@@ -69,9 +69,8 @@ DEFAULT_TITLE_STRONG = (r"\bai\b|artificial intelligence|machine learning|\bml\b
                         r"applied scien")
 DEFAULT_TITLE_MEDIUM = (r"python|cloud|devops|platform engineer|software engineer|developer|\.net|c#|analytics|"
                         r"data analyst|data platform|rpa|innovation|digital transformation|full ?stack|backend|back-end")
-TITLE_EXCLUDE = re.compile(
-    r"\bintern(ship)?\b|part[- ]time|placement|apprentice|volunteer|\bsales\b|recruit(er|ment consultant)|"
-    r"nurse|teacher|lecturer|driver|warehouse operative|cleaner", re.I)
+DEFAULT_TITLE_EXCLUDE = (r"\bintern(ship)?\b|part[- ]time|placement|apprentice|volunteer|\bsales\b|"
+                         r"recruit(er|ment consultant)|nurse|teacher|lecturer|driver|warehouse operative|cleaner")
 # Country names in structured data ("United Kingdom of Great Britain and Northern Ireland") are not locations.
 COUNTRY_FULL_NAMES = re.compile(r"united kingdom of great britain and northern ireland", re.I)
 
@@ -106,10 +105,11 @@ def load_settings() -> SimpleNamespace:
         indeed_days=env_int("JOB_INDEED_DAYS", 14),
         title_strong=re.compile(env("JOB_TITLE_STRONG", DEFAULT_TITLE_STRONG), re.I),
         title_medium=re.compile(env("JOB_TITLE_MEDIUM", DEFAULT_TITLE_MEDIUM), re.I),
+        title_exclude=re.compile(env("JOB_TITLE_EXCLUDE", DEFAULT_TITLE_EXCLUDE), re.I),
         senior_penalty=env_int("JOB_SENIOR_PENALTY", 0),
         lead_penalty=env_int("JOB_LEAD_PENALTY", 0),
-        profile_file=Path(env("JOB_PROFILE_FILE") or PACKAGE_DIR / "job_profile.md"),
-        keywords_file=Path(env("JOB_KEYWORDS_FILE") or PACKAGE_DIR / "cv_keywords.json"),
+        profile_file=PACKAGE_DIR / (env("JOB_PROFILE_FILE") or "job_profile.md"),
+        keywords_file=PACKAGE_DIR / (env("JOB_KEYWORDS_FILE") or "cv_keywords.json"),
         timezone=env("HERMES_TIMEZONE", "UTC"),
     )
 
@@ -216,7 +216,7 @@ def seniority_penalty(title: str) -> int:
 
 
 def title_relevance(title: str) -> int:
-    if TITLE_EXCLUDE.search(title):
+    if CFG.title_exclude.search(title):
         return -1
     return 3 * len(CFG.title_strong.findall(title)) + len(CFG.title_medium.findall(title))
 

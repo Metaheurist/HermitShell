@@ -492,8 +492,12 @@ CUSTOM_SECTIONS = {"on": False}
 
 
 def load_sections(path: str) -> None:
-    """Replace the built-in sections with a JSON list of section objects (see sections.example.json)."""
-    data = json.loads(open(path, encoding="utf-8").read())
+    """Replace the built-in sections with a JSON list of section objects (see sections.example.json).
+    Relative paths are resolved against this script's directory."""
+    file = Path(path)
+    if not file.is_absolute():
+        file = Path(__file__).resolve().parent / file
+    data = json.loads(file.read_text(encoding="utf-8"))
     missing = [(s.get("id", "?"), sorted(SECTION_KEYS - set(s))) for s in data if SECTION_KEYS - set(s)]
     if not data or missing:
         raise ValueError(f"invalid sections file {path}: missing keys {missing}")
