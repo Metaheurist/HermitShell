@@ -51,6 +51,10 @@ if [ -n "${HERMES_OWNER:-}" ]; then
     chown -R "$HERMES_OWNER" "$DEST"
 fi
 
-echo
-echo "Next: copy the *.example files to their real names, fill them in, add settings to"
-echo "$HERMES_HOME/.env and register the cron jobs (see each package README)."
+if [ -z "${HERMITSHELL_SETUP:-}" ]; then
+    echo
+    echo "Next: run the setup wizard to enter your settings, API keys, profile and schedules:"
+    echo "  python3 $REPO/scripts/setup.py --hermes-home $HERMES_HOME --no-install"
+    echo "(or copy the *.example files, edit $HERMES_HOME/.env and register the cron jobs by hand;"
+    echo "see each package README)."
+fi
