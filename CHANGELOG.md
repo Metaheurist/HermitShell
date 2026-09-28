@@ -139,6 +139,8 @@ using [Semantic Versioning](https://semver.org/).
   are now retried on the following runs, up to 4 attempts (`state/job_scanner_retry.json`).
   Only jobs that were rated or definitely ruled out are marked as seen.
 - A broken table row and a missing blank line in `docs/configuration.md`.
+- LinkedIn search results showed the page title ("Acme hiring Data Engineer Job in Belfast") instead
+  of the job title.
 
 ## [0.1.0] - 2026-09-28
 

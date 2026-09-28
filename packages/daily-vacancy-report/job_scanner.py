@@ -247,6 +247,9 @@ def clean_title(title: str) -> str:
                    r"eFinancialCareers|Built In Belfast|The Sun Jobs|Ni Jobs)\b.*$", "", title, flags=re.I)
     title = re.sub(r"\s+-\s+Job\s+(January|February|March|April|May|June|July|August|September|October|"
                    r"November|December)\s+\d{4}\b.*$", "", title, flags=re.I)
+    linkedin = re.match(r"^.{1,80}?\s+hiring\s+(.+)\s+in\s+.*$", title, flags=re.I)
+    if linkedin:
+        title = re.sub(r"\s+Job$", "", linkedin.group(1), flags=re.I)
     if CFG.location:
         title = re.sub(rf"\s+-\s+{re.escape(CFG.location)}\s*$", "", title, flags=re.I)
     return re.sub(r"\s+", " ", title).strip()

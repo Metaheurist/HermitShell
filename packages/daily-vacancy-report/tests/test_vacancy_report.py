@@ -230,3 +230,16 @@ def test_report_renders_new_card_parts():
         assert text in page, text
     plain = job_scanner.build_text([job], "Summary.")
     assert "closes in 2 days" in plain and "I applied: https://fb.example.workers.dev/f?" in plain
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("Citi hiring GenAI Full-Stack Engineer Lead Job in Belfast, Northern Ireland | LinkedIn",
+     "GenAI Full-Stack Engineer Lead"),
+    ("Ocho hiring Senior Machine Learning Engineer in Belfast ...", "Senior Machine Learning Engineer"),
+    ("Data Engineer - Job September 2026", "Data Engineer"),
+    ("Hiring Manager Assistant", "Hiring Manager Assistant"),
+])
+def test_clean_title(raw, expected):
+    import job_scanner
+
+    assert job_scanner.clean_title(raw) == expected
