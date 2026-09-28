@@ -41,7 +41,8 @@ Full template: [`.env.example`](../.env.example).
 | `WEB_SEARCH_ORDER` | `firecrawl,tavily` | Search provider priority |
 | `WEB_SCRAPE_ORDER` | `firecrawl,scrapfly,tavily` | Scrape provider priority |
 | `SCRAPFLY_COUNTRY` | none | Scrapfly proxy country (two-letter code) for geo-blocked sites |
-| `OLLAMA_HOST` / `OLLAMA_FALLBACK_HOST` / `OLLAMA_MODEL` | see above | Model fallbacks || `HERMES_TIMEZONE` | `UTC` | IANA timezone for dates shown in emails |
+| `OLLAMA_HOST` / `OLLAMA_FALLBACK_HOST` / `OLLAMA_MODEL` | see above | Model fallbacks |
+| `HERMES_TIMEZONE` | `UTC` | IANA timezone for dates shown in emails |
 | `HERMES_STATE_DIR` | `<scripts>/state` | Seen-state, caches and last reports |
 | `HERMES_HOME` | parent of the scripts directory | Where `.env` and `config.yaml` are read from. Environment only |
 
@@ -51,6 +52,26 @@ Full template: [`.env.example`](../.env.example).
   plus a regional example in
   [`examples/northern-ireland.env`](../packages/daily-vacancy-report/examples/northern-ireland.env).
 - Noon Tech Digest: [`packages/noon-tech-digest/.env.example`](../packages/noon-tech-digest/.env.example).
+
+## MCP sources
+
+Some packages can use MCP servers that are connected to Hermes. Currently this is the Indeed
+source in the Daily Vacancy Report. HermitShell never holds MCP credentials. The server entry
+lives under `mcp_servers:` in Hermes' `config.yaml`, and Hermes stores and refreshes the OAuth
+tokens in `$HERMES_HOME/mcp-tokens/`. The package reuses Hermes' OAuth provider, so it needs to
+run inside Hermes' Python environment (the `hermes-agent` container).
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `JOB_INDEED` | `1` | Use the Indeed MCP source when it is configured and authorised |
+| `JOB_INDEED_MCP_SERVER` | `indeed` | Server name under `mcp_servers` in `config.yaml` |
+| `HERMES_AGENT_DIR` | `/opt/hermes` | Hermes source directory, for its MCP and OAuth modules. Environment only |
+
+Authorise once with `hermes mcp login indeed` or from the dashboard's MCP page. An unauthorised
+or unreachable server is logged and skipped, and the other sources still run. The remaining
+`JOB_INDEED_*` settings are listed in the package's
+[`.env.example`](../packages/daily-vacancy-report/.env.example).
+
 ## Keeping secrets safe
 
 - Prefer container environment variables for keys and passwords, and keep `$HERMES_HOME/.env`
@@ -59,3 +80,5 @@ Full template: [`.env.example`](../.env.example).
   `.gitignore` already excludes them.
 - Logs show only the index and a masked prefix and suffix of the Firecrawl key in use, never the
   full key.
+- MCP OAuth tokens stay in Hermes' `mcp-tokens/` directory and are handled only by Hermes' own
+  OAuth code. HermitShell never copies or logs them.

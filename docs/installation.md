@@ -70,6 +70,17 @@ cp job_profile.example.md job_profile.md
 cp cv_keywords.example.json cv_keywords.json
 ```
 
+Optionally, connect the Indeed MCP server in Hermes so the vacancy report also searches Indeed.
+Add **indeed** from the dashboard's MCP catalog, then authorise it once:
+
+```sh
+docker exec -it -u hermes hermes-agent hermes mcp login indeed
+docker exec -u hermes hermes-agent hermes mcp test indeed
+```
+
+Setup details are in the package README's
+[Indeed MCP source](../packages/daily-vacancy-report/README.md#indeed-mcp-source) section.
+
 ## 4. Test
 
 Run the scripts as the same user Hermes uses. In Docker, that means:

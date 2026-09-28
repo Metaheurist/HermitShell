@@ -11,7 +11,7 @@ includes credentials, API keys, your CV and your region.
 
 | Package | What you get | Schedule |
 | --- | --- | --- |
-| [Daily Vacancy Report](packages/daily-vacancy-report) | Jobs matched to your CV and scored 0-10 by the model, with company logos, websites and profiles | Daily, morning |
+| [Daily Vacancy Report](packages/daily-vacancy-report) | Jobs from Indeed (via Hermes' Indeed MCP connection) and the wider web, matched to your CV and scored 0-10 by the model, with company logos, websites and profiles | Daily, morning |
 | [Noon Tech Digest](packages/noon-tech-digest) | Curated AI / ML / Python / IoT / new-tech news in sections, with a model-written briefing | Daily, noon |
 
 <table>
@@ -68,6 +68,9 @@ script from `$HERMES_HOME/scripts`.
   `$HERMES_HOME/config.yaml`, with overrides per package.
 - **Web provider failover.** Firecrawl comes first (with extra backup keys when credits run
   low), then Tavily and Scrapfly. See [docs/web-providers.md](docs/web-providers.md).
+- **Uses Hermes' MCP connections.** Packages can call MCP servers you have already authorised in
+  Hermes, such as Indeed for job search, without holding any tokens themselves. See
+  [MCP sources](docs/configuration.md#mcp-sources).
 - **Email that survives Gmail.** Table layout, inline CSS, PNG icons sent as inline attachments,
   and a dark-mode hack that keeps headers readable. See
   [docs/email-rendering.md](docs/email-rendering.md).
@@ -85,6 +88,8 @@ script from `$HERMES_HOME/scripts`.
 - An SMTP account, such as a Gmail App Password.
 - An API key for at least one of [Firecrawl](https://firecrawl.dev),
   [Tavily](https://tavily.com) or [Scrapfly](https://scrapfly.io). All three have free tiers.
+- Optional: the [Indeed MCP server](https://docs.indeed.com/mcp) added and authorised in Hermes,
+  for the vacancy report's Indeed source.
 
 ## Adding a package
 

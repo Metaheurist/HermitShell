@@ -6,6 +6,33 @@ using [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Indeed MCP source for the Daily Vacancy Report** (`packages/daily-vacancy-report/indeed_mcp.py`):
+  - Searches Indeed through the Indeed MCP server connected to Hermes, and fetches full job
+    descriptions with the MCP job-detail tool instead of scraping, so it uses no web credits.
+  - Reuses Hermes' OAuth provider and tokens (`hermes mcp login indeed`). The package holds no
+    credentials, and token refreshes stay coordinated with the Hermes gateway.
+  - Tool and argument names are discovered from the server's tool list, with
+    `JOB_INDEED_SEARCH_TOOL` / `JOB_INDEED_DETAIL_TOOL` overrides.
+  - Configured through `JOB_INDEED`, `JOB_INDEED_MCP_SERVER`, `JOB_INDEED_MCP_URL`,
+    `JOB_INDEED_QUERIES`, `JOB_INDEED_LOCATION`, `JOB_INDEED_COUNTRY`, `JOB_INDEED_LIMIT`,
+    `JOB_INDEED_DAYS`, `JOB_INDEED_DOMAIN` and `JOB_INDEED_TIMEOUT`.
+  - New `--no-indeed` flag. The report footer counts Indeed MCP calls.
+  - Indeed job keys (`jk`) are used for seen-state, so the same posting found by web search and
+    by the MCP source is only rated once.
+- **Documentation.** An "Indeed MCP source" setup section in the package README, an "MCP
+  sources" section in the configuration guide, and an optional step in the installation guide.
+
+### Changed
+
+- An unauthorised, unreachable or missing Indeed MCP server is logged and skipped, and the other
+  sources still run.
+
+### Fixed
+
+- A broken table row and a missing blank line in `docs/configuration.md`.
+
 ## [0.1.0] - 2026-09-28
 
 First public release. Two packages are ported from a private Hermes deployment and made fully
