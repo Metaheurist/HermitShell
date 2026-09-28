@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""Noon Tech Digest: daily AI / ML / Python / IoT / new-tech news, curated by Hermes' model.
+"""News Digest: daily news on the topics you choose, curated by Hermes' model.
 
-For each section, runs a site-targeted and a broad news search (Firecrawl, with Tavily as backup) over the last
+Topics come from the built-in catalog (TOPICS, picked with NEWS_DIGEST_TOPICS), free-form custom
+topics (NEWS_DIGEST_CUSTOM_TOPICS) or a full sections file (NEWS_DIGEST_SECTIONS_FILE).
+For each topic, runs a site-targeted and a broad news search (Firecrawl, with Tavily as backup) over the last
 24 hours (widening to the last week when a section comes up short), drops social/video
 junk, category pages and stories already sent, then asks Hermes' local Ollama model to
 pick and summarise the best stories. The result is emailed as a sectioned HTML digest.
 
 Runs from $HERMES_HOME/scripts as a Hermes cron job (see the package README):
-    hermes cron create '0 12 * * *' --name noon-tech-digest --script tech_digest.py --no-agent --deliver local
+    hermes cron create '0 12 * * *' --name news-digest --script news_digest.py --no-agent --deliver local
 
 Manual runs:
-    python3 tech_digest.py --dry-run          # search + curate, write state/tech_digest_last.html, no email
-    python3 tech_digest.py --test-email       # SMTP check only
+    python3 news_digest.py --dry-run          # search + curate, write state/news_digest_last.html, no email
+    python3 news_digest.py --test-email       # SMTP check only
 """
 
 from __future__ import annotations
@@ -34,16 +36,16 @@ from hermes_common import (EMAIL_HEAD, STATE_DIR, WebClient, connect_model, env,
                            first_sentences, gmail_dark_safe, inline_images, load_env_file, log, normalize_url,
                            ollama_chat)
 
-hc.LOG_TAG = "tech_digest"
+hc.LOG_TAG = "news_digest"
 ICON_DIR = Path(__file__).resolve().parent / "icons"  # PNGs built from icons/src by icons/build_icons.py
-SEEN_FILE = STATE_DIR / "tech_digest_seen.json"
-LAST_REPORT = STATE_DIR / "tech_digest_last.html"
-LAST_RESULTS = STATE_DIR / "tech_digest_last.json"
-DEFAULT_READER = "a software engineer who builds with Python, LLMs, automation and IoT"
+SEEN_FILE = STATE_DIR / "news_digest_seen.json"
+LAST_REPORT = STATE_DIR / "news_digest_last.html"
+LAST_RESULTS = STATE_DIR / "news_digest_last.json"
+DEFAULT_READER = "a busy professional who wants the day's most important developments on these topics"
 
 
 def digest_title() -> str:
-    return env("TECH_DIGEST_TITLE", "Noon Tech Digest")
+    return env("NEWS_DIGEST_TITLE", "News Digest")
 
 
 EXCLUDE_SITES = ("youtube.com", "facebook.com", "reddit.com", "instagram.com", "x.com", "tiktok.com",
@@ -73,7 +75,9 @@ NON_ARTICLE_TITLE = re.compile(
     r"^(latest|home|news)\b|\b(latest|breaking) (news|stories|articles)\b|\bnews,? (and|&) (analysis|updates)\b"
     r"|\b(coupon|promo code|best deals?|% off)\b|\bjobs? (in|at)\b|\bpage \d+\b", re.I)
 
-SECTIONS = [
+# Topic catalog. NEWS_DIGEST_TOPICS picks entries by id (in that order); each id needs icons built by
+# icons/build_icons.py. Sites are searched with site: filters; the broad query catches everything else.
+TOPICS = [
     {
         "id": "ai", "title": "Artificial Intelligence", "icon": "brain", "colour": "#7c3aed", "tint": "#f5f3ff",
         "scope": "AI industry news: model and product launches, major company moves, funding, policy and regulation, "
@@ -124,7 +128,171 @@ SECTIONS = [
         "site_query": "launch OR announced OR unveiled",
         "broad_query": "new technology launched OR unveiled OR announced gadget OR chip OR robot",
     },
+    {
+        "id": "security", "title": "Cybersecurity", "icon": "shield", "colour": "#dc2626", "tint": "#fef2f2",
+        "scope": "Security news: actively exploited vulnerabilities, major breaches, ransomware, patches that "
+                 "matter, threat-actor activity and security policy.",
+        "sites": ["bleepingcomputer.com", "thehackernews.com", "krebsonsecurity.com", "therecord.media",
+                  "securityweek.com", "darkreading.com"],
+        "site_query": "vulnerability OR breach OR ransomware",
+        "broad_query": "cybersecurity news exploited vulnerability OR data breach OR ransomware attack",
+    },
+    {
+        "id": "cloud", "title": "Cloud & DevOps", "icon": "cloud", "colour": "#0ea5e9", "tint": "#f0f9ff",
+        "scope": "Cloud platforms and DevOps: AWS, Azure and Google Cloud launches and outages, Kubernetes and "
+                 "container tooling, CI/CD, infrastructure as code and platform engineering.",
+        "sites": ["thenewstack.io", "devclass.com", "infoq.com", "aws.amazon.com", "cloud.google.com",
+                  "azure.microsoft.com"],
+        "site_query": "cloud OR Kubernetes OR DevOps",
+        "broad_query": "cloud computing news AWS OR Azure OR Google Cloud OR Kubernetes release",
+        "site_tbs": "qdr:w",
+    },
+    {
+        "id": "programming", "title": "Programming & Dev Tools", "icon": "terminal", "colour": "#1e293b",
+        "tint": "#f1f5f9",
+        "scope": "Software development: programming language releases, compilers and runtimes, IDEs and "
+                 "developer tools, package-registry incidents and notable open-source releases for developers.",
+        "sites": ["github.blog", "infoq.com", "devclass.com", "thenewstack.io", "lwn.net", "blog.jetbrains.com"],
+        "site_query": "release OR developer tools OR programming language",
+        "broad_query": "programming language release OR developer tools news Rust OR Go OR TypeScript OR Java",
+        "site_tbs": "qdr:w",
+    },
+    {
+        "id": "webdev", "title": "Web Development", "icon": "code", "colour": "#4f46e5", "tint": "#eef2ff",
+        "scope": "The web platform: browsers, JavaScript and TypeScript, frameworks (React, Vue, Svelte, Next.js), "
+                 "CSS and web standards.",
+        "sites": ["web.dev", "developer.chrome.com", "smashingmagazine.com", "blog.mozilla.org", "infoworld.com",
+                  "thenewstack.io"],
+        "site_query": "JavaScript OR TypeScript OR browser OR framework",
+        "broad_query": "web development news JavaScript OR TypeScript OR React OR browser release",
+        "site_tbs": "qdr:w",
+    },
+    {
+        "id": "data", "title": "Data & Analytics", "icon": "database", "colour": "#0891b2", "tint": "#ecfeff",
+        "scope": "Data engineering and analytics: databases, data warehouses and lakehouses, streaming, BI tools "
+                 "and notable releases from Databricks, Snowflake, Postgres and similar.",
+        "sites": ["datanami.com", "thenewstack.io", "infoworld.com", "databricks.com", "snowflake.com",
+                  "postgresql.org"],
+        "site_query": "data engineering OR analytics OR database",
+        "broad_query": "data engineering analytics database news release",
+        "site_tbs": "qdr:w",
+    },
+    {
+        "id": "opensource", "title": "Open Source & Self-hosting", "icon": "box", "colour": "#0f766e",
+        "tint": "#f0fdfa",
+        "scope": "Open-source and self-hosted software: notable releases, Linux, homelab platforms, local AI "
+                 "(Ollama, llama.cpp) and licence changes.",
+        "sites": ["lwn.net", "selfh.st", "itsfoss.com", "opensource.com", "github.blog", "omgubuntu.co.uk"],
+        "site_query": "open source release",
+        "broad_query": "open source software release self-hosted Linux",
+        "site_tbs": "qdr:w",
+    },
+    {
+        "id": "smarthome", "title": "Smart Home", "icon": "house", "colour": "#d97706", "tint": "#fffbeb",
+        "scope": "Smart-home and home-automation news: Home Assistant releases, Matter and Thread, Zigbee, "
+                 "ESPHome and notable device launches. Skip shopping deals and generic gadget reviews.",
+        "sites": ["home-assistant.io", "theverge.com", "arstechnica.com", "hackaday.com", "cnx-software.com"],
+        "site_query": "Home Assistant OR Matter OR Zigbee OR smart home",
+        "broad_query": "smart home news Home Assistant OR Matter OR Thread release",
+        "site_tbs": "qdr:w",
+    },
+    {
+        "id": "robotics", "title": "Robotics", "icon": "bot", "colour": "#57534e", "tint": "#fafaf9",
+        "scope": "Robotics: humanoid and industrial robots, autonomous vehicles and drones, robotics research and "
+                 "major funding or deployments.",
+        "sites": ["therobotreport.com", "spectrum.ieee.org", "techcrunch.com", "robohub.org",
+                  "roboticsandautomationnews.com"],
+        "site_query": "robot OR robotics OR humanoid",
+        "broad_query": "robotics news humanoid robot OR autonomous robot OR drone",
+    },
+    {
+        "id": "space", "title": "Space", "icon": "orbit", "colour": "#1d4ed8", "tint": "#eff6ff",
+        "scope": "Space exploration and industry: launches, missions, satellites, telescopes and discoveries from "
+                 "NASA, ESA, SpaceX and others.",
+        "sites": ["space.com", "spacenews.com", "nasaspaceflight.com", "esa.int", "arstechnica.com"],
+        "site_query": "launch OR mission OR satellite",
+        "broad_query": "space news launch mission NASA OR SpaceX OR ESA",
+    },
+    {
+        "id": "science", "title": "Science", "icon": "flask-conical", "colour": "#16a34a", "tint": "#f0fdf4",
+        "scope": "Science news: significant new studies and discoveries in physics, biology, chemistry, earth "
+                 "science and more. Skip press-release hype without a published result.",
+        "sites": ["nature.com", "science.org", "newscientist.com", "quantamagazine.org", "phys.org",
+                  "sciencedaily.com"],
+        "site_query": "study OR research OR discovery",
+        "broad_query": "science news new study discovery researchers",
+    },
+    {
+        "id": "climate", "title": "Climate & Energy", "icon": "leaf", "colour": "#65a30d", "tint": "#f7fee7",
+        "scope": "Climate and energy: renewables, batteries and storage, EVs, grids, emissions data and climate "
+                 "policy.",
+        "sites": ["carbonbrief.org", "canarymedia.com", "electrek.co", "insideclimatenews.org", "theguardian.com"],
+        "site_query": "climate OR renewable OR battery OR emissions",
+        "broad_query": "climate energy news renewable OR solar OR battery OR emissions",
+    },
+    {
+        "id": "health", "title": "Health & Medicine", "icon": "heart-pulse", "colour": "#e11d48", "tint": "#fff1f2",
+        "scope": "Health and medicine: clinical trial results, drug and device approvals, public health and "
+                 "health-tech. Skip wellness tips and supplement marketing.",
+        "sites": ["statnews.com", "fiercebiotech.com", "medicalxpress.com", "medpagetoday.com", "bmj.com"],
+        "site_query": "trial OR approval OR treatment OR health",
+        "broad_query": "health medicine news clinical trial OR new treatment OR drug approval",
+    },
+    {
+        "id": "business", "title": "Business & Startups", "icon": "briefcase", "colour": "#9333ea",
+        "tint": "#faf5ff",
+        "scope": "Business and startups: significant funding rounds, acquisitions, IPOs, layoffs and strategy "
+                 "moves at notable companies.",
+        "sites": ["techcrunch.com", "reuters.com", "cnbc.com", "sifted.eu", "fortune.com"],
+        "site_query": "funding OR acquisition OR IPO",
+        "broad_query": "startup funding round OR acquisition OR IPO business news",
+    },
+    {
+        "id": "markets", "title": "Markets & Economy", "icon": "trending-up", "colour": "#047857", "tint": "#ecfdf5",
+        "scope": "Markets and the economy: central banks and interest rates, inflation and jobs data, major "
+                 "market moves and earnings that moved markets.",
+        "sites": ["reuters.com", "cnbc.com", "apnews.com", "marketwatch.com", "economist.com"],
+        "site_query": "markets OR economy OR inflation OR rates",
+        "broad_query": "stock markets economy news inflation OR interest rates OR central bank",
+    },
+    {
+        "id": "policy", "title": "Tech Policy & Regulation", "icon": "landmark", "colour": "#475569",
+        "tint": "#f8fafc",
+        "scope": "Technology policy: AI and privacy regulation, antitrust cases, online safety laws and major "
+                 "court rulings affecting tech companies.",
+        "sites": ["politico.eu", "techpolicy.press", "reuters.com", "theverge.com", "euractiv.com"],
+        "site_query": "regulation OR law OR antitrust OR ruling",
+        "broad_query": "technology regulation news AI Act OR antitrust OR privacy law OR online safety",
+    },
+    {
+        "id": "world", "title": "World News", "icon": "globe", "colour": "#0369a1", "tint": "#f0f9ff",
+        "scope": "The day's major world news: geopolitics, elections, conflicts, disasters and international "
+                 "diplomacy. Prefer wire services and established outlets.",
+        "sites": ["reuters.com", "apnews.com", "bbc.co.uk", "theguardian.com", "aljazeera.com"],
+        "site_query": "world news",
+        "broad_query": "world news today",
+    },
+    {
+        "id": "gaming", "title": "Gaming", "icon": "gamepad-2", "colour": "#c026d3", "tint": "#fdf4ff",
+        "scope": "Video games: major releases and announcements, consoles and hardware, studio and industry news. "
+                 "Skip deals, guides and walkthroughs.",
+        "sites": ["polygon.com", "eurogamer.net", "gamesindustry.biz", "rockpapershotgun.com", "ign.com"],
+        "site_query": "game OR console OR studio",
+        "broad_query": "video game news release OR console OR studio",
+    },
+    {
+        "id": "sport", "title": "Sport", "icon": "trophy", "colour": "#ca8a04", "tint": "#fefce8",
+        "scope": "Sport: major results, transfers and tournament news across the big sports. Skip betting tips "
+                 "and fantasy advice.",
+        "sites": ["bbc.co.uk", "espn.com", "skysports.com", "theathletic.com", "reuters.com"],
+        "site_query": "result OR wins OR final OR transfer",
+        "broad_query": "sports news results today",
+    },
 ]
+DEFAULT_TOPICS = ["ai", "ml", "python", "iot", "newtech"]
+CUSTOM_PALETTE = [("#475569", "#f8fafc"), ("#0f766e", "#f0fdfa"), ("#9333ea", "#faf5ff"), ("#ea580c", "#fff7ed"),
+                  ("#0369a1", "#f0f9ff"), ("#be123c", "#fff1f2")]
+SECTIONS = [t for t in TOPICS if t["id"] in DEFAULT_TOPICS]
 
 PICK_SCHEMA_ITEM = {
     "type": "object",
@@ -139,11 +307,11 @@ PICK_SCHEMA_ITEM = {
 }
 
 def editor_system() -> str:
-    return EDITOR_SYSTEM.format(reader=env("TECH_DIGEST_READER", DEFAULT_READER))
+    return EDITOR_SYSTEM.format(reader=env("NEWS_DIGEST_READER", DEFAULT_READER))
 
 
 EDITOR_SYSTEM = (
-    "You are a sharp technology news editor writing a daily digest for {reader}. "
+    "You are a sharp news editor writing a daily digest for {reader}. "
     "Pick genuinely new, newsworthy stories. Use ONLY facts stated in each candidate's title and snippet: never "
     "invent numbers, names, dates or claims, and never add connections the snippet does not state. Skip "
     "listicles, generic how-tos, SEO roundups, deals, job posts, press-release fluff, opinion pieces without news "
@@ -151,8 +319,8 @@ EDITOR_SYSTEM = (
     "candidates cover the same story, pick the best source once. Headlines are short and factual. Summaries are "
     "1-2 plain sentences. 'why_it_matters' is one sentence on the practical impact for the reader. "
     "Importance: most stories are 5-7; 8 is a clearly significant development; 9-10 is reserved for rare, "
-    "major events such as a frontier model launch, a huge acquisition or a critical widely exploited "
-    "vulnerability. Reply with JSON only."
+    "major events such as a landmark launch, a huge acquisition, a major policy decision or a critical widely "
+    "exploited vulnerability. Reply with JSON only."
 )
 
 
@@ -277,7 +445,8 @@ def clean_title(title: str) -> str:
 def section_queries(sec: dict) -> list[str]:
     sites = " OR ".join(f"site:{s}" for s in sec["sites"])
     excludes = " ".join(f"-site:{s}" for s in EXCLUDE_SITES)
-    return [f"{sec['site_query']} ({sites})", f"{sec['broad_query']} {excludes}"]
+    site_query = f"{sec['site_query']} ({sites})" if sites else f"{sec['site_query']} news"
+    return [site_query, f"{sec['broad_query']} {excludes}"]
 
 
 def load_seen(days: int) -> dict:
@@ -507,6 +676,55 @@ def load_sections(path: str) -> None:
     SEC_BY_ID.update({s["id"]: s for s in SECTIONS})
 
 
+def custom_topics(spec: str) -> list[dict]:
+    """Parse NEWS_DIGEST_CUSTOM_TOPICS, e.g. "Formula 1: F1, Grand Prix || Home Brewing: homebrew, craft beer"."""
+    out = []
+    for chunk in (c.strip() for c in spec.split("||")):
+        title, _, words = chunk.partition(":")
+        title = title.strip()
+        if not title:
+            continue
+        keywords = [k.strip() for k in (words or title).split(",") if k.strip()]
+        terms = " OR ".join(f'"{k}"' if " " in k else k for k in keywords)
+        colour, tint = CUSTOM_PALETTE[len(out) % len(CUSTOM_PALETTE)]
+        slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or str(len(out) + 1)
+        out.append({
+            "id": f"custom-{slug}", "title": title, "icon": "newspaper", "colour": colour, "tint": tint,
+            "scope": f"News about {title} ({', '.join(keywords)}): genuinely new developments, announcements and "
+                     "results. Skip evergreen explainers, listicles, deals and marketing.",
+            "sites": [], "site_query": terms, "broad_query": f"{title} news {terms}",
+        })
+    return out
+
+
+def select_topics(ids: str, custom: str) -> None:
+    """Build SECTIONS from NEWS_DIGEST_TOPICS (catalog ids, in order) plus NEWS_DIGEST_CUSTOM_TOPICS."""
+    catalog = {t["id"]: t for t in TOPICS}
+    wanted = [i.strip().lower() for i in ids.split(",") if i.strip()] if ids.strip() else list(DEFAULT_TOPICS)
+    unknown = [i for i in wanted if i not in catalog]
+    if unknown:
+        log(f"ignoring unknown topics: {', '.join(unknown)} (known: {', '.join(catalog)})")
+    chosen = [catalog[i] for i in dict.fromkeys(wanted) if i in catalog] + custom_topics(custom)
+    if not chosen:
+        raise ValueError("no news topics selected; set NEWS_DIGEST_TOPICS or NEWS_DIGEST_CUSTOM_TOPICS")
+    SECTIONS[:] = chosen
+    SEC_BY_ID.clear()
+    SEC_BY_ID.update({s["id"]: s for s in SECTIONS})
+
+
+def default_tagline() -> str:
+    titles = [s["title"] for s in SECTIONS]
+    if CUSTOM_SECTIONS["on"] or len(titles) > 5 or len(" ".join(titles)) > 70:
+        return "Curated news from the last 24 hours"
+    joined = titles[0] if len(titles) == 1 else ", ".join(titles[:-1]) + " & " + titles[-1]
+    return f"{joined} from the last 24 hours"
+
+
+def icon_id(sec: dict) -> str:
+    """Topics without built icons (custom topics, sections files) use the generic set."""
+    return sec["id"] if (ICON_DIR / f"badge-{sec['id']}.png").is_file() else "custom"
+
+
 def icon(name: str, size: int) -> str:
     if not (ICON_DIR / f"{name}.png").is_file():
         return ""
@@ -538,7 +756,7 @@ def hero_card(story: dict) -> str:
     return f"""
 <table width="100%" cellpadding="0" cellspacing="0" style="background:{C_CARD};border:1px solid #e2e8f0;border-top:5px solid {sec['colour']};border-radius:16px;margin:22px 0 4px">
 <tr><td style="padding:22px 24px">
-  <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:{sec['colour']};font-weight:800">{icon(f"star-{sec['id']}", 14)} <span style="vertical-align:middle">Top story &middot;</span> {icon(f"glyph-{sec['id']}", 14)} <span style="vertical-align:middle">{esc(sec['title'])}</span></div>
+  <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:{sec['colour']};font-weight:800">{icon(f"star-{icon_id(sec)}", 14)} <span style="vertical-align:middle">Top story &middot;</span> {icon(f"glyph-{icon_id(sec)}", 14)} <span style="vertical-align:middle">{esc(sec['title'])}</span></div>
   <a href="{esc(story['url'])}" style="display:block;font-size:22px;font-weight:800;color:{C_INK};text-decoration:none;line-height:1.3;margin:8px 0 6px">{esc(story['headline'])}</a>
   <div style="font-size:12px;color:{C_MUTED};margin-bottom:10px">{esc(story['domain'])} &nbsp;{importance_badge(story['importance'], sec['colour'])}</div>
   <div style="font-size:15px;color:#1e293b;line-height:1.6">{esc(story['summary'])}</div>
@@ -575,7 +793,7 @@ def section_block(sec: dict, stories: list[dict]) -> str:
 <a name="{sec['id']}"></a>
 <table width="100%" cellpadding="0" cellspacing="0" style="background:{C_CARD};border:1px solid #e2e8f0;border-radius:16px;margin:22px 0 0;overflow:hidden">
 <tr><td style="background:{sec['tint']};border-left:5px solid {sec['colour']};border-radius:16px 16px 0 0;padding:14px 22px">
-  {icon(f"badge-{sec['id']}", 32)}
+  {icon(f"badge-{icon_id(sec)}", 32)}
   <span style="font-size:17px;font-weight:800;color:{sec['colour']};vertical-align:middle;margin-left:10px">{esc(sec['title'])}</span>
   <span style="font-size:12px;color:{C_MUTED};vertical-align:middle;margin-left:6px">{len(stories)} {'story' if len(stories) == 1 else 'stories'}</span>
 </td></tr>
@@ -602,8 +820,7 @@ def build_html(sections: list[tuple[dict, list[dict]]], top: dict | None, briefi
     body = "".join(section_block(sec, st) for sec, st in sections)
     widened = (f"Widened to the past week for: {esc(', '.join(stats['widened']))}.<br>" if stats["widened"] else "")
     title = esc(digest_title())
-    tagline = esc(env("TECH_DIGEST_TAGLINE", "Curated tech news from the last 24 hours" if CUSTOM_SECTIONS["on"]
-                      else "AI, Machine Learning, Python, IoT & new tech from the last 24 hours"))
+    tagline = esc(env("NEWS_DIGEST_TAGLINE") or default_tagline())
     edition = esc(stats.get("edition") or "Daily")
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{EMAIL_HEAD}<title>{title}</title></head>
@@ -653,19 +870,22 @@ def build_text(sections: list[tuple[dict, list[dict]]], top: dict | None, briefi
 # --------------------------------------------------------------------------- main
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Daily sectioned tech news digest curated by Hermes' model.")
+    parser = argparse.ArgumentParser(description="Daily sectioned news digest on your chosen topics, curated by "
+                                                 "Hermes' model.")
     parser.add_argument("--dry-run", action="store_true", help="don't send email or update seen-state")
     parser.add_argument("--test-email", action="store_true", help="send a test email and exit")
     parser.add_argument("--include-seen", action="store_true", help="allow stories sent in previous digests")
     args = parser.parse_args()
 
     load_env_file()
-    if env("TECH_DIGEST_SECTIONS_FILE"):
-        try:
-            load_sections(env("TECH_DIGEST_SECTIONS_FILE"))
-        except (OSError, ValueError) as exc:
-            log(str(exc))
-            return 4
+    try:
+        if env("NEWS_DIGEST_SECTIONS_FILE"):
+            load_sections(env("NEWS_DIGEST_SECTIONS_FILE"))
+        else:
+            select_topics(env("NEWS_DIGEST_TOPICS"), env("NEWS_DIGEST_CUSTOM_TOPICS"))
+    except (OSError, ValueError) as exc:
+        log(str(exc))
+        return 4
     tz = ZoneInfo(env("HERMES_TIMEZONE", "UTC"))
     now = datetime.now(tz)
     empty_stats = {"when": now.strftime("%A %d %B %Y"), "edition": now.strftime("%H:%M"), "stories": 0,
@@ -680,35 +900,35 @@ def main() -> int:
         return 0
 
     try:
-        host, model, num_ctx = connect_model("TECH_DIGEST_MODEL")
+        host, model, num_ctx = connect_model("NEWS_DIGEST_MODEL")
     except RuntimeError as exc:
         log(str(exc))
         return 3
     try:
-        web = WebClient(env_int("TECH_DIGEST_MIN_CREDITS", 30))
+        web = WebClient(env_int("NEWS_DIGEST_MIN_CREDITS", 30))
     except RuntimeError as exc:
         log(str(exc))
         return 2
 
-    seen_days = env_int("TECH_DIGEST_SEEN_DAYS", 7)
+    seen_days = env_int("NEWS_DIGEST_SEEN_DAYS", 7)
     seen = {} if args.include_seen else load_seen(seen_days)
-    per_section = env_int("TECH_DIGEST_PER_SECTION", 5)
-    candidates, gstats = gather(web, seen, env_int("TECH_DIGEST_RESULTS_PER_QUERY", 10),
-                                env_int("TECH_DIGEST_MIN_CANDIDATES", 4), env("TECH_DIGEST_COUNTRY"),
-                                env_int("TECH_DIGEST_MAX_CANDIDATES", 18))
+    per_section = env_int("NEWS_DIGEST_PER_SECTION", 5)
+    candidates, gstats = gather(web, seen, env_int("NEWS_DIGEST_RESULTS_PER_QUERY", 10),
+                                env_int("NEWS_DIGEST_MIN_CANDIDATES", 4), env("NEWS_DIGEST_COUNTRY"),
+                                env_int("NEWS_DIGEST_MAX_CANDIDATES", 18))
 
     sections: list[tuple[dict, list[dict]]] = []
     for sec in SECTIONS:
         covered = [s["headline"] for _, st in sections for s in st]
         stories = curate_section(host, model, num_ctx, sec, candidates.get(sec["id"], []), per_section, covered,
-                                 env_int("TECH_DIGEST_MIN_IMPORTANCE", 5))
+                                 env_int("NEWS_DIGEST_MIN_IMPORTANCE", 5))
         log(f"{sec['title']}: {len(stories)} stories selected")
         sections.append((sec, stories))
     gstats["duplicate"] += dedupe_across(host, model, num_ctx, sections)
 
     all_stories = [s for _, st in sections for s in st]
     top = max(all_stories, key=lambda s: (s["importance"], s["curated"]), default=None)
-    if top and env_bool("TECH_DIGEST_SCRAPE_TOP", True):
+    if top and env_bool("NEWS_DIGEST_SCRAPE_TOP", True):
         deepen_top_story(web, host, model, num_ctx, top)
     briefing = write_briefing(host, model, num_ctx, sections)
 
@@ -726,7 +946,7 @@ def main() -> int:
                                         "sections": {sec["id"]: st for sec, st in sections}},
                                        indent=2, ensure_ascii=False), encoding="utf-8")
 
-    if not all_stories and not env_bool("TECH_DIGEST_EMAIL_WHEN_EMPTY", False):
+    if not all_stories and not env_bool("NEWS_DIGEST_EMAIL_WHEN_EMPTY", False):
         print(f"{digest_title()}: no stories found today; no email sent.")
         return 0
     subject = f"{digest_title()}: {len(all_stories)} stor{'y' if len(all_stories) == 1 else 'ies'}"

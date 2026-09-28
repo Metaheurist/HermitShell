@@ -3,7 +3,7 @@
 
 Gmail strips inline <svg> and SVG images, so the emails carry PNGs rendered at 3x as CID attachments.
 Needs PyMuPDF (pip install pymupdf); run locally after changing an icon or a section colour:
-    python icons/build_icons.py                          # built-in sections
+    python icons/build_icons.py                          # every topic in the catalog
     python icons/build_icons.py my_sections.json         # custom sections file
 Each section's "icon" must name an SVG in icons/src (Lucide stroke icons work as-is).
 Sources: Lucide (ISC) and Simple Icons (CC0, the Python logo).
@@ -18,7 +18,7 @@ import pymupdf as fitz
 
 HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE.parent), str(HERE.parents[2] / "common")]
-from tech_digest import SECTIONS, load_sections  # noqa: E402
+from news_digest import SECTIONS, TOPICS, load_sections  # noqa: E402
 
 SCALE = 3
 FILLED = {"python"}  # Simple Icons are filled shapes; Lucide icons are 2px strokes
@@ -46,9 +46,13 @@ def render(svg_body: str, box: int, out: str) -> None:
 
 
 def main() -> None:
+    sections = TOPICS
     if len(sys.argv) > 1:
         load_sections(sys.argv[1])
-    for sec in SECTIONS:
+        sections = SECTIONS
+    # Generic set used by custom topics and any section without its own icons.
+    sections = [*sections, {"id": "custom", "icon": "newspaper", "colour": "#475569"}]
+    for sec in sections:
         # 32px rounded badge in the section colour with a white 18px glyph, for the section headers.
         render(f'<rect width="32" height="32" rx="9" fill="{sec["colour"]}"/>'
                f'<g transform="translate(7 7) scale(0.75)">{glyph(sec["icon"], "#ffffff")}</g>',
