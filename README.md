@@ -1,5 +1,7 @@
 # HermitShell
 
+[![CI](https://github.com/Metaheurist/HermitShell/actions/workflows/ci.yml/badge.svg)](https://github.com/Metaheurist/HermitShell/actions/workflows/ci.yml)
+
 A collection of ready-to-install packages for [Hermes Agent](https://github.com/NousResearch/hermes-agent).
 Each package is a self-contained scheduled script that runs through `hermes cron`. The packages use
 the model Hermes is already configured with (Ollama by default) and send you the results by email.
@@ -124,7 +126,10 @@ script from `$HERMES_HOME/scripts`.
    `# @wizard` when a guided step in `scripts/setup.py` fills it in. Add the package to
    `PACKAGES` in `scripts/setup.py` so the wizard can schedule it.
 4. Support `--dry-run` and `--test-email`.
-5. Add an entry to [CHANGELOG.md](CHANGELOG.md).
+5. Put unit tests in `packages/<name>/tests/` and add a step for them to
+   [`.github/workflows/ci.yml`](.github/workflows/ci.yml), which runs on every push and pull
+   request.
+6. Add an entry to [CHANGELOG.md](CHANGELOG.md).
 
 ## Security
 

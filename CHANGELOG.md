@@ -48,6 +48,8 @@ using [Semantic Versioning](https://semver.org/).
   (`SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY` in answers files).
 - **Tests** for the vacancy report helpers (`packages/daily-vacancy-report/tests`) and the
   feedback Worker (`npm test`).
+- **CI** (`.github/workflows/ci.yml`): every push and pull request compiles all scripts, runs
+  the Python tests on Python 3.10 and 3.12, and runs the Worker's tests on Node 22.
 - **Setup wizard** (`scripts/setup.py`, standard library only):
   - Installs the chosen packages, then asks for SMTP details, web search API keys (typed
     without echo, shown masked), timezone and each package's settings.
