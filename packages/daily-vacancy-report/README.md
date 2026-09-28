@@ -15,12 +15,15 @@ light and dark modes.
    Hermes, and runs web searches for single job postings through Firecrawl, with Tavily as the
    backup. It can also read [nijobs.com](https://www.nijobs.com) keyword listings, which is useful
    for Northern Ireland.
-2. **Pre-filter.** Keeps only relevant titles (configurable regexes), drops internships, part-time
-   work and jobs already seen in the last 90 days, then fetches each posting. Indeed descriptions
+2. **Pre-filter.** Keeps only relevant titles (configurable regexes), drops employment types you
+   didn't choose (internships and part-time by default) and jobs already seen in the last 90
+   days, then fetches each posting. Indeed descriptions
    come from the MCP job-detail tool, so they cost no scraping credits. For other boards, where
    the page has structured `JobPosting` data, the scanner uses that.
 3. **Hard filters.** Optionally restricts results to one region (towns, postcodes or any regex),
-   and accepts only full-time permanent or contract roles.
+   optionally letting fully remote jobs through, and keeps only the employment types (permanent,
+   contract, temporary, part-time, internship) and work modes (on-site, hybrid, remote) you chose.
+   Jobs that don't state a type or mode are kept.
 4. **Rate.** Hermes' model scores each job 0-10 against `job_profile.md`, with a confidence value,
    matched CV keywords, gaps and a short reason. For agency adverts it also identifies the real
    employer.
@@ -54,10 +57,17 @@ The quickest way is the setup wizard, run from the repository root:
 python3 scripts/setup.py daily-vacancy-report
 ```
 
-It asks for your email and API keys, the job titles and region to search, and your candidate
-profile (guided questions, an imported CV, or the example). It then writes `job_profile.md` and
-`cv_keywords.json`, connects Indeed, schedules the cron job and sends a test email. See
-[the installation guide](../../docs/installation.md#setup-wizard).
+It asks for your email and API keys, then:
+
+- **Where** you're job hunting: region or city, the towns inside it, your country (which also
+  picks the Indeed site) and whether fully remote jobs elsewhere count.
+- **What kind of job:** your target level (junior, mid, senior, lead or any), the employment types
+  and work modes to keep, and the job titles to search for.
+- Your **candidate profile** (guided questions, an imported CV, or the example).
+- **When** the report should run, for example `07:00` or `weekdays 07:30`.
+
+It then writes `job_profile.md` and `cv_keywords.json`, connects Indeed, schedules the cron job
+and sends a test email. See [the installation guide](../../docs/installation.md#setup-wizard).
 
 To install by hand instead, on the machine (or inside the container) running Hermes:
 
@@ -122,13 +132,16 @@ with `JOB_INDEED_SEARCH_TOOL` / `JOB_INDEED_DETAIL_TOOL`.
 
 ### Schedule it
 
+The wizard does this for you. By hand:
+
 ```sh
-hermes cron create "0 7 * * *" "Daily vacancy report" \
+hermes cron create "0 7 * * *" "Daily Vacancy Report" \
     --name daily-vacancy-report --script job_scanner.py --no-agent --deliver local
 hermes cron list
 ```
 
-Cron times are in the container's timezone, which is usually UTC.
+Cron times use Hermes' timezone (`timezone:` in `config.yaml`); without one that is usually UTC.
+Use `0 7 * * 1-5` for weekdays only.
 
 ## Command-line options
 
@@ -147,7 +160,13 @@ Every option is an environment variable (or a line in `$HERMES_HOME/.env`). See
 [`.env.example`](.env.example) for the full list with defaults. The most important ones are:
 
 - **`JOB_REGION_NAME`, `JOB_REGION_PLACES`, `JOB_REGION_REGEX`.** Restrict results to one region.
-  With none of these set, jobs from any location are kept.
+  With none of these set, jobs from any location are kept. `JOB_REMOTE_ANYWHERE=1` also keeps
+  fully remote jobs based elsewhere.
+- **`JOB_LEVEL`.** The seniority you're targeting: `junior`, `mid`, `senior`, `lead` or `any`
+  (the default). Titles above or below it lose fit points, and the model is told your target.
+- **`JOB_EMPLOYMENT_TYPES`, `JOB_WORK_MODES`.** Comma-separated lists of what to keep. Defaults:
+  `Permanent,Contract,Temporary` and `On-site,Hybrid,Remote`. Add `Part-time` or `Internship` to
+  include those; they are then also dropped from the default title exclusions.
 - **`JOB_SEARCH_LOCATION`, `JOB_SCANNER_QUERIES`.** Control what gets searched. The default queries
   target AI / ML / automation / data roles, with your location inserted.
 - **`JOB_INDEED_QUERIES`, `JOB_INDEED_LOCATION`, `JOB_INDEED_DOMAIN`.** What the Indeed source
@@ -157,8 +176,8 @@ Every option is an environment variable (or a line in `$HERMES_HOME/.env`). See
   results are worth fetching, and which are always skipped. The defaults suit AI / ML / data roles,
   and the exclude list drops internships, sales, recruiters and a few unrelated professions. The
   setup wizard rewrites all three from the job titles you enter.
-- **`JOB_SENIOR_PENALTY`, `JOB_LEAD_PENALTY`.** Lower the score of Senior or Lead titles if you
-  are not targeting them.
+- **`JOB_JUNIOR_PENALTY`, `JOB_SENIOR_PENALTY`, `JOB_LEAD_PENALTY`.** Fine-tune the points
+  `JOB_LEVEL` subtracts for Junior/Graduate, Senior and Lead/Principal titles.
 - **`JOB_SCANNER_MIN_SCORE`.** The cut-off (0-10) for a job to appear in the report.
 
 ### Writing a good profile

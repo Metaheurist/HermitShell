@@ -71,6 +71,17 @@ DEFAULT_TITLE_MEDIUM = (r"python|cloud|devops|platform engineer|software enginee
                         r"data analyst|data platform|rpa|innovation|digital transformation|full ?stack|backend|back-end")
 DEFAULT_TITLE_EXCLUDE = (r"\bintern(ship)?\b|part[- ]time|placement|apprentice|volunteer|\bsales\b|"
                          r"recruit(er|ment consultant)|nurse|teacher|lecturer|driver|warehouse operative|cleaner")
+EMPLOYMENT_TYPES = ["Permanent", "Full-time", "Contract", "Temporary", "Part-time", "Internship"]
+WORK_MODES = ["On-site", "Hybrid", "Remote"]
+# Fit-score penalties (junior, senior, lead titles) for each JOB_LEVEL; JOB_*_PENALTY overrides them.
+LEVEL_PENALTIES = {"junior": (0, 2, 3), "mid": (1, 1, 2), "senior": (2, 0, 1), "lead": (3, 1, 0), "any": (0, 0, 0)}
+
+
+def choice_list(name: str, default: list[str], options: list[str]) -> set[str]:
+    canon = {o.lower().replace(" ", "").replace("-", ""): o for o in options}
+    raw = [v.strip().lower().replace(" ", "").replace("-", "") for v in (env(name) or "").split(",") if v.strip()]
+    picked = {canon[v] for v in raw if v in canon}
+    return picked or set(default)
 # Country names in structured data ("United Kingdom of Great Britain and Northern Ireland") are not locations.
 COUNTRY_FULL_NAMES = re.compile(r"united kingdom of great britain and northern ireland", re.I)
 
@@ -86,6 +97,17 @@ def load_settings() -> SimpleNamespace:
     queries = [q.strip() for q in (env("JOB_SCANNER_QUERIES") or "").split("||") if q.strip()] or [
         (t.format(location=f'"{location}"' if location else "") + (" -site:nijobs.com" if nijobs else "")).replace("  ", " ")
         for t in DEFAULT_QUERY_TEMPLATES]
+    level = (env("JOB_LEVEL") or "any").lower()
+    level = level if level in LEVEL_PENALTIES else "any"
+    junior_pen, senior_pen, lead_pen = LEVEL_PENALTIES[level]
+    types = choice_list("JOB_EMPLOYMENT_TYPES", ["Permanent", "Contract", "Temporary"], EMPLOYMENT_TYPES)
+    if types & {"Permanent", "Full-time"}:
+        types |= {"Permanent", "Full-time"}
+    title_exclude = DEFAULT_TITLE_EXCLUDE
+    if "Internship" in types:
+        title_exclude = re.sub(r"\\bintern\(ship\)\?\\b\||placement\||apprentice\|", "", title_exclude)
+    if "Part-time" in types:
+        title_exclude = title_exclude.replace(r"part[- ]time|", "")
     return SimpleNamespace(
         title=env("JOB_REPORT_TITLE", "Daily Vacancy Report"),
         tagline=env("JOB_REPORT_TAGLINE", "Roles matched to your CV"),
@@ -105,9 +127,14 @@ def load_settings() -> SimpleNamespace:
         indeed_days=env_int("JOB_INDEED_DAYS", 14),
         title_strong=re.compile(env("JOB_TITLE_STRONG", DEFAULT_TITLE_STRONG), re.I),
         title_medium=re.compile(env("JOB_TITLE_MEDIUM", DEFAULT_TITLE_MEDIUM), re.I),
-        title_exclude=re.compile(env("JOB_TITLE_EXCLUDE", DEFAULT_TITLE_EXCLUDE), re.I),
-        senior_penalty=env_int("JOB_SENIOR_PENALTY", 0),
-        lead_penalty=env_int("JOB_LEAD_PENALTY", 0),
+        title_exclude=re.compile(env("JOB_TITLE_EXCLUDE", title_exclude), re.I),
+        level=level,
+        junior_penalty=env_int("JOB_JUNIOR_PENALTY", junior_pen),
+        senior_penalty=env_int("JOB_SENIOR_PENALTY", senior_pen),
+        lead_penalty=env_int("JOB_LEAD_PENALTY", lead_pen),
+        employment_types=types,
+        work_modes=choice_list("JOB_WORK_MODES", WORK_MODES, WORK_MODES),
+        remote_anywhere=env_bool("JOB_REMOTE_ANYWHERE", False),
         profile_file=PACKAGE_DIR / (env("JOB_PROFILE_FILE") or "job_profile.md"),
         keywords_file=PACKAGE_DIR / (env("JOB_KEYWORDS_FILE") or "cv_keywords.json"),
         timezone=env("HERMES_TIMEZONE", "UTC"),
@@ -123,8 +150,6 @@ SINGLE_POSTING = re.compile(
     r"glassdoor\.[a-z.]+/job-listing/|jobijoba\.[a-z.]+/detail/|/vacanc(y|ies)/.+|/careers?/.+/\d+|"
     r"/job/[^/]+/\d+|/jobs/\d+|/job-details?/", re.I)
 AGGREGATE_TITLE = re.compile(r"^\s*\d[\d,]*\+?\s.*\bjobs?\b|\bjobs in\b|job vacancies|updated daily", re.I)
-
-ALLOWED_TYPES = {"Permanent", "Full-time", "Contract", "Temporary", "Unknown"}
 
 SCORE_SCHEMA = {
     "type": "object",
@@ -205,14 +230,21 @@ def clean_title(title: str) -> str:
 
 LEAD_TITLE = re.compile(r"\b(lead|principal|staff|head|director|vp|chief)\b", re.I)
 SENIOR_TITLE = re.compile(r"\bsenior\b|\bsnr\b|\bsr\.?\b", re.I)
+JUNIOR_TITLE = re.compile(r"\bjunior\b|\bjnr\b|\bjr\.?\b|\bgraduate\b|\bentry[- ]level\b|\btrainee\b", re.I)
+
+
+def title_level(title: str) -> str | None:
+    if LEAD_TITLE.search(title):
+        return "lead"
+    if SENIOR_TITLE.search(title):
+        return "senior"
+    if JUNIOR_TITLE.search(title):
+        return "junior"
+    return None
 
 
 def seniority_penalty(title: str) -> int:
-    if LEAD_TITLE.search(title):
-        return CFG.lead_penalty
-    if SENIOR_TITLE.search(title):
-        return CFG.senior_penalty
-    return 0
+    return getattr(CFG, f"{title_level(title)}_penalty", 0)
 
 
 def title_relevance(title: str) -> int:
@@ -471,6 +503,17 @@ SYSTEM_PROMPT = (
 )
 
 
+def preferences() -> str:
+    level = {"junior": "junior / entry level", "mid": "mid level", "senior": "senior level",
+             "lead": "lead / principal level"}.get(CFG.level, "any seniority")
+    types = ", ".join(t for t in EMPLOYMENT_TYPES if t in CFG.employment_types)
+    modes = ", ".join(m for m in WORK_MODES if m in CFG.work_modes)
+    where = CFG.region or "anywhere"
+    if CFG.remote_anywhere:
+        where += " (or fully remote from anywhere)"
+    return f"target level {level}; employment types {types}; work modes {modes}; location {where}."
+
+
 def rate_job(host: str, model: str, num_ctx: int | None, profile: str, cv_keywords: list[str],
              job: dict) -> dict | None:
     facts = job.get("facts") or {}
@@ -482,17 +525,19 @@ def rate_job(host: str, model: str, num_ctx: int | None, profile: str, cv_keywor
         f"Title: {job['title']}\nURL: {job['url']}\nSource: {job['source']}\n"
         f"Structured facts from the page:\n{fact_lines}\n"
         f"Listing text:\n{job['text'][:MAX_LISTING_CHARS]}\n\n"
+        f"CANDIDATE PREFERENCES: {preferences()}\n\n"
         "TASK: Rate how well this job fits the candidate.\n"
-        "fit_score rubric: 9-10 core AI/ML/automation role where most key requirements are on the CV and "
-        "seniority matches; 7-8 strong overlap with one or two notable gaps; 5-6 partial or adjacent fit; "
-        "0-4 weak fit, wrong discipline, or seniority far above/below the candidate. Be discriminating: a "
-        "typical relevant listing scores 5-7; reserve 9-10 for exceptional matches. Deduct for required "
-        "technologies or domains (e.g. C++, computer vision, robotics, GCP) the CV does not show.\n"
+        "fit_score rubric: 9-10 a role in the candidate's core field where most key requirements are on the CV "
+        "and seniority matches their target level; 7-8 strong overlap with one or two notable gaps; 5-6 partial "
+        "or adjacent fit; 0-4 weak fit, wrong discipline, or seniority far above/below the candidate. Be "
+        "discriminating: a typical relevant listing scores 5-7; reserve 9-10 for exceptional matches. Deduct "
+        "for required technologies, qualifications or domains the CV does not show.\n"
         "confidence (0-100): how certain you are about fit_score given how detailed the listing is.\n"
         "matched_skills: CV keywords the job explicitly asks for or clearly involves.\n"
         "missing_skills: up to 5 important requirements from the listing the CV does not show.\n"
         f"in_target_region: true only if the job is based in {CFG.region or 'a location the CV says is acceptable'} "
-        "(on-site, hybrid, or remote but explicitly tied to it).\n"
+        "(on-site, hybrid, or remote but explicitly tied to it"
+        + (", or fully remote and open to candidates there" if CFG.remote_anywhere else "") + ").\n"
         "reasoning: at most two short sentences (under 50 words) speaking to the candidate as 'you'.\n"
         "recruitment_agency: true if the advertiser is a recruitment agency or consultancy hiring for a client.\n"
         "employer: the company the successful candidate would actually work for, exactly as named in the "
@@ -732,9 +777,11 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str) ->
         f'No new matching roles{where} this run. Hermes will keep looking.</div>')
     location_filter = f"located in {esc(CFG.region)} &middot; " if CFG.region_re else ""
     outside = f"{stats['excluded_location']} outside {esc(CFG.region or 'the region')}, " if CFG.region_re else ""
-    penalty_note = (f"Hermes fit is reduced by {CFG.senior_penalty} for Senior and {CFG.lead_penalty} for "
-                    f"Lead/Principal titles to reflect your experience level."
-                    if CFG.senior_penalty or CFG.lead_penalty else "")
+    penalties = [f"{n} for {label}" for n, label in ((CFG.junior_penalty, "Junior/Graduate"),
+                                                      (CFG.senior_penalty, "Senior"),
+                                                      (CFG.lead_penalty, "Lead/Principal")) if n]
+    penalty_note = (f"Hermes fit is reduced by {', '.join(penalties)} titles to match your target level."
+                    if penalties else "")
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{EMAIL_HEAD}<title>{esc(CFG.title)}</title></head>
 <body class="body" style="margin:0;padding:0;background:{C_BG};font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
@@ -756,7 +803,7 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str) ->
   {empty}
   <div style="font-size:12px;color:{C_MUTED};line-height:1.6;padding:18px 6px 6px;text-align:center">
     Filters: {location_filter}full-time/permanent or contract &middot; fit &ge; {stats['min_score']}/10.<br>
-    Excluded this run: {outside}{stats['excluded_type']} part-time/internship, {stats['below_min']} below threshold.<br>
+    Excluded this run: {outside}{stats['excluded_type']} unwanted job type or work mode, {stats['below_min']} below threshold.<br>
     Rated by {esc(stats['model'])} (Hermes&rsquo; model) on your Hermes server &middot; sources: {esc(stats['sources'])} &middot;
     Web data: {stats['web_usage']}.<br>
     CV keyword match = share of the technologies named in the listing that appear on your CV.
@@ -868,12 +915,18 @@ def main() -> int:
 
         det_type = detect_type(job["facts"].get("type_line", "")) or \
             detect_type(f"{job['title']}\n{job['text'][:1500]}", check_internship=False)
-        if det_type in ("Part-time", "Internship"):
+        if det_type and det_type not in CFG.employment_types:
             excluded_type += 1
             log(f"[{i}/{len(queue)}] skip ({det_type}) {job['title'][:70]}")
             continue
         loc_text = job["facts"].get("location") or ""
-        local = in_region(loc_text) if loc_text else in_region(full_text[:5000])
+        mode = detect_mode(f"{job['facts'].get('type_line', '')} {loc_text}")
+        if mode and mode not in CFG.work_modes:
+            excluded_type += 1
+            log(f"[{i}/{len(queue)}] skip ({mode}) {job['title'][:70]}")
+            continue
+        remote_ok = CFG.remote_anywhere and (mode or detect_mode(full_text[:4000])) == "Remote"
+        local = remote_ok or (in_region(loc_text) if loc_text else in_region(full_text[:5000]))
         if not local and (loc_text or job["source"] != "nijobs.com"):
             excluded_location += 1
             log(f"[{i}/{len(queue)}] skip (outside region: '{loc_text or 'no matching location found'}') "
@@ -884,15 +937,17 @@ def main() -> int:
         rating = rate_job(host, model, num_ctx, profile, list(cv_kw), job)
         if not rating:
             continue
-        if (CFG.region_re and not loc_text and job["source"] != "nijobs.com"
+        if (CFG.region_re and not loc_text and job["source"] != "nijobs.com" and not remote_ok
                 and not rating.get("in_target_region")):
             excluded_location += 1
             log(f"[{i}/{len(queue)}] skip (model: outside region) {job['title'][:60]}")
             continue
         emp_type = det_type or rating.get("employment_type") or "Unknown"
-        if emp_type not in ALLOWED_TYPES:
+        mode = mode or rating.get("work_mode") or detect_mode(full_text[:4000]) or "Unknown"
+        if (emp_type != "Unknown" and emp_type not in CFG.employment_types) or \
+                (mode != "Unknown" and mode not in CFG.work_modes):
             excluded_type += 1
-            log(f"[{i}/{len(queue)}] skip ({emp_type}) {job['title'][:60]}")
+            log(f"[{i}/{len(queue)}] skip ({emp_type}, {mode}) {job['title'][:60]}")
             continue
 
         kw_matched, kw_other = keyword_match(full_text, cv_kw, other_kw)
@@ -909,16 +964,17 @@ def main() -> int:
 
         penalty = seniority_penalty(job["title"])
         fit = max(0, rating["fit_score"] - penalty)
-        mode = detect_mode(job["facts"].get("type_line", "")) or rating.get("work_mode") or detect_mode(full_text[:4000])
+        level = title_level(job["title"])
         entry = {
             "title": job["title"], "url": job["url"], "source": job["source"],
             "company": job["facts"].get("company") or rating.get("company") or "",
             "location": loc_text or rating.get("location") or CFG.region or "Unknown",
             "employment_type": {"Permanent": "Full-time permanent"}.get(emp_type, emp_type),
-            "work_mode": mode or "Unknown",
+            "work_mode": mode,
             "salary": job["facts"].get("salary") or rating.get("salary") or "",
-            "seniority": (("Lead-level stretch" if LEAD_TITLE.search(job["title"]) else "Senior-level stretch")
-                          if penalty else rating.get("seniority") or "Unknown"),
+            "seniority": ({"lead": "Lead-level stretch", "senior": "Senior-level stretch",
+                           "junior": "Junior-level role"}[level]
+                          if penalty and level else rating.get("seniority") or "Unknown"),
             "published": job["facts"].get("published", ""),
             "fit": fit, "model_fit": rating["fit_score"], "confidence": confidence, "coverage": coverage,
             "matched": matched, "gaps": gaps, "reasoning": rating.get("reasoning", "").strip(),
