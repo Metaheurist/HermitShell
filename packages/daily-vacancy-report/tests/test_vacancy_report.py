@@ -232,6 +232,27 @@ def test_report_renders_new_card_parts():
     assert "closes in 2 days" in plain and "I applied: https://fb.example.workers.dev/f?" in plain
 
 
+def test_weekly_roll_up_shows_jobs_applications_and_source_health():
+    from job_weekly import build_weekly
+
+    now = time.time()
+    data = {
+        "jobs": [{"key": "k1", "title": "AI Engineer", "company": "Acme", "url": "https://example.com/1", "fit": 8,
+                  "confidence": 80, "emailed": 1, "gaps": '["Kubernetes"]'}],
+        "events": [{"action": "applied"}],
+        "runs": [{"sources": '{"Indeed": {"found": 0, "error": "expired"}, "web search": {"found": 5}}'},
+                 {"sources": '{"Indeed": {"found": 0}, "web search": {"found": 3}}'}],
+        "applications": [{"key": "k1", "title": "AI Engineer", "company": "Acme", "status": "applied",
+                          "applied_at": now - 3 * 86400}],
+    }
+    subject, page, plain = build_weekly(data, "this week", "Job radar", "Weekly", now)
+    assert subject == "Job radar: your week (1 rated, 1 applied)"
+    for text in ("AI Engineer", "applied 3 days ago", "Kubernetes", "0 found, 1 failed runs, 1 empty runs",
+                 "8 found</td>", "2 daily runs recorded"):
+        assert text in page, text
+    assert "Sources: Indeed 0 found, web search 8 found" in plain
+
+
 @pytest.mark.parametrize("raw, expected", [
     ("Citi hiring GenAI Full-Stack Engineer Lead Job in Belfast, Northern Ireland | LinkedIn",
      "GenAI Full-Stack Engineer Lead"),

@@ -125,6 +125,11 @@ def _chip(text: str, count: int) -> str:
             f'border-radius:999px;padding:3px 10px;font-size:12px;margin:0 6px 6px 0">{esc(text)} &middot; {count}</span>')
 
 
+def _run_problems(info: dict) -> str:
+    return "".join(f", {info[key]} {label}" for key, label in (("errors", "failed runs"), ("empty", "empty runs"))
+                   if info[key])
+
+
 def weekly_summary(data: dict) -> dict:
     jobs, events, runs = data["jobs"], data["events"], data["runs"]
     fits = [j["fit"] for j in jobs if j.get("fit") is not None]
@@ -185,8 +190,7 @@ def build_weekly(data: dict, when: str, title: str, eyebrow: str, now: float) ->
     health = "".join(
         f'<tr><td style="font-size:13px;color:#334155;padding:3px 0">{esc(name)}</td><td align="right" '
         f'style="font-size:13px;color:{"#b45309" if info["errors"] or info["empty"] else C_MUTED}">{info["found"]} found'
-        f'{f", {info["errors"]} failed runs" if info["errors"] else ""}{f", {info["empty"]} empty runs" if info["empty"] else ""}'
-        f'</td></tr>' for name, info in s["sources"].items()) or \
+        f'{_run_problems(info)}</td></tr>' for name, info in s["sources"].items()) or \
         f'<tr><td style="color:{C_MUTED};font-size:13px">No runs recorded this week.</td></tr>'
     body = f"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{EMAIL_HEAD}<title>{esc(title)}: weekly roll-up</title></head>
