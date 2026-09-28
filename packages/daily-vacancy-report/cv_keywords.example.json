@@ -1,0 +1,36 @@
+{
+  "cv_keywords": {
+    "Python": "\\bpython\\b",
+    "SQL / PostgreSQL": "\\bsql\\b|\\bpostgres(ql)?\\b",
+    "FastAPI": "\\bfastapi\\b",
+    "pandas": "\\bpandas\\b",
+    "LLMs / GenAI": "\\bllms?\\b|\\bgen ?ai\\b|generative ai|large language model",
+    "RAG": "\\brag\\b|retrieval[- ]augmented",
+    "Prompt engineering": "prompt engineer|prompt design",
+    "Ollama / local models": "\\bollama\\b|local (llm|model)",
+    "Machine learning": "machine learning|\\bml\\b",
+    "scikit-learn": "scikit|sklearn",
+    "PyTorch": "\\bpytorch\\b|\\btorch\\b",
+    "MLOps": "\\bmlops\\b|model (deployment|monitoring)",
+    "Airflow": "\\bairflow\\b",
+    "dbt": "\\bdbt\\b",
+    "Docker": "\\bdocker\\b|container",
+    "AWS": "\\baws\\b|amazon web services|\\blambda\\b",
+    "CI/CD": "ci ?/ ?cd|github actions|continuous (integration|delivery)",
+    "REST APIs": "\\brest\\b|\\bapis?\\b|webhook",
+    "Automation": "automation|automate",
+    "IoT / MQTT": "\\biot\\b|\\bmqtt\\b"
+  },
+  "other_tech": {
+    "Java": "\\bjava\\b",
+    "Go": "\\bgolang\\b|\\bgo developer\\b",
+    "Kubernetes": "\\bkubernetes\\b|\\bk8s\\b",
+    "Terraform": "\\bterraform\\b",
+    "Azure": "\\bazure\\b",
+    "GCP": "\\bgcp\\b|google cloud",
+    "Spark": "\\bspark\\b|\\bpyspark\\b",
+    "Snowflake": "\\bsnowflake\\b",
+    "React": "\\breact\\b",
+    "C#": "\\bc#|\\.net\\b"
+  }
+}
