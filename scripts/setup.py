@@ -22,6 +22,7 @@ import getpass
 import json
 import os
 import re
+import secrets
 import shlex
 import shutil
 import subprocess
@@ -37,13 +38,21 @@ SECRET_RE = re.compile(r"PASSWORD|API_KEY|_KEYS$|TOKEN|SECRET")
 PLACEHOLDER_RE = re.compile(r"example\.(com|org)|change-me", re.I)
 SECTION_RE = re.compile(r"^#\s*-{4,}\s*(.+?)\s*$")
 KEY_RE = re.compile(r"^(?:export\s+)?([A-Z][A-Z0-9_]*)=(.*)$")
-TIME_RE = re.compile(r"^(?:(weekdays|daily)\s+)?([01]?\d|2[0-3]):([0-5]\d)$", re.I)
+TIME_RE = re.compile(r"^(?:(weekdays|daily|sun(?:day)?|mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|"
+                     r"thu(?:rs(?:day)?)?|fri(?:day)?|sat(?:urday)?)\s+)?([01]?\d|2[0-3]):([0-5]\d)$", re.I)
 CRON_RE = re.compile(r"^\S+(\s+\S+){4}$")
+DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+SALARY_SYMBOLS = {"gb": "£", "us": "$", "ca": "$", "au": "$", "nz": "$", "in": "₹", "jp": "¥", "ch": "CHF"}
+EURO_COUNTRIES = {"at", "be", "cy", "de", "ee", "es", "fi", "fr", "gr", "hr", "ie", "it", "lt", "lu", "lv", "mt",
+                  "nl", "pt", "si", "sk"}
 
 PACKAGES = {
     "daily-vacancy-report": {
         "title": "Daily Vacancy Report", "script": "job_scanner.py", "cron": "daily-vacancy-report",
         "schedule": "0 7 * * *", "dry_run": ["--dry-run", "--limit", "3"],
+        "extra_jobs": [{"id": "weekly", "title": "Weekly vacancy roll-up", "script": "job_weekly.py",
+                        "cron": "weekly-vacancy-report", "schedule": "0 18 * * 0",
+                        "intro": "A Sunday summary of the week: best jobs, applications, common gaps."}],
     },
     "news-digest": {
         "title": "News Digest", "script": "news_digest.py", "cron": "news-digest",
@@ -67,21 +76,36 @@ def indeed_domain(country: str) -> str:
 
 
 def friendly_schedule(cron: str) -> str:
-    """'0 7 * * *' -> '07:00', '30 6 * * 1-5' -> 'weekdays 06:30'; anything else is shown as-is."""
+    """'0 7 * * *' -> '07:00', '30 6 * * 1-5' -> 'weekdays 06:30', '0 18 * * 0' -> 'sunday 18:00'."""
     parts = cron.split()
     if len(parts) == 5 and parts[0].isdigit() and parts[1].isdigit() and parts[2:4] == ["*", "*"] \
-            and parts[4] in ("*", "1-5"):
+            and (parts[4] in ("*", "1-5") or parts[4] in "0123456" and len(parts[4]) == 1):
         time = f"{int(parts[1]):02d}:{int(parts[0]):02d}"
-        return time if parts[4] == "*" else f"weekdays {time}"
+        if parts[4] == "*":
+            return time
+        return f"weekdays {time}" if parts[4] == "1-5" else f"{DAYS[int(parts[4])]} {time}"
     return cron
 
 
 def cron_expression(reply: str) -> str | None:
-    """HH:MM, 'daily HH:MM', 'weekdays HH:MM' or a 5-field cron expression; None if unrecognised."""
+    """HH:MM, 'daily HH:MM', 'weekdays HH:MM', '<day> HH:MM' or a 5-field cron expression; None if unrecognised."""
     if m := TIME_RE.match(reply.strip()):
-        days = "1-5" if (m.group(1) or "").lower() == "weekdays" else "*"
+        word = (m.group(1) or "daily").lower()
+        days = "*" if word == "daily" else "1-5" if word == "weekdays" else \
+            str(next(i for i, d in enumerate(DAYS) if d.startswith(word[:3])))
         return f"{int(m.group(3))} {int(m.group(2))} * * {days}"
     return reply.strip() if CRON_RE.match(reply.strip()) else None
+
+
+def scheduled_jobs(pkg: str) -> list[tuple[str, dict]]:
+    """(job id, info) for the package's main cron job and any extra ones (e.g. a weekly roll-up)."""
+    info = PACKAGES[pkg]
+    return [(pkg, info)] + [(f"{pkg}-{extra['id']}", extra) for extra in info.get("extra_jobs", [])]
+
+
+def salary_symbol(country: str) -> str:
+    cc = country.strip().lower()
+    return "€" if cc in EURO_COUNTRIES else SALARY_SYMBOLS.get(cc, "")
 
 BOLD, DIM, GREEN, YELLOW, RESET = ("\033[1m", "\033[2m", "\033[32m", "\033[33m", "\033[0m") \
     if sys.stdout.isatty() and os.name != "nt" else ("",) * 5
@@ -288,7 +312,7 @@ class Wizard:
         self.changes: dict[str, str] = {}
         self.files: dict[Path, str] = {}
         self.current: dict[str, str] = {}
-        self.schedule_plan: dict[str, str | None] = {}
+        self.schedule_plan: dict[str, tuple[dict, str | None]] = {}
         self._cron_jobs: list[dict] | None = None
 
     # ------------------------------------------------------------------ prompting
@@ -561,6 +585,76 @@ class Wizard:
         modes = [m.strip() for m in self.preset("JOB_WORK_MODES", "On-site,Hybrid,Remote").split(",") if m.strip()]
         self.say("\nWork modes to keep:")
         self.set("JOB_WORK_MODES", ",".join(self.choose("Work modes", WORK_MODES, modes)), "On-site,Hybrid,Remote")
+        self.job_salary_and_agencies()
+
+    def job_salary_and_agencies(self) -> None:
+        self.say("\nMinimum salary: jobs whose advertised pay is clearly below it are left out. Jobs that don't\n"
+                 "list a salary are always kept; day and hourly rates are converted to a yearly figure.")
+        while True:
+            reply = self.text("Minimum yearly salary, e.g. 45000 or 45k (0 = no minimum)",
+                              self.preset("JOB_MIN_SALARY", "0")).lower().replace(",", "")
+            if m := re.fullmatch(r"(\d+(?:\.\d+)?)(k?)", reply or "0"):
+                minimum = int(float(m.group(1)) * (1000 if m.group(2) else 1))
+                break
+            if not self.interactive:
+                sys.exit(f"JOB_MIN_SALARY: '{reply}' is not a number")
+            self.say(f"  {YELLOW}enter a number such as 45000 or 45k{RESET}")
+        self.set("JOB_MIN_SALARY", str(minimum) if minimum else "0", "0")
+        if minimum:
+            symbol = self.preset("JOB_SALARY_CURRENCY") or salary_symbol(self.value("JOB_SEARCH_COUNTRY"))
+            self.set("JOB_SALARY_CURRENCY", self.text(
+                "Currency symbol in the adverts (salaries in another currency are kept; empty = any)", symbol))
+        self.set("JOB_HIDE_UNNAMED_AGENCY", "1" if self.confirm(
+            "Hide recruitment-agency adverts that don't name the employer? (repeats of the same job are "
+            "always merged)", self.preset("JOB_HIDE_UNNAMED_AGENCY", "0") == "1") else "0", "0")
+
+    def feedback_buttons(self) -> None:
+        self.heading("Feedback buttons (optional)")
+        self.say("Buttons on each job (Interested, Not for me, I applied) teach the model what you like and\n"
+                 "remind you to follow up on applications. They need a small free Cloudflare Worker, deployed\n"
+                 "once: see docs/feedback-worker.md. Deploy it first, then paste its URL here (empty = skip).")
+        while True:
+            url = self.text("Feedback Worker URL", self.preset("JOB_FEEDBACK_URL")).rstrip("/")
+            if not url or re.fullmatch(r"https://[^\s/?#]+(/[^\s?#]*)?", url):
+                break
+            if not self.interactive:
+                sys.exit(f"JOB_FEEDBACK_URL: '{url}' must start with https://")
+            self.say(f"  {YELLOW}use the full https:// address of your Worker{RESET}")
+        self.set("JOB_FEEDBACK_URL", url)
+        if not url:
+            return
+        for key in ("JOB_FEEDBACK_SECRET", "JOB_FEEDBACK_API_TOKEN"):
+            value = self.preset(key)
+            if not value:
+                value = secrets.token_urlsafe(32)
+                self.say(f"  {DIM}generated {key}{RESET}")
+            self.set(key, value)
+
+    def upload_feedback_secrets(self, home: Path) -> None:
+        """Copy newly set feedback secrets to the Worker by piping them to wrangler; they are never printed."""
+        keys = [k for k in ("JOB_FEEDBACK_SECRET", "JOB_FEEDBACK_API_TOKEN") if self.changes.get(k)]
+        if not keys:
+            return
+        worker = PACKAGES_DIR / "daily-vacancy-report" / "feedback-worker"
+        self.heading("Feedback Worker secrets")
+        npx = (os.name == "nt" and shutil.which("npx.cmd")) or shutil.which("npx")
+        if npx and self.interactive and not self.args.dry_run and self.confirm(
+                "Copy the new secrets to your Worker now with wrangler? (run `npx wrangler login` first)", True):
+            failed = False
+            for key in keys:
+                res = subprocess.run([npx, "wrangler", "secret", "put", key], input=self.changes[key] + "\n",
+                                     text=True, cwd=worker, capture_output=True)
+                failed |= res.returncode != 0
+                self.say(f"  {GREEN if not res.returncode else YELLOW}{key}: "
+                         f"{'uploaded' if not res.returncode else 'failed'}{RESET}")
+                if res.returncode:
+                    self.say(re.sub(r"[A-Za-z0-9_-]{32,}", "****", (res.stdout + res.stderr).strip())[-400:])
+            if not failed:
+                return
+        env_path = home / ".env"
+        self.say(f"From {worker}, copy them to the Worker (the values are piped, not shown):")
+        for key in keys:
+            self.say(f"  sed -n 's/^{key}=//p' {shlex.quote(str(env_path))} | npx wrangler secret put {key}")
 
     @staticmethod
     def strip_type_excludes(exclude: str, types: list[str]) -> str:
@@ -815,42 +909,41 @@ class Wizard:
 
     # ------------------------------------------------------------------ cron + tests
 
-    def existing_job(self, runner: Runner, pkg: str) -> dict | None:
+    def existing_job(self, runner: Runner, info: dict) -> dict | None:
         if self._cron_jobs is None:
             self._cron_jobs = runner.cron_jobs() if runner.mode else []
-        info = PACKAGES[pkg]
         scripts = [info["script"], *info.get("legacy_scripts", [])]
-        return next((j for s in scripts for j in self._cron_jobs if j.get("script", "").endswith(s)), None)
+        return next((j for s in scripts for j in self._cron_jobs
+                     if j.get("script", "").rsplit("/", 1)[-1] == s), None)
 
-    def ask_schedule(self, runner: Runner, pkg: str) -> None:
-        info = PACKAGES[pkg]
-        existing = self.existing_job(runner, pkg)
+    def ask_schedule(self, runner: Runner, job_id: str, info: dict) -> None:
+        existing = self.existing_job(runner, info)
         default = friendly_schedule(existing.get("schedule", info["schedule"]) if existing else info["schedule"])
-        key = "SCHEDULE_" + pkg.upper().replace("-", "_")
+        key = "SCHEDULE_" + job_id.upper().replace("-", "_")
         if not self.interactive:
             default = self.answers.get(key, os.environ.get(key, default))
-        self.say(f"\nWhen should {info['title']} run? Times use Hermes' timezone (`timezone:` in config.yaml).\n"
-                 f"  {DIM}HH:MM runs daily, 'weekdays HH:MM' Monday to Friday; a cron expression also works; "
-                 f"'-' skips scheduling{RESET}")
+        self.say(f"\nWhen should {info['title']} run? " + (f"{info['intro']}\n" if info.get("intro") else "")
+                 + "Times use Hermes' timezone (`timezone:` in config.yaml).\n"
+                 f"  {DIM}HH:MM runs daily, 'weekdays HH:MM' Monday to Friday, 'sunday HH:MM' once a week; "
+                 f"a cron expression also works; '-' skips scheduling{RESET}")
         while True:
             reply = self.text("Run time", default)
             if not reply or reply == "-":
-                self.schedule_plan[pkg] = None
+                self.schedule_plan[job_id] = (info, None)
                 return
             if cron := cron_expression(reply):
-                self.schedule_plan[pkg] = cron
+                self.schedule_plan[job_id] = (info, cron)
                 return
             if not self.interactive:
                 sys.exit(f"{key}: unrecognised schedule '{reply}'")
-            self.say(f"  {YELLOW}enter a time like 07:30, 'weekdays 08:00' or a cron expression{RESET}")
+            self.say(f"  {YELLOW}enter a time like 07:30, 'weekdays 08:00', 'sunday 18:00' or a cron expression{RESET}")
 
-    def schedules(self, runner: Runner, packages: list[str]) -> None:
+    def schedules(self, runner: Runner) -> None:
         self.heading("Schedules")
-        for pkg in packages:
-            info, cron = PACKAGES[pkg], self.schedule_plan.get(pkg)
+        for info, cron in self.schedule_plan.values():
             if cron is None:
                 continue
-            existing = self.existing_job(runner, pkg)
+            existing = self.existing_job(runner, info)
             current_script = existing and existing.get("script", "").endswith(info["script"])
             if current_script and existing.get("schedule") == cron:
                 self.say(f"  {DIM}{info['title']}: unchanged ({friendly_schedule(cron)}){RESET}")
@@ -911,17 +1004,21 @@ class Wizard:
                 self.job_search()
                 self.job_targets(scripts)
                 self.job_profile(scripts)
+                self.feedback_buttons()
             elif pkg == "news-digest":
                 self.digest_topics(scripts)
             if pkg in PACKAGES and not self.args.no_cron:
-                self.ask_schedule(runner, pkg)
+                for job_id, info in scheduled_jobs(pkg):
+                    self.ask_schedule(runner, job_id, info)
 
         saved = self.review_and_write(home, owner)
+        if saved:
+            self.upload_feedback_secrets(home)
         if "daily-vacancy-report" in packages:
             self.indeed(runner)
         known = [p for p in packages if p in PACKAGES]
         if not self.args.no_cron and (saved or self.args.dry_run or not self.changes):
-            self.schedules(runner, known)
+            self.schedules(runner)
         if saved:
             self.tests(runner, known)
         self.heading("Done")
@@ -938,7 +1035,8 @@ def main() -> int:
     parser.add_argument("--non-interactive", action="store_true",
                         help="no prompts: take values from --answers, then the environment, then current/defaults")
     parser.add_argument("--answers", help="KEY=VALUE file of settings for --non-interactive; schedules go in "
-                                          "SCHEDULE_<PACKAGE>=HH:MM (e.g. SCHEDULE_NEWS_DIGEST=weekdays 12:00)")
+                                          "SCHEDULE_<PACKAGE>=HH:MM (e.g. SCHEDULE_NEWS_DIGEST=weekdays 12:00, "
+                                          "SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY=sunday 18:00)")
     parser.add_argument("--dry-run", action="store_true", help="show what would change; write and run nothing")
     parser.add_argument("--no-install", action="store_true", help="skip copying package files")
     parser.add_argument("--no-cron", action="store_true", help="skip the schedule step")
