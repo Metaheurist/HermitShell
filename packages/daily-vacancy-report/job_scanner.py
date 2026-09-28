@@ -21,6 +21,7 @@ Runs from $HERMES_HOME/scripts (see the package README for cron setup):
     python3 job_scanner.py              # full run + email
     python3 job_scanner.py --dry-run    # no email / state update
     python3 job_scanner.py --test-email # SMTP check only
+    python3 job_scanner.py --weekly     # weekly roll-up from job_tracker.db
 """
 
 from __future__ import annotations
@@ -47,9 +48,17 @@ from hermes_common import (BROWSER_HEADERS, EMAIL_HEAD, STATE_DIR, WebClient, co
                            env_bool, env_int, first_sentences, gmail_dark_safe, html_to_text, inline_images,
                            load_env_file, log, ollama_chat)
 from indeed_mcp import IndeedMCP
+from job_extras import (below_min_salary, closing_date, combined_level, days_left, group_agency_posts,
+                        parse_salary, rating_failed, repost_key, second_opinion, triage_titles)
+from job_tracker import FOLLOWUP_ACTIONS, Tracker, card_links, prompt_examples, sync_feedback
+from job_weekly import (action_buttons, build_weekly, closing_pill, followup_section, followup_text,
+                        source_banner, weekly_when)
 
 hc.LOG_TAG = "job_radar"
 SEEN_FILE = STATE_DIR / "job_scanner_seen.json"
+RETRY_FILE = STATE_DIR / "job_scanner_retry.json"
+TRACKER_FILE = STATE_DIR / "job_tracker.db"
+MAX_RATING_ATTEMPTS = 4
 LAST_REPORT = STATE_DIR / "job_scanner_last.html"
 LAST_RESULTS = STATE_DIR / "job_scanner_last.json"
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -171,10 +180,11 @@ SCORE_SCHEMA = {
         "recruitment_agency": {"type": "boolean"},
         "employer": {"type": "string", "maxLength": 80},
         "employer_about": {"type": "string", "maxLength": 260},
+        "closing_date": {"type": "string", "maxLength": 20},
     },
     "required": ["fit_score", "confidence", "reasoning", "matched_skills", "missing_skills",
                  "employment_type", "work_mode", "location", "in_target_region", "company", "salary",
-                 "seniority", "recruitment_agency", "employer", "employer_about"],
+                 "seniority", "recruitment_agency", "employer", "employer_about", "closing_date"],
 }
 
 
@@ -217,12 +227,26 @@ def save_seen(seen: dict[str, float]) -> None:
     tmp.replace(SEEN_FILE)
 
 
+def load_retries() -> dict[str, int]:
+    try:
+        return {k: int(v) for k, v in json.loads(RETRY_FILE.read_text(encoding="utf-8")).items()}
+    except (FileNotFoundError, ValueError, AttributeError):
+        return {}
+
+
+def save_retries(retries: dict[str, int]) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    RETRY_FILE.write_text(json.dumps(retries, indent=1), encoding="utf-8")
+
+
 # --------------------------------------------------------------------------- firecrawl
 
 def clean_title(title: str) -> str:
     title = title.replace("\\|", "|").replace("\\", "")
     title = re.sub(r"\s+[-|–]\s+(LinkedIn|Jobijoba UK|Indeed|Glassdoor|Totaljobs|Reed|CWJobs|Jobs\.ac\.uk|"
                    r"eFinancialCareers|Built In Belfast|The Sun Jobs|Ni Jobs)\b.*$", "", title, flags=re.I)
+    title = re.sub(r"\s+-\s+Job\s+(January|February|March|April|May|June|July|August|September|October|"
+                   r"November|December)\s+\d{4}\b.*$", "", title, flags=re.I)
     if CFG.location:
         title = re.sub(rf"\s+-\s+{re.escape(CFG.location)}\s*$", "", title, flags=re.I)
     return re.sub(r"\s+", " ", title).strip()
@@ -382,30 +406,40 @@ class Nijobs:
 
 
 def discover(web: WebClient, nijobs: Nijobs, nijobs_keywords: list[str], queries: list[str], tbs: str,
-             use_search: bool, indeed: IndeedMCP | None = None) -> list[dict]:
+             use_search: bool, indeed: IndeedMCP | None = None, health: dict | None = None) -> list[dict]:
+    """All candidate postings; `health` gets {source: {"found": n, "error": text}} for the report."""
     found: dict[str, dict] = {}
+    health = {} if health is None else health
 
     if indeed:
-        for item in indeed.search(CFG.indeed_queries, CFG.indeed_location, CFG.indeed_limit,
-                                  CFG.indeed_country, CFG.indeed_days):
+        items = indeed.search(CFG.indeed_queries, CFG.indeed_location, CFG.indeed_limit,
+                              CFG.indeed_country, CFG.indeed_days)
+        for item in items:
             key = f"indeed:{item['job_id'].lower()}" if item["job_id"] else job_key(item["url"])
             found.setdefault(key, {"key": key, "url": item["url"], "title": clean_title(item["title"]),
                                    "description": item["snippet"], "source": "indeed.com", "indeed": item})
+        health["Indeed"] = {"found": len(items), "error": indeed.error}
 
-    for kw in nijobs_keywords:
-        links = nijobs.listing(kw)
-        log(f"nijobs '{kw}': {len(links)} postings")
-        for title, link in links:
-            title = clean_title(title)
-            if title.lower().startswith("!["):
-                continue
-            key = job_key(link)
-            found.setdefault(key, {"key": key, "url": link.split("?")[0], "title": title,
-                                   "description": "", "source": "nijobs.com"})
+    if nijobs_keywords:
+        total = 0
+        for kw in nijobs_keywords:
+            links = nijobs.listing(kw)
+            log(f"nijobs '{kw}': {len(links)} postings")
+            total += len(links)
+            for title, link in links:
+                title = clean_title(title)
+                if title.lower().startswith("!["):
+                    continue
+                key = job_key(link)
+                found.setdefault(key, {"key": key, "url": link.split("?")[0], "title": title,
+                                       "description": "", "source": "nijobs.com"})
+        health["nijobs.com"] = {"found": total, "error": ""}
 
     if use_search:
+        search_total = 0
         for query in queries:
             results = web.search(query, 8, tbs, country=CFG.country)
+            search_total += len(results)
             kept = 0
             for item in results:
                 link = item.get("url") or ""
@@ -419,6 +453,8 @@ def discover(web: WebClient, nijobs: Nijobs, nijobs_keywords: list[str], queries
                                   "source": urlsplit(link).netloc.replace("www.", "")}
                     kept += 1
             log(f"search '{query[:60]}...': {len(results)} results, {kept} new postings")
+        health["web search"] = {"found": search_total,
+                                "error": "" if web.search_order else "no web search provider has credits left"}
     return list(found.values())
 
 
@@ -515,11 +551,12 @@ def preferences() -> str:
 
 
 def rate_job(host: str, model: str, num_ctx: int | None, profile: str, cv_keywords: list[str],
-             job: dict) -> dict | None:
+             job: dict, feedback: str = "") -> dict | None:
     facts = job.get("facts") or {}
     fact_lines = "\n".join(f"{k}: {v}" for k, v in facts.items() if k not in ("logo_url", "links")) or "none"
     user = (
         f"CANDIDATE CV SUMMARY:\n{profile}\n\n"
+        + (f"{feedback}\n\n" if feedback else "") +
         f"CV KEYWORDS (matched_skills must only use these exact strings):\n{', '.join(cv_keywords)}\n\n"
         "JOB LISTING\n"
         f"Title: {job['title']}\nURL: {job['url']}\nSource: {job['source']}\n"
@@ -546,6 +583,7 @@ def rate_job(host: str, model: str, num_ctx: int | None, profile: str, cv_keywor
         "does, where it is based) using only what the listing text says about it. When an agency advertises, "
         "describe the agency's client, never the agency itself (company_profile describes the advertiser, so "
         "do not use it here); empty string if the listing does not describe the employer.\n"
+        "closing_date: the application deadline as YYYY-MM-DD if the listing states one, else empty string.\n"
         "Use empty string or 'Unknown' when the listing does not say. Keep every field brief."
     )
     for num_predict in (900, 1600):
@@ -708,15 +746,29 @@ def job_card(job: dict, rank: int) -> str:
     company = (f'<a href="{esc(job["company_site"])}" style="color:#475569;text-decoration:underline">{esc(job["company"])}</a>'
                if job.get("company_site") and job["company"] else esc(job["company"]))
     meta = " &middot; ".join(x for x in (company, esc(job["location"])) if x)
-    pills = "".join(pill(p) for p in (job["employment_type"], job["work_mode"], job["salary"],
-                                        job["seniority"], job.get("published")) if p and p != "Unknown")
-    matched = chips(job["matched"], "#047857", "#ecfdf5", "#a7f3d0") or \
+    pills = closing_pill(job.get("days_left")) + "".join(
+        pill(p) for p in (job["employment_type"], job["work_mode"], job["salary"] or "Salary not listed",
+                          job["seniority"], job.get("published")) if p and p != "Unknown")
+    top_skills = chips(job["matched"][:3], "#047857", "#ecfdf5", "#34d399").replace(
+        "font-size:12px;", "font-size:12px;font-weight:700;") or \
         f'<span style="font-size:12px;color:{C_MUTED}">None detected</span>'
-    gaps = chips(job["gaps"], "#b45309", "#fffbeb", "#fde68a")
-    gaps_block = (f'<div style="font-size:11px;color:{C_MUTED};text-transform:uppercase;letter-spacing:.06em;'
-                  f'margin:10px 0 6px">Gaps to address</div>{gaps}') if gaps else ""
+    more_skills = (f'<div style="font-size:12px;color:{C_MUTED};margin-top:2px">Also on your CV: '
+                   f'{esc(", ".join(job["matched"][3:]))}</div>') if len(job["matched"]) > 3 else ""
+    gaps_block = ""
+    if job["gaps"]:
+        rest = (f'<span style="color:{C_MUTED}"> &middot; also {esc(", ".join(job["gaps"][1:]))}</span>'
+                if len(job["gaps"]) > 1 else "")
+        gaps_block = (f'<div style="font-size:13px;color:#92400e;margin-top:10px"><b>Biggest gap:</b> '
+                      f'{esc(job["gaps"][0])}{rest}</div>')
     note = ('<div style="font-size:11px;color:#b45309;margin-top:6px">Rated from the search snippet only '
             '(page could not be scraped), so confidence is capped.</div>') if job["snippet_only"] else ""
+    if job.get("also_advertised_by"):
+        note += (f'<div style="font-size:12px;color:{C_MUTED};margin-top:6px">Also advertised by '
+                 f'{esc(", ".join(job["also_advertised_by"]))}.</div>')
+    if job.get("second_opinion") is not None:
+        note += (f'<div style="font-size:11px;color:{C_MUTED};margin-top:6px">Checked twice: a stricter second look '
+                 f'scored it {job["second_opinion"]}/10, so the score shown is the average of the two.</div>'
+                 if job["second_opinion"] < job["model_fit"] else "")
     return f"""
 <table width="100%" cellpadding="0" cellspacing="0" style="background:{C_CARD};border:1px solid #e2e8f0;border-radius:16px;margin:0 0 18px">
 <tr><td style="padding:22px 24px">
@@ -741,12 +793,14 @@ def job_card(job: dict, rank: int) -> str:
   </tr></table>
   <div style="background:#f8fafc;border-left:3px solid {C_ACCENT};border-radius:8px;padding:12px 14px;font-size:14px;color:#334155;line-height:1.5">{esc(job['reasoning'])}</div>
   {about_block(job)}
-  <div style="font-size:11px;color:{C_MUTED};text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px">Matches your CV ({len(job['matched'])})</div>
-  {matched}
+  <div style="font-size:11px;color:{C_MUTED};text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px">Strongest matches with your CV ({len(job['matched'])} in total)</div>
+  {top_skills}
+  {more_skills}
   {gaps_block}
   {note}
   <div style="margin-top:16px"><a href="{esc(job['url'])}" style="display:inline-block;background:{C_ACCENT};color:#ffffff;padding:11px 20px;border-radius:10px;font-size:14px;font-weight:600;text-decoration:none">View job &rarr;</a>
   <span style="font-size:11px;color:{C_MUTED};margin-left:10px;word-break:break-all">{esc(job['url'])}</span></div>
+  {action_buttons(job.get("actions") or {})}
 </td></tr></table>"""
 
 
@@ -765,7 +819,8 @@ def section(title: str, subtitle: str, jobs: list[dict], start: int) -> str:
             f'<div style="font-size:13px;color:{C_MUTED}">{subtitle}</div></div>{cards}')
 
 
-def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str) -> str:
+def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, problems: list[str] | None = None,
+               followups: str = "") -> str:
     summary_block = (
         f'<table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e0e7ff;border-radius:16px;margin:22px 0 4px">'
         f'<tr><td style="padding:18px 22px"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:{C_ACCENT};font-weight:700">Hermes&rsquo; take</div>'
@@ -780,8 +835,20 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str) ->
     penalties = [f"{n} for {label}" for n, label in ((CFG.junior_penalty, "Junior/Graduate"),
                                                       (CFG.senior_penalty, "Senior"),
                                                       (CFG.lead_penalty, "Lead/Principal")) if n]
-    penalty_note = (f"Hermes fit is reduced by {', '.join(penalties)} titles to match your target level."
+    penalty_note = (f"Hermes fit is reduced by {', '.join(penalties)} titles to match your target level, "
+                    "and by up to 1 when the listing reads at one of those levels even though the title does not say so."
                     if penalties else "")
+    salary_filter = (f" &middot; salary at least {esc(stats.get('salary_currency', ''))}{stats['min_salary']:,}"
+                     if stats.get("min_salary") else "")
+    extra_excluded = "".join(f", {stats[k]} {label}" for k, label in (
+        ("excluded_salary", "below your salary floor"), ("excluded_closed", "already closed"),
+        ("reposts", "reposts of jobs seen before"), ("grouped", "duplicate or hidden agency adverts"))
+        if stats.get(k))
+    verify_note = (f"Scores of {stats['verify_from']} or more are checked a second time and the two scores are averaged."
+                   if stats.get("verify_from") else "")
+    feedback_note = ("<br>Buttons on each job record your answer after you confirm it; Hermes uses them to "
+                     "calibrate future scores and to remind you about applications."
+                     if stats.get("feedback") else "")
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{EMAIL_HEAD}<title>{esc(CFG.title)}</title></head>
 <body class="body" style="margin:0;padding:0;background:{C_BG};font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
@@ -797,36 +864,85 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str) ->
   </tr></table>''')}
 </td></tr>
 <tr><td>
+  {source_banner(problems or [])}
   {summary_block}
-  {section("Top matches", "Fit score 7 or higher: apply to these first.", top, 1)}
+  {section("Top matches", "Fit score 7 or higher: apply to these first. Jobs closing soon come first.", top, 1)}
   {section("Worth a look", "Partial fit: adjacent roles or a few gaps to cover.", maybe, len(top) + 1)}
   {empty}
+  {followups}
   <div style="font-size:12px;color:{C_MUTED};line-height:1.6;padding:18px 6px 6px;text-align:center">
-    Filters: {location_filter}full-time/permanent or contract &middot; fit &ge; {stats['min_score']}/10.<br>
-    Excluded this run: {outside}{stats['excluded_type']} unwanted job type or work mode, {stats['below_min']} below threshold.<br>
+    Filters: {location_filter}full-time/permanent or contract &middot; fit &ge; {stats['min_score']}/10{salary_filter}.<br>
+    Excluded this run: {outside}{stats['excluded_type']} unwanted job type or work mode, {stats['below_min']} below threshold{extra_excluded}.<br>
     Rated by {esc(stats['model'])} (Hermes&rsquo; model) on your Hermes server &middot; sources: {esc(stats['sources'])} &middot;
     Web data: {stats['web_usage']}.<br>
     CV keyword match = share of the technologies named in the listing that appear on your CV.
-    {penalty_note}
+    {penalty_note} {verify_note}{feedback_note}
   </div>
 </td></tr>
 </table></td></tr></table></body></html>"""
 
 
-def build_text(jobs: list[dict], summary: str) -> str:
+def build_text(jobs: list[dict], summary: str, followups: str = "") -> str:
     parts = [summary, ""] if summary else []
     for i, j in enumerate(jobs, 1):
-        parts.append(f"#{i} [{j['fit']}/10, confidence {j['confidence']}%, CV match {j['coverage']}%] "
+        closing = f", closes in {j['days_left']} days" if j.get("days_left") is not None else ""
+        parts.append(f"#{i} [{j['fit']}/10, confidence {j['confidence']}%, CV match {j['coverage']}%{closing}] "
                      f"{j['title']} - {j['company']} ({j['location']}, {j['employment_type']})\n"
                      f"   {j['reasoning']}\n   Matches: {', '.join(j['matched']) or '-'}\n   {j['url']}"
                      + "".join(f"\n   {label}: {j[k]}" for label, k in (("Employer", "employer"), ("About", "about"),
                                                                         ("Company site", "company_site"))
-                               if j.get(k)))
+                               if j.get(k))
+                     + "".join(f"\n   {label}: {j['actions'][a]}" for a, label in (
+                         ("interested", "Interested"), ("not_for_me", "Not for me"), ("applied", "I applied"))
+                         if (j.get("actions") or {}).get(a)))
+    if followups:
+        parts.append(followups)
     where = f" in {CFG.region}" if CFG.region else ""
     return "\n\n".join(parts) or f"No new matching roles{where} this run."
 
 
 # --------------------------------------------------------------------------- main
+
+def send_weekly(tracker: Tracker, tz: ZoneInfo, dry_run: bool) -> int:
+    now = time.time()
+    subject, html_body, text = build_weekly(tracker.week(now - 7 * 86400), weekly_when(tz), CFG.title,
+                                            CFG.region or "Job radar", now)
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    (STATE_DIR / "job_scanner_weekly.html").write_text(html_body, encoding="utf-8")
+    if dry_run:
+        print(f"{subject} [dry run, report at {STATE_DIR / 'job_scanner_weekly.html'}]")
+        print(text)
+        return 0
+    try:
+        hc.send_email(subject, html_body, text, CFG.title)
+    except (smtplib.SMTPException, OSError, RuntimeError) as exc:
+        log(f"Email failed: {exc}")
+        return 5
+    print(f"Weekly roll-up sent: {subject}")
+    return 0
+
+
+def source_problems(health: dict, feedback_error: str | None) -> list[str]:
+    problems = []
+    for name, info in health.items():
+        if info.get("error"):
+            hint = " Run `hermes mcp login indeed` where Hermes runs." \
+                if name == "Indeed" and re.search(r"auth|login|token|oauth", info["error"], re.I) else ""
+            problems.append(f"{name} failed: {info['error']}.{hint}")
+        elif not info.get("found"):
+            problems.append(f"{name} found no postings this run.")
+    if feedback_error:
+        problems.append(f"Feedback buttons: {feedback_error}; answers wait in the Worker until the next run.")
+    return problems
+
+
+def model_stretch(title: str, model_seniority: str) -> tuple[str | None, int]:
+    """Level the listing reads at when the title does not say, and its penalty (at most 1, the model can be wrong)."""
+    if title_level(title):
+        return None, 0
+    level, from_model = combined_level(None, model_seniority)
+    return level, min(1, getattr(CFG, f"{level}_penalty", 0)) if from_model else 0
+
 
 def main() -> int:
     global CFG
@@ -837,11 +953,13 @@ def main() -> int:
     parser.add_argument("--include-seen", action="store_true", help="re-rate jobs from previous runs")
     parser.add_argument("--no-search", action="store_true", help="board listings only (nijobs.com), skip web searches")
     parser.add_argument("--no-indeed", action="store_true", help="skip the Indeed MCP source")
+    parser.add_argument("--weekly", action="store_true", help="send the weekly roll-up from job_tracker.db and exit")
     args = parser.parse_args()
 
     load_env_file()
     CFG = load_settings()
-    when = datetime.now(ZoneInfo(CFG.timezone)).strftime("%A %d %B %Y, %H:%M %Z")
+    tz = ZoneInfo(CFG.timezone)
+    when = datetime.now(tz).strftime("%A %d %B %Y, %H:%M %Z")
 
     if args.test_email:
         stats = {"when": when, "shown": 0, "strong": 0, "avg_fit": "-", "scanned": 0, "min_score": 0,
@@ -851,6 +969,16 @@ def main() -> int:
                       "SMTP test.", CFG.title)
         print("Test email sent.")
         return 0
+
+    tracker = Tracker(TRACKER_FILE)
+    fb_url, fb_secret = env("JOB_FEEDBACK_URL", ""), env("JOB_FEEDBACK_SECRET", "")
+    synced, fb_error = sync_feedback(tracker, fb_url, env("JOB_FEEDBACK_API_TOKEN", ""), ack=not args.dry_run)
+    if synced:
+        log(f"synced {synced} feedback answers from the feedback Worker")
+    if fb_error:
+        log(fb_error)
+    if args.weekly:
+        return send_weekly(tracker, tz, args.dry_run)
 
     try:
         host, model, num_ctx = connect_model("JOB_SCANNER_MODEL")
@@ -865,9 +993,12 @@ def main() -> int:
         log(f"Candidate profile missing ({exc}); copy job_profile.example.md and cv_keywords.example.json")
         return 4
     nijobs_kw, queries = CFG.nijobs_keywords, CFG.queries
-    max_scrape = args.limit or env_int("JOB_SCANNER_MAX_SCRAPE", 15)
+    max_scrape = args.limit or env_int("JOB_SCANNER_MAX_SCRAPE", 25)
     min_score = env_int("JOB_SCANNER_MIN_SCORE", 5)
     tbs = env("JOB_SCANNER_TBS", "qdr:m")
+    min_salary = env_int("JOB_MIN_SALARY", 0)
+    salary_currency = env("JOB_SALARY_CURRENCY", "")
+    verify_from = env_int("JOB_VERIFY_MIN_FIT", 8)
 
     try:
         web = WebClient(env_int("JOB_SCANNER_MIN_CREDITS", 40))
@@ -877,23 +1008,47 @@ def main() -> int:
     nijobs = Nijobs(web)
     companies = Companies(web, CFG.region_re, CFG.region, CFG.country or "")
     seen = load_seen()
+    retries = load_retries()
 
     indeed = IndeedMCP() if CFG.indeed and not args.no_indeed else None
-    candidates = discover(web, nijobs, nijobs_kw, queries, tbs, use_search=not args.no_search, indeed=indeed)
+    health: dict[str, dict] = {}
+    candidates = discover(web, nijobs, nijobs_kw, queries, tbs, use_search=not args.no_search, indeed=indeed,
+                          health=health)
 
-    scored_titles = []
-    for c in candidates:
+    fresh = [c for c in candidates if args.include_seen or c["key"] not in seen]
+    retry_jobs = [c for c in fresh if c["key"] in retries]
+    pool, title_skips = [], []
+    for c in fresh:
+        if c["key"] in retries:
+            continue
         rel = title_relevance(c["title"])
-        if rel > 0 and (args.include_seen or c["key"] not in seen):
-            scored_titles.append((rel + (1 if c["source"] == "nijobs.com" else 0), c))
-    scored_titles.sort(key=lambda x: x[0], reverse=True)
-    queue = [c for _, c in scored_titles[:max_scrape]]
-    log(f"{len(candidates)} postings discovered, {len(scored_titles)} relevant & unseen, rating {len(queue)}")
+        if rel < 0:
+            title_skips.append(c)
+        else:
+            pool.append((rel + (1 if c["source"] == "nijobs.com" else 0), c))
+    pool.sort(key=lambda x: x[0], reverse=True)
+    pool = pool[:env_int("JOB_TRIAGE_MAX", 60)]
+    verdicts = triage_titles(host, model, num_ctx, profile, [c["title"] for _, c in pool]) if pool else []
+    ranked, off_target = [], []
+    for (rel, c), verdict in zip(pool, verdicts):
+        if verdict == "no" and rel < 3:
+            off_target.append(c)
+        else:
+            ranked.append((2 if verdict == "yes" else 1, rel, c))
+    ranked.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    queue = (retry_jobs + [c for _, _, c in ranked])[:max_scrape]
+    log(f"{len(candidates)} postings discovered, {len(fresh)} unseen ({len(retry_jobs)} retries), "
+        f"{len(pool)} titles triaged ({len(off_target)} off-target), rating {len(queue)}")
     indeed_details = indeed.details([j["indeed"] for j in queue if j["source"] == "indeed.com"]) if indeed else {}
 
     now = time.time()
-    results, processed = [], []
-    excluded_location = excluded_type = below_min = 0
+    today = datetime.now(tz).date()
+    feedback = prompt_examples(tracker)
+    done = [c["key"] for c in title_skips + off_target]
+    repost_keys: list[str] = []
+    texts: dict[str, str] = {}
+    results = []
+    excluded_location = excluded_type = below_min = excluded_salary = excluded_closed = reposts = 0
     for i, job in enumerate(queue, 1):
         facts, text = {}, ""
         if job["source"] == "nijobs.com":
@@ -911,34 +1066,50 @@ def main() -> int:
         job["facts"] = facts
         job["text"] = text or f"{job['title']}\n{job['description']}"
         full_text = f"{job['title']}\n{job['description']}\n{job['text']}"
-        processed.append(job["key"])
 
+        repost = repost_key(job["title"], job["facts"].get("company") or "")
+        if repost and repost in seen and not args.include_seen:
+            reposts += 1
+            done.append(job["key"])
+            log(f"[{i}/{len(queue)}] skip (seen before on another board) {job['title'][:60]}")
+            continue
         det_type = detect_type(job["facts"].get("type_line", "")) or \
             detect_type(f"{job['title']}\n{job['text'][:1500]}", check_internship=False)
         if det_type and det_type not in CFG.employment_types:
             excluded_type += 1
+            done.append(job["key"])
             log(f"[{i}/{len(queue)}] skip ({det_type}) {job['title'][:70]}")
             continue
         loc_text = job["facts"].get("location") or ""
         mode = detect_mode(f"{job['facts'].get('type_line', '')} {loc_text}")
         if mode and mode not in CFG.work_modes:
             excluded_type += 1
+            done.append(job["key"])
             log(f"[{i}/{len(queue)}] skip ({mode}) {job['title'][:70]}")
             continue
         remote_ok = CFG.remote_anywhere and (mode or detect_mode(full_text[:4000])) == "Remote"
         local = remote_ok or (in_region(loc_text) if loc_text else in_region(full_text[:5000]))
         if not local and (loc_text or job["source"] != "nijobs.com"):
             excluded_location += 1
+            done.append(job["key"])
             log(f"[{i}/{len(queue)}] skip (outside region: '{loc_text or 'no matching location found'}') "
                 f"{job['title'][:60]}")
             continue
 
         started = time.monotonic()
-        rating = rate_job(host, model, num_ctx, profile, list(cv_kw), job)
+        rating = rate_job(host, model, num_ctx, profile, list(cv_kw), job, feedback)
         if not rating:
+            if rating_failed(retries, job["key"], MAX_RATING_ATTEMPTS):
+                done.append(job["key"])
+                log(f"[{i}/{len(queue)}] giving up after {MAX_RATING_ATTEMPTS} failed ratings: {job['title'][:60]}")
+            else:
+                log(f"[{i}/{len(queue)}] rating failed ({retries[job['key']]}/{MAX_RATING_ATTEMPTS}), "
+                    "will retry next run")
             continue
+        retries.pop(job["key"], None)
+        done.append(job["key"])
         if (CFG.region_re and not loc_text and job["source"] != "nijobs.com" and not remote_ok
-                and not rating.get("in_target_region")):
+                and not rating.get("in_target_region") and not in_region(f"{job['title']}\n{job['description']}")):
             excluded_location += 1
             log(f"[{i}/{len(queue)}] skip (model: outside region) {job['title'][:60]}")
             continue
@@ -949,12 +1120,26 @@ def main() -> int:
             excluded_type += 1
             log(f"[{i}/{len(queue)}] skip ({emp_type}, {mode}) {job['title'][:60]}")
             continue
+        salary_text = job["facts"].get("salary") or rating.get("salary") or ""
+        salary = parse_salary(salary_text)
+        if below_min_salary(salary, min_salary, salary_currency):
+            excluded_salary += 1
+            log(f"[{i}/{len(queue)}] skip (salary {salary_text} below {min_salary}) {job['title'][:60]}")
+            continue
+        closing = closing_date(job["text"], rating.get("closing_date", ""))
+        left = days_left(closing, today)
+        if left is not None and left < 0:
+            excluded_closed += 1
+            log(f"[{i}/{len(queue)}] skip (closed {closing}) {job['title'][:60]}")
+            continue
+        if left is not None and left > 365:
+            closing, left = None, None
 
         kw_matched, kw_other = keyword_match(full_text, cv_kw, other_kw)
         llm_matched = [s for s in rating.get("matched_skills", []) if s in cv_kw]
-        matched = list(dict.fromkeys(kw_matched + llm_matched))
-        gaps = list(dict.fromkeys(kw_other + [s for s in rating.get("missing_skills", [])
-                                              if s and s not in cv_kw]))[:6]
+        matched = list(dict.fromkeys(llm_matched + kw_matched))
+        gaps = list(dict.fromkeys([s for s in rating.get("missing_skills", []) if s and s not in cv_kw]
+                                  + kw_other))[:6]
         coverage = round(100 * len(matched) / max(1, len(matched) + len(kw_other)))
         confidence = rating["confidence"]
         if job["snippet_only"]:
@@ -963,25 +1148,34 @@ def main() -> int:
             confidence = min(confidence, 65)
 
         penalty = seniority_penalty(job["title"])
-        fit = max(0, rating["fit_score"] - penalty)
         level = title_level(job["title"])
+        model_level, stretch = model_stretch(job["title"], rating.get("seniority", ""))
+        fit = max(0, rating["fit_score"] - penalty - stretch)
         entry = {
-            "title": job["title"], "url": job["url"], "source": job["source"],
+            "key": job["key"], "title": job["title"], "url": job["url"], "source": job["source"],
             "company": job["facts"].get("company") or rating.get("company") or "",
             "location": loc_text or rating.get("location") or CFG.region or "Unknown",
             "employment_type": {"Permanent": "Full-time permanent"}.get(emp_type, emp_type),
             "work_mode": mode,
-            "salary": job["facts"].get("salary") or rating.get("salary") or "",
+            "salary": salary_text, "salary_range": salary,
             "seniority": ({"lead": "Lead-level stretch", "senior": "Senior-level stretch",
-                           "junior": "Junior-level role"}[level]
-                          if penalty and level else rating.get("seniority") or "Unknown"),
+                           "junior": "Junior-level role"}[level] if penalty and level else
+                          f"{rating.get('seniority')}-level stretch" if stretch and model_level != "junior" else
+                          rating.get("seniority") or "Unknown"),
             "published": job["facts"].get("published", ""),
+            "closing": closing.isoformat() if closing else "", "days_left": left,
             "fit": fit, "model_fit": rating["fit_score"], "confidence": confidence, "coverage": coverage,
             "matched": matched, "gaps": gaps, "reasoning": rating.get("reasoning", "").strip(),
             "snippet_only": job["snippet_only"],
         }
+        repost = repost_key(entry["title"], entry["company"])
+        if repost:
+            repost_keys.append(repost)
+        texts[job["key"]] = job["text"]
         log(f"[{i}/{len(queue)}] fit {entry['fit']}/10 conf {confidence}% cv {coverage}% "
             f"in {time.monotonic() - started:.0f}s - {job['title'][:60]}")
+        if not args.dry_run:
+            tracker.upsert_job(job["key"], entry, emailed=False, now=now)
         if entry["fit"] < min_score:
             below_min += 1
             continue
@@ -994,9 +1188,36 @@ def main() -> int:
         k = (re.sub(r"\W+", "", r["title"].lower()), re.sub(r"\W+", "", r["company"].lower()))
         if k not in dedup or r["fit"] > dedup[k]["fit"]:
             dedup[k] = r
-    results = sorted(dedup.values(), key=lambda r: (r["fit"], r["confidence"], r["coverage"]), reverse=True)
-    top = [r for r in results if r["fit"] >= 7]
-    maybe = [r for r in results if r["fit"] < 7]
+    duplicates = len(results) - len(dedup)
+    results, grouped = group_agency_posts(list(dedup.values()), env_bool("JOB_HIDE_UNNAMED_AGENCY", False))
+    grouped += duplicates
+
+    for r in results:
+        if verify_from and r["fit"] >= verify_from:
+            second = second_opinion(host, model, num_ctx, profile, r["title"], texts.get(r["key"], ""),
+                                    r["model_fit"], r["reasoning"])
+            if second is not None:
+                r["second_opinion"] = second
+                if second < r["model_fit"]:
+                    r["fit"] = max(0, r["fit"] - (r["model_fit"] - second + 1) // 2)
+                    log(f"second opinion lowered {r['title'][:50]} to {r['fit']}/10")
+    below_min += sum(r["fit"] < min_score for r in results)
+    results = [r for r in results if r["fit"] >= min_score]
+    results.sort(key=lambda r: (r["fit"], r["confidence"], r["coverage"]), reverse=True)
+
+    def urgent_first(jobs: list[dict]) -> list[dict]:
+        return sorted(jobs, key=lambda r: 0 if r.get("days_left") is not None and r["days_left"] <= 3 else 1)
+
+    top = urgent_first([r for r in results if r["fit"] >= 7])
+    maybe = urgent_first([r for r in results if r["fit"] < 7])
+    results = top + maybe
+    for r in results:
+        r["actions"] = card_links(fb_url, fb_secret, r["key"], r["title"])
+
+    followups = tracker.followups(now)
+    followups_html = followup_section(
+        followups, lambda item: card_links(fb_url, fb_secret, item["key"], item["title"], FOLLOWUP_ACTIONS))
+    problems = source_problems(health, fb_error)
 
     summary = hermes_summary(host, model, num_ctx, results)
     stats = {
@@ -1004,34 +1225,52 @@ def main() -> int:
         "avg_fit": f"{sum(r['fit'] for r in results) / len(results):.1f}" if results else "-",
         "scanned": len(queue), "min_score": min_score, "excluded_location": excluded_location,
         "excluded_type": excluded_type, "below_min": below_min, "model": model,
-        "sources": ", ".join(sorted({r["source"] for r in results})) or "web search",
+        "min_salary": min_salary, "salary_currency": salary_currency, "excluded_salary": excluded_salary,
+        "excluded_closed": excluded_closed, "reposts": reposts, "grouped": grouped, "verify_from": verify_from,
+        "feedback": bool(fb_url and fb_secret),
+        "sources": ", ".join(f"{name} {info['found']}" for name, info in health.items()) or "none",
         "web_usage": web.usage() + (f", Indeed MCP {indeed.calls} calls" if indeed and indeed.calls else ""),
     }
-    html_body = build_html(top, maybe, stats, summary)
+    html_body = build_html(top, maybe, stats, summary, problems, followups_html)
+    text_body = build_text(results, summary, followup_text(followups))
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     LAST_REPORT.write_text(re.sub(r'src="cid:([\w-]+)"', r'src="logos/\1.png"', html_body), encoding="utf-8")
-    LAST_RESULTS.write_text(json.dumps({"generated": when, "model": model, "summary": summary,
-                                        "jobs": results}, indent=1), encoding="utf-8")
+    LAST_RESULTS.write_text(json.dumps({"generated": when, "model": model, "summary": summary, "sources": health,
+                                        "problems": problems, "jobs": results}, indent=1, default=str),
+                            encoding="utf-8")
 
     line = (f"Job radar: {len(results)} matches ({len(top)} with fit 7+) from {len(queue)} rated; "
             f"best: {results[0]['title']} ({results[0]['fit']}/10)" if results else
             f"Job radar: no new matches from {len(queue)} rated")
+    if problems:
+        line += f" | {len(problems)} source warning{'s' if len(problems) > 1 else ''}"
     if args.dry_run:
         print(f"{line} [dry run, report at {LAST_REPORT}]")
-        print(build_text(results, summary))
+        print(text_body)
+        tracker.close()
         return 0
 
-    if results or env_bool("JOB_SCANNER_EMAIL_WHEN_EMPTY", False):
-        subject = f"{CFG.title}: {len(results)} new job{'' if len(results) == 1 else 's'}"
+    if results or followups or env_bool("JOB_SCANNER_EMAIL_WHEN_EMPTY", False):
+        subject = (f"{CFG.title}: {len(results)} new job{'' if len(results) == 1 else 's'}" if results
+                   else f"{CFG.title}: follow up on {len(followups)} application"
+                        f"{'' if len(followups) == 1 else 's'}" if followups
+                   else f"{CFG.title}: 0 new jobs")
         try:
-            hc.send_email(subject, html_body, build_text(results, summary), CFG.title,
-                          inline_images(html_body, LOGO_DIR))
+            hc.send_email(subject, html_body, text_body, CFG.title, inline_images(html_body, LOGO_DIR))
         except (smtplib.SMTPException, OSError, RuntimeError) as exc:
             log(f"Email failed: {exc}")
+            save_retries(retries)
+            tracker.close()
             return 5
+        tracker.mark_reminded(followups)
+        for r in results:
+            tracker.upsert_job(r["key"], r, emailed=True, now=now)
 
-    seen.update({k: now for k in processed})
+    seen.update({k: now for k in done + repost_keys})
     save_seen(seen)
+    save_retries(retries)
+    tracker.record_run(len(queue), len(results), health, problems, now)
+    tracker.close()
     print(line)
     return 0
 
