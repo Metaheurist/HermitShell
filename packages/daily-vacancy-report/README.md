@@ -48,7 +48,18 @@ installer handles.
 
 ## Install
 
-From the repository root, on the machine (or inside the container) running Hermes:
+The quickest way is the setup wizard, run from the repository root:
+
+```sh
+python3 scripts/setup.py daily-vacancy-report
+```
+
+It asks for your email and API keys, the job titles and region to search, and your candidate
+profile (guided questions, an imported CV, or the example). It then writes `job_profile.md` and
+`cv_keywords.json`, connects Indeed, schedules the cron job and sends a test email. See
+[the installation guide](../../docs/installation.md#setup-wizard).
+
+To install by hand instead, on the machine (or inside the container) running Hermes:
 
 ```sh
 HERMES_HOME=/opt/data ./scripts/install.sh daily-vacancy-report
@@ -142,8 +153,10 @@ Every option is an environment variable (or a line in `$HERMES_HOME/.env`). See
 - **`JOB_INDEED_QUERIES`, `JOB_INDEED_LOCATION`, `JOB_INDEED_DOMAIN`.** What the Indeed source
   searches for (plain job titles, `||`-separated), where, and which Indeed site the job links point
   to (for example `uk.indeed.com`).
-- **`JOB_TITLE_STRONG`, `JOB_TITLE_MEDIUM`.** Title regexes deciding which results are worth
-  fetching.
+- **`JOB_TITLE_STRONG`, `JOB_TITLE_MEDIUM`, `JOB_TITLE_EXCLUDE`.** Title regexes deciding which
+  results are worth fetching, and which are always skipped. The defaults suit AI / ML / data roles,
+  and the exclude list drops internships, sales, recruiters and a few unrelated professions. The
+  setup wizard rewrites all three from the job titles you enter.
 - **`JOB_SENIOR_PENALTY`, `JOB_LEAD_PENALTY`.** Lower the score of Senior or Lead titles if you
   are not targeting them.
 - **`JOB_SCANNER_MIN_SCORE`.** The cut-off (0-10) for a job to appear in the report.

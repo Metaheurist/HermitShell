@@ -35,17 +35,28 @@ On the machine or container running Hermes (for the official Docker image, `HERM
 ```sh
 git clone https://github.com/Metaheurist/HermitShell.git
 cd HermitShell
-HERMES_HOME=/opt/data ./scripts/install.sh daily-vacancy-report noon-tech-digest
+python3 scripts/setup.py
 ```
 
-Then do the following:
+The setup wizard installs the packages you pick and then walks you through everything they need:
 
-1. Copy the settings you need from [`.env.example`](.env.example) into `$HERMES_HOME/.env`. You
-   need SMTP details and at least one web search key (Firecrawl, Tavily or Scrapfly).
-2. Follow the package README for any package-specific files, such as the candidate profile for
-   the vacancy report.
-3. Test with `--test-email`, then `--dry-run`.
-4. Register the cron job shown in the package README.
+1. Email (SMTP) details and any web search API keys you have (Firecrawl, Tavily, Scrapfly). Keys
+   are typed without being shown and are only ever displayed masked.
+2. Each package's settings, such as the report title, your region, the job titles to search for
+   and the digest's reader description. `--advanced` asks for every setting.
+3. Your candidate profile for the vacancy report. Answer a few questions, import your CV as text,
+   or start from the example.
+4. Optional Indeed MCP connection and login.
+5. Cron schedules, then a test email and an optional dry run.
+
+Settings are saved to `$HERMES_HOME/.env`, which is backed up first. Re-run the wizard any time;
+your current values are offered as the defaults. On a Docker host, point it at the bind-mounted
+data directory (`sudo python3 scripts/setup.py --hermes-home /path/to/hermes/data`). It runs
+`hermes` commands inside the `hermes-agent` container automatically.
+
+Prefer to do it by hand? Run `./scripts/install.sh <package>...`, copy settings from
+[`.env.example`](.env.example) and each package's `.env.example` into `$HERMES_HOME/.env`, and
+follow the package READMEs.
 
 Details are in [docs/installation.md](docs/installation.md) and
 [docs/configuration.md](docs/configuration.md).
@@ -55,6 +66,7 @@ Details are in [docs/installation.md](docs/installation.md) and
 ```
 common/hermes_common.py    shared plumbing: .env loading, model discovery, web providers, SMTP
 packages/<name>/           one directory per package: entry script, README, examples
+scripts/setup.py           interactive wizard: install, settings, API keys, profile, schedules
 scripts/install.sh         copies common + chosen packages flat into $HERMES_HOME/scripts
 docs/                      installation, configuration, email rendering, web providers
 ```
@@ -97,7 +109,8 @@ script from `$HERMES_HOME/scripts`.
    screenshot in `docs/images/`.
 2. Import helpers from `hermes_common` rather than copying them.
 3. Read every personal or deployment-specific value from the environment and give it a neutral
-   default.
+   default. Document each one in `.env.example` with a comment above it; add `# @basic` to have
+   the setup wizard ask for it by default (everything else appears with `--advanced`).
 4. Support `--dry-run` and `--test-email`.
 5. Add an entry to [CHANGELOG.md](CHANGELOG.md).
 

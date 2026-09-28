@@ -8,6 +8,26 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Setup wizard** (`scripts/setup.py`, standard library only):
+  - Installs the chosen packages, then asks for SMTP details, web search API keys (typed
+    without echo, shown masked), timezone and each package's settings.
+  - Settings, help text and defaults come from the `.env.example` files: `# @basic` settings
+    are asked by default, and `--advanced` asks for everything.
+  - Vacancy report steps: turn your job titles into Indeed searches, web queries and title
+    filters; build `job_profile.md` from guided questions, an imported CV or the example;
+    generate `cv_keywords.json` from your skills and gaps; add and log in to the Indeed MCP
+    server.
+  - Digest step: built-in sections or your own `sections.json`.
+  - Creates or updates the `hermes cron` jobs, then sends a test email and offers a dry run.
+  - Works locally or from a Docker host: runs `hermes` in the `hermes-agent` container and
+    matches file ownership to the Hermes home.
+  - Backs up `.env` before writing, updates it in place (other Hermes settings untouched) and
+    keeps it at mode 600.
+  - Safe to re-run: current values are the defaults.
+  - `--dry-run`, `--non-interactive --answers FILE`, `--no-install` and `--no-cron` options.
+- **`JOB_TITLE_EXCLUDE`** makes the vacancy report's always-skip title filter configurable. It
+  used to be hard-coded, including professions like nurse and teacher.
+
 - **Indeed MCP source for the Daily Vacancy Report** (`packages/daily-vacancy-report/indeed_mcp.py`):
   - Searches Indeed through the Indeed MCP server connected to Hermes, and fetches full job
     descriptions with the MCP job-detail tool instead of scraping, so it uses no web credits.
@@ -28,6 +48,12 @@ using [Semantic Versioning](https://semver.org/).
 
 - An unauthorised, unreachable or missing Indeed MCP server is logged and skipped, and the other
   sources still run.
+- Relative `JOB_PROFILE_FILE`, `JOB_KEYWORDS_FILE` and `TECH_DIGEST_SECTIONS_FILE` paths are
+  resolved against the scripts directory instead of the working directory, so they also work
+  under cron.
+- `install.sh` points to the setup wizard when it finishes. `.env.example` files mark the
+  essential settings with `# @basic`, and the settings filled in by the job-targets step with
+  `# @wizard`.
 
 ### Fixed
 

@@ -2,6 +2,11 @@
 
 Every HermitShell setting is an environment variable. Nothing personal is hard-coded.
 
+The [setup wizard](installation.md#setup-wizard) (`python3 scripts/setup.py`) writes all of these
+for you and can be re-run to change them. It reads the settings, their help text and their
+defaults straight from the `.env.example` files. Settings tagged `# @basic` are asked by
+default, and every setting is asked with `--advanced`.
+
 ## Where settings come from
 
 When they conflict, higher entries in this list win:

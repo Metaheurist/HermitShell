@@ -43,7 +43,17 @@ installer handles.
 
 ## Install
 
-From the repository root, on the machine (or inside the container) running Hermes:
+The quickest way is the setup wizard, run from the repository root:
+
+```sh
+python3 scripts/setup.py noon-tech-digest
+```
+
+It asks for your email and API keys, the digest title and reader description, and whether to
+use the built-in sections or your own `sections.json`. It then schedules the cron job and sends
+a test email. See [the installation guide](../../docs/installation.md#setup-wizard).
+
+To install by hand instead, on the machine (or inside the container) running Hermes:
 
 ```sh
 HERMES_HOME=/opt/data ./scripts/install.sh noon-tech-digest
