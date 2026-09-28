@@ -8,6 +8,46 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Vacancy report feedback buttons** (optional):
+  - Each job card gets **Interested**, **Not for me** and **I applied** buttons, and follow-up
+    reminders get **Heard back** and **Rejected**.
+  - The buttons are signed links to a small Cloudflare Worker
+    (`packages/daily-vacancy-report/feedback-worker`, with Vitest tests). Opening a link only
+    shows a confirmation page with an optional note, so mail scanners can't record answers.
+  - Answers are kept in Workers KV until the next run fetches them (`/events`, then `/ack`,
+    both behind a bearer token). Nothing on the Hermes server is exposed.
+  - Set up with `JOB_FEEDBACK_URL`, `JOB_FEEDBACK_SECRET` and `JOB_FEEDBACK_API_TOKEN`. New guide,
+    [docs/feedback-worker.md](docs/feedback-worker.md), covers deploying with the Cloudflare MCP
+    in an AI agent or with wrangler by hand.
+- **`state/job_tracker.db`** (`job_tracker.py`, SQLite) records rated and emailed jobs, feedback,
+  reminders and run statistics:
+  - Recent liked and rejected jobs, with your reasons, are added to the rating prompt as
+    examples.
+  - Jobs you applied to come back in a "Follow up" section after 7 and 14 days.
+- **Weekly roll-up.** `job_weekly.py` (also `job_scanner.py --weekly`) emails the week's best
+  jobs, applications and replies, common gaps, who's hiring, the score spread and source
+  health. The wizard schedules it (default `sunday 18:00`).
+- **Salary filter.** `JOB_MIN_SALARY` and `JOB_SALARY_CURRENCY` leave out jobs clearly paying
+  less than your minimum. Ranges, `45k`, day rates and hourly rates are converted to a yearly
+  figure, and unlisted salaries are kept.
+- **Closing dates.** Read from the listing, shown as a pill on each card (red within three days),
+  and used to put jobs closing soon first. Jobs that have already closed are skipped.
+- **Title screening.** Before rating, the model screens up to `JOB_TRIAGE_MAX` (default 60)
+  relevant titles in quick batches, so the rating budget goes to the most promising jobs.
+- **Second opinion** on scores of `JOB_VERIFY_MIN_FIT` (default 8) or more: a stricter re-check,
+  averaged with the first score.
+- **Agency grouping.** The same job advertised by several agencies becomes one card listing the
+  other advertisers. `JOB_HIDE_UNNAMED_AGENCY=1` drops agency adverts that don't name the
+  employer.
+- **Source health.** Jobs found and errors per source (Indeed, nijobs.com, web search) appear in
+  the footer, and a warning banner explains failures, such as an expired Indeed login and how to
+  fix it.
+- **Setup wizard:** minimum salary, currency and unnamed-agency questions; a feedback-buttons
+  step that generates both secrets and pipes them to `wrangler secret put` without showing them;
+  a weekly roll-up schedule; and `<day> HH:MM` run times such as `sunday 18:00`
+  (`SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY` in answers files).
+- **Tests** for the vacancy report helpers (`packages/daily-vacancy-report/tests`) and the
+  feedback Worker (`npm test`).
 - **Setup wizard** (`scripts/setup.py`, standard library only):
   - Installs the chosen packages, then asks for SMTP details, web search API keys (typed
     without echo, shown masked), timezone and each package's settings.
@@ -75,6 +115,15 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Vacancy report cards show the three strongest matching skills in bold (the rest as one line),
+  the biggest gap, "Salary not listed" when there's no salary, and the closing date.
+- `JOB_SCANNER_MAX_SCRAPE` now defaults to 25 (was 15).
+- When a title doesn't state a seniority, the model's reading of the listing counts too, with the
+  `JOB_LEVEL` penalty capped at 1.
+- The same role at the same company is skipped across boards and days, not just by URL.
+- The model can no longer rule a job out of the region when its title or snippet names a place
+  inside it.
+- Web search titles lose trailing "- Job <Month> <Year>" suffixes.
 - An unauthorised, unreachable or missing Indeed MCP server is logged and skipped, and the other
   sources still run.
 - Relative `JOB_PROFILE_FILE`, `JOB_KEYWORDS_FILE` and `TECH_DIGEST_SECTIONS_FILE` paths are
@@ -86,6 +135,9 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Jobs whose rating failed (model timeout or bad JSON) were marked as seen and never shown. They
+  are now retried on the following runs, up to 4 attempts (`state/job_scanner_retry.json`).
+  Only jobs that were rated or definitely ruled out are marked as seen.
 - A broken table row and a missing blank line in `docs/configuration.md`.
 
 ## [0.1.0] - 2026-09-28

@@ -71,11 +71,31 @@ Full template: [`.env.example`](../.env.example).
 | `JOB_EMPLOYMENT_TYPES` | `Permanent,Contract,Temporary` | Types to keep: also `Full-time`, `Part-time`, `Internship`. Jobs that don't say are kept |
 | `JOB_WORK_MODES` | `On-site,Hybrid,Remote` | Work modes to keep. Jobs that don't say are kept |
 | `JOB_JUNIOR_PENALTY` / `JOB_SENIOR_PENALTY` / `JOB_LEAD_PENALTY` | from `JOB_LEVEL` | Fit points subtracted for Junior/Graduate, Senior and Lead/Principal titles |
+| `JOB_MIN_SALARY` | `0` | Minimum yearly salary; jobs clearly paying less are left out. Unlisted salaries are kept |
+| `JOB_SALARY_CURRENCY` | none | Currency symbol of the minimum (`£`, `€`, `$`...). Other currencies are kept |
+| `JOB_HIDE_UNNAMED_AGENCY` | `0` | `1` drops agency adverts that don't name the employer |
+| `JOB_VERIFY_MIN_FIT` | `8` | Scores at or above this get a second, stricter look (averaged). `0` = off |
 
 `JOB_LEVEL` sets the three penalties (junior, senior, lead titles) like this: `junior` 0/2/3,
 `mid` 1/1/2, `senior` 2/0/1, `lead` 3/1/0 and `any` 0/0/0. Setting one of the penalty variables
-overrides just that value. The target level, types, modes and region are also given to the model
-when it scores each job.
+overrides just that value. When the title doesn't state a level, the model's reading of the
+listing is used instead, with the penalty capped at 1. The target level, types, modes and region
+are also given to the model when it scores each job.
+
+Salaries are read from the listing (or the model's summary of it): ranges, `45k`, day rates
+(×220) and hourly rates (×1950) are all converted to a yearly figure, and a job is only dropped
+when its best case is below the minimum.
+
+### Feedback buttons (Daily Vacancy Report)
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `JOB_FEEDBACK_URL` | none | Your feedback Worker, e.g. `https://vacancy-feedback.<subdomain>.workers.dev`. Empty = no buttons |
+| `JOB_FEEDBACK_SECRET` | none | Signs the button links; the Worker holds the same value |
+| `JOB_FEEDBACK_API_TOKEN` | none | Lets Hermes fetch and clear answers from the Worker |
+
+The wizard generates both secrets. Deploying the Worker (with the Cloudflare MCP in an AI agent,
+or with wrangler by hand) is covered in [feedback-worker.md](feedback-worker.md).
 
 ### Topics (News Digest)
 
@@ -93,8 +113,10 @@ Catalog ids: `ai`, `ml`, `python`, `iot`, `newtech`, `security`, `cloud`, `progr
 ### Schedules
 
 Run times aren't `.env` settings: they are `hermes cron` jobs. The wizard asks for a time per
-package (`07:30`, `weekdays 08:00` or a cron expression) and creates or updates the job. In an
-unattended `--answers` file, use `SCHEDULE_DAILY_VACANCY_REPORT` and `SCHEDULE_NEWS_DIGEST`.
+package (`07:30`, `weekdays 08:00`, `sunday 18:00` or a cron expression) and creates or updates
+the job. The vacancy report has a second job for its weekly roll-up (`job_weekly.py`, default
+Sunday 18:00). In an unattended `--answers` file, use `SCHEDULE_DAILY_VACANCY_REPORT`,
+`SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY` and `SCHEDULE_NEWS_DIGEST`.
 
 ## MCP sources
 
@@ -125,3 +147,6 @@ or unreachable server is logged and skipped, and the other sources still run. Th
   full key.
 - MCP OAuth tokens stay in Hermes' `mcp-tokens/` directory and are handled only by Hermes' own
   OAuth code. HermitShell never copies or logs them.
+- The feedback secrets live only in `.env` and in the Worker's encrypted secrets. The wizard
+  pipes them to `wrangler secret put` instead of printing them, and your KV namespace ID belongs
+  in the untracked `feedback-worker/wrangler.local.jsonc`.

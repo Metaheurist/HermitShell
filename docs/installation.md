@@ -38,18 +38,27 @@ It asks, in order:
    - **Employment types:** permanent, contract, temporary, part-time, internship. Choosing
      part-time or internship also takes them off the title exclude list.
    - **Work modes:** on-site, hybrid, remote.
+   - **Minimum salary** (for example `45k`; `0` for none) and the currency symbol used in adverts,
+     suggested from your country. Jobs that don't list a salary are always kept.
+   - **Unnamed agency adverts:** whether to hide recruitment-agency adverts that don't name the
+     employer.
 5. **Job titles** (vacancy report). Enter the job titles you want. The wizard turns them into
    Indeed searches, web search queries for your location and a title filter. It also removes
    any of your titles from the default exclude list, so a nurse or teacher isn't filtered out.
 6. **Candidate profile** (vacancy report). Answer a few questions, import a text or markdown CV,
    paste text, or start from the example. Your skills and gaps become `cv_keywords.json`.
+   Then the optional **feedback buttons**: paste the URL of your
+   [feedback Worker](feedback-worker.md) (or leave it empty). The wizard generates
+   `JOB_FEEDBACK_SECRET` and `JOB_FEEDBACK_API_TOKEN`, and after saving offers to pipe them into
+   `wrangler secret put` so they never appear on screen.
 7. **News topics** (digest). Pick topics from a numbered catalog of 23 (AI, cybersecurity,
    cloud, space, science, climate, health, business, markets, world news, gaming, sport and
    more), then add any of your own as `Title: keyword, keyword`. With `--advanced` you can switch
    to a `sections.json` file for full control.
 8. **Run time,** asked for each package straight after its settings: `07:00` runs daily,
-   `weekdays 07:30` runs Monday to Friday, and a cron expression or `-` (don't schedule) also
-   work. Times use Hermes' timezone (`timezone:` in `config.yaml`).
+   `weekdays 07:30` runs Monday to Friday, `sunday 18:00` once a week, and a cron expression or
+   `-` (don't schedule) also work. The vacancy report also asks when to send its weekly roll-up
+   (default `sunday 18:00`). Times use Hermes' timezone (`timezone:` in `config.yaml`).
 9. **Review.** Every change is listed (secrets masked) before anything is written. `.env` is
    backed up to `.env.bak-<timestamp>`, updated in place (other Hermes settings are left
    alone) and kept at mode 600.
@@ -77,7 +86,9 @@ Re-running the wizard is safe: current values are the defaults, and pressing Ent
 changes nothing.
 
 An answers file for an unattended setup uses the normal setting names, plus one
-`SCHEDULE_<PACKAGE>` line per package for the run time:
+`SCHEDULE_<PACKAGE>` line per package for the run time (and
+`SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY` for the roll-up). If you set `JOB_FEEDBACK_URL` without
+the two secrets, they are generated:
 
 ```sh
 JOB_REGION_NAME=Dublin
@@ -86,9 +97,12 @@ JOB_SEARCH_COUNTRY=ie
 JOB_LEVEL=mid
 JOB_EMPLOYMENT_TYPES=Permanent,Contract
 JOB_WORK_MODES=Hybrid,Remote
+JOB_MIN_SALARY=50000
+JOB_SALARY_CURRENCY=€
 NEWS_DIGEST_TOPICS=security,cloud,world
 NEWS_DIGEST_CUSTOM_TOPICS=Formula 1: F1, Grand Prix
 SCHEDULE_DAILY_VACANCY_REPORT=weekdays 07:30
+SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY=sunday 18:00
 SCHEDULE_NEWS_DIGEST=12:00
 ```
 
@@ -158,8 +172,11 @@ cat packages/news-digest/.env.example
 
 The settings the wizard asks about in its guided steps are, for the vacancy report,
 `JOB_REGION_NAME`, `JOB_REGION_PLACES`, `JOB_SEARCH_COUNTRY`, `JOB_REMOTE_ANYWHERE`, `JOB_LEVEL`,
-`JOB_EMPLOYMENT_TYPES`, `JOB_WORK_MODES` and `JOB_INDEED_QUERIES`, and for the digest,
-`NEWS_DIGEST_TOPICS` and `NEWS_DIGEST_CUSTOM_TOPICS`.
+`JOB_EMPLOYMENT_TYPES`, `JOB_WORK_MODES`, `JOB_MIN_SALARY`, `JOB_SALARY_CURRENCY`,
+`JOB_HIDE_UNNAMED_AGENCY`, `JOB_INDEED_QUERIES` and the `JOB_FEEDBACK_*` values, and for the
+digest, `NEWS_DIGEST_TOPICS` and `NEWS_DIGEST_CUSTOM_TOPICS`. The optional feedback buttons need
+a small Cloudflare Worker; [feedback-worker.md](feedback-worker.md) covers deploying it and
+setting the secrets.
 
 See [configuration.md](configuration.md) for how settings are resolved.
 
@@ -200,13 +217,17 @@ Dry runs write the email HTML to `scripts/state/*_last.html`. Copy that file alo
 ```sh
 docker exec -u hermes -w /opt/data hermes-agent hermes cron create "0 7 * * *" "Daily vacancy report" \
     --name daily-vacancy-report --script job_scanner.py --no-agent --deliver local
+docker exec -u hermes -w /opt/data hermes-agent hermes cron create "0 18 * * 0" "Weekly vacancy roll-up" \
+    --name weekly-vacancy-report --script job_weekly.py --no-agent --deliver local
 docker exec -u hermes -w /opt/data hermes-agent hermes cron create "0 12 * * *" "News Digest" \
     --name news-digest --script news_digest.py --no-agent --deliver local
 docker exec -u hermes -w /opt/data hermes-agent hermes cron list
 ```
 
 - The first argument is a standard cron expression: `30 7 * * *` is 07:30 every day,
-  `0 8 * * 1-5` is 08:00 on weekdays.
+  `0 8 * * 1-5` is 08:00 on weekdays, `0 18 * * 0` is 18:00 on Sundays.
+- `--script` takes a script name only, no arguments, so the weekly roll-up runs `job_weekly.py`
+  (the same as `job_scanner.py --weekly`).
 - `--no-agent` runs the script directly without an LLM turn.
 - `--deliver local` keeps the script's one-line summary in Hermes' cron log. The email is the
   real delivery.

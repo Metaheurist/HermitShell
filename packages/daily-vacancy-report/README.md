@@ -17,30 +17,52 @@ light and dark modes.
    for Northern Ireland.
 2. **Pre-filter.** Keeps only relevant titles (configurable regexes), drops employment types you
    didn't choose (internships and part-time by default) and jobs already seen in the last 90
-   days, then fetches each posting. Indeed descriptions
-   come from the MCP job-detail tool, so they cost no scraping credits. For other boards, where
-   the page has structured `JobPosting` data, the scanner uses that.
+   days. The model then screens up to 60 remaining titles in one quick batch, so the rating
+   budget goes to the most promising ones. Jobs whose rating failed last time go first. The
+   same role reposted on another board or day (same title and company) is skipped. Indeed
+   descriptions come from the MCP job-detail tool, so they cost no scraping credits. For other
+   boards, where the page has structured `JobPosting` data, the scanner uses that.
 3. **Hard filters.** Optionally restricts results to one region (towns, postcodes or any regex),
    optionally letting fully remote jobs through, and keeps only the employment types (permanent,
    contract, temporary, part-time, internship) and work modes (on-site, hybrid, remote) you chose.
-   Jobs that don't state a type or mode are kept.
+   Jobs that don't state a type or mode are kept. Optionally drops jobs advertising clearly less
+   than your minimum salary (day and hourly rates are converted) and jobs whose closing date has
+   passed.
 4. **Rate.** Hermes' model scores each job 0-10 against `job_profile.md`, with a confidence value,
-   matched CV keywords, gaps and a short reason. For agency adverts it also identifies the real
-   employer.
+   matched CV keywords, gaps, the closing date and a short reason. For agency adverts it also
+   identifies the real employer. Seniority comes from the title, or from the model's reading of
+   the listing when the title doesn't say. Scores of 8 or more get a second, stricter look and the
+   two scores are averaged. If you use the feedback buttons, your recent likes and rejections are
+   added to the prompt as examples.
 5. **Enrich.** Adds the hiring company's website, a circular logo and an expandable "About the
-   company" section. Lookups are cached for 30 days in `state/companies.json`.
-6. **Email.** Sends a summary with CV keyword coverage, then one card per job with a link to
-   apply.
+   company" section. Lookups are cached for 30 days in `state/companies.json`. The same job
+   advertised by several agencies becomes one card that lists the other advertisers.
+6. **Email.** Sends a summary, then one card per job with the closing date (jobs closing within
+   three days come first), your three strongest matching skills, the biggest gap and a link to
+   apply. A banner warns when a source failed (for example an expired Indeed login). With the
+   optional [feedback buttons](../../docs/feedback-worker.md), each card also has **Interested**,
+   **Not for me** and **I applied** buttons, and jobs you applied to come back in a follow-up
+   section after 7 and 14 days.
+7. **Weekly roll-up.** `job_weekly.py` (or `job_scanner.py --weekly`) emails a Sunday summary from
+   `state/job_tracker.db`: best jobs of the week, applications and replies, common gaps, who's
+   hiring and source health.
 
-It only emails when there are new matches, unless `JOB_SCANNER_EMAIL_WHEN_EMPTY=1` is set.
+It only emails when there are new matches or follow-ups due, unless
+`JOB_SCANNER_EMAIL_WHEN_EMPTY=1` is set. A job is only marked as seen once it has been rated or
+definitely ruled out; ratings that fail are retried on the next runs, up to 4 attempts.
 
 ## Files
 
 | File | Purpose |
 | --- | --- |
-| `job_scanner.py` | Entry point run by the cron job |
+| `job_scanner.py` | Entry point run by the daily cron job |
+| `job_weekly.py` | Weekly roll-up email and shared email blocks; entry point for the weekly cron job |
+| `job_extras.py` | Salary and closing-date parsing, title screening, second opinions, repost and agency grouping |
+| `job_tracker.py` | `state/job_tracker.db` (jobs, feedback, reminders, runs) and the feedback Worker sync |
 | `companies.py` | Employer website, logo and profile lookup with caching |
 | `indeed_mcp.py` | Indeed job search and job details through Hermes' Indeed MCP connection |
+| `feedback-worker/` | Optional Cloudflare Worker for the feedback buttons ([guide](../../docs/feedback-worker.md)); not installed into Hermes |
+| `tests/` | Unit tests (`python -m pytest packages/daily-vacancy-report/tests`) |
 | `job_profile.example.md` | Template for your candidate profile (copy to `job_profile.md`) |
 | `cv_keywords.example.json` | Template for skills to match and gaps to flag (copy to `cv_keywords.json`) |
 | `.env.example` | Every package setting with its default |
@@ -62,9 +84,13 @@ It asks for your email and API keys, then:
 - **Where** you're job hunting: region or city, the towns inside it, your country (which also
   picks the Indeed site) and whether fully remote jobs elsewhere count.
 - **What kind of job:** your target level (junior, mid, senior, lead or any), the employment types
-  and work modes to keep, and the job titles to search for.
+  and work modes to keep, a minimum salary, whether to hide agency adverts that don't name the
+  employer, and the job titles to search for.
 - Your **candidate profile** (guided questions, an imported CV, or the example).
-- **When** the report should run, for example `07:00` or `weekdays 07:30`.
+- Optional **feedback buttons:** paste your Worker URL and the wizard generates both secrets
+  and can copy them to the Worker for you. See [the guide](../../docs/feedback-worker.md).
+- **When** the report should run, for example `07:00` or `weekdays 07:30`, and when the weekly
+  roll-up goes out (default `sunday 18:00`).
 
 It then writes `job_profile.md` and `cv_keywords.json`, connects Indeed, schedules the cron job
 and sends a test email. See [the installation guide](../../docs/installation.md#setup-wizard).
@@ -87,6 +113,7 @@ one search provider key) to `$HERMES_HOME/.env`. Then add any settings from this
 ```sh
 python3 job_scanner.py --test-email              # SMTP check only
 python3 job_scanner.py --dry-run --limit 5       # full pipeline, no email, no state update
+python3 job_weekly.py --dry-run                  # weekly roll-up, written to state/ only
 ```
 
 A dry run writes the rendered email to `state/job_scanner_last.html` and the raw results to
@@ -137,11 +164,14 @@ The wizard does this for you. By hand:
 ```sh
 hermes cron create "0 7 * * *" "Daily Vacancy Report" \
     --name daily-vacancy-report --script job_scanner.py --no-agent --deliver local
+hermes cron create "0 18 * * 0" "Weekly vacancy roll-up" \
+    --name weekly-vacancy-report --script job_weekly.py --no-agent --deliver local
 hermes cron list
 ```
 
 Cron times use Hermes' timezone (`timezone:` in `config.yaml`); without one that is usually UTC.
-Use `0 7 * * 1-5` for weekdays only.
+Use `0 7 * * 1-5` for weekdays only. Cron jobs can't pass arguments to a script, which is why the
+weekly roll-up has its own entry point, `job_weekly.py`.
 
 ## Command-line options
 
@@ -153,6 +183,7 @@ Use `0 7 * * 1-5` for weekdays only.
 | `--include-seen` | Re-rate jobs reported in previous runs |
 | `--no-search` | Board listings only (nijobs.com, Indeed); skip web searches |
 | `--no-indeed` | Skip the Indeed MCP source for this run |
+| `--weekly` | Send the weekly roll-up from `state/job_tracker.db` and exit (with `--dry-run`: write it to `state/job_scanner_weekly.html` only) |
 
 ## Configuration
 
@@ -179,6 +210,16 @@ Every option is an environment variable (or a line in `$HERMES_HOME/.env`). See
 - **`JOB_JUNIOR_PENALTY`, `JOB_SENIOR_PENALTY`, `JOB_LEAD_PENALTY`.** Fine-tune the points
   `JOB_LEVEL` subtracts for Junior/Graduate, Senior and Lead/Principal titles.
 - **`JOB_SCANNER_MIN_SCORE`.** The cut-off (0-10) for a job to appear in the report.
+- **`JOB_MIN_SALARY`, `JOB_SALARY_CURRENCY`.** Leave out jobs whose best advertised pay is clearly
+  below the minimum (yearly; day rates count 220 days, hourly rates 1950 hours). Jobs without a
+  salary, or in another currency, are kept.
+- **`JOB_HIDE_UNNAMED_AGENCY`.** `1` drops agency adverts that don't name the employer. Repeats
+  of the same job are always merged.
+- **`JOB_VERIFY_MIN_FIT`.** Scores at or above this (default 8) get a second look; `0` turns it off.
+- **`JOB_SCANNER_MAX_SCRAPE`, `JOB_TRIAGE_MAX`.** How many jobs are rated per run (default 25),
+  and how many titles the model screens first (default 60).
+- **`JOB_FEEDBACK_URL`, `JOB_FEEDBACK_SECRET`, `JOB_FEEDBACK_API_TOKEN`.** The optional
+  feedback buttons. See [docs/feedback-worker.md](../../docs/feedback-worker.md).
 
 ### Writing a good profile
 
@@ -200,4 +241,6 @@ A typical run uses 4 searches plus up to `JOB_SCANNER_MAX_SCRAPE` page fetches, 
 Firecrawl credits. Indeed searches and job details go through the MCP server and use no web
 credits; the report footer shows how many Indeed calls a run made. When Firecrawl credits drop below `JOB_SCANNER_MIN_CREDITS`, the scanner
 switches to your backup keys, then Tavily and Scrapfly. Rating takes 10-40 seconds per job on a
-4B model running on a CPU.
+4B model running on a CPU. The title screen adds about a minute per 40 titles, and each second
+look on a high score takes about as long as a rating, so a full run of 25 jobs takes roughly
+15-30 minutes.

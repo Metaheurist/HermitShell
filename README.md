@@ -11,7 +11,7 @@ includes credentials, API keys, your CV and your region.
 
 | Package | What you get | Schedule |
 | --- | --- | --- |
-| [Daily Vacancy Report](packages/daily-vacancy-report) | Jobs from Indeed (via Hermes' Indeed MCP connection) and the wider web in your region, level, job types and work modes, matched to your CV and scored 0-10 by the model, with company logos, websites and profiles | You choose (default 07:00) |
+| [Daily Vacancy Report](packages/daily-vacancy-report) | Jobs from Indeed (via Hermes' Indeed MCP connection) and the wider web in your region, level, job types, work modes and salary range, matched to your CV and scored 0-10 by the model, with closing dates, company logos, websites and profiles. Optional [feedback buttons](docs/feedback-worker.md) teach the model what you like and remind you to follow up on applications, and a weekly roll-up sums up your week | You choose (default 07:00, roll-up Sunday 18:00) |
 | [News Digest](packages/news-digest) | Curated news on the topics you pick (AI, security, space, markets, sport... or your own keywords), in sections with a model-written briefing | You choose (default 12:00) |
 
 <table>
@@ -43,12 +43,13 @@ The setup wizard installs the packages you pick and then walks you through every
 1. Email (SMTP) details and any web search API keys you have (Firecrawl, Tavily, Scrapfly). Keys
    are typed without being shown and are only ever displayed masked.
 2. Your job search: where you're looking (region, towns, country, remote), the level you're
-   targeting, employment types (permanent, contract, part-time, internship...), work modes and
-   the job titles to search for.
+   targeting, employment types (permanent, contract, part-time, internship...), work modes,
+   minimum salary and the job titles to search for.
 3. Your candidate profile for the vacancy report. Answer a few questions, import your CV as text,
-   or start from the example.
+   or start from the example. Optionally, the URL of your feedback Worker; the wizard generates
+   its secrets (see [docs/feedback-worker.md](docs/feedback-worker.md)).
 4. The digest's news topics, picked from a catalog of 23 or added as your own keywords.
-5. What time each package should run (for example `07:30` or `weekdays 08:00`).
+5. What time each package should run (for example `07:30`, `weekdays 08:00` or `sunday 18:00`).
 6. Along the way, each package's other essential settings, such as email titles and score
    thresholds. `--advanced` asks for every setting.
 7. Optional Indeed MCP connection and login, then the cron jobs, a test email and an optional dry
@@ -64,16 +65,20 @@ Prefer to do it by hand? Run `./scripts/install.sh <package>...`, copy settings 
 follow the package READMEs.
 
 Details are in [docs/installation.md](docs/installation.md) and
-[docs/configuration.md](docs/configuration.md).
+[docs/configuration.md](docs/configuration.md). The optional feedback buttons have their own
+guide, [docs/feedback-worker.md](docs/feedback-worker.md), covering setup with the Cloudflare MCP
+in an AI agent or with wrangler by hand.
 
 ## Repository layout
 
 ```
 common/hermes_common.py    shared plumbing: .env loading, model discovery, web providers, SMTP
-packages/<name>/           one directory per package: entry script, README, examples
+packages/<name>/           one directory per package: entry script, README, examples, tests
+packages/daily-vacancy-report/feedback-worker/
+                           optional Cloudflare Worker for the report's feedback buttons (not copied into Hermes)
 scripts/setup.py           interactive wizard: install, API keys, job search, topics, profile, schedules
 scripts/install.sh         copies common + chosen packages flat into $HERMES_HOME/scripts
-docs/                      installation, configuration, email rendering, web providers
+docs/                      installation, configuration, feedback Worker, email rendering, web providers
 ```
 
 Packages are installed flat next to `hermes_common.py`, because Hermes cron jobs run a single
@@ -124,4 +129,5 @@ script from `$HERMES_HOME/scripts`.
 ## Security
 
 Nothing in this repo contains credentials. `.gitignore` excludes `.env`, `job_profile.md`,
-`cv_keywords.json` and `state/`. Keep your filled-in copies on the Hermes host only.
+`cv_keywords.json` and `state/`, and the feedback Worker's own `.gitignore` excludes
+`wrangler.local.jsonc` and `.dev.vars`. Keep your filled-in copies on the Hermes host only.
