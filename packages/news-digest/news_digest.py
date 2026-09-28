@@ -661,7 +661,7 @@ CUSTOM_SECTIONS = {"on": False}
 
 
 def load_sections(path: str) -> None:
-    """Replace the built-in sections with a JSON list of section objects (see sections.example.json).
+    """Replace the chosen topics with a JSON list of section objects (see sections.example.json).
     Relative paths are resolved against this script's directory."""
     file = Path(path)
     if not file.is_absolute():
