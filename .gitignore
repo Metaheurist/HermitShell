@@ -1,0 +1,24 @@
+# Secrets and personal data: only the *.example files belong in the repo.
+.env
+*.env
+!.env.example
+!**/examples/*.env
+job_profile.md
+cv_keywords.json
+sections.json
+
+# Runtime state, caches, reports
+state/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
