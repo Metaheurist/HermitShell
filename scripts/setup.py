@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""HermitShell setup wizard: install packages, then configure every setting, API key, profile and
-cron schedule interactively.
+"""HermitShell setup wizard: install packages, then configure every setting, API key, job search,
+news topic, candidate profile and cron schedule interactively.
 
     python3 scripts/setup.py                          # guided setup (essential settings)
     python3 scripts/setup.py --advanced               # ask for every setting
@@ -38,17 +38,50 @@ PLACEHOLDER_RE = re.compile(r"example\.(com|org)|change-me", re.I)
 SECTION_RE = re.compile(r"^#\s*-{4,}\s*(.+?)\s*$")
 KEY_RE = re.compile(r"^(?:export\s+)?([A-Z][A-Z0-9_]*)=(.*)$")
 TIME_RE = re.compile(r"^(?:(weekdays|daily)\s+)?([01]?\d|2[0-3]):([0-5]\d)$", re.I)
+CRON_RE = re.compile(r"^\S+(\s+\S+){4}$")
 
 PACKAGES = {
     "daily-vacancy-report": {
         "title": "Daily Vacancy Report", "script": "job_scanner.py", "cron": "daily-vacancy-report",
         "schedule": "0 7 * * *", "dry_run": ["--dry-run", "--limit", "3"],
     },
-    "noon-tech-digest": {
-        "title": "Noon Tech Digest", "script": "tech_digest.py", "cron": "noon-tech-digest",
-        "schedule": "0 12 * * *", "dry_run": ["--dry-run"],
+    "news-digest": {
+        "title": "News Digest", "script": "news_digest.py", "cron": "news-digest",
+        "schedule": "0 12 * * *", "dry_run": ["--dry-run"], "legacy_scripts": ["tech_digest.py"],
     },
 }
+JOB_LEVELS = [("junior", "Junior / graduate / entry level"), ("mid", "Mid level"), ("senior", "Senior"),
+              ("lead", "Lead / principal / head of"), ("any", "Any level (no seniority adjustment)")]
+EMPLOYMENT_TYPES = [("Permanent", "Permanent / full-time"), ("Contract", "Contract / fixed-term"),
+                    ("Temporary", "Temporary"), ("Part-time", "Part-time"),
+                    ("Internship", "Internship / placement / apprenticeship")]
+WORK_MODES = [("On-site", "On-site"), ("Hybrid", "Hybrid"), ("Remote", "Remote")]
+# Title-exclude patterns that contradict a chosen employment type.
+TYPE_EXCLUDES = {"Internship": ("internship", "intern", "placement", "apprentice"), "Part-time": ("part-time",)}
+INDEED_HOSTS = {"gb": "uk", "us": "www"}
+
+
+def indeed_domain(country: str) -> str:
+    cc = country.strip().lower()
+    return f"{INDEED_HOSTS.get(cc, cc)}.indeed.com" if cc else "www.indeed.com"
+
+
+def friendly_schedule(cron: str) -> str:
+    """'0 7 * * *' -> '07:00', '30 6 * * 1-5' -> 'weekdays 06:30'; anything else is shown as-is."""
+    parts = cron.split()
+    if len(parts) == 5 and parts[0].isdigit() and parts[1].isdigit() and parts[2:4] == ["*", "*"] \
+            and parts[4] in ("*", "1-5"):
+        time = f"{int(parts[1]):02d}:{int(parts[0]):02d}"
+        return time if parts[4] == "*" else f"weekdays {time}"
+    return cron
+
+
+def cron_expression(reply: str) -> str | None:
+    """HH:MM, 'daily HH:MM', 'weekdays HH:MM' or a 5-field cron expression; None if unrecognised."""
+    if m := TIME_RE.match(reply.strip()):
+        days = "1-5" if (m.group(1) or "").lower() == "weekdays" else "*"
+        return f"{int(m.group(3))} {int(m.group(2))} * * {days}"
+    return reply.strip() if CRON_RE.match(reply.strip()) else None
 
 BOLD, DIM, GREEN, YELLOW, RESET = ("\033[1m", "\033[2m", "\033[32m", "\033[33m", "\033[0m") \
     if sys.stdout.isatty() and os.name != "nt" else ("",) * 5
@@ -255,6 +288,8 @@ class Wizard:
         self.changes: dict[str, str] = {}
         self.files: dict[Path, str] = {}
         self.current: dict[str, str] = {}
+        self.schedule_plan: dict[str, str | None] = {}
+        self._cron_jobs: list[dict] | None = None
 
     # ------------------------------------------------------------------ prompting
 
@@ -319,8 +354,47 @@ class Wizard:
         reply = self.text(question, ", ".join(default))
         return [p.strip() for p in reply.split(",") if p.strip()]
 
+    def preset(self, key: str, default: str = "") -> str:
+        """Default for a guided question: --answers / environment (non-interactive), then current value."""
+        if not self.interactive:
+            if key in self.answers:
+                return self.answers[key]
+            if key in os.environ:
+                return os.environ[key]
+        return self.value(key, default)
+
+    def _pick(self, reply: str, options: list[tuple[str, str]]) -> list[str] | None:
+        ids = {o.lower(): o for o, _ in options}
+        picked = []
+        for token in (t.strip() for t in reply.split(",") if t.strip()):
+            if token.isdigit() and 1 <= int(token) <= len(options):
+                picked.append(options[int(token) - 1][0])
+            elif token.lower() in ids:
+                picked.append(ids[token.lower()])
+            else:
+                self.say(f"  {YELLOW}unknown choice '{token}'{RESET}")
+                return None
+        return list(dict.fromkeys(picked))
+
+    def choose(self, question: str, options: list[tuple[str, str]], current: list[str],
+               many: bool = True) -> list[str]:
+        """Numbered menu; the reply is numbers or ids, comma-separated when many is true."""
+        if not self.interactive:
+            return current
+        for i, (oid, label) in enumerate(options, 1):
+            mark = "*" if oid in current else " "
+            self.say(f"  {mark} {i:>2}) {label}" + (f" {DIM}[{oid}]{RESET}" if oid.lower() != label.lower() else ""))
+        default = ",".join(str(i) for i, (oid, _) in enumerate(options, 1) if oid in current)
+        hint = " (numbers, comma-separated)" if many else ""
+        while True:
+            picked = self._pick(self.text(question + hint, default), options)
+            if picked and (many or len(picked) == 1):
+                return picked
+            if picked is not None:
+                self.say(f"  {YELLOW}choose {'at least one' if many else 'exactly one'}{RESET}")
+
     def ask_setting(self, s: Setting) -> str:
-        current = self.current.get(s.key)
+        current = self.changes.get(s.key, self.current.get(s.key))
         if not self.interactive:
             if s.key in self.answers:
                 return self.answers[s.key]
@@ -434,18 +508,80 @@ class Wizard:
 
     # ------------------------------------------------------------------ package: daily-vacancy-report
 
+    def job_search(self) -> None:
+        self.heading("Job search: where and what kind of job")
+        region = self.text("Where are you job hunting? Region or city (empty = anywhere)",
+                           self.preset("JOB_REGION_NAME"))
+        self.set("JOB_REGION_NAME", region)
+        if region:
+            places = [p for p in self.preset("JOB_REGION_PLACES").split(",") if p.strip()] or [region]
+            self.set("JOB_REGION_PLACES", ", ".join(self.listing(
+                "Towns or areas that count as inside it (comma-separated)", [p.strip() for p in places])))
+        else:
+            self.set("JOB_REGION_PLACES", "")
+        location = self.preset("JOB_SEARCH_LOCATION")
+        if self.args.advanced or (location and location != region):
+            location = self.text("Location text used in searches (empty = the region)", location)
+        self.set("JOB_SEARCH_LOCATION", location if location != region else "")
+
+        default = self.preset("JOB_SEARCH_COUNTRY").lower()
+        while True:
+            country = self.text("Country, as a two-letter code (gb, ie, us, de...; empty = none)", default).lower()
+            if not country or re.fullmatch(r"[a-z]{2}", country):
+                break
+            if not self.interactive:
+                sys.exit(f"JOB_SEARCH_COUNTRY: '{country}' is not a two-letter country code")
+            self.say(f"  {YELLOW}use a two-letter code such as gb or us{RESET}")
+        country = "gb" if country == "uk" else country
+        self.set("JOB_SEARCH_COUNTRY", country)
+        if country:
+            self.set("JOB_INDEED_COUNTRY", country.upper())
+            self.set("JOB_INDEED_DOMAIN", indeed_domain(country), "www.indeed.com")
+            self.say(f"  {DIM}Indeed: {indeed_domain(country)}{RESET}")
+        self.set("JOB_REMOTE_ANYWHERE", "1" if self.confirm(
+            "Include fully remote jobs based outside that region?",
+            self.preset("JOB_REMOTE_ANYWHERE", "0") == "1") else "0", "0")
+
+        level = self.preset("JOB_LEVEL", "any").lower()
+        self.say("\nWhat level are you targeting? Titles above or below it get a lower fit score.")
+        self.set("JOB_LEVEL", self.choose("Level", JOB_LEVELS, [level if level in dict(JOB_LEVELS) else "any"],
+                                          many=False)[0], "any")
+        types = [t.strip() for t in self.preset("JOB_EMPLOYMENT_TYPES", "Permanent,Contract,Temporary").split(",")]
+        types = ["Permanent" if t == "Full-time" else t for t in types if t]
+        self.say("\nEmployment types to keep (jobs that don't say are always kept):")
+        types = self.choose("Types", EMPLOYMENT_TYPES, types)
+        self.set("JOB_EMPLOYMENT_TYPES", ",".join(types), "Permanent,Contract,Temporary")
+        exclude = self.value("JOB_TITLE_EXCLUDE")
+        if exclude:
+            kept = self.strip_type_excludes(exclude, types)
+            if kept != exclude:
+                self.say(f"  {DIM}removed {', '.join(t for t in types if t in TYPE_EXCLUDES)} "
+                         f"from your title exclusions{RESET}")
+                self.set("JOB_TITLE_EXCLUDE", kept)
+        modes = [m.strip() for m in self.preset("JOB_WORK_MODES", "On-site,Hybrid,Remote").split(",") if m.strip()]
+        self.say("\nWork modes to keep:")
+        self.set("JOB_WORK_MODES", ",".join(self.choose("Work modes", WORK_MODES, modes)), "On-site,Hybrid,Remote")
+
+    @staticmethod
+    def strip_type_excludes(exclude: str, types: list[str]) -> str:
+        words = [w for t in types for w in TYPE_EXCLUDES.get(t, ())]
+        parts = split_top_level(exclude)
+        return "|".join(p for p in parts if not any(re.search(p, w, re.I) for w in words))
+
     def job_targets(self, scripts: Path) -> None:
-        self.heading("Job targets")
+        self.heading("Job titles")
         pkg = PACKAGES_DIR / "daily-vacancy-report"
         builtin_titles = read_constant(pkg / "job_scanner.py", "DEFAULT_INDEED_QUERIES") or []
         builtin_exclude = read_constant(pkg / "job_scanner.py", "DEFAULT_TITLE_EXCLUDE") or ""
         current = [t for t in self.value("JOB_INDEED_QUERIES").split("||") if t.strip()]
         titles = self.listing("Job titles to search for (comma-separated)", current or builtin_titles)
-        if not titles or titles == (current or builtin_titles):
+        location = self.value("JOB_SEARCH_LOCATION") or self.value("JOB_REGION_NAME")
+        old_location = self.current.get("JOB_SEARCH_LOCATION") or self.current.get("JOB_REGION_NAME") or ""
+        moved = location != old_location and bool(self.value("JOB_SCANNER_QUERIES"))
+        if not titles or (titles == (current or builtin_titles) and not moved):
             if self.args.advanced:
                 self.advanced_job_filters()
             return
-        location = self.value("JOB_SEARCH_LOCATION") or self.value("JOB_REGION_NAME")
         nijobs = bool(self.value("JOB_SCANNER_NIJOBS_KEYWORDS"))
         self.set("JOB_INDEED_QUERIES", "||".join(titles))
         queries = []
@@ -459,7 +595,8 @@ class Wizard:
         if self.confirm("Use these titles as the title filter too? (recommended unless you target AI / ML / data roles)",
                         True):
             self.set("JOB_TITLE_STRONG", "|".join(phrase_regex(t) for t in titles))
-        exclude = self.value("JOB_TITLE_EXCLUDE") or builtin_exclude
+        exclude = self.value("JOB_TITLE_EXCLUDE") or self.strip_type_excludes(
+            builtin_exclude, self.value("JOB_EMPLOYMENT_TYPES").split(","))
         kept = [p for p in split_top_level(exclude) if not any(re.search(p, t, re.I) for t in titles)]
         if len(kept) != len(split_top_level(exclude)):
             self.say(f"  {DIM}removed words matching your titles from the exclude filter{RESET}")
@@ -471,7 +608,9 @@ class Wizard:
         for key, label in (("JOB_SCANNER_QUERIES", "Web search queries ('||'-separated)"),
                            ("JOB_INDEED_QUERIES", "Indeed searches ('||'-separated job titles)"),
                            ("JOB_TITLE_STRONG", "Strong title regex"),
-                           ("JOB_TITLE_EXCLUDE", "Exclude title regex")):
+                           ("JOB_TITLE_EXCLUDE", "Exclude title regex"),
+                           ("JOB_INDEED_LOCATION", "Indeed location"),
+                           ("JOB_INDEED_DOMAIN", "Indeed site for job links")):
             self.set(key, self.text(label + " (empty = built-in default)", self.value(key)))
 
     def job_profile(self, scripts: Path) -> None:
@@ -532,14 +671,18 @@ class Wizard:
         summary = self.multiline("Short summary: current role, years of experience, what you've built")
         skills = self.listing("Core skills (comma-separated)", [])
         titles = self.listing("Job titles you want", [t for t in self.value("JOB_INDEED_QUERIES").split("||") if t])
-        seniority = self.text("Seniority you're targeting (e.g. mid-level individual contributor)")
-        types = self.text("Employment types", "Full-time permanent or contract")
-        mode = self.text("Work mode", "Hybrid or remote preferred")
+        level = dict(JOB_LEVELS).get(self.value("JOB_LEVEL", "any"), "")
+        seniority = self.text("Seniority you're targeting (e.g. mid-level individual contributor)",
+                              "" if self.value("JOB_LEVEL", "any") == "any" else level)
+        types = self.text("Employment types", self.value("JOB_EMPLOYMENT_TYPES", "Permanent,Contract,Temporary")
+                          .replace(",", ", "))
+        mode = self.text("Work mode", self.value("JOB_WORK_MODES", "On-site,Hybrid,Remote").replace(",", ", "))
         avoid = self.text("Roles or conditions you're NOT interested in")
         gaps = self.listing("Honest gaps the model should know about (comma-separated)", [])
         looking = [line for line in (f"- Titles: {', '.join(titles)}" if titles else "",
                                      f"- Seniority: {seniority}" if seniority else "",
-                                     f"- {types}" if types else "", f"- {mode}" if mode else "",
+                                     f"- Employment: {types}" if types else "",
+                                     f"- Work mode: {mode}" if mode else "",
                                      f"- Not interested in: {avoid}" if avoid else "") if line]
         parts = ["# Candidate profile", "## Summary", summary or f"{name or 'The candidate'} is looking for a new role."]
         if skills:
@@ -581,23 +724,47 @@ class Wizard:
                 runner.run(["hermes", "mcp", "login", server], tty=True)
                 self.say("  Restart the Hermes session afterwards so the tools load.")
 
-    # ------------------------------------------------------------------ package: noon-tech-digest
+    # ------------------------------------------------------------------ package: news-digest
 
-    def digest_sections(self, scripts: Path) -> None:
-        self.heading("Digest sections")
-        current = self.value("TECH_DIGEST_SECTIONS_FILE")
-        if current:
-            self.say(f"Using custom sections from {current}.")
+    def migrate_digest_settings(self) -> None:
+        """Carry TECH_DIGEST_* values from the old noon-tech-digest package over to NEWS_DIGEST_*."""
+        legacy = {k: v for k, v in self.current.items() if k.startswith("TECH_DIGEST_")}
+        moved = [k for k in legacy if "NEWS_DIGEST_" + k[len("TECH_DIGEST_"):] not in self.current]
+        for key in moved:
+            self.changes["NEWS_DIGEST_" + key[len("TECH_DIGEST_"):]] = legacy[key]
+        if moved:
+            self.say(f"  {DIM}copied {len(moved)} TECH_DIGEST_* setting(s) to NEWS_DIGEST_*; the old keys are "
+                     f"left in place and can be deleted{RESET}")
+
+    def digest_topics(self, scripts: Path) -> None:
+        self.heading("News topics")
+        pkg = PACKAGES_DIR / "news-digest"
+        sections_file = self.value("NEWS_DIGEST_SECTIONS_FILE")
+        if sections_file:
+            self.say(f"Using custom sections from {sections_file}.")
             if self.confirm("Keep it?", True):
                 return
-        if self.confirm("Use the built-in sections (AI, ML research, Python, IoT & edge, new tech)?", not current):
-            self.set("TECH_DIGEST_SECTIONS_FILE", "")
-            return
-        target = scripts / "sections.json"
-        if not target.is_file():
-            self.files[target] = (PACKAGES_DIR / "noon-tech-digest" / "sections.example.json").read_text(encoding="utf-8")
-        self.set("TECH_DIGEST_SECTIONS_FILE", "sections.json")
-        self.say(f"  {DIM}edit {target} to choose your own sections and search queries{RESET}")
+            self.set("NEWS_DIGEST_SECTIONS_FILE", "")
+        catalog = read_constant(pkg / "news_digest.py", "TOPICS") or []
+        defaults = read_constant(pkg / "news_digest.py", "DEFAULT_TOPICS") or []
+        options = [(t["id"], t["title"]) for t in catalog]
+        current = [t.strip() for t in self.preset("NEWS_DIGEST_TOPICS").split(",") if t.strip()] or defaults
+        self.say("Choose the topics for your digest; each becomes a section of the email, in this order.")
+        topics = self.choose("Topics", options, [t for t in current if t in dict(options)])
+        self.set("NEWS_DIGEST_TOPICS", ",".join(topics), ",".join(defaults))
+
+        self.say("\nAdd topics of your own as 'Title: keyword, keyword', several separated by ||\n"
+                 f"  {DIM}e.g. Formula 1: F1, Grand Prix || Home Brewing: homebrew, craft beer{RESET}")
+        custom = self.text("Custom topics (empty = none, '-' clears)", self.preset("NEWS_DIGEST_CUSTOM_TOPICS"))
+        self.set("NEWS_DIGEST_CUSTOM_TOPICS", custom)
+
+        if self.args.advanced and self.confirm(
+                "Use a sections file instead, for full control over sites and search queries?", False):
+            target = scripts / "sections.json"
+            if not target.is_file():
+                self.files[target] = (pkg / "sections.example.json").read_text(encoding="utf-8")
+            self.set("NEWS_DIGEST_SECTIONS_FILE", "sections.json")
+            self.say(f"  {DIM}edit {target}; it replaces the topics above{RESET}")
 
     # ------------------------------------------------------------------ saving
 
@@ -648,29 +815,52 @@ class Wizard:
 
     # ------------------------------------------------------------------ cron + tests
 
+    def existing_job(self, runner: Runner, pkg: str) -> dict | None:
+        if self._cron_jobs is None:
+            self._cron_jobs = runner.cron_jobs() if runner.mode else []
+        info = PACKAGES[pkg]
+        scripts = [info["script"], *info.get("legacy_scripts", [])]
+        return next((j for s in scripts for j in self._cron_jobs if j.get("script", "").endswith(s)), None)
+
+    def ask_schedule(self, runner: Runner, pkg: str) -> None:
+        info = PACKAGES[pkg]
+        existing = self.existing_job(runner, pkg)
+        default = friendly_schedule(existing.get("schedule", info["schedule"]) if existing else info["schedule"])
+        key = "SCHEDULE_" + pkg.upper().replace("-", "_")
+        if not self.interactive:
+            default = self.answers.get(key, os.environ.get(key, default))
+        self.say(f"\nWhen should {info['title']} run? Times use Hermes' timezone (`timezone:` in config.yaml).\n"
+                 f"  {DIM}HH:MM runs daily, 'weekdays HH:MM' Monday to Friday; a cron expression also works; "
+                 f"'-' skips scheduling{RESET}")
+        while True:
+            reply = self.text("Run time", default)
+            if not reply or reply == "-":
+                self.schedule_plan[pkg] = None
+                return
+            if cron := cron_expression(reply):
+                self.schedule_plan[pkg] = cron
+                return
+            if not self.interactive:
+                sys.exit(f"{key}: unrecognised schedule '{reply}'")
+            self.say(f"  {YELLOW}enter a time like 07:30, 'weekdays 08:00' or a cron expression{RESET}")
+
     def schedules(self, runner: Runner, packages: list[str]) -> None:
         self.heading("Schedules")
-        if not runner.mode:
-            self.say("Hermes isn't reachable from here; register the jobs from the package READMEs.")
-            return
-        self.say("Times use Hermes' timezone (`timezone:` in config.yaml). Enter HH:MM for daily, "
-                 "'weekdays HH:MM', a cron expression, or '-' to skip.")
-        jobs = runner.cron_jobs()
         for pkg in packages:
-            info = PACKAGES[pkg]
-            existing = next((j for j in jobs if j.get("script", "").endswith(info["script"])), None)
-            default = existing.get("schedule", info["schedule"]) if existing else info["schedule"]
-            reply = self.text(f"{info['title']} schedule", default)
-            if not reply or reply == "-":
+            info, cron = PACKAGES[pkg], self.schedule_plan.get(pkg)
+            if cron is None:
                 continue
-            if m := TIME_RE.match(reply):
-                days = "1-5" if (m.group(1) or "").lower() == "weekdays" else "*"
-                reply = f"{int(m.group(3))} {int(m.group(2))} * * {days}"
-            if existing and existing.get("schedule") == reply:
-                self.say(f"  {DIM}{info['title']}: unchanged ({reply}){RESET}")
+            existing = self.existing_job(runner, pkg)
+            current_script = existing and existing.get("script", "").endswith(info["script"])
+            if current_script and existing.get("schedule") == cron:
+                self.say(f"  {DIM}{info['title']}: unchanged ({friendly_schedule(cron)}){RESET}")
                 continue
-            create = ["hermes", "cron", "create", reply, info["title"], "--name", existing.get("name", info["cron"])
-                      if existing else info["cron"], "--script", info["script"], "--no-agent", "--deliver", "local"]
+            name = existing.get("name", info["cron"]) if current_script else info["cron"]
+            create = ["hermes", "cron", "create", cron, info["title"], "--name", name,
+                      "--script", info["script"], "--no-agent", "--deliver", "local"]
+            if not runner.mode:
+                self.say(f"  Hermes isn't reachable from here; inside Hermes run:\n    {shlex.join(create)}")
+                continue
             if self.args.dry_run:
                 self.say(f"  would run: {shlex.join(create)}" + (f" (replacing {existing['id']})" if existing else ""))
                 continue
@@ -678,7 +868,8 @@ class Wizard:
                 runner.run(["hermes", "cron", "remove", existing["id"]], capture=True, timeout=60)
             res = runner.run(create, capture=True, timeout=60)
             ok = res is not None and res.returncode == 0
-            self.say(f"  {GREEN if ok else YELLOW}{info['title']}: {'scheduled ' + reply if ok else 'failed'}{RESET}")
+            self.say(f"  {GREEN if ok else YELLOW}{info['title']}: "
+                     f"{'scheduled ' + friendly_schedule(cron) if ok else 'failed'}{RESET}")
             if not ok and res is not None:
                 self.say((res.stdout + res.stderr).strip()[-400:])
 
@@ -713,12 +904,17 @@ class Wizard:
         for pkg in packages:
             info = PACKAGES.get(pkg, {"title": pkg})
             self.heading(f"{info['title']} settings")
+            if pkg == "news-digest":
+                self.migrate_digest_settings()
             self.run_settings(parse_example(PACKAGES_DIR / pkg / ".env.example"))
             if pkg == "daily-vacancy-report":
+                self.job_search()
                 self.job_targets(scripts)
                 self.job_profile(scripts)
-            elif pkg == "noon-tech-digest":
-                self.digest_sections(scripts)
+            elif pkg == "news-digest":
+                self.digest_topics(scripts)
+            if pkg in PACKAGES and not self.args.no_cron:
+                self.ask_schedule(runner, pkg)
 
         saved = self.review_and_write(home, owner)
         if "daily-vacancy-report" in packages:
@@ -741,7 +937,8 @@ def main() -> int:
     parser.add_argument("--advanced", action="store_true", help="ask for every setting, not just the essentials")
     parser.add_argument("--non-interactive", action="store_true",
                         help="no prompts: take values from --answers, then the environment, then current/defaults")
-    parser.add_argument("--answers", help="KEY=VALUE file of settings for --non-interactive")
+    parser.add_argument("--answers", help="KEY=VALUE file of settings for --non-interactive; schedules go in "
+                                          "SCHEDULE_<PACKAGE>=HH:MM (e.g. SCHEDULE_NEWS_DIGEST=weekdays 12:00)")
     parser.add_argument("--dry-run", action="store_true", help="show what would change; write and run nothing")
     parser.add_argument("--no-install", action="store_true", help="skip copying package files")
     parser.add_argument("--no-cron", action="store_true", help="skip the schedule step")
