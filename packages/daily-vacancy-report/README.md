@@ -11,12 +11,14 @@ light and dark modes.
 
 ## What it does
 
-1. **Discover.** Runs web searches for single job postings through Firecrawl, with Tavily as the
+1. **Discover.** Searches Indeed through the [Indeed MCP server](#indeed-mcp-source) connected to
+   Hermes, and runs web searches for single job postings through Firecrawl, with Tavily as the
    backup. It can also read [nijobs.com](https://www.nijobs.com) keyword listings, which is useful
    for Northern Ireland.
 2. **Pre-filter.** Keeps only relevant titles (configurable regexes), drops internships, part-time
-   work and jobs already seen in the last 90 days, then fetches each posting. Where the page has
-   structured `JobPosting` data, the scanner uses that.
+   work and jobs already seen in the last 90 days, then fetches each posting. Indeed descriptions
+   come from the MCP job-detail tool, so they cost no scraping credits. For other boards, where
+   the page has structured `JobPosting` data, the scanner uses that.
 3. **Hard filters.** Optionally restricts results to one region (towns, postcodes or any regex),
    and accepts only full-time permanent or contract roles.
 4. **Rate.** Hermes' model scores each job 0-10 against `job_profile.md`, with a confidence value,
@@ -35,6 +37,7 @@ It only emails when there are new matches, unless `JOB_SCANNER_EMAIL_WHEN_EMPTY=
 | --- | --- |
 | `job_scanner.py` | Entry point run by the cron job |
 | `companies.py` | Employer website, logo and profile lookup with caching |
+| `indeed_mcp.py` | Indeed job search and job details through Hermes' Indeed MCP connection |
 | `job_profile.example.md` | Template for your candidate profile (copy to `job_profile.md`) |
 | `cv_keywords.example.json` | Template for skills to match and gaps to flag (copy to `cv_keywords.json`) |
 | `.env.example` | Every package setting with its default |
@@ -68,6 +71,44 @@ python3 job_scanner.py --dry-run --limit 5       # full pipeline, no email, no s
 A dry run writes the rendered email to `state/job_scanner_last.html` and the raw results to
 `state/job_scanner_last.json`.
 
+### Indeed MCP source
+
+Indeed publishes an [MCP server](https://docs.indeed.com/mcp) for job search and job details.
+Hermes handles the connection and OAuth. The scanner reuses Hermes' authorised session, so it
+never sees or stores Indeed credentials.
+
+1. Add the server to Hermes, either from the dashboard's MCP catalog (**indeed**) or in
+   `config.yaml`:
+
+   ```yaml
+   mcp_servers:
+     indeed:
+       url: https://mcp.indeed.com/claude/mcp
+       auth: oauth
+       enabled: true
+   ```
+
+2. Authorise once. Either approve it from the dashboard's MCP page, or run the login
+   interactively and approve access in the browser:
+
+   ```sh
+   docker exec -it -u hermes hermes-agent hermes mcp login indeed   # or: hermes mcp login indeed
+   hermes mcp test indeed                                           # should list the Indeed tools
+   ```
+
+3. Restart the Hermes session so the tools load, then run a dry run. The log shows one
+   `indeed '<query>' ...` line per query.
+
+Tokens are stored by Hermes in `$HERMES_HOME/mcp-tokens/` and refreshed by Hermes. Until the
+server is authorised, the scanner logs `Indeed MCP: not authorised yet` and carries on with the
+other sources, so a missing or expired login never breaks the report. Set `JOB_INDEED=0` (or pass
+`--no-indeed`) to turn the source off.
+
+The Indeed source needs Hermes' Python environment (the MCP SDK and Hermes' `tools` package), so
+run the scanner inside the `hermes-agent` container, which is how Hermes cron runs it. Tool and
+argument names are read from the server's tool list at run time. If Indeed renames a tool, pin it
+with `JOB_INDEED_SEARCH_TOOL` / `JOB_INDEED_DETAIL_TOOL`.
+
 ### Schedule it
 
 ```sh
@@ -86,7 +127,8 @@ Cron times are in the container's timezone, which is usually UTC.
 | `--test-email` | Send a short SMTP test email and exit |
 | `--limit N` | Scrape and rate at most N job pages this run |
 | `--include-seen` | Re-rate jobs reported in previous runs |
-| `--no-search` | Board listings only (nijobs.com); skip web searches |
+| `--no-search` | Board listings only (nijobs.com, Indeed); skip web searches |
+| `--no-indeed` | Skip the Indeed MCP source for this run |
 
 ## Configuration
 
@@ -97,6 +139,9 @@ Every option is an environment variable (or a line in `$HERMES_HOME/.env`). See
   With none of these set, jobs from any location are kept.
 - **`JOB_SEARCH_LOCATION`, `JOB_SCANNER_QUERIES`.** Control what gets searched. The default queries
   target AI / ML / automation / data roles, with your location inserted.
+- **`JOB_INDEED_QUERIES`, `JOB_INDEED_LOCATION`, `JOB_INDEED_DOMAIN`.** What the Indeed source
+  searches for (plain job titles, `||`-separated), where, and which Indeed site the job links point
+  to (for example `uk.indeed.com`).
 - **`JOB_TITLE_STRONG`, `JOB_TITLE_MEDIUM`.** Title regexes deciding which results are worth
   fetching.
 - **`JOB_SENIOR_PENALTY`, `JOB_LEAD_PENALTY`.** Lower the score of Senior or Lead titles if you
@@ -120,6 +165,7 @@ regex values are also used to compute keyword coverage directly from the job tex
 ## Cost and runtime
 
 A typical run uses 4 searches plus up to `JOB_SCANNER_MAX_SCRAPE` page fetches, roughly 20-40
-Firecrawl credits. When Firecrawl credits drop below `JOB_SCANNER_MIN_CREDITS`, the scanner
+Firecrawl credits. Indeed searches and job details go through the MCP server and use no web
+credits; the report footer shows how many Indeed calls a run made. When Firecrawl credits drop below `JOB_SCANNER_MIN_CREDITS`, the scanner
 switches to your backup keys, then Tavily and Scrapfly. Rating takes 10-40 seconds per job on a
 4B model running on a CPU.
