@@ -17,8 +17,13 @@ using [Semantic Versioning](https://semver.org/).
     filters; build `job_profile.md` from guided questions, an imported CV or the example;
     generate `cv_keywords.json` from your skills and gaps; add and log in to the Indeed MCP
     server.
-  - Digest step: built-in sections or your own `sections.json`.
-  - Creates or updates the `hermes cron` jobs, then sends a test email and offers a dry run.
+  - Guided job search step: region, towns, country (which also sets the Indeed site and
+    country), remote-anywhere, target level, employment types and work modes.
+  - News topics step: pick from the topic catalog by number, then add your own topics.
+  - Asks what time each package should run (`07:30`, `weekdays 08:00` or a cron expression) and
+    creates or updates the `hermes cron` jobs, then sends a test email and offers a dry run.
+    Unattended runs take `SCHEDULE_<PACKAGE>` from the answers file.
+  - Migrates `TECH_DIGEST_*` settings and the old digest cron job to the renamed News Digest.
   - Works locally or from a Docker host: runs `hermes` in the `hermes-agent` container and
     matches file ownership to the Hermes home.
   - Backs up `.env` before writing, updates it in place (other Hermes settings untouched) and
@@ -27,6 +32,30 @@ using [Semantic Versioning](https://semver.org/).
   - `--dry-run`, `--non-interactive --answers FILE`, `--no-install` and `--no-cron` options.
 - **`JOB_TITLE_EXCLUDE`** makes the vacancy report's always-skip title filter configurable. It
   used to be hard-coded, including professions like nurse and teacher.
+- **Vacancy report job preferences:**
+  - `JOB_LEVEL` (junior, mid, senior, lead or any) sets fit penalties for titles above or below
+    your level. The new `JOB_JUNIOR_PENALTY` joins the senior and lead penalties, which now
+    default to the level's values.
+  - `JOB_EMPLOYMENT_TYPES` and `JOB_WORK_MODES` choose which types (now including part-time and
+    internships) and modes to keep. They replace the hard-coded "full-time permanent, contract or
+    temporary" rule.
+  - `JOB_REMOTE_ANYWHERE` lets fully remote jobs through the region filter.
+  - The model is told the target level, types, modes and region when scoring, and its rubric no
+    longer assumes an AI / ML role.
+- **News Digest topic catalog:** 23 topics to choose from with `NEWS_DIGEST_TOPICS`, adding
+  cybersecurity, cloud, programming, web development, data, open source, smart home, robotics,
+  space, science, climate, health, business, markets, tech policy, world news, gaming and sport
+  to the original five, each with its own sites, queries, colour and icon. Also
+  `NEWS_DIGEST_CUSTOM_TOPICS` for keyword-based topics of your own.
+
+### Changed (breaking)
+
+- **Noon Tech Digest is now News Digest.** The package is `packages/news-digest`, the script
+  `news_digest.py`, the settings `NEWS_DIGEST_*` (previously `TECH_DIGEST_*`), the default cron
+  job `news-digest` and the state files `state/news_digest_*`. Re-run `scripts/setup.py` to
+  migrate settings and the cron job; see the [upgrade notes](packages/news-digest/README.md#upgrading-from-noon-tech-digest).
+- The digest's default reader and editor prompt are no longer tech-specific, and the tagline is
+  built from the chosen topic names.
 
 - **Indeed MCP source for the Daily Vacancy Report** (`packages/daily-vacancy-report/indeed_mcp.py`):
   - Searches Indeed through the Indeed MCP server connected to Hermes, and fetches full job

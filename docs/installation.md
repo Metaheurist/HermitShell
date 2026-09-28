@@ -30,21 +30,34 @@ It asks, in order:
 3. **Package settings.** Every setting tagged `# @basic` in the package's `.env.example`. With
    `--advanced`, you get every setting, including provider order, Ollama fallbacks, title regexes
    and limits.
-4. **Job targets** (vacancy report). Enter the job titles you want. The wizard turns them into
+4. **Job search** (vacancy report). Where you're job hunting: region or city, the towns that
+   count as inside it, and a two-letter country code, which also picks the right Indeed site
+   (`gb` gives `uk.indeed.com`). Then whether fully remote jobs elsewhere count, and what kind of
+   job you want from numbered menus:
+   - **Level:** junior, mid, senior, lead or any. Titles above or below it lose fit points.
+   - **Employment types:** permanent, contract, temporary, part-time, internship. Choosing
+     part-time or internship also takes them off the title exclude list.
+   - **Work modes:** on-site, hybrid, remote.
+5. **Job titles** (vacancy report). Enter the job titles you want. The wizard turns them into
    Indeed searches, web search queries for your location and a title filter. It also removes
    any of your titles from the default exclude list, so a nurse or teacher isn't filtered out.
-5. **Candidate profile** (vacancy report). Answer a few questions, import a text or markdown CV,
+6. **Candidate profile** (vacancy report). Answer a few questions, import a text or markdown CV,
    paste text, or start from the example. Your skills and gaps become `cv_keywords.json`.
-6. **Digest sections.** Keep the built-in sections, or copy `sections.example.json` to
-   `sections.json` to edit.
-7. **Review.** Every change is listed (secrets masked) before anything is written. `.env` is
+7. **News topics** (digest). Pick topics from a numbered catalog of 23 (AI, cybersecurity,
+   cloud, space, science, climate, health, business, markets, world news, gaming, sport and
+   more), then add any of your own as `Title: keyword, keyword`. With `--advanced` you can switch
+   to a `sections.json` file for full control.
+8. **Run time,** asked for each package straight after its settings: `07:00` runs daily,
+   `weekdays 07:30` runs Monday to Friday, and a cron expression or `-` (don't schedule) also
+   work. Times use Hermes' timezone (`timezone:` in `config.yaml`).
+9. **Review.** Every change is listed (secrets masked) before anything is written. `.env` is
    backed up to `.env.bak-<timestamp>`, updated in place (other Hermes settings are left
    alone) and kept at mode 600.
-8. **Indeed MCP.** Adds the server to Hermes if it's missing and offers the one-time browser
-   login.
-9. **Schedules.** Creates or updates the `hermes cron` jobs. Enter `07:00`, `weekdays 07:30` or
-   a cron expression.
-10. **Test.** Sends a test email and offers a dry run.
+10. **Indeed MCP.** Adds the server to Hermes if it's missing and offers the one-time browser
+    login.
+11. **Schedules.** Creates or updates the `hermes cron` jobs with the run times you chose. If
+    Hermes isn't reachable from where the wizard runs, it prints the commands to run instead.
+12. **Test.** Sends a test email and offers a dry run.
 
 The wizard finds Hermes by itself. It uses the `hermes` command when it's on your PATH;
 otherwise it runs commands in the `hermes-agent` container with `docker exec` (change this with
@@ -58,10 +71,33 @@ Useful options:
 | `--dry-run` | Show what would change; write and run nothing |
 | `--no-install` / `--no-cron` | Skip copying files / the schedule step |
 | `--non-interactive --answers FILE` | Unattended: values from a `KEY=VALUE` file, then the environment, then current values |
-| `daily-vacancy-report noon-tech-digest` | Set up only these packages without asking |
+| `daily-vacancy-report news-digest` | Set up only these packages without asking |
 
 Re-running the wizard is safe: current values are the defaults, and pressing Enter everywhere
 changes nothing.
+
+An answers file for an unattended setup uses the normal setting names, plus one
+`SCHEDULE_<PACKAGE>` line per package for the run time:
+
+```sh
+JOB_REGION_NAME=Dublin
+JOB_REGION_PLACES=Dublin, Dun Laoghaire, Swords
+JOB_SEARCH_COUNTRY=ie
+JOB_LEVEL=mid
+JOB_EMPLOYMENT_TYPES=Permanent,Contract
+JOB_WORK_MODES=Hybrid,Remote
+NEWS_DIGEST_TOPICS=security,cloud,world
+NEWS_DIGEST_CUSTOM_TOPICS=Formula 1: F1, Grand Prix
+SCHEDULE_DAILY_VACANCY_REPORT=weekdays 07:30
+SCHEDULE_NEWS_DIGEST=12:00
+```
+
+### Upgrading from Noon Tech Digest
+
+The digest used to be the `noon-tech-digest` package (`tech_digest.py`, `TECH_DIGEST_*`
+settings). Pull the repo and re-run the wizard for `news-digest`: it copies your `TECH_DIGEST_*`
+values to `NEWS_DIGEST_*` and replaces the old cron job with one for `news_digest.py`. Delete the
+old script and settings afterwards if you like.
 
 ## Manual installation
 
@@ -82,7 +118,7 @@ the mounted directory.
 ```sh
 git clone https://github.com/Metaheurist/HermitShell.git
 cd HermitShell
-HERMES_HOME=/opt/data ./scripts/install.sh daily-vacancy-report noon-tech-digest
+HERMES_HOME=/opt/data ./scripts/install.sh daily-vacancy-report news-digest
 ```
 
 The installer does the following:
@@ -96,7 +132,7 @@ The installer does the following:
 If you install from the Docker host, set the owner to the container user:
 
 ```sh
-sudo HERMES_OWNER=10000:10000 HERMES_HOME=/path/to/hermes/data ./scripts/install.sh noon-tech-digest
+sudo HERMES_OWNER=10000:10000 HERMES_HOME=/path/to/hermes/data ./scripts/install.sh news-digest
 ```
 
 #### Without the installer
@@ -117,8 +153,13 @@ environment variables:
 cat .env.example                                  # copy what you need
 # per package, all optional
 cat packages/daily-vacancy-report/.env.example
-cat packages/noon-tech-digest/.env.example
+cat packages/news-digest/.env.example
 ```
+
+The settings the wizard asks about in its guided steps are, for the vacancy report,
+`JOB_REGION_NAME`, `JOB_REGION_PLACES`, `JOB_SEARCH_COUNTRY`, `JOB_REMOTE_ANYWHERE`, `JOB_LEVEL`,
+`JOB_EMPLOYMENT_TYPES`, `JOB_WORK_MODES` and `JOB_INDEED_QUERIES`, and for the digest,
+`NEWS_DIGEST_TOPICS` and `NEWS_DIGEST_CUSTOM_TOPICS`.
 
 See [configuration.md](configuration.md) for how settings are resolved.
 
@@ -148,7 +189,7 @@ Run the scripts as the same user Hermes uses. In Docker, that means:
 ```sh
 docker exec -u hermes -w /opt/data hermes-agent python3 scripts/job_scanner.py --test-email
 docker exec -u hermes -w /opt/data hermes-agent python3 scripts/job_scanner.py --dry-run --limit 3
-docker exec -u hermes -w /opt/data hermes-agent python3 scripts/tech_digest.py --dry-run
+docker exec -u hermes -w /opt/data hermes-agent python3 scripts/news_digest.py --dry-run
 ```
 
 Dry runs write the email HTML to `scripts/state/*_last.html`. Copy that file along with the
@@ -159,15 +200,18 @@ Dry runs write the email HTML to `scripts/state/*_last.html`. Copy that file alo
 ```sh
 docker exec -u hermes -w /opt/data hermes-agent hermes cron create "0 7 * * *" "Daily vacancy report" \
     --name daily-vacancy-report --script job_scanner.py --no-agent --deliver local
-docker exec -u hermes -w /opt/data hermes-agent hermes cron create "0 12 * * *" "Noon tech digest" \
-    --name noon-tech-digest --script tech_digest.py --no-agent --deliver local
+docker exec -u hermes -w /opt/data hermes-agent hermes cron create "0 12 * * *" "News Digest" \
+    --name news-digest --script news_digest.py --no-agent --deliver local
 docker exec -u hermes -w /opt/data hermes-agent hermes cron list
 ```
 
+- The first argument is a standard cron expression: `30 7 * * *` is 07:30 every day,
+  `0 8 * * 1-5` is 08:00 on weekdays.
 - `--no-agent` runs the script directly without an LLM turn.
 - `--deliver local` keeps the script's one-line summary in Hermes' cron log. The email is the
   real delivery.
-- Cron schedules use the container clock, usually UTC.
+- Schedules use Hermes' timezone (`timezone:` in `config.yaml`); without it, the container
+  clock, usually UTC.
 
 ## Updating
 

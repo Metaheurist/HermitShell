@@ -11,17 +11,17 @@ includes credentials, API keys, your CV and your region.
 
 | Package | What you get | Schedule |
 | --- | --- | --- |
-| [Daily Vacancy Report](packages/daily-vacancy-report) | Jobs from Indeed (via Hermes' Indeed MCP connection) and the wider web, matched to your CV and scored 0-10 by the model, with company logos, websites and profiles | Daily, morning |
-| [Noon Tech Digest](packages/noon-tech-digest) | Curated AI / ML / Python / IoT / new-tech news in sections, with a model-written briefing | Daily, noon |
+| [Daily Vacancy Report](packages/daily-vacancy-report) | Jobs from Indeed (via Hermes' Indeed MCP connection) and the wider web in your region, level, job types and work modes, matched to your CV and scored 0-10 by the model, with company logos, websites and profiles | You choose (default 07:00) |
+| [News Digest](packages/news-digest) | Curated news on the topics you pick (AI, security, space, markets, sport... or your own keywords), in sections with a model-written briefing | You choose (default 12:00) |
 
 <table>
 <tr>
 <td width="50%" valign="top"><a href="packages/daily-vacancy-report"><img src="docs/images/daily-vacancy-report.png" alt="Daily Vacancy Report email"></a></td>
-<td width="50%" valign="top"><a href="packages/noon-tech-digest"><img src="docs/images/noon-tech-digest.png" alt="Noon Tech Digest email"></a></td>
+<td width="50%" valign="top"><a href="packages/news-digest"><img src="docs/images/news-digest.png" alt="News Digest email"></a></td>
 </tr>
 <tr>
 <td align="center"><b>Daily Vacancy Report</b></td>
-<td align="center"><b>Noon Tech Digest</b></td>
+<td align="center"><b>News Digest</b></td>
 </tr>
 </table>
 
@@ -42,12 +42,17 @@ The setup wizard installs the packages you pick and then walks you through every
 
 1. Email (SMTP) details and any web search API keys you have (Firecrawl, Tavily, Scrapfly). Keys
    are typed without being shown and are only ever displayed masked.
-2. Each package's settings, such as the report title, your region, the job titles to search for
-   and the digest's reader description. `--advanced` asks for every setting.
+2. Your job search: where you're looking (region, towns, country, remote), the level you're
+   targeting, employment types (permanent, contract, part-time, internship...), work modes and
+   the job titles to search for.
 3. Your candidate profile for the vacancy report. Answer a few questions, import your CV as text,
    or start from the example.
-4. Optional Indeed MCP connection and login.
-5. Cron schedules, then a test email and an optional dry run.
+4. The digest's news topics, picked from a catalog of 23 or added as your own keywords.
+5. What time each package should run (for example `07:30` or `weekdays 08:00`).
+6. Along the way, each package's other essential settings, such as email titles and score
+   thresholds. `--advanced` asks for every setting.
+7. Optional Indeed MCP connection and login, then the cron jobs, a test email and an optional dry
+   run.
 
 Settings are saved to `$HERMES_HOME/.env`, which is backed up first. Re-run the wizard any time;
 your current values are offered as the defaults. On a Docker host, point it at the bind-mounted
@@ -66,7 +71,7 @@ Details are in [docs/installation.md](docs/installation.md) and
 ```
 common/hermes_common.py    shared plumbing: .env loading, model discovery, web providers, SMTP
 packages/<name>/           one directory per package: entry script, README, examples
-scripts/setup.py           interactive wizard: install, settings, API keys, profile, schedules
+scripts/setup.py           interactive wizard: install, API keys, job search, topics, profile, schedules
 scripts/install.sh         copies common + chosen packages flat into $HERMES_HOME/scripts
 docs/                      installation, configuration, email rendering, web providers
 ```
@@ -110,7 +115,9 @@ script from `$HERMES_HOME/scripts`.
 2. Import helpers from `hermes_common` rather than copying them.
 3. Read every personal or deployment-specific value from the environment and give it a neutral
    default. Document each one in `.env.example` with a comment above it; add `# @basic` to have
-   the setup wizard ask for it by default (everything else appears with `--advanced`).
+   the setup wizard ask for it by default (everything else appears with `--advanced`), or
+   `# @wizard` when a guided step in `scripts/setup.py` fills it in. Add the package to
+   `PACKAGES` in `scripts/setup.py` so the wizard can schedule it.
 4. Support `--dry-run` and `--test-email`.
 5. Add an entry to [CHANGELOG.md](CHANGELOG.md).
 

@@ -22,7 +22,7 @@ Only providers with a key are used. You need at least one search provider: Firec
 ## Firecrawl backup keys
 
 At startup the client checks the remaining credits on `FIRECRAWL_API_KEY`. If the balance is
-below the package's minimum (`JOB_SCANNER_MIN_CREDITS`, `TECH_DIGEST_MIN_CREDITS`), it moves on
+below the package's minimum (`JOB_SCANNER_MIN_CREDITS`, `NEWS_DIGEST_MIN_CREDITS`), it moves on
 to the next key in `FIRECRAWL_BACKUP_KEYS`. It also switches keys mid-run if one runs out. Logs
 only ever show a masked key such as `fc-1a2b...9z8y`.
 
@@ -38,7 +38,7 @@ used.
 | Package | Firecrawl credits |
 | --- | --- |
 | Daily Vacancy Report | about 20-40: 4 searches plus up to `JOB_SCANNER_MAX_SCRAPE` scrapes |
-| Noon Tech Digest | about 15-20: 2-3 searches plus one article per section |
+| News Digest | about 15-20 with five topics: 2-3 searches plus one article per topic |
 
 Both fit comfortably inside Firecrawl's free monthly allowance when run once a day. Tavily's
 free tier covers occasional failover.

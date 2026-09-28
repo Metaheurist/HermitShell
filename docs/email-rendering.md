@@ -17,7 +17,7 @@ explains the techniques, for anyone building a new package.
 Gmail strips inline `<svg>` and SVG images, and many clients block remote images by default.
 Icons and company logos are therefore:
 
-1. Stored as PNGs rendered at 3x for sharpness. `packages/noon-tech-digest/icons/build_icons.py`
+1. Stored as PNGs rendered at 3x for sharpness. `packages/news-digest/icons/build_icons.py`
    rasterises the SVG sources with PyMuPDF.
 2. Referenced in the HTML as `<img src="cid:name">`.
 3. Attached as `multipart/related` parts by `hermes_common.inline_images()` and `send_email()`.
@@ -53,4 +53,4 @@ digest's sun icon sits in its own table cell for that reason.
 - Model output is cleaned of em and en dashes (`hermes_common.plain_dashes`), so generated
   prose reads naturally.
 - Summaries are trimmed at whole-sentence boundaries, never mid-word.
-- Subjects stay short: `Daily Vacancy Report: 8 new jobs`, `Noon Tech Digest: 23 stories`.
+- Subjects stay short: `Daily Vacancy Report: 8 new jobs`, `News Digest: 23 stories`.

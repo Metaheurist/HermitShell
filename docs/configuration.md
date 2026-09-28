@@ -5,7 +5,8 @@ Every HermitShell setting is an environment variable. Nothing personal is hard-c
 The [setup wizard](installation.md#setup-wizard) (`python3 scripts/setup.py`) writes all of these
 for you and can be re-run to change them. It reads the settings, their help text and their
 defaults straight from the `.env.example` files. Settings tagged `# @basic` are asked by
-default, and every setting is asked with `--advanced`.
+default, settings tagged `# @wizard` are filled in by guided steps (job search, job titles and
+news topics), and every remaining setting is asked with `--advanced`.
 
 ## Where settings come from
 
@@ -56,7 +57,44 @@ Full template: [`.env.example`](../.env.example).
 - Daily Vacancy Report: [`packages/daily-vacancy-report/.env.example`](../packages/daily-vacancy-report/.env.example),
   plus a regional example in
   [`examples/northern-ireland.env`](../packages/daily-vacancy-report/examples/northern-ireland.env).
-- Noon Tech Digest: [`packages/noon-tech-digest/.env.example`](../packages/noon-tech-digest/.env.example).
+- News Digest: [`packages/news-digest/.env.example`](../packages/news-digest/.env.example).
+
+### Job search (Daily Vacancy Report)
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `JOB_REGION_NAME` | none | Region or city you're job hunting in. Empty = no location filter |
+| `JOB_REGION_PLACES` | none | Comma-separated towns or areas that count as inside the region |
+| `JOB_SEARCH_COUNTRY` | none | Two-letter country code for searches (`gb`, `ie`, `us`...) |
+| `JOB_REMOTE_ANYWHERE` | `0` | `1` lets fully remote jobs through the region filter |
+| `JOB_LEVEL` | `any` | `junior`, `mid`, `senior`, `lead` or `any`. Sets the seniority penalties below |
+| `JOB_EMPLOYMENT_TYPES` | `Permanent,Contract,Temporary` | Types to keep: also `Full-time`, `Part-time`, `Internship`. Jobs that don't say are kept |
+| `JOB_WORK_MODES` | `On-site,Hybrid,Remote` | Work modes to keep. Jobs that don't say are kept |
+| `JOB_JUNIOR_PENALTY` / `JOB_SENIOR_PENALTY` / `JOB_LEAD_PENALTY` | from `JOB_LEVEL` | Fit points subtracted for Junior/Graduate, Senior and Lead/Principal titles |
+
+`JOB_LEVEL` sets the three penalties (junior, senior, lead titles) like this: `junior` 0/2/3,
+`mid` 1/1/2, `senior` 2/0/1, `lead` 3/1/0 and `any` 0/0/0. Setting one of the penalty variables
+overrides just that value. The target level, types, modes and region are also given to the model
+when it scores each job.
+
+### Topics (News Digest)
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `NEWS_DIGEST_TOPICS` | `ai,ml,python,iot,newtech` | Catalog topic ids, in email order |
+| `NEWS_DIGEST_CUSTOM_TOPICS` | none | Your own topics: `Title: keyword, keyword \|\| Title 2: keyword` |
+| `NEWS_DIGEST_SECTIONS_FILE` | none | JSON sections file that replaces both of the above |
+
+Catalog ids: `ai`, `ml`, `python`, `iot`, `newtech`, `security`, `cloud`, `programming`,
+`webdev`, `data`, `opensource`, `smarthome`, `robotics`, `space`, `science`, `climate`,
+`health`, `business`, `markets`, `policy`, `world`, `gaming` and `sport`. See the
+[package README](../packages/news-digest/README.md#topics) for what each covers.
+
+### Schedules
+
+Run times aren't `.env` settings: they are `hermes cron` jobs. The wizard asks for a time per
+package (`07:30`, `weekdays 08:00` or a cron expression) and creates or updates the job. In an
+unattended `--answers` file, use `SCHEDULE_DAILY_VACANCY_REPORT` and `SCHEDULE_NEWS_DIGEST`.
 
 ## MCP sources
 
