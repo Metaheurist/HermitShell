@@ -6,9 +6,11 @@ optionally restricted to one region, rates each one with the model Hermes is
 configured to use (config.yaml) and emails a scored HTML report.
 
 Pipeline:
-  1. Discover: web searches for single job postings (Firecrawl, Tavily backup),
-     plus nijobs.com keyword listings when JOB_SCANNER_NIJOBS_KEYWORDS is set.
-  2. Pre-filter on title relevance, drop already-seen jobs, fetch the rest.
+  1. Discover: Indeed job search through the Indeed MCP server connected to Hermes,
+     web searches for single job postings (Firecrawl, Tavily backup), plus
+     nijobs.com keyword listings when JOB_SCANNER_NIJOBS_KEYWORDS is set.
+  2. Pre-filter on title relevance, drop already-seen jobs, fetch the rest
+     (Indeed descriptions come from the MCP job-detail tool, not scraping).
   3. Hard filters: inside JOB_REGION_* when configured; full-time / permanent
      or contract only (no part-time, internships).
   4. Hermes' model returns fit score, confidence, matched CV keywords, gaps,
@@ -44,6 +46,7 @@ from companies import norm as company_key
 from hermes_common import (BROWSER_HEADERS, EMAIL_HEAD, STATE_DIR, WebClient, connect_model, env,
                            env_bool, env_int, first_sentences, gmail_dark_safe, html_to_text, inline_images,
                            load_env_file, log, ollama_chat)
+from indeed_mcp import IndeedMCP
 
 hc.LOG_TAG = "job_radar"
 SEEN_FILE = STATE_DIR / "job_scanner_seen.json"
@@ -59,6 +62,8 @@ DEFAULT_QUERY_TEMPLATES = [
     '("automation engineer" OR "AI automation" OR "integration engineer") {location} job',
     '"data engineer" {location} job',
 ]
+DEFAULT_INDEED_QUERIES = ["AI engineer", "machine learning engineer", "LLM engineer", "automation engineer",
+                          "data engineer"]
 DEFAULT_TITLE_STRONG = (r"\bai\b|artificial intelligence|machine learning|\bml\b|mlops|\bllm|gen ?ai|generative|\bnlp\b|"
                         r"data scien|automation|agentic|data engineer|solutions engineer|integration|intelligent|"
                         r"applied scien")
@@ -92,6 +97,13 @@ def load_settings() -> SimpleNamespace:
         country=env("JOB_SEARCH_COUNTRY"),
         nijobs_keywords=nijobs,
         queries=queries,
+        indeed=env_bool("JOB_INDEED", True),
+        indeed_queries=[q.strip() for q in (env("JOB_INDEED_QUERIES") or "").split("||") if q.strip()]
+        or DEFAULT_INDEED_QUERIES,
+        indeed_location=env("JOB_INDEED_LOCATION", location),
+        indeed_country=env("JOB_INDEED_COUNTRY", env("JOB_SEARCH_COUNTRY", "")),
+        indeed_limit=env_int("JOB_INDEED_LIMIT", 15),
+        indeed_days=env_int("JOB_INDEED_DAYS", 14),
         title_strong=re.compile(env("JOB_TITLE_STRONG", DEFAULT_TITLE_STRONG), re.I),
         title_medium=re.compile(env("JOB_TITLE_MEDIUM", DEFAULT_TITLE_MEDIUM), re.I),
         senior_penalty=env_int("JOB_SENIOR_PENALTY", 0),
@@ -156,6 +168,9 @@ def job_key(url: str) -> str:
     m = re.search(r"nijobs\.com/job/.*?(\d{6,})", url)
     if m:
         return f"nijobs:{m.group(1)}"
+    m = re.search(r"indeed\.[a-z.]+/.*[?&](?:jk|vjk)=([0-9a-f]{8,})", url, re.I)
+    if m:
+        return f"indeed:{m.group(1).lower()}"
     parts = urlsplit(url.strip())
     query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
              if not k.lower().startswith("utm_") and k.lower() not in {"cid", "source", "ref", "trk", "gh_src"}]
@@ -335,8 +350,15 @@ class Nijobs:
 
 
 def discover(web: WebClient, nijobs: Nijobs, nijobs_keywords: list[str], queries: list[str], tbs: str,
-             use_search: bool) -> list[dict]:
+             use_search: bool, indeed: IndeedMCP | None = None) -> list[dict]:
     found: dict[str, dict] = {}
+
+    if indeed:
+        for item in indeed.search(CFG.indeed_queries, CFG.indeed_location, CFG.indeed_limit,
+                                  CFG.indeed_country, CFG.indeed_days):
+            key = f"indeed:{item['job_id'].lower()}" if item["job_id"] else job_key(item["url"])
+            found.setdefault(key, {"key": key, "url": item["url"], "title": clean_title(item["title"]),
+                                   "description": item["snippet"], "source": "indeed.com", "indeed": item})
 
     for kw in nijobs_keywords:
         links = nijobs.listing(kw)
@@ -767,6 +789,7 @@ def main() -> int:
     parser.add_argument("--limit", type=int, help="max job pages to scrape and rate this run")
     parser.add_argument("--include-seen", action="store_true", help="re-rate jobs from previous runs")
     parser.add_argument("--no-search", action="store_true", help="board listings only (nijobs.com), skip web searches")
+    parser.add_argument("--no-indeed", action="store_true", help="skip the Indeed MCP source")
     args = parser.parse_args()
 
     load_env_file()
@@ -808,7 +831,8 @@ def main() -> int:
     companies = Companies(web, CFG.region_re, CFG.region, CFG.country or "")
     seen = load_seen()
 
-    candidates = discover(web, nijobs, nijobs_kw, queries, tbs, use_search=not args.no_search)
+    indeed = IndeedMCP() if CFG.indeed and not args.no_indeed else None
+    candidates = discover(web, nijobs, nijobs_kw, queries, tbs, use_search=not args.no_search, indeed=indeed)
 
     scored_titles = []
     for c in candidates:
@@ -818,6 +842,7 @@ def main() -> int:
     scored_titles.sort(key=lambda x: x[0], reverse=True)
     queue = [c for _, c in scored_titles[:max_scrape]]
     log(f"{len(candidates)} postings discovered, {len(scored_titles)} relevant & unseen, rating {len(queue)}")
+    indeed_details = indeed.details([j["indeed"] for j in queue if j["source"] == "indeed.com"]) if indeed else {}
 
     now = time.time()
     results, processed = [], []
@@ -826,7 +851,12 @@ def main() -> int:
         facts, text = {}, ""
         if job["source"] == "nijobs.com":
             facts, text = nijobs.job(job["url"]) or ({}, "")
-        if not text and "linkedin.com" not in job["url"]:
+        elif job["source"] == "indeed.com":
+            item = job["indeed"]
+            detail_facts, text = indeed_details.get(item["job_id"], ({}, ""))
+            facts = {k: item[k] for k in ("company", "location", "salary", "type_line", "published") if item[k]}
+            facts.update(detail_facts)
+        if not text and "linkedin.com" not in job["url"] and job["source"] != "indeed.com":
             md = web.scrape(job["url"])
             if md:
                 facts, text = header_facts(md), clean_listing(md)
@@ -919,7 +949,7 @@ def main() -> int:
         "scanned": len(queue), "min_score": min_score, "excluded_location": excluded_location,
         "excluded_type": excluded_type, "below_min": below_min, "model": model,
         "sources": ", ".join(sorted({r["source"] for r in results})) or "web search",
-        "web_usage": web.usage(),
+        "web_usage": web.usage() + (f", Indeed MCP {indeed.calls} calls" if indeed and indeed.calls else ""),
     }
     html_body = build_html(top, maybe, stats, summary)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
