@@ -8,6 +8,7 @@ export const SECURITY_HEADERS = {
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
 };
+export const CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'";
 export const DAY_MS = 86400000;
 // Links in emails stop working after this many days.
 export const LINK_DAYS = 90;
@@ -148,6 +149,7 @@ a.back:hover{background:#eef2ff}
 nav.tabs{display:flex;gap:4px;margin:6px 0 18px;border-bottom:1px solid #e2e8f0}
 nav.tabs a{padding:8px 12px;font-size:14px;font-weight:600;color:#475569;text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px}
 nav.tabs a.on{color:#4f46e5;border-bottom-color:#4f46e5}
+iframe.saving{display:block;width:100%;height:42px;border:0;margin:0 0 14px}
 code.link{display:block;word-break:break-all;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px;font-size:13px}
 `;
 
@@ -160,7 +162,7 @@ export function page(heading, body, { status = 200, wide = false, headers = {} }
     status,
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+      "Content-Security-Policy": CSP,
       ...SECURITY_HEADERS,
       ...headers,
     },

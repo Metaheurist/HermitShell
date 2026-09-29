@@ -53,6 +53,26 @@ async function setup(status = STATUS) {
   return { env, get, act, upload, csrf, cookie };
 }
 
+function unescape(html) {
+  return html.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+}
+
+// The profile form as a browser would send it: the values it opened with (its hidden base) plus any edits.
+async function openForm(get, u) {
+  const { body } = await get(`/admin/profile?u=${u}`);
+  const base = unescape(body.match(/name="base" value="([^"]*)"/)[1]);
+  const v = JSON.parse(base);
+  const fields = { action: "profile", u, base, name: v.name, email: v.email, phone: v.phone, location: v.location,
+    titles: v.titles.join("\n"), region: v.region, places: v.places.join(", "), country: v.country, level: v.level,
+    types: v.types, modes: v.modes, min_salary: v.min_salary === "0" ? "" : v.min_salary, currency: v.currency,
+    ...(v.remote_anywhere ? { remote_anywhere: "1" } : {}), ...(v.hide_agency ? { hide_agency: "1" } : {}) };
+  return (edits = {}) => ({ ...fields, ...edits });
+}
+
+async function save(get, act, u, edits) {
+  return act((await openForm(get, u))(edits));
+}
+
 function ttlOf(env, prefix) {
   return env.FEEDBACK.ttls.get(keysWith(env, prefix)[0]);
 }
@@ -140,9 +160,20 @@ describe("global settings page", () => {
     await act({ action: "test_email", to: "alex@example.com" });
     await act({ action: "pause", u: "sam-lee" });
     const { body } = await get("/admin/settings?done=queued");
-    expect(body).toContain("Saved. HermitShell applies it within about 5 minutes.");
+    expect(body).toContain("Saved. HermitShell usually applies it within a minute.");
     expect(body).toContain("Waiting for HermitShell: test email.");
     expect(body).not.toContain("pause for sam-lee");
+  });
+
+  it("keeps a saved email server in the form until HermitShell applies it, but never the password", async () => {
+    const { get, act } = await setup();
+    await act({ action: "email", host: "smtp.office365.com", port: "587", user: "alex@example.com", password: "abcd efgh ijkl mnop" });
+    const { body } = await get("/admin/settings");
+    expect(body).toContain('value="smtp.office365.com"');
+    expect(body).toContain('id="smtp_user" name="user" value="alex@example.com"');
+    expect(body).not.toContain("abcd efgh");
+    await act({ action: "email_clear" });
+    expect((await get("/admin/settings")).body).toContain('value="smtp.gmail.com"');
   });
 
   it("links every profile page back to it", async () => {
@@ -251,21 +282,81 @@ describe("profile page", () => {
     expect(body).toContain("Admin sign-in");
   });
 
-  it("queues details and job search changes separately", async () => {
-    const { env, act } = await setup();
-    const saved = await act({ action: "profile", section: "details", u: "owner", name: "Alex Morgan", email: "alex.m@example.com",
-      phone: "07700 900456", location: "Leeds" });
-    expect(saved.headers.get("Location")).toBe("/admin/profile?u=owner&done=queued#details");
-    await act({ action: "profile", section: "job", u: "owner", titles: "Data Engineer\nAnalytics Engineer\n\nData Engineer",
-      region: "West Yorkshire", places: "Leeds, Bradford", country: "GB", remote_anywhere: "1", level: "senior",
-      types: ["Permanent", "Bogus"], modes: ["Remote"], min_salary: "55,000", currency: "£" });
-    const [details, job] = valuesWith(env, "queue:");
-    expect(details).toMatchObject({ action: "profile", u: "owner",
-      details: { name: "Alex Morgan", email: "alex.m@example.com", phone: "07700 900456", location: "Leeds" } });
-    expect(details).not.toHaveProperty("job");
-    expect(job.job).toEqual({ titles: ["Data Engineer", "Analytics Engineer"], region: "West Yorkshire", places: ["Leeds", "Bradford"],
-      country: "gb", remote_anywhere: true, level: "senior", types: ["Permanent"], modes: ["Remote"],
-      min_salary: "55000", currency: "£", hide_agency: false });
+  it("has one form with one Save for details and job search, and one CV upload", async () => {
+    const { get } = await setup();
+    const { body } = await get("/admin/profile?u=sam-lee");
+    expect(body.match(/<button>Save changes<\/button>/g)).toHaveLength(1);
+    expect(body.match(/<button>Upload CV<\/button>/g)).toHaveLength(1);
+    expect(body.match(/<form /g)).toHaveLength(2);
+    expect(body).not.toContain("Save details");
+    expect(body).not.toContain("Save job search");
+    expect(body.indexOf('id="details"')).toBeGreaterThan(body.indexOf('action="/admin/action"'));
+    expect(body.indexOf('id="job"')).toBeLessThan(body.indexOf("Save changes"));
+  });
+
+  it("queues only the fields that changed, cleaned", async () => {
+    const { env, get, act } = await setup();
+    const saved = await save(get, act, "owner", { email: "alex.m@example.com", phone: "07700 900456",
+      titles: "Data Engineer\nAnalytics Engineer\n\nData Engineer", region: "West Yorkshire", places: "Leeds, Bradford",
+      remote_anywhere: "1", level: "senior", types: ["Permanent", "Bogus"], modes: ["Remote"], min_salary: "55,000" });
+    expect(saved.headers.get("Location")).toBe("/admin/profile?u=owner&done=saved");
+    const [item] = valuesWith(env, "queue:");
+    expect(item).toMatchObject({ type: "admin", action: "profile", u: "owner" });
+    expect(item.details).toEqual({ email: "alex.m@example.com", phone: "07700 900456" });
+    expect(item.job).toEqual({ titles: ["Data Engineer", "Analytics Engineer"], region: "West Yorkshire",
+      places: ["Leeds", "Bradford"], remote_anywhere: true, level: "senior", types: ["Permanent"], modes: ["Remote"],
+      min_salary: "55000" });
+  });
+
+  it("keeps what was saved on the page until HermitShell applies it, with a live status box", async () => {
+    const { get, act } = await setup();
+    await save(get, act, "sam-lee", { email: "sam.lee@example.com", titles: "Data Analyst" });
+    const { body } = await get("/admin/profile?u=sam-lee&done=saved");
+    expect(body).toContain('value="sam.lee@example.com"');
+    expect(body).toContain(">Data Analyst</textarea>");
+    expect(body).toContain("The box above shows when HermitShell has applied it");
+    expect(body).toContain('<iframe class="saving" src="/admin/profile/status?u=sam-lee&amp;n=1"');
+    expect((await get("/admin/profile?u=sam-lee")).body).toContain('src="/admin/profile/status?u=sam-lee"');
+  });
+
+  it("saves nothing when nothing changed", async () => {
+    const { env, get, act } = await setup();
+    const res = await save(get, act, "sam-lee", { min_salary: "35k", places: "York,Harrogate", types: ["Permanent", "Bogus"] });
+    expect(res.headers.get("Location")).toBe("/admin/profile?u=sam-lee&done=nochange");
+    expect(valuesWith(env, "queue:")).toEqual([]);
+  });
+
+  it("merges two people's changes to different fields of one profile", async () => {
+    const { env, get, act } = await setup();
+    const first = await openForm(get, "sam-lee");
+    const second = await openForm(get, "sam-lee");
+    await act(second({ phone: "07700 900999" }));
+    const res = await act(first({ region: "West Yorkshire" }));
+    expect(res.headers.get("Location")).toBe("/admin/profile?u=sam-lee&done=saved");
+    expect(valuesWith(env, "queue:").map((i) => [i.details, i.job])).toEqual([
+      [{ phone: "07700 900999" }, undefined], [undefined, { region: "West Yorkshire" }]]);
+    const { body } = await get("/admin/profile?u=sam-lee");
+    expect(body).toContain('value="07700 900999"');
+    expect(body).toContain('value="West Yorkshire"');
+  });
+
+  it("shows a clash on the same field instead of overwriting it, and saves once confirmed", async () => {
+    const { env, get, act } = await setup();
+    const first = await openForm(get, "sam-lee");
+    await save(get, act, "sam-lee", { email: "sam.other@example.com" });
+    const res = await act(first({ email: "sam.mine@example.com", location: "Leeds" }));
+    expect(res.status).toBe(409);
+    const body = await res.text();
+    expect(body).toContain("Someone else changed this profile while you were editing.");
+    expect(body).toContain("<b>Email for reports</b>: now <i>sam.other@example.com</i>, yours <i>sam.mine@example.com</i>");
+    expect(body).toContain('value="sam.mine@example.com"');
+    expect(body).toContain('value="Leeds"');
+    expect(valuesWith(env, "queue:")).toHaveLength(1);
+    const base = unescape(body.match(/name="base" value="([^"]*)"/)[1]);
+    expect(JSON.parse(base).email).toBe("sam.other@example.com");
+    await act(first({ base, email: "sam.mine@example.com", location: "Leeds" }));
+    expect(valuesWith(env, "queue:").map((i) => i.details)).toEqual([
+      { email: "sam.other@example.com" }, { email: "sam.mine@example.com", location: "Leeds" }]);
   });
 
   it("offers countries by name and stores only known codes", async () => {
@@ -275,10 +366,8 @@ describe("profile page", () => {
     expect(body).toContain('<option value="gb" selected>United Kingdom</option>');
     expect(body).toContain('<option value="ie">Ireland</option>');
     expect(body).not.toContain('name="search_location"');
-    for (const country of ["uk", "IE", "zz", "", "g<"]) {
-      await act({ action: "profile", section: "job", u: "owner", country });
-    }
-    expect(valuesWith(env, "queue:").map((i) => i.job.country)).toEqual(["gb", "ie", "", "", ""]);
+    for (const country of ["IE", "zz", "uk", "g<"]) await save(get, act, "owner", { country });
+    expect(valuesWith(env, "queue:").map((i) => i.job.country)).toEqual(["ie", "", "gb", ""]);
     expect(valuesWith(env, "queue:")[0].job).not.toHaveProperty("search_location");
   });
 
@@ -291,18 +380,87 @@ describe("profile page", () => {
     expect(body).not.toContain("All profiles");
     expect(body).toContain('<a class="back" href="/admin">&larr; Back to profiles</a>');
     expect((await get("/admin/profile?u=owner")).body).toContain('id="min_salary" name="min_salary" value=""');
-    await act({ action: "profile", section: "job", u: "owner", min_salary: "£45,000" });
-    await act({ action: "profile", section: "job", u: "owner", min_salary: "" });
-    expect(valuesWith(env, "queue:").map((i) => i.job.min_salary)).toEqual(["45000", "0"]);
+    for (const min_salary of ["£45,000", "", "45k"]) await save(get, act, "owner", { min_salary });
+    expect(valuesWith(env, "queue:").map((i) => i.job.min_salary)).toEqual(["45000", "0", "45000"]);
   });
 
-  it("refuses a bad email, an unknown level and a bad profile id", async () => {
-    const { env, act } = await setup();
-    const bad = await act({ action: "profile", section: "details", u: "owner", name: "Alex", email: "nope" });
-    expect(bad.headers.get("Location")).toBe("/admin/profile?u=owner&done=baddetails#details");
-    expect((await act({ action: "profile", section: "job", u: "../etc" })).headers.get("Location")).toBe("/admin?done=profile#job");
-    await act({ action: "profile", section: "job", u: "owner", level: "wizard", min_salary: "lots" });
-    expect(valuesWith(env, "queue:")).toMatchObject([{ job: { level: "any", min_salary: "0" } }]);
+  it("refuses a bad email without losing what was typed, and ignores an unknown level or a bad profile id", async () => {
+    const { env, get, act } = await setup();
+    const bad = await save(get, act, "owner", { name: "Alex M", email: "nope", location: "Bradford" });
+    expect(bad.status).toBe(400);
+    const body = await bad.text();
+    expect(body).toContain("A name and a valid email address are needed.");
+    expect(body).toContain('value="Alex M"');
+    expect(body).toContain('value="Bradford"');
+    expect((await save(get, act, "owner", { name: "" })).status).toBe(400);
+    expect((await act({ action: "profile", u: "../etc" })).headers.get("Location")).toBe("/admin?done=profile");
+    const res = await save(get, act, "owner", { level: "wizard", min_salary: "lots" });
+    expect(res.headers.get("Location")).toBe("/admin/profile?u=owner&done=nochange");
+    expect(valuesWith(env, "queue:")).toEqual([]);
+  });
+
+  it("applies changes still waiting for HermitShell in order", async () => {
+    const { get, act } = await setup();
+    await save(get, act, "owner", { titles: "Data Engineer" });
+    await save(get, act, "owner", { titles: "Data Engineer\nML Engineer", location: "York" });
+    const { body } = await get("/admin/profile?u=owner");
+    expect(body).toContain(">Data Engineer\nML Engineer</textarea>");
+    expect(body).toContain('value="York"');
+  });
+});
+
+describe("save status box", () => {
+  const API_HEADERS = { ...API, "Content-Type": "application/json" };
+
+  it("says when HermitShell is up to date, is waiting and has applied a save", async () => {
+    const { env, get, act } = await setup();
+    const idle = await get("/admin/profile/status?u=sam-lee");
+    expect(idle.res.status).toBe(200);
+    expect(idle.body).toContain("Up to date. HermitShell last reported just now.");
+    expect(idle.body).not.toContain("http-equiv");
+    await save(get, act, "sam-lee", { phone: "07700 900111" });
+    const waiting = await get("/admin/profile/status?u=sam-lee&n=1");
+    expect(waiting.body).toContain("Waiting for HermitShell to apply it");
+    expect(waiting.body).toContain('<meta http-equiv="refresh" content="5;url=/admin/profile/status?u=sam-lee&amp;n=2">');
+    expect((await get("/admin/profile/status?u=owner")).body).toContain("Up to date");
+    const ids = keysWith(env, "queue:");
+    await worker.fetch(new Request(`${BASE}/api/queue/ack`, { method: "POST", headers: API_HEADERS, body: JSON.stringify({ ids }) }), env);
+    const applied = await get("/admin/profile/status?u=sam-lee&n=3");
+    expect(applied.body).toContain("Applied by HermitShell");
+    expect(applied.body).not.toContain("http-equiv");
+  });
+
+  it("slows down and then stops checking, to spare the free plan's KV list quota", async () => {
+    const { get, act } = await setup();
+    await save(get, act, "sam-lee", { phone: "07700 900111" });
+    expect((await get("/admin/profile/status?u=sam-lee&n=15")).body).toContain('content="20;url=');
+    const stopped = await get("/admin/profile/status?u=sam-lee&n=21");
+    expect(stopped.body).toContain("Still waiting for HermitShell");
+    expect(stopped.body).not.toContain("http-equiv");
+    expect((await get("/admin/profile/status?u=sam-lee&n=-5")).body).toContain('content="5;url=/admin/profile/status?u=sam-lee&amp;n=1"');
+  });
+
+  it("shows a change HermitShell could not apply, escaped", async () => {
+    const { get } = await setup({ ...STATUS, problems: [{ at: Date.now(), what: "profile for sam-lee", error: "invalid <b>email</b>" }] });
+    const { body } = await get("/admin/profile/status?u=sam-lee&n=1");
+    expect(body).toContain("HermitShell could not apply a change:</b> invalid &lt;b&gt;email&lt;/b&gt;");
+  });
+
+  it("says a CV takes longer", async () => {
+    const { get, upload } = await setup();
+    await upload({ u: "owner", cv_text: CV_TEXT });
+    expect((await get("/admin/profile/status?u=owner&n=1")).body).toContain("reading the new CV");
+  });
+
+  it("can only be framed by the dashboard itself", async () => {
+    const { get } = await setup();
+    const { res } = await get("/admin/profile/status?u=owner");
+    expect(res.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'self'");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    const page = await get("/admin/profile?u=owner");
+    expect(page.res.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
+    expect(page.res.headers.get("Content-Security-Policy")).toContain("frame-src 'self'");
+    expect((await get("/admin/profile/status?u=../x")).res.status).toBe(404);
   });
 });
 
@@ -311,7 +469,7 @@ describe("CV upload", () => {
     const { env, upload } = await setup();
     const pdf = new File([new TextEncoder().encode("%PDF-1.4 cv")], "Alex Morgan CV.pdf", { type: "application/pdf" });
     const res = await upload({ u: "owner", roles: "Data engineering" }, pdf);
-    expect(res.headers.get("Location")).toBe("/admin/profile?u=owner&done=cvqueued#cv");
+    expect(res.headers.get("Location")).toBe("/admin/profile?u=owner&done=cvqueued");
     const [item] = valuesWith(env, "queue:");
     expect(item).toMatchObject({ type: "admin", action: "cv", u: "owner", roles: "Data engineering", cv: { kind: "pdf", size: 11 } });
     expect(new TextDecoder().decode(new Uint8Array(env.FEEDBACK.store.get(item.cv.key)))).toBe("%PDF-1.4 cv");

@@ -65,11 +65,8 @@ describe("escaping", () => {
   it("never echoes or queues a hostile country, whether reported or posted", async () => {
     const env = testEnv(ADMIN);
     await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "owner", owner: true, name: "Alex Morgan",
-      job: { country: HOSTILE, titles: [], places: [] } }] }));
-    const login = await worker.fetch(new Request(`${BASE}/admin/login`, {
-      method: "POST", body: new URLSearchParams({ username: "admin", password: ADMIN.ADMIN_PASSWORD }),
-      headers: { "CF-Connecting-IP": "203.0.113.8" } }), env);
-    const cookie = login.headers.get("Set-Cookie").split(";")[0];
+      email: "alex@example.com", job: { country: HOSTILE, titles: [], places: [] } }] }));
+    const cookie = await signIn(env, "203.0.113.8");
     const body = await (await get("/admin/profile?u=owner", env, { Cookie: cookie })).text();
     expect(body).not.toContain("<script>");
     expect(body).not.toContain("<img");
@@ -77,15 +74,63 @@ describe("escaping", () => {
     expect(body.match(/<select id="country"[\s\S]*?<\/select>/)[0]).not.toContain("selected");
     const csrf = body.match(/name="csrf" value="([0-9a-f]+)"/)[1];
     await worker.fetch(new Request(`${BASE}/admin/action`, { method: "POST", headers: { Cookie: cookie },
-      body: new URLSearchParams({ csrf, action: "profile", section: "job", u: "owner", country: HOSTILE }) }), env);
-    expect(valuesWith(env, "queue:").map((i) => i.job.country)).toEqual([""]);
+      body: new URLSearchParams({ csrf, action: "profile", u: "owner", name: "Alex Morgan", email: "alex@example.com",
+        country: HOSTILE, level: "any", types: "Permanent", modes: "Remote" }) }), env);
+    expect(valuesWith(env, "queue:").map((i) => i.job?.country)).not.toContain(HOSTILE);
+    expect(JSON.stringify(valuesWith(env, "queue:"))).not.toContain("<script>");
+  });
+
+  it("never trusts or echoes a tampered form base", async () => {
+    const env = testEnv(ADMIN);
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "owner", owner: true, name: "Alex Morgan",
+      email: "alex@example.com" }] }));
+    const cookie = await signIn(env, "203.0.113.6");
+    const page = await (await get("/admin/profile?u=owner", env, { Cookie: cookie })).text();
+    const csrf = page.match(/name="csrf" value="([0-9a-f]+)"/)[1];
+    for (const base of [JSON.stringify({ name: HOSTILE, email: HOSTILE, titles: [HOSTILE], level: HOSTILE, country: HOSTILE }),
+      "not json", '["array"]', JSON.stringify({ __proto__: { polluted: true } })]) {
+      const res = await worker.fetch(new Request(`${BASE}/admin/action`, { method: "POST", headers: { Cookie: cookie },
+        body: new URLSearchParams({ csrf, action: "profile", u: "owner", base, name: HOSTILE, email: "nope" }) }), env);
+      const body = await res.text();
+      expect([400, 409]).toContain(res.status);
+      expect(body).not.toContain("<script>");
+      expect(body).not.toContain("<img");
+    }
+    expect({}.polluted).toBeUndefined();
+    expect(valuesWith(env, "queue:")).toEqual([]);
+  });
+});
+
+async function signIn(env, ip) {
+  const login = await worker.fetch(new Request(`${BASE}/admin/login`, {
+    method: "POST", body: new URLSearchParams({ username: "admin", password: ADMIN.ADMIN_PASSWORD }),
+    headers: { "CF-Connecting-IP": ip } }), env);
+  return login.headers.get("Set-Cookie").split(";")[0];
+}
+
+describe("queue flag", () => {
+  it("changes with every queued item and clears once HermitShell has collected them", async () => {
+    const env = testEnv(ADMIN);
+    const api = { Authorization: "Bearer api-token" };
+    const flag = async () => (await (await get("/api/queue/flag", env, api)).json()).flag;
+    expect(await flag()).toBe("");
+    const { queueItem } = await import("../src/join.js");
+    await queueItem(env, { type: "admin", action: "pause", u: "sam-lee" });
+    const first = await flag();
+    await queueItem(env, { type: "admin", action: "resume", u: "sam-lee" });
+    const second = await flag();
+    expect(first).toMatch(/^queue:\d+:[0-9a-f]{32}$/);
+    expect(second).not.toBe(first);
+    const ids = (await (await get("/api/queue", env, api)).json()).items.map((i) => i.id);
+    await worker.fetch(new Request(`${BASE}/api/queue/ack`, { method: "POST", headers: api, body: JSON.stringify({ ids }) }), env);
+    expect(await flag()).toBe("");
   });
 });
 
 describe("authentication", () => {
   it("keeps every HermitShell API route behind the token", async () => {
     const env = testEnv();
-    const routes = [["GET", "/events"], ["POST", "/ack"], ["GET", "/api/queue"], ["POST", "/api/queue/ack"],
+    const routes = [["GET", "/events"], ["POST", "/ack"], ["GET", "/api/queue"], ["GET", "/api/queue/flag"], ["POST", "/api/queue/ack"],
       ["GET", "/api/file?key=cvfile:1"], ["POST", "/api/status"], ["POST", "/api/invite"]];
     for (const [method, path] of routes) {
       for (const headers of [{}, { Authorization: "Bearer wrong-token" }, { Authorization: "api-token" }]) {
@@ -111,7 +156,7 @@ describe("authentication", () => {
     const env = testEnv(ADMIN);
     await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "owner", owner: true, name: "Alex Morgan" }],
       email: { user: "alex@example.com", password_set: true } }));
-    for (const path of ["/admin/profile?u=owner", "/admin/settings", "/admin/settings?done=queued"]) {
+    for (const path of ["/admin/profile?u=owner", "/admin/settings", "/admin/settings?done=queued", "/admin/profile/status?u=owner"]) {
       const body = await (await worker.fetch(new Request(`${BASE}${path}`), env)).text();
       expect(body, path).toContain("Admin sign-in");
       expect(body, path).not.toContain("alex@example.com");

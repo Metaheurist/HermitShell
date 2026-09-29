@@ -1,7 +1,7 @@
 // Invite-only sign-up: /join?i=<invite id> shows a form for a new profile with a CV upload.
 // The answers and the CV wait in KV until HermitShell collects them from /api/queue.
 
-import { esc, limitedForm, newId, page, setFlag, text } from "./lib.js";
+import { esc, limitedForm, newId, page, text } from "./lib.js";
 
 export const INVITE_DAYS = 7;
 export const QUEUE_TTL_SECONDS = 60 * 60 * 24 * 30;
@@ -18,7 +18,8 @@ const EXPIRED = ["Invite not valid", "<p>This invite link has expired or has alr
 export async function queueItem(env, item, ttl = QUEUE_TTL_SECONDS) {
   const id = `queue:${Date.now()}:${newId()}`;
   await env.FEEDBACK.put(id, JSON.stringify({ id, at: Date.now(), ...item }), { expirationTtl: ttl });
-  await setFlag(env, "flag:queue", QUEUE_TTL_SECONDS);
+  // A new value for every item: HermitShell watches /api/queue/flag and syncs as soon as it changes.
+  await env.FEEDBACK.put("flag:queue", id, { expirationTtl: QUEUE_TTL_SECONDS });
   return id;
 }
 

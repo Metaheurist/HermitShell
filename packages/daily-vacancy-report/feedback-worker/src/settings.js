@@ -1,11 +1,11 @@
 // Settings pages of the admin dashboard: the setup checklist, the global settings page (email server and web
-// search API keys, shared by every profile) and each profile's page (details, job search, CV). Forms open
-// prefilled from the last status HermitShell reported; saving only queues the change, which profiles.py
-// validates again and applies within about 5 minutes.
+// search API keys, shared by every profile) and each profile's page (details and job search in one form, and
+// the CV). Forms open prefilled from the last status HermitShell reported plus the changes still waiting for
+// it; saving only queues the change, which profiles.py validates again and applies, usually within a minute.
 
 import { COUNTRIES, countryCode } from "./countries.js";
 import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem } from "./join.js";
-import { esc, limitedForm, newId, page, redirect, safeEqual, when } from "./lib.js";
+import { CSP, SECURITY_HEADERS, ago, esc, limitedForm, newId, page, redirect, safeEqual, when } from "./lib.js";
 
 export const LEVELS = ["junior", "mid", "senior", "lead", "any"];
 export const EMPLOYMENT_TYPES = ["Permanent", "Contract", "Temporary", "Part-time", "Internship"];
@@ -24,13 +24,16 @@ const MAX_PLACES = 30;
 const MAX_CV_TEXT = 20000;
 const MAX_CV_FORM_BYTES = MAX_CV_BYTES + 256 * 1024;
 
+function tidy(value, max) {
+  return String(value ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
 function field(form, name, max) {
-  return String(form.get(name) ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+  return tidy(form.get(name), max);
 }
 
 function list(value, sep, limit, maxLen) {
-  return [...new Set(String(value || "").split(sep).map((v) => v.replace(/\s+/g, " ").trim().slice(0, maxLen)).filter(Boolean))]
-    .slice(0, limit);
+  return [...new Set(String(value || "").split(sep).map((v) => tidy(v, maxLen)).filter(Boolean))].slice(0, limit);
 }
 
 function hidden(fields) {
@@ -129,13 +132,19 @@ export function keysSection(status, csrf) {
 <button>Save keys</button></form><p class="muted">Empty boxes leave that key as it is. Keys are only shown as their last four characters.</p>`;
 }
 
-export function settingsPage(status, csrf, { done = "", queued = [] } = {}) {
+// The email server as it will be once HermitShell applies any saved change, so the form keeps what was typed.
+function pendingEmail(email, queue) {
+  return byId(queue.filter((i) => i.type === "admin" && i.action === "email")).reduce((e, i) => i.clear ? email
+    : { ...e, host: i.host || e.host, port: i.port || e.port, user: i.user || e.user, from: i.from ?? e.from }, email);
+}
+
+export function settingsPage(status, csrf, { done = "", queued = [], queue = [] } = {}) {
   const waiting = queued.filter((q) => /^(email|test email|api keys)$/.test(q));
   return page("Global settings", `${nav("settings")}
 ${done ? `<p style="color:#047857">${esc(done)}</p>` : ""}${waiting.length ? `<p class="muted">Waiting for HermitShell: ${esc(waiting.join("; "))}.</p>` : ""}
 <p class="muted">These apply to the whole of HermitShell and every profile. Where each person's reports go, their job search
 and CV are on their own page under <a href="/admin">Profiles</a>.</p>
-${emailSection(status, csrf)}
+${emailSection({ ...status, email: pendingEmail(status.email || {}, queue) }, csrf)}
 ${keysSection(status, csrf)}`, { wide: true });
 }
 
@@ -159,39 +168,161 @@ function boxes(name, options, current) {
   return `<div class="checks">${options.map((o) => `<label class="check"><input type="checkbox" name="${name}" value="${esc(o)}"${checked(current.includes(o))}> <span>${esc(o)}</span></label>`).join("")}</div>`;
 }
 
-export function profilePage(status, pid, csrf, { done = "", queued = [] } = {}) {
+// ------------------------------------------------------------------------- saved values and conflicts
+//
+// HermitShell applies saved changes a little later, so a page shows what it last reported with every change
+// still waiting in the queue laid over it: what was saved stays on screen. Each form carries the values it
+// opened with ("base"); saving queues only the fields changed since then, so two people editing one profile
+// only clash when both changed the same field, and then the second is shown both versions before anything is
+// saved.
+
+const DETAIL_FIELDS = ["name", "email", "phone", "location"];
+const JOB_FIELDS = ["titles", "region", "places", "country", "remote_anywhere", "level", "types", "modes", "min_salary",
+  "currency", "hide_agency"];
+const PROFILE_FIELDS = [...DETAIL_FIELDS, ...JOB_FIELDS];
+const LABELS = {
+  name: "Name", email: "Email for reports", phone: "Phone", location: "Home town", titles: "Job titles",
+  region: "Region or city", places: "Towns", country: "Country", remote_anywhere: "Fully remote jobs", level: "Seniority",
+  types: "Employment types", modes: "Work location", min_salary: "Minimum salary", currency: "Currency",
+  hide_agency: "Hide agency adverts",
+};
+
+function items(value, limit, maxLen) {
+  return list(Array.isArray(value) ? value.join("\n") : value, /[\n,]/, limit, maxLen);
+}
+
+function salary(value) {
+  const m = /^(\d+(?:\.\d+)?)(k?)$/i.exec(String(value ?? "").replace(/[,\s£€$]/g, ""));
+  return m ? String(Math.trunc(Number(m[1]) * (m[2] ? 1000 : 1))) : "0";
+}
+
+function byId(list) {
+  return [...list].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+}
+
+// The same normalised shape whether the values come from a form, HermitShell's report, a queued change or a
+// form's (untrusted) base.
+export function profileValues(src = {}) {
+  const level = String(src.level || "any");
+  return {
+    name: tidy(src.name, 80), email: tidy(src.email, 120), phone: tidy(src.phone, 40), location: tidy(src.location, 80),
+    titles: items(src.titles, MAX_TITLES, 60), region: tidy(src.region, 80), places: items(src.places, MAX_PLACES, 40),
+    country: countryCode(tidy(src.country, 2)), remote_anywhere: src.remote_anywhere === true,
+    level: LEVELS.includes(level) ? level : "any",
+    types: EMPLOYMENT_TYPES.filter((t) => items(src.types, 10, 20).includes(t)),
+    modes: WORK_MODES.filter((m) => items(src.modes, 5, 20).includes(m)),
+    min_salary: salary(src.min_salary), currency: tidy(src.currency, 4), hide_agency: src.hide_agency === true,
+  };
+}
+
+function patchFields(item) {
+  const part = (x) => (x && typeof x === "object" && !Array.isArray(x) ? x : {});
+  return Object.fromEntries(Object.entries({ ...part(item.details), ...part(item.job) }).filter(([k]) => PROFILE_FIELDS.includes(k)));
+}
+
+// What HermitShell reported for the profile, with the changes still waiting for it applied in order.
+export function latestValues(p, queue = []) {
+  const changes = byId(queue.filter((i) => i.type === "admin" && i.action === "profile" && i.u === p.id));
+  return changes.reduce((v, i) => profileValues({ ...v, ...patchFields(i) }),
+    profileValues({ name: p.name, email: p.email, ...(p.details || {}), ...(p.job || {}) }));
+}
+
+function formValues(form) {
+  return profileValues({
+    ...Object.fromEntries(PROFILE_FIELDS.map((k) => [k, form.get(k)])),
+    types: form.getAll("types"), modes: form.getAll("modes"),
+    remote_anywhere: form.get("remote_anywhere") === "1", hide_agency: form.get("hide_agency") === "1",
+  });
+}
+
+function baseValues(form, fallback) {
+  try {
+    const base = JSON.parse(String(form.get("base") || ""));
+    if (base && typeof base === "object" && !Array.isArray(base)) return profileValues(base);
+  } catch {
+    // no usable base: compare with the latest values instead
+  }
+  return fallback;
+}
+
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+function pick(values, keys) {
+  return Object.fromEntries(keys.map((k) => [k, values[k]]));
+}
+
+// A saved profile form checked against the latest values (reported plus queued): { item } to queue with only
+// the changed fields, { conflicts } when someone else changed the same fields meanwhile, { error }, or nothing
+// to do. `mine` and `base` let the page be shown again without losing what was typed.
+export function profileChange(p, queue, form) {
+  const latest = latestValues(p, queue);
+  const mine = formValues(form);
+  const base = baseValues(form, latest);
+  const changed = PROFILE_FIELDS.filter((k) => !same(mine[k], base[k]) && !same(mine[k], latest[k]));
+  const conflicts = changed.filter((k) => !same(latest[k], base[k]));
+  if (conflicts.length) return { mine, base: latest, latest, conflicts };
+  if (!changed.length) return { mine, nothing: true };
+  const merged = { ...latest, ...pick(mine, changed) };
+  if (!merged.name || !EMAIL_RE.test(merged.email)) return { mine, base, error: "baddetails" };
+  const details = changed.filter((k) => DETAIL_FIELDS.includes(k));
+  const job = changed.filter((k) => JOB_FIELDS.includes(k));
+  return {
+    mine,
+    item: { type: "admin", action: "profile", u: p.id, ...(details.length ? { details: pick(mine, details) } : {}),
+      ...(job.length ? { job: pick(mine, job) } : {}) },
+  };
+}
+
+function shown(key, value) {
+  if (key === "min_salary" && value === "0") return "no minimum";
+  if (key === "country") return COUNTRIES.find(([c]) => c === value)?.[1] || "any country";
+  if (Array.isArray(value)) return value.join(", ") || "none";
+  if (typeof value === "boolean") return value ? "yes" : "no";
+  return value || "empty";
+}
+
+function conflictBox(conflicts, latest, mine) {
+  return `<div class="warn" id="conflict"><b>Someone else changed this profile while you were editing.</b>
+<p>Nothing has been saved yet. Your version is in the form below; Save again to keep it, or change these back:</p>
+<ul>${conflicts.map((k) => `<li><b>${esc(LABELS[k])}</b>: now <i>${esc(shown(k, latest[k]))}</i>, yours <i>${esc(shown(k, mine[k]))}</i></li>`).join("")}</ul></div>`;
+}
+
+// ------------------------------------------------------------------------- one profile's page, and its save status
+
+export const STATUS_URL = "/admin/profile/status";
+
+export function profilePage(status, pid, csrf,
+  { done = "", error = "", queue = [], saving = false, draft = null, base = null, conflicts = [], code = 200 } = {}) {
   const p = (status.profiles || []).find((x) => x.id === pid);
   if (!p) {
     return page("Profile not found", '<p>HermitShell has not reported this profile. <a href="/admin">Back to profiles</a></p>', { status: 404 });
   }
-  const d = p.details || { name: p.name, email: p.email };
-  const j = p.job || {};
-  const waiting = queued.filter((q) => q.endsWith(` for ${pid}`));
-  const salary = j.min_salary && j.min_salary !== "0" ? j.min_salary : "";
+  const latest = latestValues(p, queue);
+  const v = draft || latest;
+  const note = error ? `<p style="color:#b91c1c">${esc(error)}</p>` : done ? `<p style="color:#047857">${esc(done)}</p>` : "";
   return page(p.owner ? "Your profile" : p.name, `<a class="back" href="/admin">&larr; Back to profiles</a>${nav("profiles")}
-${done ? `<p style="color:#047857">${esc(done)}</p>` : ""}${waiting.length ? `<p class="muted">Waiting for HermitShell: ${esc(waiting.join("; "))}.</p>` : ""}
+${note}<iframe class="saving" src="${STATUS_URL}?u=${esc(pid)}${saving ? "&amp;n=1" : ""}" title="Save status"></iframe>
+${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
+<form method="post" action="/admin/action">${hidden({ csrf, action: "profile", u: pid, base: JSON.stringify(base || latest) })}
 <h2 id="details">Details</h2>
-<form method="post" action="/admin/action">${hidden({ csrf, action: "profile", section: "details", u: pid })}
-<div class="grid2"><div><label for="d_name">Name</label><input id="d_name" name="name" value="${esc(d.name)}" required maxlength="80" autocomplete="off"></div>
-<div><label for="d_email">Email for reports</label><input id="d_email" name="email" type="email" value="${esc(d.email)}" required maxlength="120" autocomplete="off"></div>
-<div><label for="d_phone">Phone</label><input id="d_phone" name="phone" value="${esc(d.phone || "")}" maxlength="40" autocomplete="off">${hint("Optional. Shown on cover letters.")}</div>
-<div><label for="d_loc">Home town</label><input id="d_loc" name="location" value="${esc(d.location || "")}" maxlength="80" autocomplete="off">${hint("Shown on cover letters.")}</div></div>
-<button>Save details</button></form>
+<div class="grid2"><div><label for="d_name">Name</label><input id="d_name" name="name" value="${esc(v.name)}" required maxlength="80" autocomplete="off"></div>
+<div><label for="d_email">Email for reports</label><input id="d_email" name="email" type="email" value="${esc(v.email)}" required maxlength="120" autocomplete="off"></div>
+<div><label for="d_phone">Phone</label><input id="d_phone" name="phone" value="${esc(v.phone)}" maxlength="40" autocomplete="off">${hint("Optional. Shown on cover letters.")}</div>
+<div><label for="d_loc">Home town</label><input id="d_loc" name="location" value="${esc(v.location)}" maxlength="80" autocomplete="off">${hint("Shown on cover letters.")}</div></div>
 
 <h2 id="job">Job search</h2>
-<form method="post" action="/admin/action">${hidden({ csrf, action: "profile", section: "job", u: pid })}
-<label for="titles">Job titles</label><textarea id="titles" name="titles" maxlength="600" placeholder="Data Engineer&#10;Analytics Engineer">${esc((j.titles || []).join("\n"))}</textarea>${hint(`One per line, up to ${MAX_TITLES}.`)}
-<div class="grid2"><div><label for="region">Region or city</label><input id="region" name="region" value="${esc(j.region || "")}" maxlength="80" placeholder="Greater Manchester">${hint("Where to look. Web searches use this.")}</div>
-<div><label for="country">Country</label>${countrySelect(j.country || "")}${hint("Searches favour jobs in this country.")}</div></div>
-<label for="places">Towns</label><input id="places" name="places" value="${esc((j.places || []).join(", "))}" maxlength="1200" placeholder="Salford, Stockport, Trafford">${hint("Towns in the region whose jobs count as local, separated by commas.")}
-<label class="check"><input type="checkbox" name="remote_anywhere" value="1"${checked(j.remote_anywhere)}> <span>Include fully remote jobs based anywhere</span></label>
-<div class="grid2"><div><label for="level">Seniority</label>${select("level", LEVELS, j.level || "any")}</div>
-<div><label for="min_salary">Minimum salary</label><input id="min_salary" name="min_salary" value="${esc(salary)}" maxlength="12" placeholder="No minimum" inputmode="decimal">${hint("For example 45000 or 45k. Jobs that don't show a salary are always included.")}</div>
-<div><label for="currency">Currency</label><input id="currency" name="currency" value="${esc(j.currency || "")}" maxlength="4" placeholder="£">${hint("The symbol adverts use, such as £, € or $.")}</div></div>
-<label>Employment types</label>${boxes("types", EMPLOYMENT_TYPES, j.types || [])}
-<label>Work location</label>${boxes("modes", WORK_MODES, j.modes || [])}
-<label class="check"><input type="checkbox" name="hide_agency" value="1"${checked(j.hide_agency)}> <span>Hide agency adverts that don't name the employer</span></label>
-<button>Save job search</button></form>
+<label for="titles">Job titles</label><textarea id="titles" name="titles" maxlength="600" placeholder="Data Engineer&#10;Analytics Engineer">${esc(v.titles.join("\n"))}</textarea>${hint(`One per line, up to ${MAX_TITLES}.`)}
+<div class="grid2"><div><label for="region">Region or city</label><input id="region" name="region" value="${esc(v.region)}" maxlength="80" placeholder="Greater Manchester">${hint("Where to look. Web searches use this.")}</div>
+<div><label for="country">Country</label>${countrySelect(v.country)}${hint("Searches favour jobs in this country.")}</div></div>
+<label for="places">Towns</label><input id="places" name="places" value="${esc(v.places.join(", "))}" maxlength="1200" placeholder="Salford, Stockport, Trafford">${hint("Towns in the region whose jobs count as local, separated by commas.")}
+<label class="check"><input type="checkbox" name="remote_anywhere" value="1"${checked(v.remote_anywhere)}> <span>Include fully remote jobs based anywhere</span></label>
+<div class="grid2"><div><label for="level">Seniority</label>${select("level", LEVELS, v.level)}</div>
+<div><label for="min_salary">Minimum salary</label><input id="min_salary" name="min_salary" value="${esc(v.min_salary === "0" ? "" : v.min_salary)}" maxlength="12" placeholder="No minimum" inputmode="decimal">${hint("For example 45000 or 45k. Jobs that don't show a salary are always included.")}</div>
+<div><label for="currency">Currency</label><input id="currency" name="currency" value="${esc(v.currency)}" maxlength="4" placeholder="£">${hint("The symbol adverts use, such as £, € or $.")}</div></div>
+<label>Employment types</label>${boxes("types", EMPLOYMENT_TYPES, v.types)}
+<label>Work location</label>${boxes("modes", WORK_MODES, v.modes)}
+<label class="check"><input type="checkbox" name="hide_agency" value="1"${checked(v.hide_agency)}> <span>Hide agency adverts that don't name the employer</span></label>
+<button>Save changes</button></form>
 
 <h2 id="cv">CV</h2>
 <p class="muted">${p.has_cv ? `HermitShell has a CV${p.cv_updated ? ` (updated ${esc(when(p.cv_updated, status.timezone))})` : ""}. A new one replaces it and rebuilds the skills and profile the jobs are rated against.` : "No CV yet: jobs can't be rated until one is uploaded."}</p>
@@ -199,14 +330,52 @@ ${done ? `<p style="color:#047857">${esc(done)}</p>` : ""}${waiting.length ? `<p
 <label for="cv">CV file</label><input id="cv" name="cv" type="file" accept=".pdf,.docx,.txt,.md">${hint("PDF, Word (.docx) or text, up to 5 MB.")}
 <label for="cv_text">Or paste the CV text</label><textarea id="cv_text" name="cv_text" maxlength="${MAX_CV_TEXT}"></textarea>
 <label for="roles">Roles you're after</label><input id="roles" name="roles" maxlength="300">${hint("Optional. Helps suggest job titles from the CV.")}
-<button>Upload CV</button></form>`, { wide: true });
+<button>Upload CV</button></form>`, { wide: true, status: code, headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` } });
 }
+
+const WAIT_FAST = 12; // checks 5 seconds apart, then
+const WAIT_SLOW = 21; // 20 seconds apart, then stop: each check lists the KV queue (1,000 lists a day on the free plan)
+
+// The small box at the top of a profile page, reloading itself while a change for the profile is waiting for
+// HermitShell. `n` counts the checks; it starts at 1 right after a save so "applied" can be said once it is.
+export function saveStatus(status, pid, queue, n) {
+  const mine = queue.filter((i) => i.type === "admin" && i.u === pid);
+  const tz = status.timezone;
+  const failed = (status.problems || []).filter((x) => x.what?.endsWith(` for ${pid}`) && Date.now() - x.at < 15 * 60 * 1000);
+  let body;
+  let refresh = 0;
+  if (mine.length) {
+    refresh = n < WAIT_FAST ? 5 : n < WAIT_SLOW ? 20 : 0;
+    const cv = mine.some((i) => i.action === "cv");
+    body = !refresh ? `Still waiting for HermitShell. <a href="/admin/profile?u=${esc(pid)}" target="_top">Reload</a> to check again; <a href="/admin" target="_top">Profiles</a> shows when it last reported.`
+      : cv ? "&#8987; Saved. HermitShell is reading the new CV; this takes a few minutes."
+        : "&#8987; Saved. Waiting for HermitShell to apply it (usually within a minute)&hellip;";
+  } else if (failed.length) {
+    body = `<b>HermitShell could not apply a change:</b> ${esc(failed.at(-1).error)}`;
+  } else if (n > 0) {
+    body = `&#10003; Applied by HermitShell${status.updated ? ` at ${esc(when(status.updated, tz))}` : ""}.`;
+  } else {
+    body = status.updated ? `Up to date. HermitShell last reported ${esc(ago(status.updated))}.` : "HermitShell hasn't reported yet.";
+  }
+  const next = refresh ? `<meta http-equiv="refresh" content="${refresh};url=${STATUS_URL}?u=${esc(pid)}&amp;n=${n + 1}">` : "";
+  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8">${next}<style>${WIDGET_STYLE}</style></head>
+<body class="${mine.length ? "wait" : failed.length ? "bad" : "ok"}">${body}</body></html>`, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'",
+      ...SECURITY_HEADERS,
+    },
+  });
+}
+
+const WIDGET_STYLE = "body{margin:0;padding:10px 14px;font:14px/1.4 system-ui,-apple-system,'Segoe UI',sans-serif;"
+  + "border-radius:8px;color:#334155;background:#f1f5f9}body.wait{background:#eff6ff;color:#1e3a8a}"
+  + "body.ok{background:#f0fdf4;color:#166534}body.bad{background:#fef2f2;color:#991b1b}a{color:inherit}";
 
 // ------------------------------------------------------------------------- turning forms into queue items
 
 // The queue item for a settings form, or { error } with a message key for the dashboard.
 export function settingsItem(act, form) {
-  const u = String(form.get("u") || "");
   if (act === "email") {
     const host = field(form, "host", 120);
     const port = field(form, "port", 5) || "587";
@@ -237,30 +406,6 @@ export function settingsItem(act, form) {
     const provider = String(form.get("provider") || "firecrawl");
     return PROVIDERS[provider] ? { item: { type: "admin", action: "api_keys", clear: [provider] } } : { error: "badkey" };
   }
-  if (act === "profile") {
-    if (!PROFILE_RE.test(u)) return { error: "profile" };
-    if (form.get("section") === "details") {
-      const details = { name: field(form, "name", 80), email: field(form, "email", 120), phone: field(form, "phone", 40),
-        location: field(form, "location", 80) };
-      if (!details.name || !EMAIL_RE.test(details.email)) return { error: "baddetails" };
-      return { item: { type: "admin", action: "profile", u, details } };
-    }
-    const salary = field(form, "min_salary", 16).replace(/[,\s£€$]/g, "");
-    const job = {
-      titles: list(form.get("titles"), /[\n,]/, MAX_TITLES, 60),
-      region: field(form, "region", 80),
-      places: list(form.get("places"), /[\n,]/, MAX_PLACES, 40),
-      country: countryCode(field(form, "country", 2)),
-      remote_anywhere: form.get("remote_anywhere") === "1",
-      level: LEVELS.includes(form.get("level")) ? form.get("level") : "any",
-      types: form.getAll("types").filter((t) => EMPLOYMENT_TYPES.includes(t)),
-      modes: form.getAll("modes").filter((m) => WORK_MODES.includes(m)),
-      min_salary: /^\d+(\.\d+)?k?$/i.test(salary) ? salary : "0",
-      currency: field(form, "currency", 4),
-      hide_agency: form.get("hide_agency") === "1",
-    };
-    return { item: { type: "admin", action: "profile", u, job } };
-  }
   return null;
 }
 
@@ -271,7 +416,7 @@ export async function cvUpload(request, env, s) {
   if (!safeEqual(String(form.get("csrf") || ""), s.csrf)) return page("Expired form", "<p>Reload the admin page and try again.</p>", { status: 403 });
   const u = String(form.get("u") || "");
   if (!PROFILE_RE.test(u)) return page("Unknown profile", "<p>Reload the admin page and try again.</p>", { status: 400 });
-  const back = (done) => redirect(`/admin/profile?u=${u}&done=${done}#cv`);
+  const back = (done) => redirect(`/admin/profile?u=${u}&done=${done}`);
   const file = form.get("cv");
   const cvText = String(form.get("cv_text") ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").trim().slice(0, MAX_CV_TEXT);
   let cv = null;

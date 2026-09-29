@@ -14,7 +14,8 @@ import {
   page, redirect, safeEqual, secretEqual, text, when,
 } from "./lib.js";
 import {
-  SETTINGS_DONE, SETTINGS_URL, button, checklist, cvUpload, nav, problems, profilePage, settingsItem, settingsPage,
+  SETTINGS_DONE, SETTINGS_URL, STATUS_URL, button, checklist, cvUpload, nav, problems, profileChange, profilePage, saveStatus,
+  settingsItem, settingsPage,
 } from "./settings.js";
 
 const SESSION_SECONDS = 12 * 3600;
@@ -26,7 +27,9 @@ const COOKIE = "__Host-hv_admin";
 const KEY_RE = /^[A-Za-z0-9_-]{8,120}$/;
 const PROFILE_RE = /^[a-z0-9-]{1,40}$/;
 const DONE = {
-  queued: "Saved. HermitShell applies it within about 5 minutes.",
+  queued: "Saved. HermitShell usually applies it within a minute.",
+  saved: "Saved. The box above shows when HermitShell has applied it, usually within a minute.",
+  nochange: "Nothing had changed, so nothing was saved.",
   revoked: "Invite revoked.",
   confirm: "Tick the confirmation box to delete a profile.",
   badkey: "That does not look like an API key.",
@@ -111,11 +114,38 @@ async function status(env) {
   return stored && Array.isArray(stored.profiles) ? stored : { profiles: [] };
 }
 
-async function pending(env) {
+// What is still waiting for HermitShell. The queue flag is only set while something is queued, so an empty
+// queue costs one read rather than one of the free plan's 1,000 daily list operations.
+async function queued(env) {
+  if (!(await env.FEEDBACK.get("flag:queue"))) return [];
   const listed = await env.FEEDBACK.list({ prefix: "queue:", limit: 50 });
-  const items = (await Promise.all(listed.keys.map((k) => env.FEEDBACK.get(k.name, "json")))).filter(Boolean);
+  return (await Promise.all(listed.keys.map((k) => env.FEEDBACK.get(k.name, "json")))).filter(Boolean);
+}
+
+function describe(items) {
   return items.map((i) => i.type === "signup" ? `Sign-up from ${i.name}` : i.type === "unsubscribe"
     ? `Unsubscribe ${i.u || "owner"}` : `${String(i.action || i.type).replaceAll("_", " ")}${i.u ? ` for ${i.u}` : ""}`);
+}
+
+async function pending(env) {
+  return describe(await queued(env));
+}
+
+// One save for a profile's details and job search: only the fields changed since the form opened are queued,
+// and a clash with someone else's change shows the page again, with both versions, before anything is saved.
+async function saveProfile(env, s, form, u) {
+  if (!PROFILE_RE.test(u)) return redirect("/admin?done=profile");
+  const [current, queue] = await Promise.all([status(env), queued(env)]);
+  const p = (current.profiles || []).find((x) => x.id === u);
+  if (!p) return profilePage(current, u, s.csrf);
+  const change = profileChange(p, queue, form);
+  if (change.conflicts || change.error) {
+    return profilePage(current, u, s.csrf, { queue, draft: change.mine, base: change.base, conflicts: change.conflicts || [],
+      error: change.conflicts ? "" : DONE[change.error], code: change.conflicts ? 409 : 400 });
+  }
+  if (!change.item) return redirect(`/admin/profile?u=${u}&done=nochange`);
+  await queueItem(env, change.item);
+  return redirect(`/admin/profile?u=${u}&done=saved`);
 }
 
 // HermitShell reports at least every 15 minutes, so a much older report means its profiles job has stopped.
@@ -190,12 +220,11 @@ async function action(request, env, s) {
     await env.FEEDBACK.delete(`invite:${String(form.get("invite") || "").replace(/[^0-9a-f]/g, "")}`);
     return redirect("/admin?done=revoked");
   }
+  if (act === "profile") return saveProfile(env, s, form, u);
   const setting = settingsItem(act, form);
   if (setting) {
-    const back = act !== "profile" ? `${SETTINGS_URL}?done=`
-      : PROFILE_RE.test(u) ? `/admin/profile?u=${u}&done=` : "/admin?done=";
-    const anchor = act === "profile" ? `#${form.get("section") === "details" ? "details" : "job"}`
-      : act.startsWith("api_keys") ? "#keys" : "#email";
+    const back = `${SETTINGS_URL}?done=`;
+    const anchor = act.startsWith("api_keys") ? "#keys" : "#email";
     if (setting.error) return redirect(`${back}${setting.error}${anchor}`);
     await queueItem(env, setting.item, setting.ttl);
     return redirect(`${back}queued${anchor}`);
@@ -234,14 +263,22 @@ export async function handleAdmin(request, env, ctx) {
   if (path === "/admin/cv" && request.method === "POST") return cvUpload(request, env, s);
   if (path === SETTINGS_URL && request.method === "GET") {
     const url = new URL(request.url);
-    const [current, queued] = await Promise.all([status(env), pending(env)]);
-    return settingsPage(current, s.csrf, { done: DONE[url.searchParams.get("done")] || "", queued });
+    const [current, queue] = await Promise.all([status(env), queued(env)]);
+    return settingsPage(current, s.csrf, { done: DONE[url.searchParams.get("done")] || "", queued: describe(queue), queue });
   }
   if (path === "/admin/profile" && request.method === "GET") {
     const url = new URL(request.url);
-    const [current, queued] = await Promise.all([status(env), pending(env)]);
+    const [current, queue] = await Promise.all([status(env), queued(env)]);
+    const done = url.searchParams.get("done");
     return profilePage(current, url.searchParams.get("u") || "", s.csrf,
-      { done: DONE[url.searchParams.get("done")] || "", queued });
+      { done: DONE[done] || "", queue, saving: done === "saved" || done === "cvqueued" });
+  }
+  if (path === STATUS_URL && request.method === "GET") {
+    const url = new URL(request.url);
+    const u = url.searchParams.get("u") || "";
+    if (!PROFILE_RE.test(u)) return text("Not found", 404);
+    const [current, queue] = await Promise.all([status(env), queued(env)]);
+    return saveStatus(current, u, queue, Math.min(Math.max(Math.trunc(Number(url.searchParams.get("n"))) || 0, 0), 99));
   }
   return text("Not found", 404);
 }
@@ -251,6 +288,10 @@ export async function handleApi(request, env) {
   const url = new URL(request.url);
   if (url.pathname === "/api/queue" && request.method === "GET") {
     return json({ items: await listFlagged(env, request, "queue:", "flag:queue", 100) });
+  }
+  // Polled every few seconds by profiles.py between syncs: one KV read, and a new value whenever something is queued.
+  if (url.pathname === "/api/queue/flag" && request.method === "GET") {
+    return json({ flag: (await env.FEEDBACK.get("flag:queue")) || "" });
   }
   if (url.pathname === "/api/file" && request.method === "GET") {
     const key = url.searchParams.get("k") || "";
