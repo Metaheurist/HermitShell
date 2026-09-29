@@ -314,13 +314,13 @@ deleted ([data protection](configuration.md#data-protection)).
 | **Tasks** (loading circle + number) | Opens the [task list](#tasks): everything HermitShell is doing or has waiting. The ring turns while something runs and the number in the corner says how many tasks there are |
 | Search (magnifying glass) | Slides out a search box. Type part of a name, email, place, status (**paused**, **scanning**, **no cv**) or recruiter and press Enter: only the recruits with every word are listed, with **1 of 3 recruits** above the table. Searching a recruiter lists them first, followed by all their recruits. **&times;** shows everyone again |
 | **pending** (orange) | Someone who has sent the invite form. They stay in the table, with when they signed up and what they're looking for, while HermitShell reads their CV, then the row becomes their profile |
-| Profile, Status | Name, email and start date, **no CV** when there is none yet; owner, active or paused; **scanning now** while a report runs; time of the last report and the daily report time |
-| **Send jobs now** | Runs that profile's report straight away and emails it when the scan finishes, even if nothing new turned up. Shows **Scanning…** while a report runs; missing without a CV |
+| Recruit, Status | Name, email and the date they joined, **no CV** when there is none yet; owner, active or paused; **scanning now** while a report runs; when the last report ran (hover for the exact time) and the report time, **Daily at 08:00** or **Weekdays at 08:15** |
+| **Send jobs** | Runs that recruit's report straight away and emails it when the scan finishes, even if nothing new turned up. Shows **Scanning…** while a report runs; missing without a CV |
 | **Manage** | Opens [that profile's page](#a-recruits-page): details, job search, report time and CV |
 | Stats line (the little chart) | This week's jobs sent, day by day; opens [that profile's stats and charts](#a-recruits-stats) |
 | **24 sent** | How many jobs were sent this week; opens [the list of those jobs](#the-jobs-sent-to-a-recruit) |
-| Recruiter + **Assign** (admins only) | Whose pool the recruit is in: the recruiter's initials, name and username, or **Unassigned**. Pick another recruiter and press **Assign**; the owner's row says **The main admin** |
-| **Pause** / **Resume** | Stops or restarts that recruit's reports |
+| Recruiter + **Assign** (admins only) | The recruiter's initials and a list showing whose pool the recruit is in, or **?** and **Unassigned**. Pick another recruiter and **Assign** appears next to the list; the owner's row says **The main admin** |
+| Pause / play button | Pauses or resumes that recruit's reports (hover says which) |
 | Bin button (red, admins only) | Opens a window to confirm deleting the recruit. Tick **Delete their CV and history** and press **Delete** to remove their CV and history from your server; **Cancel** or &times; closes it. The owner can't be deleted |
 | **Recruits** / **Users and roles** / **Global settings** tabs | Switch between the recruits, [who can sign in](#users-and-roles) and the [settings shared by the whole tool](#global-settings). Recruiters only have **Recruits** |
 | Invite someone + recruiter list + **Create invite link** | Makes a one-time `/join` link; the note is only for you. Admins pick whose recruit the person becomes; a recruiter's invites join their own pool |

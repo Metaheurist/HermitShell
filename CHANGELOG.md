@@ -540,6 +540,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **A tidier Recruits list.** Each row's buttons sit on one line: **Send jobs**, a pause or play button and
+  the bin. The recruiter column is one list with the recruiter's initials, and **Assign** appears only once
+  you pick someone else. Status says **Last report 3 hours ago** (the exact time on hover) and **Daily at
+  08:00**, the recruit says **Joined** with the date, and **Manage** sits beside the stats button.
 - **Edit on Users and roles no longer sets a password.** It changes only the name and roles; the new
   **Reset password** window, which asks for the new password twice, replaces its password field.
 - **Deleting asks in a window.** On the Recruits list and on Users and roles, the tick box and

@@ -385,13 +385,15 @@ settings** (the email server and web search keys the whole tool shares). Recruit
   to its form.
 - **HermitShell could not apply**: changes HermitShell rejected in the last day (a mistyped SMTP server,
   for example), with the reason.
-- **Recruits**: everyone HermitShell reports, with status, last report, daily report time and a
-  **no CV** tag when there is none yet. **Send jobs now** runs that recruit's report straight away
-  (see [Send jobs now](#send-jobs-now)); while a report is running, daily or sent now, the row says
-  **scanning now** instead. **Manage** opens that recruit's page (details, job search, report time
-  and CV). The sent button has two halves: the little chart opens its [stats page](#stats) and
-  **24 sent** the [list of jobs sent](#jobs-sent). Pause or resume them, or delete them with the red
-  bin button: it opens a window where you tick **Delete their CV and history** and press **Delete**.
+- **Recruits**: everyone HermitShell reports, with the date they joined, their status, when their
+  last report ran (hover it for the exact time), their report time (**Daily at 08:00** or
+  **Weekdays at 08:15**) and a **no CV** tag when there is none yet. The buttons sit on one line at
+  the end of the row. **Send jobs** runs that recruit's report straight away (see
+  [Send jobs now](#send-jobs-now)); while a report is running, daily or sent now, it says
+  **Scanning…** and the row says **scanning now**. **Manage** opens that recruit's page (details,
+  job search, report time and CV). The sent button has two halves: the little chart opens its
+  [stats page](#stats) and **24 sent** the [list of jobs sent](#jobs-sent). The pause and play
+  buttons pause or resume their reports, and the red bin button deletes them: it opens a window where you tick **Delete their CV and history** and press **Delete**.
   Deleting removes their CV and history from your server, their answers still waiting in KV and
   their name and email from the logs; the owner can't be deleted.
 - **Pending sign-ups**: someone who has sent the invite form gets a **pending** row straight away
@@ -404,8 +406,9 @@ settings** (the email server and web search keys the whole tool shares). Recruit
   a recruiter's name or username puts the recruiter at the top, followed by all of their recruits
   and then anyone else who matches; a recruiter and a person together (`casey jordan`) finds that
   person under their recruiter.
-- **Recruiter** (admins only): whose pool each recruit is in, with a list to change it and
-  **Assign**. The change is shown at once and HermitShell records it within seconds.
+- **Recruiter** (admins only): the recruiter's initials and a list showing whose pool each recruit
+  is in (**?** and **Unassigned** when nobody's). Pick someone else and an **Assign** button appears
+  next to the list. The change is shown at once and HermitShell records it within seconds.
 - **Invites**: create, see and revoke unused links. An admin picks whose recruit the person
   becomes (their own, when they have the Recruiter role); a recruiter's invites always join their
   own pool.
@@ -539,7 +542,7 @@ without the link. Meanwhile:
 
 #### Send jobs now
 
-**Send jobs now**, on the dashboard and on each recruit's page, runs that recruit's report straight
+**Send jobs now** on each recruit's page (**Send jobs** on the Recruits list) runs that recruit's report straight
 away instead of waiting for its daily time. HermitShell gets the request over the live link within
 seconds and starts the scan in the background (`profiles.py report --now <id>`, logged to
 `state/profiles/runs.log`), so other dashboard changes keep being applied while it runs. The email
