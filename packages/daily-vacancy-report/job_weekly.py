@@ -79,6 +79,21 @@ def _pill(action: str, url: str, block: bool = False) -> str:
             f'vertical-align:-3px;border:0;outline:none;margin-right:6px">{esc(label)}</a>')
 
 
+def mini_buttons(links: dict[str, str]) -> str:
+    """The card buttons, icons included, at a smaller size for the one-line entries under More matches."""
+    out = []
+    for action, (label, _, fg, bg, border, _round) in CARD_BUTTONS.items():
+        if links.get(action):
+            if action == "cover_letter" and out:
+                out.append("<br>")
+            out.append(f'<a href="{esc(links[action])}" title="{esc(ACTIONS.get(action, label))}" style="display:inline-block;'
+                       f'background:{bg};color:{fg};border:1px solid {border};border-radius:8px;padding:3px 8px;'
+                       f'font-size:12px;line-height:16px;font-weight:600;text-decoration:none;margin:0 4px 4px 0">'
+                       f'<img src="cid:btn-{action}" width="13" height="13" alt="" style="display:inline-block;'
+                       f'vertical-align:-2px;border:0;margin-right:4px">{esc(label)}</a>')
+    return "".join(out)
+
+
 def rating_buttons(links: dict[str, str]) -> str:
     """Thumbs up and down as two small circles under the fit score, where rating the match belongs."""
     cells = []

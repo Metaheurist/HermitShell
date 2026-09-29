@@ -454,6 +454,13 @@ def test_report_fits_gmail_by_listing_the_lowest_ranked_jobs_on_one_line(monkeyp
     assert page.count("View job &rarr;") < 6
     assert all(f"Top role {i}" in page and f"Maybe role {i}" in page for i in range(3))
     assert "/f?j=m2&amp;a=not_for_me" in page
+    more = page[page.index("More matches"):]
+    assert "text-decoration:underline" not in more
+    for action in ("applied", "good_match", "not_for_me", "interested", "cover_letter", "tailored_cv"):
+        assert f'<img src="cid:btn-{action}" width="13"' in more
+    assert 'title="Good match"' in more and ">Not for me</a>" in more
+    assert job_scanner.mini_buttons({"applied": "a", "cover_letter": "c", "tailored_cv": "t"}).count("<br>") == 1
+    assert "<br>" not in job_scanner.mini_buttons({"cover_letter": "c", "tailored_cv": "t"})
 
 
 def test_source_problems_lists_failures_empty_sources_and_feedback_errors():

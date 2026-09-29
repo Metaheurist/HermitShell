@@ -54,7 +54,7 @@ from job_extras import (below_min_salary, closing_date, combined_level, days_lef
 from job_tracker import (ACTIONS, FOLLOWUP_ACTIONS, Tracker, card_links, prompt_examples, skill_link, skills_text,
                          sync_feedback, unsubscribe_link)
 from job_weekly import (ICON_DIR, card_action_bar, build_weekly, closing_pill, followup_section, followup_text,
-                        rating_buttons, source_banner, unsubscribe_footer, weekly_when)
+                        mini_buttons, rating_buttons, source_banner, unsubscribe_footer, weekly_when)
 
 hc.LOG_TAG = "job_radar"
 SEEN_FILE = STATE_DIR / "job_scanner_seen.json"
@@ -885,8 +885,7 @@ def more_section(jobs: list[dict], start: int) -> str:
     for i, job in enumerate(jobs):
         meta = " &middot; ".join(esc(x) for x in (job.get("employer") or job["company"], job["location"],
                                                    job["salary"]) if x)
-        links = " &middot; ".join(f'<a href="{esc(url)}" style="color:{C_ACCENT};text-decoration:underline">'
-                                  f'{esc(ACTIONS[action])}</a>' for action, url in (job.get("actions") or {}).items())
+        links = mini_buttons(job.get("actions") or {})
         rows.append(
             f'<tr><td width="52" valign="top" style="padding:10px 0;border-top:1px solid #e2e8f0;font-size:14px;'
             f'font-weight:800;color:{fit_colour(job["fit"])}">{job["fit"]}/10</td>'
@@ -894,7 +893,7 @@ def more_section(jobs: list[dict], start: int) -> str:
             f'<a href="{esc(job["url"])}" style="font-size:14px;font-weight:700;color:{C_INK};text-decoration:none">'
             f'#{start + i} {esc(job["title"])}</a>{closing_pill(job.get("days_left")).replace("margin:0 6px 6px 0", "margin-left:6px")}'
             f'<div style="font-size:12px;color:{C_MUTED};margin-top:2px">{meta}</div>'
-            + (f'<div style="font-size:12px;margin-top:4px">{links}</div>' if links else "") + '</td></tr>')
+            + (f'<div style="margin-top:6px">{links}</div>' if links else "") + '</td></tr>')
     return (f'<div style="margin:26px 0 12px"><div style="font-size:18px;font-weight:800;color:{C_INK}">More matches</div>'
             f'<div style="font-size:13px;color:{C_MUTED}">Shortened so the email is not clipped; the plain-text '
             f'version has full details.</div></div>'

@@ -95,6 +95,8 @@ def test_job_card_buttons_escape_their_links():
     html = job_weekly.card_action_bar(f"https://jobs.example.com/{HOSTILE}", links) + job_weekly.rating_buttons(links)
     assert "<script>" not in html and "<img src=x" not in html and 'onerror=alert(2)>' not in html
     assert html.count("&lt;script&gt;") == 7
+    mini = job_weekly.mini_buttons(links)
+    assert "<script>" not in mini and "<img src=x" not in mini and mini.count("&lt;script&gt;") == 6
 
 
 def test_the_live_link_keeps_tls_and_never_logs_the_api_token(capsys):
