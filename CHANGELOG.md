@@ -21,6 +21,9 @@ using [Semantic Versioning](https://semver.org/).
   when no Ollama answers (reusing an existing one, with the GPU when there is one), sets
   `OLLAMA_HOST`, asks for the model and downloads it. It ends with a health check. `--no-prereqs`
   skips all of this.
+- **Screenshots** of the privacy page and the goodbye email in
+  [docs/screenshots.md](docs/screenshots.md), and refreshed pictures of the pages and emails that
+  now link to the privacy page.
 
 - **Security tests and static analysis.** A security test suite (`tests/security`) checks that
   hostile job keys, profile ids, names and CV files are handled as data (SQL, paths, HTML, log

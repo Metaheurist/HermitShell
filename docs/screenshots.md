@@ -126,10 +126,10 @@ Sent by `profiles.py` when you use [extra profiles](feedback-worker.md#extra-pro
 <td><img src="images/emails/welcome.png" alt="Welcome email" width="400"></td>
 <td><img src="images/emails/owner-new-profile.png" alt="New profile notice" width="400"></td>
 </tr>
-<tr><th>Unsubscribed (to you)</th><th></th></tr>
+<tr><th>Unsubscribed (to you)</th><th>Goodbye (to the person who left)</th></tr>
 <tr>
 <td><img src="images/emails/owner-unsubscribed.png" alt="Unsubscribe notice" width="400"></td>
-<td></td>
+<td><img src="images/emails/goodbye.png" alt="Goodbye email" width="400"></td>
 </tr>
 </table>
 
@@ -139,6 +139,8 @@ Sent by `profiles.py` when you use [extra profiles](feedback-worker.md#extra-pro
 - **Notices to you** share one layout, with a count of active and paused profiles and a
   **Manage profiles** link: new profile, profile updated, unsubscribed (with their feedback),
   your own CV rebuilt from the dashboard, and sign-ups that couldn't be applied.
+- **Goodbye** is the last email an extra profile gets: it confirms that their profile, CV and
+  history are deleted and their name and email removed from the logs.
 
 ## Test emails
 
@@ -255,6 +257,14 @@ the one in `.env` ([troubleshooting](feedback-worker.md#troubleshooting)).
 | Roles you are looking for | Turned into job titles and search queries by the model |
 | CV file or pasted CV | PDF, Word .docx or text up to 5 MB; the pasted text is used when a file can't be read |
 | Consent | Required; every report has an unsubscribe link that deletes the data |
+
+### Privacy page
+
+`/privacy`, linked from the consent box, the welcome email and the unsubscribe pages. It tells
+people who join what is kept, why, where, for how long, how it is protected and how to have it
+deleted ([data protection](configuration.md#data-protection)).
+
+<img src="images/worker/privacy.png" alt="How your data is handled" width="520">
 
 ## Admin page
 

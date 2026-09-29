@@ -271,6 +271,7 @@ def render_emails(out: Path) -> dict[str, str]:
     profiles.remove_dir = lambda pid: None
     profiles.unsubscribe("jordan-patel", "Found a job, thanks!")
     pages["owner-unsubscribed"] = sent.pop()
+    pages["goodbye"] = sent.pop()
     profiles.send_test_email("alex.morgan@example.com")
     pages["test-email"] = sent.pop()
 
@@ -372,7 +373,7 @@ def main() -> int:
                 760, 1100)
         for html in sorted((html_dir / "worker").glob("*.html")):
             capture(chrome, profile, html, args.out / "worker" / f"{html.stem}.png",
-                    1000 if html.stem.startswith("admin-dashboard") else 600)
+                    1000 if html.stem.startswith("admin-dashboard") else 760 if html.stem == "privacy" else 600)
             print(f"worker/{html.stem}.png")
     return 0
 
