@@ -617,6 +617,12 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Moving from Hermes, in the order that works.** The guide now imports the jobs before the container's
+  first start and while they are still active in Hermes (the import copies paused states, and a first start
+  adds the standard schedule, which ran the daily report twice), stops Hermes' `profiles.py listen`, notes
+  that `docker-compose.yml` must be downloaded, and shows installing the updater and watchdog from the
+  scripts inside the image.
+
 - **The container keeps the live link to the Worker.** The image lacked the `websockets` package, so a
   container fell back to polling the Worker every 5 minutes; it is now installed (and optional in
   `requirements.txt`), the doctor reports it, and the image's smoke test imports it.

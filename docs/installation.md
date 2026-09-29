@@ -406,26 +406,41 @@ Then keep it running: `python3 scheduler.py run` (a service does this for you), 
 Version 0.1.0 ran inside [Hermes](https://github.com/NousResearch/hermes-agent) and used its cron. To move
 an install out of Hermes into the container, keeping every setting, profile and history:
 
-1. Stop HermitShell's jobs in Hermes, so nothing runs twice: `hermes cron pause <id>` for each of them
-   (`hermes cron list` shows them).
-2. Create the container's data folder as above and copy in, from Hermes' data folder: `.env` (keep the
-   HermitShell settings; Hermes-only keys can go) and `scripts/` (your profile, `cv_keywords.json`, `state/`).
-   Scripts of your own that aren't HermitShell's can stay behind. Put the model and host from Hermes'
-   `config.yaml` into `.env` as `OLLAMA_MODEL`, `OLLAMA_HOST` and, if it sets one, `OLLAMA_NUM_CTX`. Keep
-   `HERMES_DATA_KEY` exactly as it was: it opens the encrypted files.
-3. Start the container, then take over the jobs, moving the folders of per-profile jobs:
+1. Create the container's folder as above, with `docker-compose.yml` downloaded next to it (it isn't in
+   the image), but don't start it yet. Copy in, from Hermes' data folder: `.env` (keep the HermitShell
+   settings; Hermes-only keys can go), `scripts/` (your profile, `cv_keywords.json`, `state/`) and
+   `backups/`. Scripts of your own that aren't HermitShell's can stay behind. Put the model and host from
+   Hermes' `config.yaml` into `.env` as `OLLAMA_MODEL`, `OLLAMA_HOST` and, if it sets one, `OLLAMA_NUM_CTX`
+   (`http://host.docker.internal:11434` reaches an Ollama whose port is published on the host). Keep
+   `HERMES_DATA_KEY` exactly as it was: it opens the encrypted files. Then `chown -R 10000:10000 data`.
+2. Take over the jobs **before the first start**, while they are still active in Hermes: the import copies
+   each job's paused state, and a first start with no jobs file adds the standard schedule, so the daily report
+   would run twice. Per-profile jobs have their folders moved:
 
    ```sh
-   docker cp /path/to/hermes/data/cron/jobs.json hermitshell:/tmp/hermes-jobs.json
-   docker exec hermitshell python3 scheduler.py import /tmp/hermes-jobs.json --map /opt/data=/data
-   docker exec hermitshell python3 scheduler.py list
+   sudo cp /path/to/hermes/data/cron/jobs.json data/hermes-jobs.json
+   sudo docker compose run --rm hermitshell python3 scheduler.py import /data/hermes-jobs.json --map /opt/data=/data
    ```
 
-   Only jobs whose script is installed are taken, with their names, times and paused state.
-4. Check with `docker exec hermitshell /app/entrypoint.sh doctor`, then remove the old jobs from Hermes
-   (`hermes cron remove <id>`) and HermitShell's files from Hermes' scripts folder.
-5. Re-point the host watchdog: `sudo sh scripts/host/install-watchdog.sh /opt/hermitshell-host` replaces the
-   old `hermes-ollama-watchdog` units.
+   Only jobs whose script is installed are taken, with their names and times.
+3. Stop them in Hermes: `hermes cron pause <id>` for each (`hermes cron list` shows them). Stop Hermes'
+   live-link listener too, so two don't answer the Worker: find the `profiles.py listen` process in Hermes'
+   container (`ps` or `/proc/*/cmdline`) and end it with `kill`; with its jobs paused, nothing starts it
+   again. Then `sudo docker compose up -d`.
+4. Check with `docker exec hermitshell /app/entrypoint.sh doctor` and `python3 scheduler.py list`, then remove
+   the old jobs from Hermes (`hermes cron remove <id>`), HermitShell's files from Hermes' scripts folder and
+   `data/hermes-jobs.json`. Keep `hermes_common.py` and `autofit.py` in Hermes if scripts of your own there
+   use them.
+5. Install the updater and re-point the host watchdog, which replaces the old `hermes-ollama-watchdog` units.
+   Without a clone of the repository on the host, take the scripts from the image:
+
+   ```sh
+   sudo docker cp hermitshell:/app/scripts/host /tmp/hermitshell-host-scripts
+   sudo sh /tmp/hermitshell-host-scripts/install-updater.sh /opt/hermitshell/docker-compose.yml
+   sudo sh /tmp/hermitshell-host-scripts/install-watchdog.sh
+   ```
+
+   A backup copy job that pointed at Hermes' `data/backups/nightly` should now point at the container's.
 
 The settings keep their `HERMES_` names (`HERMES_DATA_KEY`, `HERMES_TIMEZONE` and so on), so nothing in `.env`
 needs renaming. Backups made before the move (`hermes-*.tar.gz.enc`) are still listed, rotated and restorable.
