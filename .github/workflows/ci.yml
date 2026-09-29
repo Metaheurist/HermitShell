@@ -38,7 +38,7 @@ jobs:
         with:
           python-version: "3.10"
       - name: Compile every script
-        run: python -m compileall -q common packages scripts
+        run: python -m compileall -q common packages scripts tests
 
   python-tests:
     name: "1 · Unit tests · ${{ matrix.suite.name }} (Python ${{ matrix.python }})"

@@ -8,6 +8,15 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Prerequisite doctor.** `doctor.py` (installed next to the scripts) checks Python, the
+  packages in the new [requirements.txt](requirements.txt), Hermes' config, Ollama with the model
+  the scripts will use, `.env` permissions, the data key, email and web search settings, the
+  feedback Worker and free disk space. `--fix` installs missing packages with pip, or uv when
+  Hermes' Python has none (as in the official image), into `scripts/.deps/pyX.Y` on the data volume
+  so they survive container updates; downloads the model through Ollama's API; makes `.env`
+  owner-only; and generates the data key, never replacing a lost one. The CVE audit now covers
+  `requirements.txt`.
+
 - **Security tests and static analysis.** A security test suite (`tests/security`) checks that
   hostile job keys, profile ids, names and CV files are handled as data (SQL, paths, HTML, log
   scrubbing, XML entity and zip bombs), that feedback links are bound to their profile, action,

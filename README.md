@@ -92,8 +92,9 @@ it by hand with wrangler or the Cloudflare MCP.
 ## Repository layout
 
 ```
-common/hermes_common.py    shared plumbing: .env loading, model discovery, web providers, SMTP
-common/tests/              unit tests for the shared library
+common/hermes_common.py    shared plumbing: .env loading, model discovery, web providers, SMTP, encryption
+common/doctor.py           checks and sets up prerequisites: packages, Ollama and its model, data key
+common/tests/              unit tests for the shared library and the doctor
 packages/daily-vacancy-report/
                            the job finder: report, weekly roll-up, cover letters, tailored CVs, profiles
 packages/daily-vacancy-report/feedback-worker/
@@ -104,7 +105,10 @@ scripts/cloudflare_worker.py
 scripts/tests/             unit tests for the wizard, the Worker deploy and the .env.example files
 scripts/install.sh         copies common + the package flat into $HERMES_HOME/scripts
 scripts/screenshots/       regenerates the documentation screenshots from fictional data
-.github/workflows/         CI (lint, tests, Worker build) and Security (secrets, CVEs, CodeQL)
+tests/security/            security tests: hostile input, encryption, backups, file permissions
+requirements.txt           run-time Python packages (requirements-dev.txt adds the test tools)
+.github/workflows/         CI (lint, tests, Worker build) and Security (secrets, security tests,
+                           Bandit, CVEs, CodeQL)
 docs/                      installation, configuration, Cloudflare, feedback Worker, email rendering,
                            web providers, screenshots
 ```
@@ -137,9 +141,12 @@ script from `$HERMES_HOME/scripts`.
 ## Requirements
 
 - Hermes Agent with `hermes cron`, and Python 3.10+ (the official image has both).
-- The `requests` package (bundled with Hermes), and `cryptography` (also bundled) for encryption
-  at rest. `pillow` is optional and gives round company logos; `pyyaml` is optional.
-- An Ollama model. A 4B instruct model such as `qwen3:4b-instruct-2507` works well on a CPU.
+- The `requests` and `cryptography` packages (both bundled with Hermes). `pillow` is optional and
+  gives round company logos; `pyyaml` is optional. [`requirements.txt`](requirements.txt) lists
+  them, and `doctor.py --fix` installs any that are missing
+  ([prerequisites](docs/installation.md#3-check-the-prerequisites)).
+- An Ollama model. A 4B instruct model such as `qwen3:4b-instruct-2507` works well on a CPU. The
+  wizard can start an Ollama container next to Hermes and download the model for you.
 - An SMTP account, such as a Gmail App Password.
 - An API key for at least one of [Firecrawl](https://firecrawl.dev),
   [Tavily](https://tavily.com) or [Scrapfly](https://scrapfly.io). All three have free tiers.

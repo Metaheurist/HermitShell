@@ -3,7 +3,7 @@
 #
 #   HERMES_HOME=/opt/data ./scripts/install.sh daily-vacancy-report
 #
-# Copies the shared hermes_common.py plus each package's files flat into $HERMES_HOME/scripts,
+# Copies the shared hermes_common.py and doctor.py plus each package's files flat into $HERMES_HOME/scripts,
 # the directory Hermes cron jobs run scripts from. Existing personal files (job_profile.md,
 # cv_keywords.json, .env) are never overwritten. Set HERMES_OWNER=uid:gid to chown the result
 # (the official Hermes container runs as 10000:10000).
@@ -21,8 +21,8 @@ if [ "$#" -eq 0 ]; then
 fi
 
 mkdir -p "$DEST"
-cp "$REPO/common/hermes_common.py" "$DEST/"
-echo "installed common/hermes_common.py -> $DEST"
+cp "$REPO/common/hermes_common.py" "$REPO/common/doctor.py" "$DEST/"
+echo "installed common/hermes_common.py and common/doctor.py -> $DEST"
 
 for pkg in "$@"; do
     src="$REPO/packages/$pkg"
@@ -52,6 +52,9 @@ if [ -n "${HERMES_OWNER:-}" ]; then
 fi
 
 if [ -z "${HERMITSHELL_SETUP:-}" ]; then
+    echo
+    echo "Check what is still missing (and install packages, the model and the data key):"
+    echo "  cd $DEST && python3 doctor.py --fix"
     echo
     echo "Next: run the setup wizard to enter your settings, API keys, profile and schedules:"
     echo "  python3 $REPO/scripts/setup.py --hermes-home $HERMES_HOME --no-install"

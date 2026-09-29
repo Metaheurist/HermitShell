@@ -102,8 +102,8 @@ jobs:
           python-version: "3.12"
       - name: Install pip-audit
         run: python -m pip install pip-audit
-      - name: Audit requirements-dev.txt
-        run: pip-audit -r requirements-dev.txt --strict --desc
+      - name: Audit requirements.txt (run time) and requirements-dev.txt
+        run: pip-audit -r requirements.txt -r requirements-dev.txt --strict --desc
 
   npm-cve:
     name: "Security · CVE audit · Feedback Worker npm packages (npm audit)"

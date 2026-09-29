@@ -26,7 +26,13 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-import requests
+# Packages doctor.py installed because Hermes' Python lacked them. They live next to the scripts, on the data
+# volume, so they survive container updates; one folder per Python version, since compiled wheels are tied to it.
+DEPS_DIR = Path(__file__).resolve().parent / ".deps" / f"py{sys.version_info[0]}.{sys.version_info[1]}"
+if DEPS_DIR.is_dir() and str(DEPS_DIR) not in sys.path:
+    sys.path.insert(0, str(DEPS_DIR))
+
+import requests  # noqa: E402
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", SCRIPT_DIR.parent))

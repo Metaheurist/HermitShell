@@ -4,10 +4,11 @@ HermitShell is a set of plain Python scripts that Hermes runs on a schedule. Ins
 means three things:
 
 1. Copying the scripts and the shared `hermes_common.py` into `$HERMES_HOME/scripts`.
-2. Giving it settings.
-3. Registering a cron job.
+2. Making sure its prerequisites are there: Python packages, Ollama with a model, a data key.
+3. Giving it settings.
+4. Registering the cron jobs.
 
-The setup wizard does all three. The manual steps below explain what it does, in case you want
+The setup wizard does all four. The manual steps below explain what it does, in case you want
 to do it by hand.
 
 ## Setup wizard
@@ -124,8 +125,8 @@ HERMES_HOME=/opt/data ./scripts/install.sh daily-vacancy-report
 
 The installer does the following:
 
-- Copies `common/hermes_common.py` plus the job finder's scripts, example files and icons flat
-  into `$HERMES_HOME/scripts`.
+- Copies `common/hermes_common.py` and `common/doctor.py` plus the job finder's scripts, example
+  files and icons flat into `$HERMES_HOME/scripts`.
 - Renames the package's `.env.example` to `daily-vacancy-report.env.example`, so it doesn't
   collide with the shared one.
 - Strips Windows line endings.
@@ -141,11 +142,42 @@ sudo HERMES_OWNER=10000:10000 HERMES_HOME=/path/to/hermes/data ./scripts/install
 
 Copy these files into the scripts directory yourself:
 
-- `common/hermes_common.py`
+- `common/hermes_common.py` and `common/doctor.py`
 - Everything in `packages/daily-vacancy-report/` except the README, `tests/` and `feedback-worker/`.
   From `icons/` only the PNGs are needed at runtime.
 
-### 3. Configure
+### 3. Check the prerequisites
+
+`doctor.py` checks everything the scripts need and, with `--fix`, sets up what it can. Run it in
+Hermes' own Python:
+
+```sh
+docker exec -u hermes -w /opt/data/scripts hermes-agent python3 doctor.py --fix
+```
+
+| Check | What `--fix` does |
+| --- | --- |
+| Python 3.10 or newer | Nothing (the official image has 3.13) |
+| Packages: `requests`, `cryptography`, optional `pillow` and `pyyaml` ([requirements.txt](../requirements.txt)) | Installs missing or too-old ones with pip, or with uv when Hermes' Python has no pip (the official image), into `scripts/.deps/pyX.Y`. That folder is on the data volume, so it survives container updates, and `hermes_common.py` puts it on the import path |
+| Hermes' `config.yaml` and the `hermes` command | Nothing; tells you what's missing |
+| Ollama answers, with the model the scripts will use | Downloads the model through Ollama's API (`JOB_SCANNER_MODEL`, else `OLLAMA_MODEL`, else `qwen3:4b-instruct-2507-q4_K_M`, about 2.5 GB). `--no-pull` skips it, `--model NAME` picks another |
+| `.env` is owner-only, `HERMES_DATA_KEY` works, SMTP and a web search key are set | Makes `.env` owner-only and generates the data key when none is set, but never when encrypted files already exist (a new key can't open them) |
+| The feedback Worker answers, free disk space | Nothing |
+
+It exits with 1 when a check fails; `--only packages,ollama` runs some checks and `--json`
+prints the results for other tools. The wizard runs it for you.
+
+No Ollama yet? On a Docker host, start it next to Hermes (the wizard offers to do this):
+
+```sh
+docker run -d --name ollama --restart unless-stopped --network <hermes network> \
+    -v ollama:/root/.ollama ollama/ollama
+```
+
+`docker inspect hermes-agent --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'`
+shows the network name. The scripts find it at `http://ollama:11434` (`OLLAMA_HOST`).
+
+### 4. Configure
 
 Add settings to `$HERMES_HOME/.env`, the same file Hermes reads, or pass them as container
 environment variables:
@@ -175,7 +207,7 @@ cp job_profile.example.md job_profile.md
 cp cv_keywords.example.json cv_keywords.json
 ```
 
-### 4. Test
+### 5. Test
 
 Run the scripts as the same user Hermes uses. In Docker, that means:
 
@@ -188,7 +220,7 @@ Dry runs write the email HTML to `scripts/state/*_last.html`. Copy that file alo
 `logos/` folder next to it to preview the email in a browser. The test email and a full report
 should look like the ones in [screenshots.md](screenshots.md#test-emails).
 
-### 5. Schedule
+### 6. Schedule
 
 ```sh
 docker exec -u hermes -w /opt/data hermes-agent hermes cron create "0 7 * * *" "Daily vacancy report" \
