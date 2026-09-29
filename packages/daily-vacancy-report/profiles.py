@@ -33,9 +33,11 @@ import json
 import os
 import re
 import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -49,7 +51,7 @@ import job_settings
 import profile_stats
 from hermes_common import EMAIL_HEAD, STATE_DIR, connect_model, email_header, env, load_env_file, log, ollama_chat
 from job_settings import slug, term_regex
-from job_tracker import unsubscribe_link
+from job_tracker import Tracker, unsubscribe_link
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROFILES_DIR = Path(env("JOB_PROFILES_DIR") or STATE_DIR / "profiles")
@@ -93,6 +95,15 @@ LIVE_BACKOFF = 60
 LIVE_RECHECK = 3600
 LIVE_LIFETIME = 24 * 3600
 RUN_TIMEOUT = 4 * 3600
+# While a report runs, its status (and so its progress on the dashboard's task list) is sent this often, only when
+# it has changed: each send is one of the free plan's 1,000 KV writes a day.
+PROGRESS_EVERY = 60
+# The cover letter or tailored CV being written right now, in the profile's state folder (cover_letter.py).
+WRITING_NAME = "writing.json"
+# Tasks the dashboard can stop: a running report, or a cover letter or tailored CV request (its Worker event id).
+TASK_RE = re.compile(r"^report:([a-z0-9-]{1,40})$|^letter:([a-z0-9-]{1,40}):(event:[a-z0-9_-]{1,40}:[A-Za-z0-9:_-]{1,120})$")
+TRIGGERS = ("schedule", "dashboard")
+MAX_TASKS = 40
 # Each extra profile's daily report is its own Hermes cron job, running REPORT_SCRIPT from the profile's folder.
 REPORT_SCRIPT = "profile_report.py"
 REPORT_JOB = "vacancy-report-"
@@ -906,6 +917,8 @@ def admin_action(item: dict, api=None) -> None:
         set_status(pid, "paused" if action == "pause" else "active")
     elif action == "send_now":
         start_report(profile)
+    elif action == "cancel":
+        log(cancel_task(str(item.get("task") or ""), pid))
     elif action == "delete":
         if pid == OWNER:
             raise ProfileError("the owner profile cannot be deleted")
@@ -1004,7 +1017,7 @@ def status_payload() -> dict:
     keys["firecrawl"]["backups"] = len([k for k in (env("FIRECRAWL_BACKUP_KEYS") or "").split(",") if k.strip()])
     problems = [{"at": _ms(p["at"]), "what": p.get("what", ""), "error": p.get("error", "")} for p in recent_problems()]
     return {"profiles": profiles, "email": email, "keys": keys, "problems": problems, "timezone": timezone_name(),
-            "hermes_jobs": jobs is not None}
+            "hermes_jobs": jobs is not None, "tasks": tasks()}
 
 
 def timezone_name() -> str:
@@ -1425,31 +1438,83 @@ def scanning(pid: str) -> float | None:
     return started if _alive(int(data.get("pid") or 0)) else None
 
 
-def reported(pid: str, run) -> int:
-    """Run a profile's report with the dashboard told it is scanning, then when it last ran."""
+def scan_progress(stage: str, done: int = 0, total: int = 0) -> None:
+    """Where the running report has got to, for the dashboard's task list. Does nothing outside a report started
+    through reported(), whose marker it adds to."""
+    try:
+        marker = scan_marker(env("JOB_PROFILE_ID") or OWNER)
+    except ProfileError:
+        return
+    data = read_json(marker, None)
+    if isinstance(data, dict):
+        write_json(marker, {**data, "stage": str(stage)[:80], "done": max(0, int(done)), "total": max(0, int(total))})
+
+
+def tasks_changed() -> None:
+    """Tell the dashboard at once that a task started, moved on or finished (nothing without the Worker)."""
     api = api_from_env()
-    write_json(scan_marker(pid), {"pid": os.getpid(), "at": time.time()})
+    if api:
+        push_status(api)
+
+
+def _progress_pushes(api: Api, stop: threading.Event, every: float = PROGRESS_EVERY) -> None:
+    while not stop.wait(every):
+        push_status(api)
+
+
+def reported(pid: str, run, trigger: str = "schedule") -> int:
+    """Run a profile's report with the dashboard told it is scanning (and how far it has got), then when it last
+    ran. `trigger` is what started it: its schedule, or Send jobs now on the dashboard."""
+    api = api_from_env()
+    marker = scan_marker(pid)
+    write_json(marker, {"pid": os.getpid(), "at": time.time(), "trigger": trigger if trigger in TRIGGERS else "schedule"})
+    stop, beat, started, cancelled = threading.Event(), None, time.time(), False
     try:
         if api:
             push_status(api)
+            beat = threading.Thread(target=_progress_pushes, args=(api, stop), daemon=True)
+            beat.start()
         code = run()
     finally:
-        scan_marker(pid).unlink(missing_ok=True)
-    if code == 0 and (fresh := load(pid)):
+        stop.set()
+        if beat:
+            beat.join(timeout=30)
+        cancelled = bool(read_json(marker, {}).get("cancel"))
+        marker.unlink(missing_ok=True)
+    if cancelled:
+        log(f"The report for {pid} was stopped from the dashboard")
+    elif code == 0 and (fresh := load(pid)):
         fresh["last_run"] = time.time()
+        fresh["last_duration"] = round(time.time() - started)
         save(fresh)
     if api:
         push_status(api, stats_for=pid)
     return code
 
 
+def run_child(cmd: list[str], env: dict[str, str], cwd: Path, timeout: float) -> subprocess.CompletedProcess:
+    """A report's scan in a process group of its own, noted in its scan marker so the dashboard can stop it (and
+    everything it started) without touching the process that is waiting for it."""
+    proc = subprocess.Popen(cmd, env=env, cwd=cwd, start_new_session=True)
+    marker = Path(env.get("JOB_SCAN_MARKER") or "")
+    if marker.name and isinstance(data := read_json(marker, None), dict):
+        write_json(marker, {**data, "child": proc.pid})
+    try:
+        return subprocess.CompletedProcess(cmd, proc.wait(timeout=timeout))
+    except subprocess.TimeoutExpired:
+        _signal(proc.pid, "job_scanner.py", group=True)
+        proc.wait()
+        raise
+
+
 def has_cv(profile: dict) -> bool:
     return (owner_files()[0] if profile.get("owner") else profile_dir(profile["id"]) / "job_profile.md").is_file()
 
 
-def run_report(pid: str, now: bool = False, runner=subprocess.run) -> int:
+def run_report(pid: str, now: bool = False, runner=None, args: list[str] | tuple = ()) -> int:
     """One profile's report: the job of its Hermes cron job, or Send jobs now on the dashboard (`now`, which
     emails even when nothing new turned up and runs for a paused profile too)."""
+    runner = runner or run_child
     profile = load(pid)
     if not profile:
         raise ProfileError(f"no profile {pid}")
@@ -1465,15 +1530,16 @@ def run_report(pid: str, now: bool = False, runner=subprocess.run) -> int:
         environ = child_env(profile) if not profile.get("owner") else {**os.environ, "JOB_REPORT_ALONE": "1"}
         if now:
             environ["JOB_SCANNER_EMAIL_WHEN_EMPTY"] = "1"
+        environ["JOB_SCAN_MARKER"] = str(scan_marker(pid))
 
         def scan() -> int:
             try:
-                return runner([sys.executable, str(SCRIPT_DIR / "job_scanner.py")], env=environ, cwd=SCRIPT_DIR,
+                return runner([sys.executable, str(SCRIPT_DIR / "job_scanner.py"), *args], env=environ, cwd=SCRIPT_DIR,
                               timeout=RUN_TIMEOUT).returncode
             except subprocess.TimeoutExpired:
                 log(f"The report for {pid} took over {RUN_TIMEOUT // 3600} hours and was stopped")
                 return 1
-        code = reported(pid, scan)
+        code = reported(pid, scan, "dashboard" if now else "schedule")
     log(f"Report for {pid}: exit {code}")
     return code
 
@@ -1493,6 +1559,115 @@ def start_report(profile: dict, spawn=None) -> None:
                                     stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, cwd=SCRIPT_DIR,
                                     start_new_session=True)
     log(f"Started the report for {profile['id']} from the dashboard")
+
+
+# --------------------------------------------------------------------------- the dashboard's task list
+
+def writing_marker(pid: str) -> Path:
+    return tracker_file(pid).parent / WRITING_NAME
+
+
+def _count(value) -> int:
+    return max(0, min(int(value), 10_000)) if isinstance(value, (int, float)) else 0
+
+
+def _pid(value) -> int:
+    return value if isinstance(value, int) and value > 0 else 0
+
+
+def report_task(profile: dict) -> dict | None:
+    """A running report: what started it, the stage it has reached and how long the last one took."""
+    started = scanning(profile["id"])
+    if not started:
+        return None
+    mark = read_json(scan_marker(profile["id"]), {})
+    mark = mark if isinstance(mark, dict) else {}
+    last = profile.get("last_duration")
+    return {"id": f"report:{profile['id']}", "kind": "report", "u": profile["id"],
+            "state": "stopping" if mark.get("cancel") else "running", "at": _ms(started),
+            "trigger": mark.get("trigger") if mark.get("trigger") in TRIGGERS else "schedule",
+            "stage": str(mark.get("stage") or "Starting")[:80], "done": _count(mark.get("done")),
+            "total": _count(mark.get("total")),
+            "expected": int(last * 1000) if isinstance(last, (int, float)) and 0 < last < RUN_TIMEOUT else None}
+
+
+def letter_tasks(pid: str) -> list[dict]:
+    """A profile's cover letter and tailored CV requests still to be made, the one being written first."""
+    path = tracker_file(pid)
+    if not path.is_file():
+        return []
+    try:
+        with Tracker(path) as tracker:
+            rows = tracker.open_requests()
+    except (sqlite3.Error, OSError):
+        return []
+    writing = read_json(writing_marker(pid), {})
+    busy = writing.get("event_id") if isinstance(writing, dict) and _alive(_pid(writing.get("pid"))) else ""
+    found = [{"id": f"letter:{pid}:{r['event_id']}", "kind": r["action"], "u": pid,
+              "state": "running" if r["event_id"] == busy else "waiting", "at": _ms(r["at"]), "trigger": "email",
+              "title": str(r["title"] or "")[:120], "employer": str(r["employer"] or "")[:80], "retry": r["attempts"] > 0}
+             for r in rows]
+    return sorted(found, key=lambda t: t["state"] != "running")
+
+
+def tasks() -> list[dict]:
+    """Everything HermitShell is doing or has waiting: running reports (scheduled or from Send jobs now) and cover
+    letter and tailored CV requests. The Worker adds what it still holds itself (its queue and uncollected requests)."""
+    found: list[dict] = []
+    for profile in all_profiles():
+        if task := report_task(profile):
+            found.append(task)
+        found += letter_tasks(profile["id"])
+    return found[:MAX_TASKS]
+
+
+def _runs(pid: int, script: str) -> bool:
+    """Whether process `pid` is running `script` (Linux /proc). Any other process is never signalled, so a stale
+    marker whose process id has been reused cannot stop something else."""
+    try:
+        return script in Path(f"/proc/{pid}/cmdline").read_bytes().decode("utf-8", "replace")
+    except OSError:
+        return False
+
+
+def _signal(pid: int, script: str, group: bool = False) -> bool:
+    if pid <= 1 or pid == os.getpid() or not _runs(pid, script):
+        return False
+    try:
+        if group and os.getpgid(pid) == pid:
+            os.killpg(pid, signal.SIGTERM)
+        else:
+            os.kill(pid, signal.SIGTERM)
+    except OSError:
+        return False
+    return True
+
+
+def cancel_task(task: str, pid: str) -> str:
+    """Stop a running report, or cancel a cover letter or tailored CV request, from the dashboard's task list."""
+    match = TASK_RE.match(task or "")
+    if not match or (match.group(1) or match.group(2)) != pid:
+        raise ProfileError("invalid task")
+    if match.group(1):
+        marker = scan_marker(pid)
+        mark = read_json(marker, {})
+        if not scanning(pid) or not isinstance(mark, dict):
+            return f"The report for {pid} had already finished"
+        write_json(marker, {**mark, "cancel": time.time()})
+        child = _pid(mark.get("child"))
+        stopped = (_signal(child, "job_scanner.py", group=True) if child
+                   else _signal(_pid(mark.get("pid")), "job_scanner.py"))
+        return f"Stopping the report for {pid}" if stopped else f"The report for {pid} could not be stopped"
+    event_id, path = match.group(3), tracker_file(pid)
+    if not path.is_file():
+        return f"No such request for {pid}"
+    with Tracker(path) as tracker:
+        found = tracker.cancel_letter(event_id)
+    writing = read_json(writing_marker(pid), {})
+    if found and isinstance(writing, dict) and writing.get("event_id") == event_id:
+        _signal(_pid(writing.get("pid")), "cover_letter.py")
+        writing_marker(pid).unlink(missing_ok=True)
+    return f"Cancelled a request for {pid}" if found else f"No such request for {pid}"
 
 
 def profile_from_cwd() -> str:
@@ -1554,16 +1729,20 @@ def run_all(script: str, args: list[str], after: int | None = None, runner=subpr
             return results
         daily = _daily(script, args)
         for profile in others(script, args):
-            try:
-                code = runner([sys.executable, str(SCRIPT_DIR / script), *args], env=child_env(profile),
-                              cwd=SCRIPT_DIR, timeout=RUN_TIMEOUT).returncode
-            except subprocess.TimeoutExpired:
-                code = "timeout"
+            if daily:
+                try:
+                    code: object = run_report(profile["id"], runner=None if runner is subprocess.run else runner,
+                                              args=args)
+                except ProfileError as exc:
+                    code = str(exc)
+            else:
+                try:
+                    code = runner([sys.executable, str(SCRIPT_DIR / script), *args], env=child_env(profile),
+                                  cwd=SCRIPT_DIR, timeout=RUN_TIMEOUT).returncode
+                except subprocess.TimeoutExpired:
+                    code = "timeout"
             results[profile["id"]] = code
             log(f"{script} for {profile['id']}: exit {code}")
-            if daily and code == 0 and (fresh := load(profile["id"])):
-                fresh["last_run"] = time.time()
-                save(fresh)
     api = api_from_env()
     if api and script == "job_scanner.py":
         push_status(api)

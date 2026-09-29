@@ -310,3 +310,32 @@ def test_secrets_are_only_shown_masked():
     for secret in ("fc-0123456789abcdef", "sk-live-abcdefghijklmnop", "short"):
         shown = hc.mask_secret(secret)
         assert secret not in shown and len(shown) < len(secret) + 4
+
+
+def test_the_dashboard_can_never_signal_a_process_that_is_not_the_task(monkeypatch):
+    signals = []
+    monkeypatch.setattr(profiles.os, "kill", lambda pid, sig: signals.append(pid))
+    monkeypatch.setattr(profiles.os, "killpg", lambda pid, sig: signals.append(pid), raising=False)
+    assert not profiles._runs(os.getpid(), "job_scanner.py")
+    for pid in (0, 1, -5, os.getpid()):
+        assert not profiles._signal(pid, "job_scanner.py", group=True)
+    monkeypatch.setattr(profiles, "_runs", lambda pid, script: script == "cover_letter.py")
+    assert not profiles._signal(4242, "job_scanner.py")
+    assert signals == []
+
+
+def test_a_tampered_scan_marker_reaches_the_dashboard_only_as_plain_bounded_values(tmp_path, monkeypatch):
+    monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
+    monkeypatch.setattr(profiles, "_alive", lambda pid: True)
+    profiles.write_json(profiles.PROFILES_DIR / "sam-lee" / "profile.json", {"id": "sam-lee", "last_duration": "soon"})
+    profiles.write_json(profiles.scan_marker("sam-lee"), {"pid": 77, "at": time.time(), "trigger": HOSTILE,
+                                                         "stage": HOSTILE * 20, "done": "12; rm", "total": 10**12})
+    task = profiles.report_task(profiles.load("sam-lee"))
+    assert task["trigger"] == "schedule" and len(task["stage"]) == 80
+    assert task["done"] == 0 and task["total"] == 10_000 and task["expected"] is None
+    signals = []
+    monkeypatch.setattr(profiles, "_runs", lambda pid, script: True)
+    monkeypatch.setattr(profiles.os, "kill", lambda pid, sig: signals.append(pid))
+    profiles.write_json(profiles.scan_marker("sam-lee"), {"pid": "77", "child": 1.5, "at": time.time()})
+    assert profiles.cancel_task("report:sam-lee", "sam-lee") == "The report for sam-lee could not be stopped"
+    assert signals == []

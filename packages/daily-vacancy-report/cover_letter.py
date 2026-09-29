@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import re
 import smtplib
 import sys
@@ -45,6 +46,8 @@ LETTER_DIR = STATE_DIR / "cover_letters"
 CV_DIR = STATE_DIR / "tailored_cvs"
 KIND_LABELS = {"cover_letter": "Cover letter", "tailored_cv": "Tailored CV"}
 LOCK_FILE = STATE_DIR / "cover_letter.lock"
+# The request being written right now, so the dashboard can show it and stop it (profiles.cancel_task).
+WRITING_FILE = STATE_DIR / profiles.WRITING_NAME
 # Hourly the Worker lists KV for real, in case its "something is waiting" flag was lost (free plan: 1,000 lists a day).
 FULL_SYNC_FILE = STATE_DIR / "feedback_full_sync"
 FULL_SYNC_EVERY = 3600
@@ -310,12 +313,18 @@ def process_pending(tracker: Tracker, model_info_factory, dry_run: bool = False)
     pending = [(kind, req) for kind in REQUEST_ACTIONS for req in tracker.pending_letters(action=kind)]
     if not pending:
         return []
+    profiles.tasks_changed()
     model_info = model_info_factory()
     lines = []
     for kind, req in pending:
         what = KIND_LABELS[kind]
         job = tracker.job(req["key"]) or {}
         label = (job_title(job) if job else req["key"]) + (f" at {employer(job)}" if employer(job) else "")
+        if tracker.letter_cancelled(req["event_id"]):
+            lines.append(f"{what} for {label} was cancelled from the dashboard")
+            continue
+        profiles.write_json(WRITING_FILE, {"event_id": req["event_id"], "pid": os.getpid(), "at": time.time()})
+        profiles.tasks_changed()
         try:
             path = MAKERS[kind](tracker, req["key"], req.get("reason") or "", model_info, dry_run)
         except LookupError as exc:
@@ -327,9 +336,12 @@ def process_pending(tracker: Tracker, model_info_factory, dry_run: bool = False)
             lines.append(f"{what} {'failed' if status == 'failed' else 'will retry'} for {label}: "
                          f"{exc.__class__.__name__}: {str(exc)[:160]}")
             continue
+        finally:
+            WRITING_FILE.unlink(missing_ok=True)
         if not dry_run:
             tracker.mark_letter(req["event_id"], req["key"], "sent", file=path.name)
         lines.append(f"{what} {'saved' if dry_run else 'sent'} for {label}: {path.name}")
+    profiles.tasks_changed()
     return lines
 
 

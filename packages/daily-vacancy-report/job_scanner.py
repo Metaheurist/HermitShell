@@ -1150,7 +1150,12 @@ def run(args: argparse.Namespace) -> int:
     seen = load_seen()
     retries = load_retries()
 
+    def progress(stage: str, done: int = 0, total: int = 0) -> None:
+        if not args.dry_run:
+            profiles.scan_progress(stage, done, total)
+
     health: dict[str, dict] = {}
+    progress("Searching job boards and the web")
     candidates = discover(web, nijobs, nijobs_kw, queries, tbs, use_search=not args.no_search, health=health)
 
     fresh = [c for c in candidates if args.include_seen or c["key"] not in seen]
@@ -1166,6 +1171,7 @@ def run(args: argparse.Namespace) -> int:
             pool.append((rel + (1 if c["source"] == "nijobs.com" else 0), c))
     pool.sort(key=lambda x: x[0], reverse=True)
     pool = pool[:env_int("JOB_TRIAGE_MAX", 60)]
+    progress("Picking out the likely jobs")
     verdicts = triage_titles(host, model, num_ctx, profile, [c["title"] for _, c in pool]) if pool else []
     ranked, off_target = [], []
     for (rel, c), verdict in zip(pool, verdicts):
@@ -1334,6 +1340,7 @@ def run(args: argparse.Namespace) -> int:
 
     timeouts = 0
     for i, job in enumerate(queue, 1):
+        progress("Rating jobs", i - 1, len(queue))
         if i % 5 == 0 and not args.dry_run:
             save_retries(retries)
         try:
@@ -1365,6 +1372,7 @@ def run(args: argparse.Namespace) -> int:
     results, grouped = group_agency_posts(list(dedup.values()), env_bool("JOB_HIDE_UNNAMED_AGENCY", False))
     grouped += duplicates
 
+    progress("Checking the best matches again", len(queue), len(queue))
     for r in results:
         if verify_from and r["fit"] >= verify_from:
             second = second_opinion(host, model, num_ctx, profile, r["title"], texts.get(r["key"], ""),
@@ -1393,6 +1401,7 @@ def run(args: argparse.Namespace) -> int:
         followups, lambda item: card_links(fb_url, fb_secret, item["key"], item["title"], FOLLOWUP_ACTIONS, profile_id))
     problems = source_problems(health, fb_error)
 
+    progress("Writing the email", len(queue), len(queue))
     summary = hermes_summary(host, model, num_ctx, results)
     stats = {
         "when": when, "shown": len(results), "strong": len(top),

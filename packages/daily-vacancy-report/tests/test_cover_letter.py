@@ -138,6 +138,7 @@ def setup(tmp_path, monkeypatch):
     monkeypatch.setenv("JOB_PROFILE_FILE", str(profile))
     monkeypatch.setenv("COVER_LETTER_CONTACT", "Belfast")
     monkeypatch.setattr(cover_letter, "LETTER_DIR", tmp_path / "letters")
+    monkeypatch.setattr(cover_letter, "WRITING_FILE", tmp_path / "writing.json")
     sent = []
     monkeypatch.setattr(cover_letter.hc, "send_email",
                         lambda subject, body, text, sender, attachments=None: sent.append((subject, attachments)))
@@ -160,6 +161,41 @@ def test_process_pending_writes_and_emails_each_request_once(setup, monkeypatch)
     assert filename == "Cover letter - Sam Taylor - AI Engineer.pdf" and pdf.startswith(b"%PDF")
     assert list((cover_letter.LETTER_DIR).glob("*-acme-ai-engineer.pdf"))
     assert cover_letter.process_pending(tracker, lambda: pytest.fail("no model needed")) == []
+
+
+def test_process_pending_marks_the_request_it_is_writing_and_skips_cancelled_ones(setup, monkeypatch):
+    tracker, sent = setup
+    tracker.upsert_job("k1", JOB, emailed=True)
+    tracker.add_event("e1", "k1", "cover_letter")
+    tracker.add_event("e2", "k1", "tailored_cv")
+    tracker.add_event("e3", "k1", "cover_letter")
+    marks, pushes = [], []
+    monkeypatch.setattr(cover_letter.profiles, "tasks_changed", lambda: pushes.append(1))
+
+    def write(host, model, ctx, job, profile, listing, note):
+        marks.append(json.loads(cover_letter.WRITING_FILE.read_text())["event_id"])
+        tracker.cancel_letter("e3")
+        return PARAGRAPHS
+    monkeypatch.setattr(cover_letter, "write_letter", write)
+    assert tracker.cancel_letter("e2") and not tracker.cancel_letter("nope")
+    lines = cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    assert marks == ["e1"] and len(sent) == 1 and not cover_letter.WRITING_FILE.exists()
+    assert lines[-1] == "Cover letter for AI Engineer at Acme was cancelled from the dashboard"
+    assert tracker.open_requests() == [] and len(pushes) >= 2
+
+
+def test_open_requests_list_both_kinds_with_the_job(setup):
+    tracker, _ = setup
+    tracker.upsert_job("k1", {**JOB, "employer": ""}, emailed=True)
+    tracker.add_event("e1", "k1", "cover_letter", at=100)
+    tracker.add_event("e2", "k1", "tailored_cv", at=200)
+    tracker.add_event("e3", "k1", "applied", at=300)
+    rows = tracker.open_requests()
+    assert [(r["event_id"], r["action"], r["title"], r["employer"]) for r in rows] == [
+        ("e1", "cover_letter", "AI Engineer", "Acme"), ("e2", "tailored_cv", "AI Engineer", "Acme")]
+    tracker.mark_letter("e1", "k1", "sent")
+    assert tracker.cancel_letter("e2") and tracker.letter_cancelled("e2") and not tracker.cancel_letter("e3")
+    assert tracker.open_requests() == [] and tracker.pending_letters(action="tailored_cv") == []
 
 
 def test_process_pending_retries_failures_and_skips_unknown_jobs(setup, monkeypatch):

@@ -286,9 +286,38 @@ class Tracker:
         rows = self.db.execute(
             """SELECT e.id AS event_id, e.key, e.reason, e.at, coalesce(l.attempts, 0) AS attempts
                FROM events e LEFT JOIN letters l ON l.event_id = e.id
-               WHERE e.action = ? AND coalesce(l.status, '') NOT IN ('sent', 'failed')
+               WHERE e.action = ? AND coalesce(l.status, '') NOT IN ('sent', 'failed', 'cancelled')
                ORDER BY e.at""", (action,)).fetchall()
         return [dict(r) for r in rows if r["attempts"] < max_attempts]
+
+    def open_requests(self, max_attempts: int = LETTER_ATTEMPTS) -> list[dict]:
+        """Every cover letter and tailored CV request still to be made, oldest first, with its job's title and
+        employer: the dashboard's task list."""
+        marks = ",".join("?" * len(REQUEST_ACTIONS))
+        rows = self.db.execute(
+            f"""SELECT e.id AS event_id, e.key, e.action, e.at, coalesce(l.attempts, 0) AS attempts,
+                      j.title, coalesce(nullif(j.employer, ''), j.company) AS employer
+               FROM events e LEFT JOIN letters l ON l.event_id = e.id LEFT JOIN jobs j ON j.key = e.key
+               WHERE e.action IN ({marks}) AND coalesce(l.status, '') NOT IN ('sent', 'failed', 'cancelled')
+               ORDER BY e.at""", REQUEST_ACTIONS).fetchall()
+        return [dict(r) for r in rows if r["attempts"] < max_attempts]
+
+    def cancel_letter(self, event_id: str) -> bool:
+        """Cancelled from the dashboard: the request is never made. False when there is no such request."""
+        marks = ",".join("?" * len(REQUEST_ACTIONS))
+        row = self.db.execute(f"SELECT key FROM events WHERE id = ? AND action IN ({marks})",
+                              (event_id, *REQUEST_ACTIONS)).fetchone()
+        if not row:
+            return False
+        self.db.execute(
+            """INSERT INTO letters (event_id, key, status, attempts, error, file, at) VALUES (?, ?, 'cancelled', 0, '', '', ?)
+               ON CONFLICT(event_id) DO UPDATE SET status='cancelled', at=excluded.at""", (event_id, row["key"], time.time()))
+        self.db.commit()
+        return True
+
+    def letter_cancelled(self, event_id: str) -> bool:
+        row = self.db.execute("SELECT status FROM letters WHERE event_id = ?", (event_id,)).fetchone()
+        return bool(row and row["status"] == "cancelled")
 
     def mark_letter(self, event_id: str, key: str, status: str, error: str = "", file: str = "",
                     max_attempts: int = LETTER_ATTEMPTS) -> str:

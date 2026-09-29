@@ -980,3 +980,106 @@ def test_email_settings_drop_the_password_when_the_server_or_account_changes(hom
     assert profiles.env("SMTP_PASSWORD") is None and profiles.dashboard_env()["SMTP_PASSWORD"] == ""
     with pytest.raises(profiles.ProfileError):
         profiles.update_dashboard_env({"PATH": "/tmp"})
+
+
+# --------------------------------------------------------------------------- the dashboard's task list
+
+def _request(pid, event_id, action="cover_letter", at=1_790_000_000.0):
+    from job_tracker import Tracker
+    with Tracker(profiles.tracker_file(pid)) as tracker:
+        tracker.upsert_job("k1", {"title": "Data Analyst", "employer": "Contoso", "fit": 8}, True, at)
+        tracker.add_event(event_id, "k1", action, reason="mention my SQL work, call 07700 900123", at=at)
+
+
+def test_the_status_lists_running_reports_and_waiting_requests(home, monkeypatch):
+    monkeypatch.setattr(profiles, "_alive", lambda pid: pid == profiles.os.getpid())
+    profiles.sync(FakeApi([signup()]))
+    pid = "sam-lee-456789"
+    sam = profiles.load(pid)
+    profiles.save({**sam, "last_duration": 900})
+    profiles.write_json(profiles.scan_marker(pid), {"pid": profiles.os.getpid(), "at": profiles.time.time(), "trigger": "dashboard"})
+    monkeypatch.setenv("JOB_PROFILE_ID", pid)
+    profiles.scan_progress("Rating jobs", 3, 12)
+    first, second = "event:sam-lee-456789:aa:0a1b2c3d4e5f", "event:sam-lee-456789:bb:0a1b2c3d4e60"
+    _request(pid, first, at=100)
+    _request(pid, second, "tailored_cv", at=200)
+    profiles.write_json(profiles.writing_marker(pid), {"event_id": second, "pid": profiles.os.getpid()})
+    tasks = profiles.status_payload()["tasks"]
+    report, writing, waiting = tasks
+    assert report == {"id": f"report:{pid}", "kind": "report", "u": pid, "state": "running", "at": report["at"],
+                      "trigger": "dashboard", "stage": "Rating jobs", "done": 3, "total": 12, "expected": 900_000}
+    assert (writing["id"], writing["kind"], writing["state"]) == (f"letter:{pid}:{second}", "tailored_cv", "running")
+    assert (waiting["id"], waiting["state"], waiting["title"], waiting["employer"]) == (f"letter:{pid}:{first}", "waiting",
+                                                                                         "Data Analyst", "Contoso")
+    assert all(profiles.TASK_RE.match(t["id"]) for t in tasks)
+    assert "07700" not in json.dumps(tasks) and "SQL work" not in json.dumps(tasks)
+    profiles.scan_marker(pid).unlink()
+    assert [t["kind"] for t in profiles.tasks()] == ["tailored_cv", "cover_letter"]
+
+
+def test_progress_is_only_recorded_during_a_tracked_report(home, monkeypatch):
+    profiles.sync(FakeApi([signup()]))
+    monkeypatch.setenv("JOB_PROFILE_ID", "sam-lee-456789")
+    profiles.scan_progress("Rating jobs", 1, 2)
+    assert not profiles.scan_marker("sam-lee-456789").exists()
+    monkeypatch.setenv("JOB_PROFILE_ID", "../escape")
+    profiles.scan_progress("Rating jobs", 1, 2)
+
+
+def test_stopping_a_report_signals_only_its_scan_and_it_is_not_counted_as_run(home, monkeypatch):
+    monkeypatch.setattr(profiles, "api_from_env", lambda: None)
+    profiles.sync(FakeApi([signup()]))
+    pid = "sam-lee-456789"
+    signals = []
+    monkeypatch.setattr(profiles, "_runs", lambda p, script: p == 4242 and script == "job_scanner.py")
+    monkeypatch.setattr(profiles.os, "getpgid", lambda p: p, raising=False)
+    monkeypatch.setattr(profiles.os, "killpg", lambda p, sig: signals.append(("group", p)), raising=False)
+    monkeypatch.setattr(profiles.os, "kill", lambda p, sig: signals.append(("one", p)))
+    monkeypatch.setattr(profiles, "_alive", lambda p: True)
+
+    def runner(cmd, env, cwd, timeout):
+        marker = Path(env["JOB_SCAN_MARKER"])
+        profiles.write_json(marker, {**profiles.read_json(marker, {}), "child": 4242})
+        assert profiles.status_payload()["tasks"][0]["trigger"] == "schedule"
+        assert profiles.cancel_task(f"report:{pid}", pid) == f"Stopping the report for {pid}"
+        assert profiles.status_payload()["tasks"][0]["state"] == "stopping"
+        return subprocess.CompletedProcess(cmd, -15)
+
+    assert profiles.run_report(pid, runner=runner) == -15
+    assert signals == [("group", 4242)]
+    assert "last_run" not in profiles.load(pid) and not profiles.scan_marker(pid).exists()
+    assert profiles.cancel_task(f"report:{pid}", pid) == f"The report for {pid} had already finished"
+
+
+def test_a_cancelled_request_is_never_made_and_its_writer_is_stopped(home, monkeypatch):
+    profiles.sync(FakeApi([signup()]))
+    pid, event_id = "sam-lee-456789", "event:sam-lee-456789:aa:0a1b2c3d4e5f"
+    _request(pid, event_id)
+    signals = []
+    monkeypatch.setattr(profiles, "_runs", lambda p, script: p == 5151 and script == "cover_letter.py")
+    monkeypatch.setattr(profiles.os, "kill", lambda p, sig: signals.append(p))
+    profiles.write_json(profiles.writing_marker(pid), {"event_id": event_id, "pid": 5151})
+    api = FakeApi([admin("cancel", pid, task=f"letter:{pid}:{event_id}")])
+    assert profiles.sync(api) == [f"admin: done ({pid})"]
+    assert signals == [5151] and not profiles.writing_marker(pid).exists()
+    assert profiles.letter_tasks(pid) == [] and api.statuses[-1]["tasks"] == []
+    assert profiles.cancel_task(f"letter:{pid}:{event_id}", pid) == f"Cancelled a request for {pid}"
+    assert profiles.cancel_task(f"letter:{pid}:event:{pid}:zz:ffffff", pid) == f"No such request for {pid}"
+
+
+@pytest.mark.parametrize("task", ["report:owner", "letter:owner:event:_:aa:bb", "report:sam-lee-456789 x", "rm -rf /",
+                                  "letter:sam-lee-456789:../../x", "report:../sam", ""])
+def test_a_cancel_only_takes_a_well_formed_task_of_its_own_profile(home, task):
+    profiles.sync(FakeApi([signup()]))
+    with pytest.raises(profiles.ProfileError):
+        profiles.cancel_task(task, "sam-lee-456789")
+    api = FakeApi([admin("cancel", "sam-lee-456789", task=task)])
+    assert profiles.sync(api)[0].startswith("admin: rejected (invalid task")
+
+
+def test_run_child_notes_the_scan_process_in_the_marker(home):
+    marker = home[0] / "marker.json"
+    profiles.write_json(marker, {"pid": 1, "at": 2})
+    done = profiles.run_child([sys.executable, "-c", "raise SystemExit(3)"], {**profiles.os.environ, "JOB_SCAN_MARKER": str(marker)},
+                              home[0], 60)
+    assert done.returncode == 3 and profiles.read_json(marker, {})["child"] > 1
