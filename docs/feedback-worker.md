@@ -44,9 +44,11 @@ email button ──> Worker /f (confirm page) ──> KV ──> HermitShell GET
   Cloudflare Access (an emailed one-time code) as well; see
   [Extra profiles](#extra-profiles-and-the-admin-page).
 - **Size limits.** Request bodies are capped (answers and status reports at a few KB, sign-ups at
-  the CV limit), and uploaded CVs are checked to really be a PDF, .docx or text file.
+  the CV limit), and uploaded CVs are checked to really be a PDF, .docx or text file. Letters and
+  CVs kept for download (`POST /api/doc`) must be a PDF of at most 2 MB.
 - **Short-lived data.** Answers are deleted once HermitShell has saved them, and expire after 30 days
-  in any case. Only the job key, action, optional note and time are stored.
+  in any case. Only the job key, action, optional note and time are stored. Letters and CVs kept for
+  download are encrypted and deleted after `COVER_LETTER_KEEP_DAYS` (7 by default).
 - **No scripts or outside content.** Every page's Content-Security-Policy blocks JavaScript and
   anything loaded from elsewhere. The only file a page loads is the tab icon, `/favicon.svg`, from
   the Worker itself (a plain SVG with no scripts or links).
@@ -215,9 +217,27 @@ Cover letter button ──> Worker (confirm) ──> KV ──> cover_letter.py 
 CV for the job (titles, employers and dates are copied, never invented) and emails it as a PDF
 ([email](images/emails/tailored-cv.png), [PDF](images/emails/tailored-cv-pdf.png)).
 
-Everything runs on your HermitShell server; the Worker only sees the job key and your note. Failed
-attempts are retried on the next two runs, then given up (see `letters` in
-`state/job_tracker.db`). Put your name and contact line in `.env` so they appear on the letter:
+The letter and CV are written on your HermitShell server; the Worker sees the job key and your note,
+and afterwards keeps the finished PDF for download (below). Failed attempts are retried on the next
+two runs, then given up (see `letters` in `state/job_tracker.db`).
+
+**Made once, kept for 7 days.** Each finished letter or CV is kept for `COVER_LETTER_KEEP_DAYS`
+days (default `7`, at most `30`, `0` turns this off), counted from when it was first made:
+
+- Pressing the same button again, in any email, opens a page that offers the one already made
+  (**Download PDF**) instead of queueing another, with **Confirm: write a new cover letter** if you
+  want a new one anyway.
+- A request that reaches the server with no note, while a PDF made for that job is still on disk
+  and within those days, emails that PDF again without using the model. A note, or asking for a
+  new one, always writes a new one.
+- The Worker keeps each PDF in KV (`doc:<profile>:<kind>:<job hash>`) encrypted with AES-GCM under
+  a key derived from `JOB_FEEDBACK_SECRET`, bound to that profile, job and kind, and KV deletes it
+  when its days are up. It is served only to a signed-in admin or through a signed email link for
+  that job, as a download that the browser cannot run as a page.
+
+<img src="images/worker/confirm-cover-letter-ready.png" alt="The cover letter page offering the letter made earlier for download" width="300">
+
+Put your name and contact line in `.env` so they appear on the letter:
 
 ```sh
 COVER_LETTER_NAME=Sam Taylor
@@ -532,9 +552,11 @@ opens the [jobs sent](#jobs-sent).
 The numbers come from the profile's tracker (`job_tracker.db`) on your server:
 `profile_stats.py` counts each day in `HERMES_TIMEZONE` and `profiles.py` sends the result to the
 Worker (`POST /api/stats`, kept in KV as `stats:<id>`) when it has changed, at most every 30
-minutes per profile, and straight after each report. Notes typed on the buttons' pages and contact
-details are never sent. The title, employer, place, work mode, salary, score, source, advert link
-and last answer of each job sent in the last 90 days are, for the [jobs sent](#jobs-sent) list.
+minutes per profile, and straight after each report. Notes typed on the buttons' pages and the
+listing text are never sent. For the [jobs sent](#jobs-sent) list, each job sent in the last 90 days
+also carries its title, employer, place, work mode, salary, score, source, advert link, last answer
+and the details its email card showed (kept apart as `sent:<id>` so the stats page stays quick).
+Email addresses, phone numbers and the profile's name and email are removed from that text first.
 A deleted profile's stats are removed with it. The page is drawn on the Worker as plain SVG and CSS,
 without JavaScript, and its icons and charts animate in unless your system asks for reduced motion.
 `python3 profile_stats.py` prints the owner's numbers on the server.
@@ -550,8 +572,23 @@ pressed. Filters above the list show **All**, **No answer yet** or one answer (*
 
 <img src="images/worker/admin-sent.png" alt="The jobs sent to a profile this week, grouped by day" width="720">
 
-Only `http` and `https` advert links are kept, both on your server and again on the Worker, and they
-open with `rel="noopener noreferrer"`.
+Click a job to open its full card, like the one in the email: the advertiser if an agency posted
+it, contract type, seniority, when it was posted and closes, the score's confidence and CV keyword
+match, why it was rated a fit, what the role and company are, the skills matched and missing, and
+links to the advert and the employer's site. Below that, for both a **Cover letter** and a
+**Tailored CV**:
+
+- **Generate** asks HermitShell for one. It is made within 5 minutes (a loading circle shows
+  meanwhile, and the page refreshes itself every 15 seconds until it is ready) and is **not**
+  emailed; it waits here for download.
+- **Download** appears once one has been made for that job in the last `COVER_LETTER_KEEP_DAYS`
+  days (7 by default), from here or from an email button.
+- **Regenerate** writes a new one, replacing the one kept.
+
+<img src="images/worker/admin-sent-open.png" alt="A job on the jobs sent list opened to its full details, with Download and Regenerate for the cover letter and Generate for the CV" width="620">
+
+Only `http` and `https` advert and company links are kept, both on your server and again on the
+Worker, and they open with `rel="noopener noreferrer"`.
 
 Every control is described in [screenshots.md](screenshots.md#profiles).
 

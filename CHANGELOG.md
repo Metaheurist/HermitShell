@@ -8,6 +8,23 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Full job cards, and letters and CVs to download, on the jobs sent list.** Pressing a job on
+  `/admin/sent` opens everything its email card showed: tags, salary, the fit, confidence and CV
+  keyword meters, why it was rated a fit, the company and role, the skills matched and missing, and
+  links to the advert and the employer. Each card has a **Cover letter** and a **Tailored CV** with
+  **Generate** (made within 5 minutes for download, not emailed, with a loading circle and a page
+  that refreshes itself until it is ready), then **Download** and **Regenerate**. Contact details and
+  the profile's name and email are removed from the text before it leaves the server.
+- **Letters and CVs are made once and kept for 7 days.** A new `COVER_LETTER_KEEP_DAYS` (default
+  `7`, at most `30`, `0` = off) sets how long a finished letter or CV is reused and kept, counted from
+  when it was first made. Pressing the same button in another email offers the one already made for
+  download (**Confirm: write a new cover letter** still writes a new one), and a request without a
+  note sends the kept PDF again without using the model. The Worker keeps each PDF in KV encrypted
+  with AES-GCM under a key derived from `JOB_FEEDBACK_SECRET`, bound to its profile, job and kind, and
+  serves it only to a signed-in admin or a signed link for that job, as a download that can't run in
+  the browser. New `POST /api/doc` (API token, PDF only, 2 MB), `GET`/`POST /admin/doc` and
+  `GET /f/doc`. Removing a profile deletes its kept documents. [PRIVACY.md](PRIVACY.md) says so.
+
 - **A tab icon for the dashboard and every Worker page**: the purple square next to "HermitShell" with
   a white shell spiral, served by the Worker at `/favicon.svg` (and `/favicon.ico`). The pages'
   security policy now allows images from the Worker itself only, for this icon.

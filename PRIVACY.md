@@ -30,15 +30,17 @@ cloud AI service. This page, the sign-up form and the email buttons run on Cloud
 where what you send waits only until HermitShell collects it (at most 30 days); the operator's admin
 page there lists your name and email address, a stats page of counts (jobs found, buttons
 pressed, the employers and titles of jobs sent) and the jobs sent to you in the last 90 days (each
-advert's title, employer, place, salary, link and the last button you pressed on it), never your
-notes, until HermitShell next reports that you have left. Job
-searches send job titles and a location to web search services, never your CV or contact details.
-Emails go through the operator's email provider.
+advert's title, employer, place, salary, link, the details shown on its email card and the last
+button you pressed on it), never your notes, until HermitShell next reports that you have left.
+Cover letters and tailored CVs made for you are also kept there, encrypted, for 7 days so they can
+be downloaded again. Job searches send job titles and a location to web search services, never
+your CV or contact details. Emails go through the operator's email provider.
 
 ## How long
 
 Everything is kept while you are subscribed, except that by default jobs, answers, letters and CVs
-older than 12 months and logs older than 90 days are deleted. Encrypted nightly backups are kept
+older than 12 months and logs older than 90 days are deleted, and letters and CVs kept for download
+on Cloudflare are deleted after 7 days. Encrypted nightly backups are kept
 for about two months (14 daily and 8 weekly copies), then deleted.
 
 ## How it is protected

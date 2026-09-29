@@ -189,6 +189,11 @@ Every button in an email opens a page on the feedback Worker. Nothing is saved u
   examples of what you want; notes on **Cover letter** and **Tailored CV** guide what it writes.
 - **Add to my skills** lists the job's missing skills with the one you tapped already ticked,
   plus a box for any others.
+- **Cover letter** and **Tailored CV**, when one was made for that job in the last
+  `COVER_LETTER_KEEP_DAYS` days (7 by default), offer it for download first. **Confirm: write a new
+  cover letter** has a new one written anyway:
+
+<img src="images/worker/confirm-cover-letter-ready.png" alt="The cover letter page offering the letter already made for download" width="300">
 
 After **Confirm**:
 
@@ -436,12 +441,26 @@ dashboard's **24 sent** button opens it for this week.
 | **7 days** / **30 days** / **90 days** | The period listed. HermitShell sends the last 90 days, up to 150 jobs |
 | Answer filters | **All**, **No answer yet** and each button pressed (**Applied**, **Heard back**, **Interested**…), with how many jobs have it. The filter stays when you change the period |
 | Score ring | The job's match out of 10 (green 8+, lime 7, amber 5-6) |
-| Title | Opens the advert in a new tab, when the report had a link |
-| Employer, place, work mode, salary | As in the email |
+| Title, employer, place, work mode, salary | As in the email. Press the row (or its arrow) to open the job's full card |
 | Answer tag, source | The last button pressed on that job, and where it was found |
 | **Stats** / **Manage profile** | Back to the charts, or to the profile's settings |
 
 Notes typed on the buttons' confirmation pages are never shown.
+
+An opened job shows what its email card did, and its cover letter and tailored CV:
+
+<img src="images/worker/admin-sent-open.png" alt="A job opened to its full details, with Download and Regenerate for its cover letter and its tailored CV being made" width="620">
+
+| Part | What it shows |
+| --- | --- |
+| Tags | Closing date, contract type, work mode, seniority and when it was posted |
+| Salary | The advertised pay |
+| **HermitShell fit** / **Confidence** / **CV keyword match** | The score out of 10, how sure the model was, and the share of the advert's skills your CV shows |
+| Why | Why it was rated a fit, with anything it lacks (contact details and your name are removed) |
+| **About the company** | The employer, what it does, its website, what the role is, and the agency when one posted it |
+| **Strongest matches** / **Missing from the CV** | The skills found, and the ones the advert wants that your CV doesn't show |
+| **Cover letter** / **Tailored CV** | **Generate** has one made (not emailed), shown with a loading circle until it is ready. **Download** gets the one made in the last `COVER_LETTER_KEEP_DAYS` days (7 by default), from here or an email button; **Regenerate** replaces it |
+| **View the advert** | Opens the advert in a new tab, when the report had a link |
 
 <img src="images/worker/admin-sent-applied.png" alt="The jobs sent in 30 days that were applied for" width="460">
 

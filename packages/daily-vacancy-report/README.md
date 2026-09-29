@@ -52,7 +52,9 @@ light and dark modes.
 7. **Cover letters.** Pressing **Cover letter** gets you a tailored A4 PDF letter by email within
    about 5 minutes, written by Hermes' model from your profile and the listing
    ([how it works](../../docs/feedback-worker.md#cover-letters)). **Tailored CV** works the same
-   way and sends your CV reordered and reworded for that job.
+   way and sends your CV reordered and reworded for that job. Each one is kept for 7 days
+   (`COVER_LETTER_KEEP_DAYS`): pressing the button again offers the same PDF to download instead of
+   writing another, unless you ask for a new one.
 
    <img src="../../docs/images/emails/cover-letter.png" alt="Cover letter email" width="300"> <img src="../../docs/images/emails/cover-letter-pdf.png" alt="Cover letter PDF" width="250">
 8. **Weekly roll-up.** `job_weekly.py` (or `job_scanner.py --weekly`) emails a Sunday summary from
@@ -63,7 +65,9 @@ light and dark modes.
    dashboard), buttons, cover letters and roll-up. **Send jobs now** on the dashboard runs anyone's
    report at once. Each row's little chart opens that person's jobs, answers and applications as
    charts over 7 days to 12 months ([screenshot](../../docs/images/worker/admin-stats.png)), and its
-   **sent** count lists the jobs they were sent ([screenshot](../../docs/images/worker/admin-sent.png)). Every report has an
+   **sent** count lists the jobs they were sent ([screenshot](../../docs/images/worker/admin-sent.png)); each opens to its
+   full card with a cover letter and tailored CV to generate or download
+   ([screenshot](../../docs/images/worker/admin-sent-open.png)). Every report has an
    **Unsubscribe** link that deletes their profile (or pauses yours)
    ([how it works](../../docs/feedback-worker.md#extra-profiles-and-the-admin-page)).
 

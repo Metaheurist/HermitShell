@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import worker from "../../packages/daily-vacancy-report/feedback-worker/src/index.js";
 import { LINK_DAYS, sign, today } from "../../packages/daily-vacancy-report/feedback-worker/src/lib.js";
+import { jobHash } from "../../packages/daily-vacancy-report/feedback-worker/src/docs.js";
 import { zonedToday } from "../../packages/daily-vacancy-report/feedback-worker/src/stats.js";
 
 const BASE = "https://vacancy-feedback.example.workers.dev";
@@ -144,6 +145,21 @@ const STATUS = {
 };
 await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: STATUS });
 
+// What each job's email card showed, sent with the jobs sent list.
+const MORE = [
+  { company: "Contoso Recruitment", type: "Permanent", seniority: "Senior", published: "2 days ago",
+    closing: new Date(Date.now() + 12 * 86400000).toISOString().slice(0, 10), confidence: 85, coverage: 78,
+    reasoning: "Strong overlap: five years of Python and Airflow pipelines, dbt models and AWS match the core of the role. "
+      + "The advert asks for Kubernetes, which the CV does not show.",
+    about: "Build and run the batch and streaming pipelines behind Northwind's pricing and logistics data, working with "
+      + "analysts and the platform team.",
+    profile: "Wholesale food distributor, 2,000 staff", site: "https://northwind.example",
+    matched: ["Python", "Airflow", "SQL", "dbt", "AWS", "Docker"], gaps: ["Kubernetes", "Terraform"] },
+  { type: "Permanent", seniority: "Mid", published: "today", confidence: 80, coverage: 70,
+    reasoning: "dbt and Snowflake experience lines up with the modelling work described.",
+    matched: ["dbt", "Snowflake", "SQL"], gaps: ["Looker"] },
+];
+
 // Stats HermitShell sends for each profile (profile_stats.py): made-up daily counts, the same every time.
 function fakeStats(daysBack, scale, seed) {
   let x = seed;
@@ -185,7 +201,8 @@ function fakeStats(daysBack, scale, seed) {
   const sent = JOBS.map(([title, employer, location, mode, salary, fit, source, answer], i) => ({
     title, employer, location, mode, salary, fit, source, answer,
     day: new Date(end - [0, 0, 0, 1, 1, 2, 4, 5, 8][i] * day).toISOString().slice(0, 10),
-    url: i % 4 === 3 ? "" : `https://jobs.example.com/ad/${1000 + i}` }));
+    url: i % 4 === 3 ? "" : `https://jobs.example.com/ad/${1000 + i}`, key: `https://jobs.example.com/ad/${1000 + i}`,
+    more: MORE[i] || { type: "Permanent", confidence: 70, matched: ["Python", "SQL"], gaps: ["Kubernetes"] } }));
   return { v: 1, today: new Date(end).toISOString().slice(0, 10), since: new Date(end - (daysBack - 1) * day).toISOString().slice(0, 10), days,
     ranges: { 7: range(7), 30: range(30), 90: range(90), 365: range(365) },
     pipeline: { interested: 9, good_match: 4, not_for_me: 12, applied: 6, heard_back: 3, rejected: 2 }, sent };
@@ -240,6 +257,19 @@ await save("admin-stats-new-profile", await admin("/admin/stats?u=sam-lee&r=7"))
 await save("admin-stats-empty", await admin("/admin/stats?u=jordan-patel"));
 await save("admin-sent", await admin("/admin/sent?u=owner&r=7"));
 await save("admin-sent-applied", await admin("/admin/sent?u=owner&r=30&a=applied"));
+
+// A cover letter already made for the newest job (kept for download) and its CV asked for from the
+// dashboard (being made), shown on its opened card and on the email button's page.
+const FIRST = "https://jobs.example.com/ad/1000";
+const FIRST_TITLE = "Senior Data Engineer (Python, Airflow) at Northwind Traders";
+await worker.fetch(new Request(`${BASE}/api/doc?${new URLSearchParams({ u: "owner", j: FIRST, k: "cover_letter", days: "7",
+  name: "Cover letter - Alex Morgan - Senior Data Engineer.pdf" })}`, { method: "POST",
+  headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/pdf" }, body: "%PDF-1.4\n%%EOF" }), env, {});
+await admin("/admin/doc", { method: "POST", form: { csrf, u: "owner", j: FIRST, k: "tailored_cv", n: "Senior Data Engineer (Python, Airflow)", back: "r=7" } });
+const firstId = (await jobHash(FIRST)).slice(0, 16);
+const opened = (await (await admin(`/admin/sent?u=owner&r=7&open=${firstId}`)).text()).replace(/<meta http-equiv="refresh"[^>]*>/, "");
+await save("admin-sent-open", new Response(opened));
+await save("confirm-cover-letter-ready", await call(`/f?${new URLSearchParams(await link("cover_letter", FIRST_TITLE, { job: FIRST }))}`));
 
 // A fresh install: HermitShell has connected, nothing else is set yet.
 const fresh = { ...STATUS, profiles: [{ ...STATUS.profiles[0], provider: "", key_hint: "", has_cv: false, job: { ...JOB, titles: [], region: "", places: [] } }],
