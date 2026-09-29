@@ -1,6 +1,8 @@
-// Profile search on the dashboard. Pages run no JavaScript, so the search button is a label for the field: a
-// click focuses it and :focus-within slides it open. Enter sends ?q= and the Worker lists only the profiles
-// whose name, email, id, status, place or crawler contain the words.
+// Recruit search on the dashboard. Pages run no JavaScript, so the search button is a label for the field: a
+// click focuses it and :focus-within slides it open. Enter sends ?q= and the Worker lists only the recruits
+// whose name, email, id, status or place, or their recruiter's name or username, contain every word. A recruiter
+// the words point at is listed first, as a row of its own, followed by their recruits: "sam job" lists the
+// recruiter Sam Job and all of their recruits, "sam job riley" only Riley under Sam Job.
 
 import { esc } from "./lib.js";
 
@@ -11,11 +13,39 @@ export function searchQuery(url) {
     .slice(0, MAX_QUERY);
 }
 
-export function matchesProfile(p, q) {
+const words = (q) => q.toLowerCase().split(" ").filter(Boolean);
+
+// `recruiter` is the recruit's recruiter ({ name, username }), if they have one.
+export function matchesProfile(p, q, recruiter = null) {
   if (!q) return true;
-  const text = [p.name, p.email, p.id, p.status, p.owner ? "owner" : "", p.provider, p.details?.location,
-    p.scanning ? "scanning" : "", p.has_cv === false ? "no cv" : ""].map((v) => String(v || "")).join(" ").toLowerCase();
-  return q.toLowerCase().split(" ").every((word) => text.includes(word));
+  const text = [p.name, p.email, p.id, p.status, p.owner ? "owner" : "", p.details?.location,
+    p.scanning ? "scanning" : "", p.has_cv === false ? "no cv" : "", recruiter?.name, recruiter?.username]
+    .map((v) => String(v || "")).join(" ").toLowerCase();
+  return words(q).every((word) => text.includes(word));
+}
+
+function recruiterText(r) {
+  return [r.name, r.username, "recruiter"].map((v) => String(v || "")).join(" ").toLowerCase();
+}
+
+// The recruiters to list first: every word matches them, or some word does and a recruit of theirs is listed.
+export function recruiterHits(recruiters, q, listedRecruiterIds) {
+  if (!q) return [];
+  return recruiters.filter((r) => {
+    const text = recruiterText(r);
+    const hits = words(q).filter((w) => text.includes(w));
+    return hits.length && (hits.length === words(q).length || listedRecruiterIds.has(r.id));
+  });
+}
+
+export function recruiterRow(r, total) {
+  return `<tr class="recrow"><td colspan="4"><div class="who"><span class="avatar rec" aria-hidden="true">${esc(initialsOf(r.name))}</span><div>
+<b>${esc(r.name)}</b> <span class="role recruiter">Recruiter</span><div class="muted"><code>${esc(r.username)}</code> &middot; ${total} recruit${total === 1 ? "" : "s"}</div></div></div></td></tr>`;
+}
+
+function initialsOf(name) {
+  const parts = String(name || "").match(/\p{L}[\p{L}'-]*/gu) || [];
+  return (parts.length > 1 ? parts[0][0] + parts.at(-1)[0] : (parts[0] || "?").slice(0, 2)).toUpperCase();
 }
 
 const LENS = `<svg class="lens" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
@@ -26,7 +56,7 @@ export function searchBar(q, shown, total, tools = "") {
   return `<div class="tabletools"><span class="count">${count}</span><div class="tools">${tools}
 <form class="search${q ? " open" : ""}" method="get" action="/admin" role="search">
 <input id="profile-search" type="search" name="q" value="${esc(q)}" maxlength="${MAX_QUERY}" autocomplete="off"
-placeholder="Name, email, place or status, then Enter" aria-label="Search recruits">
+placeholder="Name, email, place, status or recruiter, then Enter" aria-label="Search recruits">
 ${q ? '<a class="clear" href="/admin" aria-label="Clear the search">&times;</a>' : ""}
 <label for="profile-search" class="searchbtn" title="Search recruits">${LENS}</label></form></div></div>`;
 }
@@ -58,6 +88,11 @@ box-shadow:0 8px 18px -8px rgba(99,102,241,.9)}
 form.search .clear{position:absolute;right:58px;width:26px;height:26px;display:grid;place-items:center;border-radius:8px;
 font-size:18px;line-height:1;color:var(--muted);text-decoration:none}.clear:hover{background:#eef0f6;color:var(--ink)}
 .nomatch{display:flex;gap:14px;align-items:center;padding:10px 0;color:var(--brand-ink)}
+tr.recrow td{background:linear-gradient(90deg,#ecfeff,rgba(236,254,255,0));border-top:1px solid #a5f3fc}
+tr.recrow:hover td{background:linear-gradient(90deg,#cffafe,rgba(236,254,255,0))}
+tr.recrow .avatar.rec,tr.recrow ~ tr .avatar.rec{background:linear-gradient(135deg,#2dd4bf,#0891b2);box-shadow:0 6px 14px -8px rgba(8,145,178,.9)}
+.role{display:inline-block;font-size:11.5px;font-weight:650;border-radius:99px;padding:2px 9px}.role.recruiter{color:#0e7490;background:#ecfeff}
+tr.inpool td:first-child{padding-left:30px;box-shadow:inset 3px 0 0 #67e8f9}
 .nomatch .lens{width:34px;height:34px;padding:8px;box-sizing:content-box;border-radius:14px;background:var(--soft)}
 @keyframes peek{0%,100%{transform:rotate(0) translate(0,0)}25%{transform:rotate(-10deg) translate(-1px,0)}
 50%{transform:rotate(0) translate(0,-1px)}75%{transform:rotate(10deg) translate(1px,0)}}

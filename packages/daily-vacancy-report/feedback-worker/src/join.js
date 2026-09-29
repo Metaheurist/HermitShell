@@ -31,9 +31,11 @@ export async function queueItem(env, item, ttl = QUEUE_TTL_SECONDS) {
   return id;
 }
 
-export async function createInvite(env, note = "") {
+// `recruiter` is the dashboard user whose pool the person joins ("" for nobody's).
+export async function createInvite(env, note = "", recruiter = "") {
   const id = newId();
-  const invite = { id, note: String(note).slice(0, 80), created: Date.now(), expires: Date.now() + INVITE_DAYS * 86400000 };
+  const invite = { id, note: String(note).slice(0, 80), created: Date.now(), expires: Date.now() + INVITE_DAYS * 86400000,
+    ...(recruiter ? { recruiter: String(recruiter).slice(0, 32) } : {}) };
   await env.FEEDBACK.put(`invite:${id}`, JSON.stringify(invite), { expirationTtl: INVITE_DAYS * 86400 });
   return invite;
 }
@@ -127,7 +129,8 @@ export async function handleJoin(request, env) {
   if (!cv && values.cv_text.length < 200) return retry("Please upload your CV or paste it (at least a few lines).");
 
   await env.FEEDBACK.delete(`invite:${invite.id}`);
-  await queueItem(env, { type: "signup", invite: invite.id, note: invite.note, ...values, cv });
+  await queueItem(env, { type: "signup", invite: invite.id, note: invite.note,
+    ...(invite.recruiter ? { recruiter: invite.recruiter } : {}), ...values, cv });
   return page("Thanks, you're in", `<p>Thanks ${esc(values.name)}. HermitShell is setting up your profile from your CV and will email
 ${esc(values.email)} when it is ready. Your first report arrives with the next daily run.</p><p>You can close this tab.</p>`);
 }

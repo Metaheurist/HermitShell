@@ -1,19 +1,16 @@
 import { describe, expect, it } from "vitest";
 import worker from "../src/index.js";
-import { crawlerCell, keyModal } from "../src/keys.js";
+import { PROVIDERS, keyModals, keysSection } from "../src/keys.js";
 import { BASE, testEnv, valuesWith } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const API = { Authorization: "Bearer api-token" };
 const STATUS = {
   timezone: "Europe/London",
+  keys: { firecrawl: { source: "env", hint: "fc-...0001", backups: 2 }, tavily: { source: "dashboard", hint: "tvl...9d2a" }, scrapfly: { source: "none" } },
   profiles: [
-    { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, has_cv: true,
-      crawler: "global", provider: "firecrawl", key_hint: "fc-...0001" },
-    { id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active", has_cv: true,
-      crawler: "own", provider: "tavily", key_hint: "tvl...9d2a" },
-    { id: "jordan-patel", name: "Jordan <b>Patel</b>", email: "jordan@example.net", status: "active", has_cv: true,
-      crawler: "global", provider: "", key_hint: "" },
+    { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, has_cv: true },
+    { id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active", has_cv: true },
   ],
 };
 
@@ -26,81 +23,80 @@ async function setup(status = STATUS) {
   await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: API, body: JSON.stringify(status) }), env);
   const res = await worker.fetch(post("/admin/login", { username: "admin", password: ADMIN.ADMIN_PASSWORD }, { "CF-Connecting-IP": "203.0.113.9" }), env);
   const cookie = (res.headers.get("Set-Cookie") || "").split(";")[0];
-  const body = await (await worker.fetch(new Request(`${BASE}/admin`, { headers: { Cookie: cookie } }), env)).text();
-  const csrf = body.match(/name="csrf" value="([0-9a-f]+)"/)[1];
+  const get = async (path) => (await worker.fetch(new Request(`${BASE}${path}`, { headers: { Cookie: cookie } }), env)).text();
+  const settings = await get("/admin/settings");
+  const csrf = settings.match(/name="csrf" value="([0-9a-f]+)"/)[1];
   const act = (fields) => worker.fetch(post("/admin/action", { csrf, ...fields }, { Cookie: cookie }), env);
-  return { env, body, act };
+  return { env, settings, get, act };
 }
 
-function rowOf(body, id) {
-  return body.split("<tr>").find((r) => r.includes(`/admin/profile?u=${id}"`));
-}
-
-describe("crawler keys on the dashboard", () => {
-  it("shows the provider and a masked key only when one is set, else an Add key button", async () => {
-    const { body } = await setup();
-    const sam = rowOf(body, "sam-lee");
-    expect(sam).toContain("<b>Tavily</b>");
-    expect(sam).toContain('<code class="keyhint"');
-    expect(sam).toContain("tvl...9d2a");
-    expect(sam).toContain('href="#key-sam-lee">Change</a>');
-    expect(sam).toContain('name="action" value="use_global"');
-    const jordan = rowOf(body, "jordan-patel");
-    expect(jordan).toContain('<a class="addkey" href="#key-jordan-patel">');
-    expect(jordan).not.toContain("keyhint");
-    expect(jordan).not.toContain("global key");
-    expect(body).not.toContain('name="key" type="password" placeholder="Their Firecrawl key"');
+describe("web search keys in Global settings", () => {
+  it("shows one row per provider with where the key comes from, a masked hint and Add key or Change", async () => {
+    const { settings } = await setup();
+    const row = (name) => settings.split('<div class="keyrow').find((r) => r.startsWith(` cr-${name}"`));
+    expect(row("firecrawl")).toContain('<span class="crtag env">from .env</span>');
+    expect(row("firecrawl")).toContain("fc-...0001");
+    expect(row("firecrawl")).toContain("plus 2 backup keys");
+    expect(row("firecrawl")).toContain('href="#gkey-firecrawl">Change</a>');
+    expect(row("firecrawl")).not.toContain("api_keys_clear");
+    expect(row("tavily")).toContain('<span class="crtag">set here</span>');
+    expect(row("tavily")).toContain('name="action" value="api_keys_clear"');
+    expect(row("scrapfly")).toContain('<a class="addkey" href="#gkey-scrapfly">');
+    expect(row("scrapfly")).toContain("No key yet");
+    expect(settings).not.toContain('name="firecrawl" type="password"');
+    expect(settings).not.toContain("Save keys");
   });
 
-  it("shows the owner's global key with a link to Global settings instead of Remove", async () => {
-    const { body } = await setup();
-    const owner = rowOf(body, "owner");
-    expect(owner).toContain("<b>Firecrawl</b>");
-    expect(owner).toContain('<span class="crtag">global</span>');
-    expect(owner).toContain('href="/admin/settings#keys">Change</a>');
-    expect(owner).not.toContain("use_global");
-  });
-
-  it("renders one modal per profile outside <main>, opened by :target", async () => {
-    const { body } = await setup();
-    const main = body.indexOf("<main");
-    for (const id of ["owner", "sam-lee", "jordan-patel"]) {
-      const at = body.indexOf(`<div class="modal" id="key-${id}"`);
+  it("renders one modal per provider outside <main>, each preselecting its own provider", async () => {
+    const { settings } = await setup();
+    const main = settings.indexOf("<main");
+    for (const name of Object.keys(PROVIDERS)) {
+      const at = settings.indexOf(`<div class="modal" id="gkey-${name}"`);
       expect(at).toBeGreaterThan(-1);
       expect(at).toBeLessThan(main);
+      const modal = settings.slice(at).split('<div class="modal"')[1];
+      expect(modal).toContain(`value="${name}" checked`);
+      expect(modal.match(/ checked/g)).toHaveLength(1);
+      expect(modal).toContain('name="action" value="api_key"');
+      expect(modal).toContain('name="key" type="password" autocomplete="off" required');
     }
-    expect(body).toContain(".modal:target{display:grid}");
-    expect(body).toContain('href="#_" aria-label="Close"');
-    expect(body).toContain("Jordan &lt;b&gt;Patel&lt;/b&gt;'s searches will use only this key");
-    expect(body).not.toContain("<b>Patel</b>");
+    expect(settings).toContain(".modal:target{display:grid}");
+    expect(keyModals("c".repeat(32))).toContain('class="crchoices three"');
   });
 
-  it("preselects the current provider and offers only providers that can search", () => {
-    const modal = keyModal(STATUS.profiles[1], "c".repeat(32));
-    expect(modal).toContain('value="tavily" checked');
-    expect(modal).not.toContain('value="firecrawl" checked');
-    expect(modal).not.toContain("scrapfly");
-    expect(modal).toContain('name="key" type="password" autocomplete="off" required');
-    expect(keyModal(STATUS.profiles[2], "c".repeat(32))).toContain('value="firecrawl" checked');
+  it("offers every provider in the modal but never shows a key or a hint unescaped", () => {
+    const html = keysSection({ keys: { firecrawl: { source: "dashboard", hint: "<i>x</i>" } } }, "c");
+    expect(html).toContain("&lt;i&gt;x&lt;/i&gt;");
+    expect(html).not.toContain("<i>x</i>");
+    for (const name of ["firecrawl", "tavily", "scrapfly"]) expect(keyModals("c")).toContain(`value="${name}"`);
   });
 
-  it("treats an unknown provider as no key and escapes the hint", () => {
-    expect(crawlerCell({ id: "x", provider: "other", key_hint: "abc" }, "c")).toContain('class="addkey"');
-    expect(crawlerCell({ id: "x", provider: "firecrawl", key_hint: "<i>" }, "c")).toContain("&lt;i&gt;");
-  });
-
-  it("queues the key with its provider, defaults to Firecrawl and refuses other providers", async () => {
+  it("queues the key for the chosen provider, several Firecrawl keys at once, and refuses anything else", async () => {
     const { env, act } = await setup();
-    expect((await act({ action: "set_key", u: "jordan-patel", key: "tvly-new-key-123", provider: "tavily" })).headers.get("Location"))
-      .toBe("/admin?done=queued");
-    await act({ action: "set_key", u: "jordan-patel", key: "fc-new-key-4567" });
-    expect((await act({ action: "set_key", u: "jordan-patel", key: "scp-new-key-890", provider: "scrapfly" })).headers.get("Location"))
-      .toBe("/admin?done=badkey");
-    expect((await act({ action: "set_key", u: "jordan-patel", key: "bad key!", provider: "tavily" })).headers.get("Location"))
-      .toBe("/admin?done=badkey");
-    expect(valuesWith(env, "queue:").map(({ action, u, key, provider }) => ({ action, u, key, provider }))).toEqual([
-      { action: "set_key", u: "jordan-patel", key: "tvly-new-key-123", provider: "tavily" },
-      { action: "set_key", u: "jordan-patel", key: "fc-new-key-4567", provider: "firecrawl" },
+    const at = async (fields) => (await act({ action: "api_key", ...fields })).headers.get("Location");
+    expect(await at({ provider: "tavily", key: "tvly-new-key-123" })).toBe("/admin/settings?done=queued#keys");
+    expect(await at({ provider: "firecrawl", key: "fc-one11111, fc-two22222" })).toBe("/admin/settings?done=queued#keys");
+    expect(await at({ key: "fc-default-provider" })).toBe("/admin/settings?done=queued#keys");
+    for (const bad of [{ provider: "tavily", key: "bad key!" }, { provider: "PATH", key: "fc-one11111" }, { provider: "tavily", key: "tvly-a1234567, tvly-b1234567" },
+      { provider: "scrapfly", key: "" }]) {
+      expect(await at(bad)).toBe("/admin/settings?done=badkey#keys");
+    }
+    expect(valuesWith(env, "queue:").map(({ action, firecrawl, tavily }) => ({ action, firecrawl, tavily }))).toEqual([
+      { action: "api_keys", firecrawl: undefined, tavily: "tvly-new-key-123" },
+      { action: "api_keys", firecrawl: ["fc-one11111", "fc-two22222"], tavily: undefined },
+      { action: "api_keys", firecrawl: ["fc-default-provider"], tavily: undefined },
     ]);
+  });
+
+  it("has no per-recruit crawler keys any more: no Crawler column, no key modals, set_key refused", async () => {
+    const { env, get, act } = await setup();
+    const dash = await get("/admin");
+    expect(dash).not.toContain("<th>Crawler</th>");
+    expect(dash).not.toContain('id="key-');
+    expect(dash).not.toContain("Add key");
+    for (const action of ["set_key", "use_global"]) {
+      expect((await act({ action, u: "sam-lee", key: "tvly-new-key-123", provider: "tavily" })).status).toBe(400);
+    }
+    expect(valuesWith(env, "queue:")).toEqual([]);
   });
 });

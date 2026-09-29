@@ -207,11 +207,11 @@ describe("admin gateway", () => {
     expect(keysWith(env, "invite:")).toEqual([]);
   });
 
-  it("lists reported profiles and queues crawler key, pause and delete changes", async () => {
+  it("lists reported profiles and queues pause, delete and global key changes", async () => {
     const env = testEnv(ADMIN);
     const status = { profiles: [
-      { id: "owner", name: "Owner", email: "owner@example.com", status: "active", owner: true, crawler: "global" },
-      { id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active", crawler: "own", provider: "firecrawl", key_hint: "fc-...9f2" },
+      { id: "owner", name: "Owner", email: "owner@example.com", status: "active", owner: true },
+      { id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active" },
     ], keys: { firecrawl: { source: "env", hint: "fc-...0001" } } };
     await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: API, body: JSON.stringify(status) }), env);
     await env.FEEDBACK.put("event:sam-lee:1:abc", JSON.stringify({ a: "interested" }));
@@ -220,12 +220,10 @@ describe("admin gateway", () => {
     const { cookie } = await signIn(env);
     const { body, csrf } = await dashboard(env, cookie);
     expect(body).toContain("Sam Lee");
-    expect(body).toContain("<b>Firecrawl</b>");
-    expect(body).toContain("fc-...9f2");
+    expect(body).not.toContain("<th>Crawler</th>");
     expect(body).toContain('<a class="small" href="/admin/profile?u=sam-lee">Manage</a>');
     expect(body.match(/delete CV and history/g)).toHaveLength(1);
 
-    await adminAction(env, cookie, csrf, { action: "set_key", u: "sam-lee", key: "fc-test-own-key" });
     await adminAction(env, cookie, csrf, { action: "pause", u: "sam-lee" });
     expect((await adminAction(env, cookie, csrf, { action: "delete", u: "sam-lee" })).headers.get("Location")).toBe("/admin?done=confirm");
     expect(keysWith(env, "event:sam-lee:")).toHaveLength(1);
@@ -234,16 +232,15 @@ describe("admin gateway", () => {
     expect(keysWith(env, "flag:events:sam-lee")).toEqual([]);
     expect(keysWith(env, "event:_:")).toHaveLength(1);
     const settings = await (await worker.fetch(new Request(`${BASE}/admin/settings`, { headers: { Cookie: cookie } }), env)).text();
-    expect(settings).toContain("HermitShell&#39;s .env fc-...0001");
+    expect(settings).toContain('<span class="crtag env">from .env</span>');
+    expect(settings).toContain("fc-...0001");
     expect((await adminAction(env, cookie, csrf, { action: "api_keys", keys: "bad key!" })).headers.get("Location")).toBe("/admin/settings?done=badkey#keys");
     await adminAction(env, cookie, csrf, { action: "api_keys", keys: "fc-one11111, fc-two22222" });
     await adminAction(env, cookie, csrf, { action: "api_keys_clear" });
     expect((await adminAction(env, cookie, csrf, { action: "pause", u: "../etc" })).status).toBe(400);
 
     const queued = valuesWith(env, "queue:").map(({ action, u, key, firecrawl, clear }) => ({ action, u, key, firecrawl, clear }));
-    expect(valuesWith(env, "queue:")[0].provider).toBe("firecrawl");
     expect(queued).toEqual([
-      { action: "set_key", u: "sam-lee", key: "fc-test-own-key", firecrawl: undefined, clear: undefined },
       { action: "pause", u: "sam-lee", key: undefined, firecrawl: undefined, clear: undefined },
       { action: "delete", u: "sam-lee", key: undefined, firecrawl: undefined, clear: undefined },
       { action: "api_keys", u: undefined, key: undefined, firecrawl: ["fc-one11111", "fc-two22222"], clear: undefined },

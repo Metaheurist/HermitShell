@@ -6,16 +6,19 @@ import { BASE, testEnv } from "./helpers.js";
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const API = { Authorization: "Bearer api-token" };
 const PROFILES = [
-  { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, has_cv: true, provider: "firecrawl",
+  { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, has_cv: true,
     details: { location: "Salford" } },
-  { id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active", has_cv: true, provider: "tavily", scanning: 1,
+  { id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active", has_cv: true, scanning: 1,
     details: { location: "York" } },
-  { id: "jordan-patel", name: "Jordan Patel", email: "jordan@contoso.example", status: "paused", has_cv: false, provider: "",
+  { id: "jordan-patel", name: "Jordan Patel", email: "jordan@contoso.example", status: "paused", has_cv: false,
     details: { location: "Leeds" } },
 ];
 
-async function setup(profiles = PROFILES) {
+const RECRUITER = { id: "casey", name: "Casey Quinn", roles: ["recruiter"], salt: "00".repeat(16), hash: "00".repeat(32), iter: 1000, v: "v1" };
+
+async function setup(profiles = PROFILES, accounts = null) {
   const env = testEnv(ADMIN);
+  if (accounts) await env.FEEDBACK.put("accounts", JSON.stringify(accounts));
   await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: API, body: JSON.stringify({ profiles }) }), env);
   const res = await worker.fetch(new Request(`${BASE}/admin/login`, { method: "POST",
     body: new URLSearchParams({ username: "admin", password: ADMIN.ADMIN_PASSWORD }), headers: { "CF-Connecting-IP": "203.0.113.9" } }), env);
@@ -51,10 +54,29 @@ describe("profile search", () => {
     expect(some).toContain('<a class="clear" href="/admin"');
   });
 
-  it("only renders key modals for the profiles listed", async () => {
-    const body = await (await setup())("?q=sam");
-    expect(body).toContain('id="key-sam-lee"');
-    expect(body).not.toContain('id="key-owner"');
+  it("lists a recruiter first, followed by all of their recruits, when the search names the recruiter", async () => {
+    const pooled = PROFILES.map((p) => (p.owner ? p : { ...p, recruiter: "casey" }));
+    const get = await setup(pooled, { users: [RECRUITER] });
+    const body = await get("?q=casey+quinn");
+    expect(listed(body)).toEqual(["sam-lee", "jordan-patel"]);
+    expect(body.indexOf('class="recrow"')).toBeGreaterThan(-1);
+    expect(body.indexOf('class="recrow"')).toBeLessThan(body.indexOf("/admin/profile?u=sam-lee"));
+    expect(body).toContain("<b>Casey Quinn</b> <span class=\"role recruiter\">Recruiter</span>");
+    expect(body).toContain("<code>casey</code> &middot; 2 recruits");
+    expect(body.match(/<tr class="inpool">/g)).toHaveLength(2);
+    expect(body).toContain('<span class="count">2 of 3 recruits</span>');
+  });
+
+  it("finds a recruit by their recruiter and their own details together, still under the recruiter", async () => {
+    const pooled = PROFILES.map((p) => (p.owner ? p : { ...p, recruiter: "casey" }));
+    const get = await setup(pooled, { users: [RECRUITER] });
+    const body = await get("?q=casey+jordan");
+    expect(listed(body)).toEqual(["jordan-patel"]);
+    expect(body).toContain('class="recrow"');
+    expect(body.indexOf('class="recrow"')).toBeLessThan(body.indexOf("/admin/profile?u=jordan-patel"));
+    const plain = await get("?q=york");
+    expect(listed(plain)).toEqual(["sam-lee"]);
+    expect(plain).not.toContain('class="recrow"');
   });
 
   it("says when nothing matches and links back to everyone", async () => {
@@ -94,5 +116,8 @@ describe("profile search", () => {
     expect(matchesProfile(PROFILES[1], "scanning york")).toBe(true);
     expect(matchesProfile({ id: "x" }, "")).toBe(true);
     expect(matchesProfile({ id: "x" }, "y")).toBe(false);
+    expect(matchesProfile(PROFILES[1], "tavily")).toBe(false);
+    expect(matchesProfile(PROFILES[1], "casey york", { id: "casey", name: "Casey Quinn" })).toBe(true);
+    expect(matchesProfile(PROFILES[1], "quinn", null)).toBe(false);
   });
 });

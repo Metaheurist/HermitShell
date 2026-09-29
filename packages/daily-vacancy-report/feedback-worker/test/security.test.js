@@ -286,33 +286,35 @@ describe("authentication", () => {
     expect((await get("/admin/sent?u=..%2Fowner", env, { Cookie: cookie })).status).toBe(404);
   });
 
-  it("only queues a crawler key from the modal with a session and its CSRF token, and never shows it back", async () => {
+  it("only queues a global key from the modal with an admin session and its CSRF token, and never shows it back", async () => {
     const env = testEnv(ADMIN);
-    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [
-      { id: "sam-lee", name: HOSTILE, has_cv: true, crawler: "own", provider: HOSTILE, key_hint: HOSTILE },
-      { id: "jordan-patel", name: "Jordan Patel", has_cv: true, crawler: "own", provider: "tavily", key_hint: HOSTILE },
-      { id: "../x", name: "Bad id", has_cv: true, provider: "", key_hint: "" }] }));
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ keys: { firecrawl: { source: "dashboard", hint: HOSTILE } },
+      profiles: [{ id: "sam-lee", name: HOSTILE, has_cv: true, provider: HOSTILE, key_hint: HOSTILE }] }));
     const secret = "tvly-never-shown-back-0001";
     const noSession = await worker.fetch(new Request(`${BASE}/admin/action`, {
-      method: "POST", body: new URLSearchParams({ action: "set_key", u: "sam-lee", key: secret, provider: "tavily" }) }), env);
+      method: "POST", body: new URLSearchParams({ action: "api_key", provider: "tavily", key: secret }) }), env);
     expect(await noSession.text()).toContain("Admin sign-in");
     const cookie = await signIn(env, "203.0.113.7");
     const dash = await (await get("/admin", env, { Cookie: cookie })).text();
     expect(dash).not.toContain("<script>");
     expect(dash).not.toContain("<img src=x");
-    expect(dash).not.toContain('id="key-../x"');
-    const csrf = dash.match(/name="csrf" value="([0-9a-f]+)"/)[1];
+    const settings = await (await get("/admin/settings", env, { Cookie: cookie })).text();
+    expect(settings).not.toContain("<script>");
+    expect(settings).not.toContain("<img src=x");
+    const csrf = settings.match(/name="csrf" value="([0-9a-f]+)"/)[1];
     const send = (fields) => worker.fetch(new Request(`${BASE}/admin/action`, { method: "POST", headers: { Cookie: cookie },
       body: new URLSearchParams(fields) }), env);
-    expect((await send({ csrf: "0".repeat(32), action: "set_key", u: "sam-lee", key: secret, provider: "tavily" })).status).toBe(403);
-    for (const provider of ["scrapfly", "PATH", HOSTILE, "firecrawl_backup"]) {
-      expect((await send({ csrf, action: "set_key", u: "sam-lee", key: secret, provider })).headers.get("Location")).toBe("/admin?done=badkey");
+    expect((await send({ csrf: "0".repeat(32), action: "api_key", provider: "tavily", key: secret })).status).toBe(403);
+    for (const provider of ["PATH", HOSTILE, "firecrawl_backup", "__proto__"]) {
+      expect((await send({ csrf, action: "api_key", key: secret, provider })).headers.get("Location")).toBe("/admin/settings?done=badkey#keys");
     }
+    expect((await send({ csrf, action: "set_key", u: "sam-lee", key: secret, provider: "tavily" })).status).toBe(400);
     expect(valuesWith(env, "queue:")).toEqual([]);
-    const done = await send({ csrf, action: "set_key", u: "sam-lee", key: secret, provider: "tavily" });
-    expect(done.headers.get("Location")).toBe("/admin?done=queued");
-    const after = await (await get("/admin?done=queued", env, { Cookie: cookie })).text();
-    expect(after).not.toContain(secret);
+    const done = await send({ csrf, action: "api_key", provider: "tavily", key: secret });
+    expect(done.headers.get("Location")).toBe("/admin/settings?done=queued#keys");
+    for (const path of ["/admin?done=queued", "/admin/settings?done=queued"]) {
+      expect(await (await get(path, env, { Cookie: cookie })).text()).not.toContain(secret);
+    }
   });
 
   it("shows a pending sign-up only to a session, without its phone, CV or invite, and escaped", async () => {

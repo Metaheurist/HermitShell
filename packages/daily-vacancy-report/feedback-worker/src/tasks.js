@@ -51,7 +51,7 @@ export async function requests(env) {
 
 const ADMIN_LABELS = {
   send_now: "Send jobs now", pause: "Pause reports", resume: "Resume reports", delete: "Delete recruit",
-  set_key: "Crawler key", use_global: "Use the global key", profile: "Recruit changes", cv: "New CV",
+  assign: "Assign to a recruiter", profile: "Recruit changes", cv: "New CV",
   api_keys: "Global API keys", email: "Email settings", test_email: "Test email",
 };
 const KIND_LABELS = {
@@ -61,19 +61,22 @@ const TRIGGERS = { schedule: "scheduled", dashboard: "from the dashboard", email
 
 function queueKind(item) {
   if (item.type === "signup" || item.type === "unsubscribe") return item.type;
-  return { send_now: "send", delete: "delete", set_key: "key", use_global: "key", api_keys: "key", cv: "cv" }[item.action] || "change";
+  return { send_now: "send", delete: "delete", api_keys: "key", cv: "cv" }[item.action] || "change";
 }
 
-// One list, running first, from HermitShell's reported tasks, the Worker's queue and the uncollected requests.
+// One list, running first, from HermitShell's reported tasks, the Worker's queue and the uncollected requests. Each row
+// has the recruit it is for (`u`, the owner's id for the owner and global settings) and a sign-up its recruiter, so a
+// recruiter's list can be cut down to their own pool.
 export function taskRows(status, queue, held) {
   const profiles = status.profiles || [];
   const owner = profiles.find((p) => p.owner);
   const names = new Map(profiles.map((p) => [p.id, p.name || p.id]));
-  const who = (u) => names.get(u || owner?.id || "owner") || u || owner?.name || "Owner";
+  const ownerId = owner?.id || "owner";
+  const who = (u) => names.get(u || ownerId) || u || owner?.name || "Owner";
   const stopping = new Set(queue.filter((i) => i.type === "admin" && i.action === "cancel").map((i) => i.task));
   const server = (Array.isArray(status.tasks) ? status.tasks : []).filter((t) => t && SERVER_ID.test(String(t.id)));
   const rows = server.map((t) => ({
-    id: t.id, kind: KIND_LABELS[t.kind] ? t.kind : "report", who: who(t.u), at: Number(t.at) || 0,
+    id: t.id, kind: KIND_LABELS[t.kind] ? t.kind : "report", who: who(t.u), u: String(t.u || ownerId), at: Number(t.at) || 0,
     state: stopping.has(t.id) || t.state === "stopping" ? "stopping" : t.state === "running" ? "running" : "waiting",
     trigger: TRIGGERS[t.trigger] ? t.trigger : "schedule", title: t.kind === "report" ? "" : [t.title, t.employer].filter(Boolean).join(" at "),
     stage: String(t.stage || ""), done: Number(t.done) || 0, total: Number(t.total) || 0, expected: Number(t.expected) || 0,
@@ -84,6 +87,7 @@ export function taskRows(status, queue, held) {
     const kind = queueKind(i);
     rows.push({
       id: i.id, kind, who: i.type === "signup" ? String(i.name || "New sign-up") : who(i.u), at: Number(i.at) || 0, state: "waiting",
+      u: i.type === "signup" ? "" : String(i.u || ownerId), recruiter: i.type === "signup" ? String(i.recruiter || "") : "",
       trigger: i.type === "signup" ? "signup" : i.type === "unsubscribe" ? "link" : "dashboard",
       title: i.type === "admin" ? ADMIN_LABELS[i.action] || String(i.action || "Change").replaceAll("_", " ") : "", where: "queue",
     });
@@ -92,7 +96,7 @@ export function taskRows(status, queue, held) {
   for (const r of held) {
     if (server.some((t) => String(t.id).endsWith(`:${r.id}`))) continue;
     if (profiles.length && r.u && !known.has(r.u)) continue;
-    rows.push({ id: r.id, kind: REQUEST_ACTIONS.includes(r.a) ? r.a : "cover_letter", who: who(r.u), at: Number(r.at) || 0,
+    rows.push({ id: r.id, kind: REQUEST_ACTIONS.includes(r.a) ? r.a : "cover_letter", who: who(r.u), u: String(r.u || ownerId), at: Number(r.at) || 0,
       state: "waiting", trigger: r.via === "dashboard" ? "dashboard" : "email", title: String(r.n || ""), where: "worker" });
   }
   const order = { running: 0, stopping: 1, waiting: 2 };

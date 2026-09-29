@@ -6,16 +6,12 @@
 import { COUNTRIES, countryCode } from "./countries.js";
 import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem } from "./join.js";
 import { BACK_TO_RECRUITS, CSP, SECURITY_HEADERS, ago, esc, limitedForm, newId, note, page, redirect, safeEqual, when } from "./lib.js";
+import { KEY_STYLE, MODAL_STYLE, PROVIDERS, keyModals, keysSection } from "./keys.js";
 import { LINK_STYLE, STATS_URL, icon } from "./stats.js";
 
 export const LEVELS = ["junior", "mid", "senior", "lead", "any"];
 export const EMPLOYMENT_TYPES = ["Permanent", "Contract", "Temporary", "Part-time", "Internship"];
 export const WORK_MODES = ["On-site", "Hybrid", "Remote"];
-export const PROVIDERS = {
-  firecrawl: { label: "Firecrawl", signup: "https://www.firecrawl.dev/app/api-keys" },
-  tavily: { label: "Tavily", signup: "https://app.tavily.com/home" },
-  scrapfly: { label: "Scrapfly", signup: "https://scrapfly.io/dashboard" },
-};
 const KEY_RE = /^[A-Za-z0-9_-]{8,120}$/;
 const HOST_RE = /^[A-Za-z0-9.-]{3,120}$/;
 const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
@@ -49,8 +45,12 @@ function checked(on) {
 
 export const SETTINGS_URL = "/admin/settings";
 
-export function nav(active) {
-  const tabs = [["profiles", "/admin", "Recruits"], ["settings", SETTINGS_URL, "Global settings"]];
+export const USERS_URL = "/admin/users";
+
+// Recruiters only have the Recruits tab: users and global settings are for admins.
+export function nav(active, admin = true) {
+  const tabs = [["profiles", "/admin", "Recruits"], ...(admin
+    ? [["users", USERS_URL, "Users and roles"], ["settings", SETTINGS_URL, "Global settings"]] : [])];
   return `<nav class="tabs">${tabs.map(([id, href, label]) =>
     `<a href="${href}"${id === active ? ' class="on" aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
 }
@@ -117,25 +117,6 @@ export function button(csrf, action, label, fields = {}, cls = "small quiet") {
   return `<form method="post" action="/admin/action" style="display:inline">${hidden({ csrf, action, ...fields })}<button class="${cls}">${esc(label)}</button></form>`;
 }
 
-export function keysSection(status, csrf) {
-  const keys = status.keys || {};
-  const rows = Object.entries(PROVIDERS).map(([name, info]) => {
-    const k = keys[name] || {};
-    const now = k.source === "dashboard" ? `set here ${k.hint || ""}` : k.source === "env" ? `HermitShell's .env ${k.hint || ""}` : "none";
-    const extra = name === "firecrawl" && k.backups ? `, plus ${k.backups} backup key${k.backups === 1 ? "" : "s"}` : "";
-    return `<tr><td><b>${info.label}</b><div class="muted"><a href="${info.signup}" rel="noopener">get a key</a></div></td>
-<td class="muted">${esc(now + extra)}</td><td>${k.source === "dashboard" ? button(csrf, "api_keys_clear", "Use the .env key", { provider: name }) : ""}</td></tr>`;
-  }).join("");
-  return `<h2 id="keys">Web search API keys</h2>
-<p class="muted">Used to search job boards for everyone without their own key. Firecrawl is tried first, then Tavily, then Scrapfly.</p>
-<table class="list">${rows}</table>
-<form method="post" action="/admin/action">${hidden({ csrf, action: "api_keys" })}
-<div class="grid2"><div><label for="k_fc">Firecrawl key</label><input id="k_fc" name="firecrawl" type="password" autocomplete="off" maxlength="700">${hint("Several keys can be separated by commas.")}</div>
-<div><label for="k_tv">Tavily key</label><input id="k_tv" name="tavily" type="password" autocomplete="off" maxlength="120"></div>
-<div><label for="k_sf">Scrapfly key</label><input id="k_sf" name="scrapfly" type="password" autocomplete="off" maxlength="120"></div></div>
-<button>Save keys</button></form><p class="muted">Empty boxes leave that key as it is. Keys are only shown as their last four characters.</p>`;
-}
-
 // The email server as it will be once HermitShell applies any saved change, so the form keeps what was typed.
 function pendingEmail(email, queue) {
   return byId(queue.filter((i) => i.type === "admin" && i.action === "email")).reduce((e, i) => i.clear ? email
@@ -144,12 +125,12 @@ function pendingEmail(email, queue) {
 
 export function settingsPage(status, csrf, { done = "", queued = [], queue = [] } = {}) {
   const waiting = queued.filter((q) => /^(email|test email|api keys)$/.test(q));
-  return page("Global settings", `${nav("settings")}
+  return page("Global settings", `<style>${MODAL_STYLE}${KEY_STYLE}</style>${nav("settings")}
 ${done ? note(done) : ""}${waiting.length ? `<p class="muted">Waiting for HermitShell: ${esc(waiting.join("; "))}.</p>` : ""}
 <p class="muted">These apply to the whole of HermitShell and every recruit. Where each person's reports go, their job search
 and CV are on their own page under <a href="/admin">Recruits</a>.</p>
 ${emailSection({ ...status, email: pendingEmail(status.email || {}, queue) }, csrf)}
-${keysSection(status, csrf)}`, { wide: true });
+${keysSection(status, csrf)}`, { wide: true, before: keyModals(csrf) });
 }
 
 // ------------------------------------------------------------------------- one profile's page
@@ -333,7 +314,7 @@ export function sendSection(p, csrf, tz) {
 }
 
 export function profilePage(status, pid, csrf,
-  { done = "", error = "", queue = [], saving = false, draft = null, base = null, conflicts = [], code = 200 } = {}) {
+  { done = "", error = "", queue = [], saving = false, draft = null, base = null, conflicts = [], code = 200, admin = true } = {}) {
   const p = (status.profiles || []).find((x) => x.id === pid);
   if (!p) {
     return page("Recruit not found", '<p>HermitShell has not reported this recruit. <a href="/admin">Back to recruits</a></p>', { status: 404 });
@@ -341,7 +322,7 @@ export function profilePage(status, pid, csrf,
   const latest = latestValues(p, queue);
   const v = draft || latest;
   const message = error ? note(error, "bad") : done ? note(done) : "";
-  return page(p.owner ? "Your profile" : p.name, `<style>${LINK_STYLE}</style>${nav("profiles")}
+  return page(p.owner ? "Your profile" : p.name, `<style>${LINK_STYLE}</style>${nav("profiles", admin)}
 <p><a class="statlink" href="${STATS_URL}?u=${esc(pid)}">${icon("chart")}${p.owner ? "Your stats" : "View stats"}</a></p>
 ${message}<iframe class="saving" src="${STATUS_URL}?u=${esc(pid)}${saving ? "&amp;n=1" : ""}" title="Save status"></iframe>
 ${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
@@ -472,20 +453,31 @@ export function settingsItem(act, form) {
     return { item: { type: "admin", action: "api_keys", ...(firecrawl.length ? { firecrawl: firecrawl.slice(0, 5) } : {}), ...single },
       ttl: SECRET_TTL_SECONDS };
   }
+  if (act === "api_key") {
+    const provider = String(form.get("provider") || "firecrawl");
+    const keys = String(form.get("key") || "").split(/[\s,]+/).filter(Boolean);
+    if (!Object.hasOwn(PROVIDERS, provider) || !keys.length || keys.some((k) => !KEY_RE.test(k)) || (provider !== "firecrawl" && keys.length > 1)) {
+      return { error: "badkey" };
+    }
+    return { item: { type: "admin", action: "api_keys", ...(provider === "firecrawl" ? { firecrawl: keys.slice(0, 5) } : { [provider]: keys[0] }) },
+      ttl: SECRET_TTL_SECONDS };
+  }
   if (act === "api_keys_clear") {
     const provider = String(form.get("provider") || "firecrawl");
-    return PROVIDERS[provider] ? { item: { type: "admin", action: "api_keys", clear: [provider] } } : { error: "badkey" };
+    return Object.hasOwn(PROVIDERS, provider) ? { item: { type: "admin", action: "api_keys", clear: [provider] } } : { error: "badkey" };
   }
   return null;
 }
 
-// POST /admin/cv: a CV uploaded for a profile, stored like a sign-up's until HermitShell collects it.
-export async function cvUpload(request, env, s) {
+// POST /admin/cv: a CV uploaded for a profile, stored like a sign-up's until HermitShell collects it. `allow(u)`
+// says whether the signed-in user may change that recruit.
+export async function cvUpload(request, env, s, allow = async () => true) {
   const form = await limitedForm(request, MAX_CV_FORM_BYTES);
   if (!form) return page("CV too large", '<p>The CV file is larger than 5 MB. <a href="/admin">Back</a></p>', { status: 413 });
   if (!safeEqual(String(form.get("csrf") || ""), s.csrf)) return page("Expired form", "<p>Reload the admin page and try again.</p>", { status: 403 });
   const u = String(form.get("u") || "");
   if (!PROFILE_RE.test(u)) return page("Unknown recruit", "<p>Reload the admin page and try again.</p>", { status: 400 });
+  if (!(await allow(u))) return page("Recruit not found", '<p>HermitShell has not reported this recruit. <a href="/admin">Back to recruits</a></p>', { status: 404 });
   const back = (done) => redirect(`/admin/profile?u=${u}&done=${done}`);
   const file = form.get("cv");
   const cvText = String(form.get("cv_text") ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").trim().slice(0, MAX_CV_TEXT);
