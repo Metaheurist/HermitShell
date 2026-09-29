@@ -1,17 +1,20 @@
 #!/usr/bin/env sh
-# Install one or more HermitShell packages into a Hermes scripts directory.
+# Install one or more HermitShell packages into HermitShell's home folder.
 #
-#   HERMES_HOME=/opt/data ./scripts/install.sh daily-vacancy-report
+#   HERMITSHELL_HOME=/opt/hermitshell ./scripts/install.sh daily-vacancy-report
 #
-# Copies the shared hermes_common.py, autofit.py and doctor.py plus each package's files flat into $HERMES_HOME/scripts,
-# the directory Hermes cron jobs run scripts from. Existing personal files (job_profile.md,
-# cv_keywords.json, .env) are never overwritten. Set HERMES_OWNER=uid:gid to chown the result
-# (the official Hermes container runs as 10000:10000).
+# Copies the shared hermes_common.py, autofit.py, doctor.py and scheduler.py plus each package's files flat into
+# $HERMITSHELL_HOME/scripts, where the scheduler runs them from; each package's jobs.json becomes
+# <package>.jobs.json, its standard schedule. Existing personal files (job_profile.md, cv_keywords.json, .env) are
+# never overwritten. Set HERMITSHELL_OWNER=uid:gid to chown the result. HERMES_HOME and HERMES_OWNER, from installs
+# inside Hermes, still work. For a service that keeps the scheduler running, see scripts/install-service.sh or
+# the container (docs/installation.md).
 set -eu
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
-DEST="$HERMES_HOME/scripts"
+APP_HOME="${HERMITSHELL_HOME:-${HERMES_HOME:-$HOME/.hermitshell}}"
+OWNER="${HERMITSHELL_OWNER:-${HERMES_OWNER:-}}"
+DEST="$APP_HOME/scripts"
 
 if [ "$#" -eq 0 ]; then
     echo "usage: $0 <package> [package...]" >&2
@@ -21,8 +24,10 @@ if [ "$#" -eq 0 ]; then
 fi
 
 mkdir -p "$DEST"
-cp "$REPO/common/hermes_common.py" "$REPO/common/autofit.py" "$REPO/common/doctor.py" "$DEST/"
-echo "installed common/hermes_common.py, common/autofit.py and common/doctor.py -> $DEST"
+for f in hermes_common.py autofit.py doctor.py scheduler.py; do
+    cp "$REPO/common/$f" "$DEST/"
+done
+echo "installed common/hermes_common.py, autofit.py, doctor.py and scheduler.py -> $DEST"
 
 for pkg in "$@"; do
     src="$REPO/packages/$pkg"
@@ -36,6 +41,7 @@ for pkg in "$@"; do
         [ "$name" = ".env.example" ] && name="$pkg.env.example"
         cp "$f" "$DEST/$name"
     done
+    [ -f "$src/jobs.json" ] && cp "$src/jobs.json" "$DEST/$pkg.jobs.json"
     [ -d "$src/examples" ] && mkdir -p "$DEST/examples" && cp "$src"/examples/* "$DEST/examples/"
     if [ -d "$src/icons" ]; then
         mkdir -p "$DEST/icons"
@@ -47,8 +53,8 @@ done
 # Strip Windows line endings in case the repo was checked out on Windows.
 find "$DEST" -maxdepth 1 -name '*.py' -exec sed -i 's/\r$//' {} +
 
-if [ -n "${HERMES_OWNER:-}" ]; then
-    chown -R "$HERMES_OWNER" "$DEST"
+if [ -n "$OWNER" ]; then
+    chown -R "$OWNER" "$DEST"
 fi
 
 if [ -z "${HERMITSHELL_SETUP:-}" ]; then
@@ -57,7 +63,8 @@ if [ -z "${HERMITSHELL_SETUP:-}" ]; then
     echo "  cd $DEST && python3 doctor.py --fix"
     echo
     echo "Next: run the setup wizard to enter your settings, API keys, profile and schedules:"
-    echo "  python3 $REPO/scripts/setup.py --hermes-home $HERMES_HOME --no-install"
-    echo "(or copy the *.example files, edit $HERMES_HOME/.env and register the cron jobs by hand;"
-    echo "see each package README)."
+    echo "  python3 $REPO/scripts/setup.py --home $APP_HOME --no-install"
+    echo
+    echo "Then keep the scheduler running: sudo sh $REPO/scripts/install-service.sh (a systemd service),"
+    echo "or run HermitShell as a container instead (docs/installation.md)."
 fi

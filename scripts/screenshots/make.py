@@ -2,7 +2,7 @@
 """Regenerate the documentation screenshots: every email, PDF and feedback Worker page.
 
 Everything is rendered by the real code with fictional data (Alex Morgan, Northwind, Contoso...), in a
-temporary Hermes home, so nothing from your own .env, profile or server is used. Emails and PDFs come
+temporary HermitShell home, so nothing from your own .env, profile or server is used. Emails and PDFs come
 from the Python builders, Worker pages from worker_pages.mjs (Node 18+), and headless Chrome or
 Chromium takes the pictures.
 
@@ -54,7 +54,8 @@ def isolate(home: Path) -> None:
         if key.startswith(("JOB_", "SMTP_", "ALERT_", "COVER_LETTER_", "FIRECRAWL", "TAVILY", "SCRAPFLY", "HERMES_",
                            "OLLAMA_", "CLOUDFLARE_")):
             del os.environ[key]
-    os.environ.update(SETTINGS, HERMES_HOME=str(home), HERMES_STATE_DIR=str(home / "state"))
+    os.environ.update(SETTINGS, HERMITSHELL_HOME=str(home), HERMES_HOME=str(home),
+                      HERMES_STATE_DIR=str(home / "state"))
     sys.path[:0] = [str(REPO / "common"), str(PACKAGE)]
 
 

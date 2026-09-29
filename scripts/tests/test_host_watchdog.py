@@ -22,8 +22,8 @@ echo "$*" >> "$FAKE/calls"
 case "$1" in
   ps)
     case "$*" in
-      *Image*) printf 'ollama ollama/ollama:latest\nhermes-agent nousresearch/hermes-agent:latest\nweb nginx:latest\n' ;;
-      *) printf 'ollama\nhermes-agent\nweb\n' ;;
+      *Image*) printf 'ollama ollama/ollama:latest\nhermitshell ghcr.io/example/hermitshell:latest\nweb nginx:latest\n' ;;
+      *) printf 'ollama\nhermitshell\nold-agent\nweb\n' ;;
     esac ;;
   inspect) echo '[{"Driver":"nvidia","Count":-1,"Capabilities":[["gpu"]]}] null' ;;
   restart) echo ok > "$FAKE/gpu"; echo "$2" ;;
@@ -80,14 +80,23 @@ def test_a_healthy_container_is_left_alone(host):
     assert not any(c.startswith("restart") for c in calls) and report["ollama_gpu"] == "ok"
 
 
-def test_the_report_is_written_inside_the_hermes_container_as_its_user(host):
+def test_the_report_is_written_inside_the_hermitshell_container_as_its_user(host):
     _, calls, _ = host(gpu="ok")
     write = next(c for c in calls if c.startswith("exec -i"))
-    assert write.startswith("exec -i -u hermes hermes-agent sh -c")
-    assert write.endswith("sh /opt/data/scripts/state")
+    assert write.startswith("exec -i -u hermitshell hermitshell sh -c")
+    assert write.endswith("sh /data/scripts/state")
 
 
-@pytest.mark.parametrize("env", [{"HERMES_CONTAINER": "x;reboot"}, {"HERMES_STATE": "relative/path"},
+def test_the_settings_of_an_install_inside_hermes_are_still_read(host):
+    _, calls, _ = host(gpu="ok", HERMES_CONTAINER="old-agent", HERMES_USER="agent", HERMES_STATE="/opt/data/scripts/state")
+    write = next(c for c in calls if c.startswith("exec -i"))
+    assert write.startswith("exec -i -u agent old-agent sh -c") and write.endswith("sh /opt/data/scripts/state")
+    _, calls, _ = host(gpu="ok", HERMES_CONTAINER="old-agent", HERMITSHELL_CONTAINER="hermitshell")
+    assert next(c for c in calls if c.startswith("exec -i")).startswith("exec -i -u hermitshell hermitshell ")
+
+
+@pytest.mark.parametrize("env", [{"HERMITSHELL_CONTAINER": "x;reboot"}, {"HERMITSHELL_STATE": "relative/path"},
+                                 {"HERMITSHELL_STATE": "/data/$(reboot)"}, {"HERMITSHELL_USER": "a b"},
                                  {"HERMES_STATE": "/opt/data/$(reboot)"}])
 def test_bad_settings_are_refused(host, env):
     res, calls, report = host(gpu="ok", **env)

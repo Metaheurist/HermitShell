@@ -1,31 +1,34 @@
 #!/bin/sh
-# HermitShell's Ollama watchdog, run as root on the Docker host every 2 minutes by hermes-ollama-watchdog.timer.
+# HermitShell's Ollama watchdog, run as root on the Docker host every 2 minutes by hermitshell-ollama-watchdog.timer.
 #
 # - Reports the machine to the scripts (CPU, memory, GPUs, whether Ollama can still see them) as
 #   state/hardware.json, which autofit.py reads: the scripts run in a container that can't see the host's GPUs.
-#   It is written from inside the Hermes container, as Hermes' own user, never by root into a folder the
+#   It is written from inside the HermitShell container, as its own user, never by root into a folder the
 #   container can change.
 # - Restarts an Ollama container that has lost its GPU ("Failed to initialize NVML", which happens to running
 #   containers after a systemd reload), at most once every 20 minutes and 6 times a day per container, so a broken
 #   driver can't cause a restart loop.
 #
-# Settings, from the environment or /etc/default/hermes-ollama-watchdog:
-#   HERMES_CONTAINER    the Hermes container (default hermes-agent)
-#   HERMES_USER         the user the scripts run as in it (default hermes)
-#   HERMES_STATE        the scripts' state folder inside it (default /opt/data/scripts/state)
+# Settings, from the environment or /etc/default/hermitshell-ollama-watchdog:
+#   HERMITSHELL_CONTAINER  the HermitShell container (default hermitshell)
+#   HERMITSHELL_USER       the user the scripts run as in it (default hermitshell)
+#   HERMITSHELL_STATE      the scripts' state folder inside it (default /data/scripts/state)
+# (HERMES_CONTAINER, HERMES_USER, HERMES_STATE and /etc/default/hermes-ollama-watchdog, from when HermitShell
+# ran inside Hermes, are still read.)
 #   OLLAMA_CONTAINERS   the Ollama containers to watch (default: every running container of an ollama/ollama image)
 #   RESTART_MIN_GAP     seconds between restarts of one container (default 1200)
 #   RESTART_MAX_PER_DAY restarts per container per day (default 6)
 set -u
-CONF=/etc/default/hermes-ollama-watchdog
-# shellcheck disable=SC1090
-[ -r "$CONF" ] && . "$CONF"
-HERMES_CONTAINER=${HERMES_CONTAINER:-hermes-agent}
-HERMES_USER=${HERMES_USER:-hermes}
-HERMES_STATE=${HERMES_STATE:-/opt/data/scripts/state}
+for CONF in /etc/default/hermes-ollama-watchdog /etc/default/hermitshell-ollama-watchdog; do
+    # shellcheck disable=SC1090
+    [ -r "$CONF" ] && . "$CONF"
+done
+CONTAINER=${HERMITSHELL_CONTAINER:-${HERMES_CONTAINER:-hermitshell}}
+APP_USER=${HERMITSHELL_USER:-${HERMES_USER:-hermitshell}}
+STATE=${HERMITSHELL_STATE:-${HERMES_STATE:-/data/scripts/state}}
 MIN_GAP=${RESTART_MIN_GAP:-1200}
 MAX_DAY=${RESTART_MAX_PER_DAY:-6}
-RUN_DIR=${WATCHDOG_RUN_DIR:-/run/hermes-ollama-watchdog}
+RUN_DIR=${WATCHDOG_RUN_DIR:-/run/hermitshell-ollama-watchdog}
 DOCKER=${DOCKER:-docker}
 
 say() { echo "ollama-watchdog: $*"; }
@@ -122,15 +125,16 @@ for f in "$RUN_DIR"/*; do
     [ "$(digits "$t")" -gt "$last_restart" ] && last_restart=$(digits "$t")
 done
 
-# ---------------------------------------------------------------- the report, written as Hermes' user
-valid_name "$HERMES_CONTAINER" || { say "bad HERMES_CONTAINER"; exit 1; }
-case "$HERMES_STATE" in /*) ;; *) say "HERMES_STATE must be an absolute path"; exit 1 ;; esac
-case "$HERMES_STATE" in *[!A-Za-z0-9_./-]*) say "bad HERMES_STATE"; exit 1 ;; esac
+# ---------------------------------------------------------------- the report, written as HermitShell's user
+valid_name "$CONTAINER" || { say "bad HERMITSHELL_CONTAINER"; exit 1; }
+valid_name "$APP_USER" || { say "bad HERMITSHELL_USER"; exit 1; }
+case "$STATE" in /*) ;; *) say "HERMITSHELL_STATE must be an absolute path"; exit 1 ;; esac
+case "$STATE" in *[!A-Za-z0-9_./-]*) say "bad HERMITSHELL_STATE"; exit 1 ;; esac
 report=$(printf '{"at":%s,"cpu":{"model":"%s","logical":%s,"physical":%s,"avx2":%s},"ram_mb":{"total":%s,"available":%s},"gpus":[%s],"ollama_gpu":"%s","last_restart":%s}' \
     "$(date +%s)" "$cpu_model" "$(digits "$logical")" "$(digits "$physical")" "$avx2" "$(digits "$mem_total")" \
     "$(digits "$mem_avail")" "$gpus" "$seen" "$last_restart")
-if $DOCKER ps --format '{{.Names}}' 2>/dev/null | grep -qx "$HERMES_CONTAINER"; then
-    printf '%s\n' "$report" | $DOCKER exec -i -u "$HERMES_USER" "$HERMES_CONTAINER" sh -c \
+if $DOCKER ps --format '{{.Names}}' 2>/dev/null | grep -qx "$CONTAINER"; then
+    printf '%s\n' "$report" | $DOCKER exec -i -u "$APP_USER" "$CONTAINER" sh -c \
         'umask 022; mkdir -p "$1" && cat > "$1/.hardware.json.tmp" && mv -f "$1/.hardware.json.tmp" "$1/hardware.json"' \
-        sh "$HERMES_STATE" || say "could not write the hardware report"
+        sh "$STATE" || say "could not write the hardware report"
 fi

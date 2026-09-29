@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Deploy the feedback Worker with a Cloudflare API token: no Node.js or wrangler needed.
 
-    python3 scripts/cloudflare_worker.py                   # deploy or update with $HERMES_HOME/.env
-    python3 scripts/cloudflare_worker.py --hermes-home /path/to/hermes/data
+    python3 scripts/cloudflare_worker.py                   # deploy or update with $HERMITSHELL_HOME/.env
+    python3 scripts/cloudflare_worker.py --home /opt/hermitshell
     printf '%s' "$PASS" | python3 scripts/cloudflare_worker.py --admin-password-stdin
     python3 scripts/cloudflare_worker.py --access you@example.com
 
@@ -303,21 +303,24 @@ def set_env_value(path: Path, key: str, value: str) -> None:
 
 
 def default_home() -> Path:
-    for candidate in (os.environ.get("HERMES_HOME"), "/opt/data" if Path("/opt/data/.env").is_file() else None):
+    """$HERMITSHELL_HOME, else $HERMES_HOME (older installs), else the container's /data, else ~/.hermitshell."""
+    for candidate in (os.environ.get("HERMITSHELL_HOME"), os.environ.get("HERMES_HOME"),
+                      "/data" if Path("/data/.env").is_file() else None):
         if candidate:
             return Path(candidate)
-    return Path.home() / ".hermes"
+    return Path.home() / ".hermitshell"
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Deploy or update the feedback Worker with a Cloudflare API token.")
-    parser.add_argument("--hermes-home", help="Hermes home holding .env (default: $HERMES_HOME, /opt/data or ~/.hermes)")
+    parser.add_argument("--home", "--hermes-home", dest="home",
+                        help="HermitShell's home holding .env (default: $HERMITSHELL_HOME, /data or ~/.hermitshell)")
     parser.add_argument("--admin-user", help="set the /admin username")
     parser.add_argument("--admin-password-stdin", action="store_true", help="read a new /admin password from stdin")
     parser.add_argument("--access", metavar="EMAILS", help="protect /admin with Cloudflare Access for these emails")
     args = parser.parse_args(argv)
 
-    env_path = Path(args.hermes_home or default_home()) / ".env"
+    env_path = Path(args.home or default_home()) / ".env"
     env = read_env(env_path)
     missing = [k for k in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "JOB_FEEDBACK_SECRET",
                            "JOB_FEEDBACK_API_TOKEN") if not env.get(k)]

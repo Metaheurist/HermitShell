@@ -5,12 +5,13 @@ deploys the Worker first and leaves email, keys, the CV and the job search to th
 
     python3 scripts/setup.py                          # guided setup (essential settings)
     python3 scripts/setup.py --advanced               # ask for every setting
-    sudo python3 scripts/setup.py --hermes-home /path/to/hermes/data   # from a Docker host
+    sudo python3 scripts/setup.py --home /opt/hermitshell   # another home folder
+    docker exec -it hermitshell /app/entrypoint.sh setup   # inside the container
     python3 scripts/setup.py --non-interactive --answers answers.env   # unattended
     python3 scripts/setup.py --dry-run                # show what would change, write nothing
 
 Settings are read from the .env.example files (repository root and each package), so new
-settings appear in the wizard automatically. Values go to $HERMES_HOME/.env, which is backed up
+settings appear in the wizard automatically. Values go to $HERMITSHELL_HOME/.env, which is backed up
 first and kept at mode 600. Secrets are typed without echo and only ever shown masked.
 Re-run the wizard at any time: current values are offered as the defaults.
 """
@@ -47,6 +48,7 @@ TIME_RE = re.compile(r"^(?:(weekdays|daily|sun(?:day)?|mon(?:day)?|tue(?:s(?:day
                      r"thu(?:rs(?:day)?)?|fri(?:day)?|sat(?:urday)?)\s+)?([01]?\d|2[0-3]):([0-5]\d)$", re.I)
 CRON_RE = re.compile(r"^\S+(\s+\S+){4}$")
 OLLAMA_CONTAINER, OLLAMA_IMAGE, OLLAMA_WAIT_TRIES = "ollama", "ollama/ollama", 12
+CONTAINER = "hermitshell"
 # Flash attention and an 8-bit KV cache halve the memory a long context takes, so more of the model fits on a GPU.
 OLLAMA_ENV = ("OLLAMA_FLASH_ATTENTION=1", "OLLAMA_KV_CACHE_TYPE=q8_0")
 NVIDIA_NODES = ("/dev/nvidiactl", "/dev/nvidia-uvm", "/dev/nvidia-uvm-tools", "/dev/nvidia-modeset")
@@ -260,7 +262,7 @@ def parse_example(path: Path) -> list[Setting]:
 
 
 class EnvFile:
-    """$HERMES_HOME/.env: update keys in place, append new ones in a labelled block."""
+    """$HERMITSHELL_HOME/.env: update keys in place, append new ones in a labelled block."""
 
     def __init__(self, path: Path):
         self.path = path
@@ -287,19 +289,20 @@ class EnvFile:
         return "\n".join(lines).rstrip("\n") + "\n"
 
 
-# --------------------------------------------------------------------------- running Hermes commands
+# --------------------------------------------------------------------------- running package commands
 
 class Runner:
-    """Runs `hermes` and package scripts locally or inside the Hermes Docker container."""
+    """Runs package scripts and the scheduler here, or inside the HermitShell container when it is running on this
+    Docker host (its Python has every package the scripts need)."""
 
     def __init__(self, args, scripts_dir: Path):
         self.args, self.scripts_dir, self.mode = args, scripts_dir, None
         if args.container:
             self.mode = "docker"
-        elif shutil.which("hermes"):
+        elif shutil.which("docker") and self._container_running(CONTAINER):
+            args.container, self.mode = CONTAINER, "docker"
+        elif (scripts_dir / "scheduler.py").is_file():
             self.mode = "local"
-        elif shutil.which("docker") and self._container_running("hermes-agent"):
-            args.container, self.mode = "hermes-agent", "docker"
 
     @staticmethod
     def _container_running(name: str) -> bool:
@@ -313,7 +316,7 @@ class Runner:
     def describe(self) -> str:
         if self.mode == "docker":
             return f"inside the '{self.args.container}' container as user '{self.args.container_user}'"
-        return "with the local `hermes` command" if self.mode == "local" else "not available"
+        return f"here, with {self.args.python}" if self.mode == "local" else "not available (install first)"
 
     def command(self, argv: list[str], tty: bool = False, in_scripts: bool = False,
                 env: dict[str, str] | None = None) -> list[str]:
@@ -346,17 +349,16 @@ class Runner:
             return subprocess.CompletedProcess(["docker", *argv], 1, "", str(exc))
 
     def cron_jobs(self) -> list[dict]:
-        res = self.run(["hermes", "cron", "list"], capture=True, timeout=60)
-        if not res or res.returncode:
+        """The scheduler's jobs as {id, name, schedule (the cron expression), script}."""
+        res = self.run([self.args.python, "scheduler.py", "list", "--json"], capture=True, in_scripts=True, timeout=60)
+        try:
+            jobs = json.loads(res.stdout) if res and not res.returncode else []
+        except ValueError:
             return []
-        jobs, cur = [], None
-        for line in res.stdout.splitlines():
-            if m := re.match(r"^\s{2}([0-9a-f]{6,})\s+\[", line):
-                cur = {"id": m.group(1)}
-                jobs.append(cur)
-            elif cur is not None and (m := re.match(r"^\s+(Name|Schedule|Script):\s+(.*)$", line)):
-                cur[m.group(1).lower()] = m.group(2).strip()
-        return jobs
+        return [{"id": str(j.get("id", "")), "name": str(j.get("name", "")), "script": str(j.get("script") or ""),
+                 "schedule": str((j.get("schedule") or {}).get("expr", "") if isinstance(j.get("schedule"), dict)
+                                 else j.get("schedule") or "")}
+                for j in jobs if isinstance(j, dict) and not j.get("workdir")] if isinstance(jobs, list) else []
 
 
 # --------------------------------------------------------------------------- the wizard
@@ -481,7 +483,7 @@ class Wizard:
         if not self.interactive:
             if s.key in self.answers:
                 return self.answers[s.key]
-            if s.key in os.environ and s.key not in ("HERMES_HOME",):
+            if s.key in os.environ and s.key not in ("HERMES_HOME", "HERMITSHELL_HOME"):
                 return os.environ[s.key]
             return current if current is not None else ("" if s.placeholder else s.default)
 
@@ -535,13 +537,11 @@ class Wizard:
     # ------------------------------------------------------------------ steps
 
     def choose_home(self) -> Path:
-        candidates = [self.args.hermes_home, os.environ.get("HERMES_HOME"),
-                      "/opt/data" if Path("/opt/data/config.yaml").is_file() else None, str(Path.home() / ".hermes")]
+        candidates = [self.args.home, os.environ.get("HERMITSHELL_HOME"), os.environ.get("HERMES_HOME"),
+                      "/data" if Path("/data/.env").is_file() else None, str(Path.home() / ".hermitshell")]
         default = next(c for c in candidates if c)
-        home = Path(self.text("Hermes home directory (holds config.yaml and .env)", default, allow_empty=False))
-        if not (home / "config.yaml").is_file():
-            self.say(f"{YELLOW}  {home}/config.yaml not found. Packages read the model from it; continuing anyway.{RESET}")
-        return home
+        return Path(self.text("HermitShell home folder (holds .env, the schedule and the data)", default,
+                              allow_empty=False))
 
     def choose_packages(self) -> list[str]:
         available = sorted(p.name for p in PACKAGES_DIR.iterdir() if (p / ".env.example").is_file())
@@ -571,10 +571,10 @@ class Wizard:
         self.heading("Installing files")
         cmd = ["sh", str(REPO / "scripts" / "install.sh"), *packages]
         if self.args.dry_run:
-            self.say(f"  would run: HERMES_HOME={home} {shlex.join(cmd)}")
+            self.say(f"  would run: HERMITSHELL_HOME={home} {shlex.join(cmd)}")
             return
-        env = {**os.environ, "HERMES_HOME": str(home), "HERMITSHELL_SETUP": "1",
-               **({"HERMES_OWNER": owner} if owner else {})}
+        env = {**os.environ, "HERMITSHELL_HOME": str(home), "HERMITSHELL_SETUP": "1",
+               **({"HERMITSHELL_OWNER": owner} if owner else {})}
         if subprocess.run(cmd, env=env).returncode:
             sys.exit("install.sh failed; fix the error above and re-run the wizard.")
 
@@ -620,12 +620,12 @@ class Wizard:
 
     def doctor(self, runner: Runner, scripts: Path, argv: list[str], capture: bool = False,
                env: dict[str, str] | None = None) -> subprocess.CompletedProcess | None:
-        """doctor.py in Hermes' own Python (in the container or next to the local `hermes`), else in this one."""
+        """doctor.py in the Python that runs the scripts (in the container, or this one)."""
         if runner.mode:
             return runner.run([self.args.python, "doctor.py", *argv], capture=capture, in_scripts=True, env=env)
         try:
             return subprocess.run([sys.executable, str(scripts / "doctor.py"), *argv], cwd=scripts, text=True,
-                                  capture_output=capture, env={**os.environ, "HERMES_HOME": str(scripts.parent),
+                                  capture_output=capture, env={**os.environ, "HERMITSHELL_HOME": str(scripts.parent),
                                                                **(env or {})})
         except (OSError, subprocess.SubprocessError) as exc:
             self.say(f"{YELLOW}  doctor.py failed: {exc}{RESET}")
@@ -695,10 +695,10 @@ class Wizard:
         return None
 
     def start_ollama(self, runner: Runner) -> str | None:
-        """Start (or reuse) an Ollama container on the Hermes container's network; returns its address for Hermes."""
+        """Start (or reuse) an Ollama container on the HermitShell container's network; returns its address."""
         if runner.mode != "docker" or not shutil.which("docker"):
             return None
-        if not self.confirm(f"No Ollama server found. Start an Ollama container next to Hermes ({OLLAMA_IMAGE}, "
+        if not self.confirm(f"No Ollama server found. Start an Ollama container next to HermitShell ({OLLAMA_IMAGE}, "
                             f"models kept in the '{OLLAMA_CONTAINER}' volume)?", True):
             return None
         container = self.args.container
@@ -710,7 +710,7 @@ class Wizard:
             # Containers only find each other by name on a user-defined network, not on the default bridge.
             net = next((n for n in nets if n not in ("bridge", "none")), None)
             if not net:
-                net = "hermes-net"
+                net = "hermitshell-net"
                 if runner.docker(["network", "inspect", net]).returncode:
                     runner.docker(["network", "create", net])
                 runner.docker(["network", "connect", net, container])
@@ -1211,7 +1211,7 @@ class Wizard:
         if not self.interactive:
             default = self.answers.get(key, os.environ.get(key, default))
         self.say(f"\nWhen should {info['title']} run? " + (f"{info['intro']}\n" if info.get("intro") else "")
-                 + "Times use Hermes' timezone (`timezone:` in config.yaml).\n"
+                 + "Times are in HERMES_TIMEZONE (the timezone you gave above).\n"
                  f"  {DIM}HH:MM runs daily, 'weekdays HH:MM' Monday to Friday, 'sunday HH:MM' once a week; "
                  f"a cron expression also works; '-' skips scheduling{RESET}")
         while True:
@@ -1237,17 +1237,18 @@ class Wizard:
                 self.say(f"  {DIM}{info['title']}: unchanged ({friendly_schedule(cron)}){RESET}")
                 continue
             name = existing.get("name", info["cron"]) if current_script else info["cron"]
-            create = ["hermes", "cron", "create", cron, info["title"], "--name", name,
-                      "--script", info["script"], "--no-agent", "--deliver", "local"]
+            create = [self.args.python, "scheduler.py", "create", cron, info["title"], "--name", name,
+                      "--script", info["script"]]
             if not runner.mode:
-                self.say(f"  Hermes isn't reachable from here; inside Hermes run:\n    {shlex.join(create)}")
+                self.say(f"  HermitShell isn't installed here; in its scripts folder run:\n    {shlex.join(create)}")
                 continue
             if self.args.dry_run:
                 self.say(f"  would run: {shlex.join(create)}" + (f" (replacing {existing['id']})" if existing else ""))
                 continue
             if existing:
-                runner.run(["hermes", "cron", "remove", existing["id"]], capture=True, timeout=60)
-            res = runner.run(create, capture=True, timeout=60)
+                runner.run([self.args.python, "scheduler.py", "remove", existing["id"]], capture=True,
+                           in_scripts=True, timeout=60)
+            res = runner.run(create, capture=True, in_scripts=True, timeout=60)
             ok = res is not None and res.returncode == 0
             self.say(f"  {GREEN if ok else YELLOW}{info['title']}: "
                      f"{'scheduled ' + friendly_schedule(cron) if ok else 'failed'}{RESET}")
@@ -1311,7 +1312,7 @@ class Wizard:
         return on_dashboard
 
     def run(self) -> int:
-        self.say(f"{BOLD}HermitShell setup{RESET}\nInstalls packages into Hermes and configures them. "
+        self.say(f"{BOLD}HermitShell setup{RESET}\nInstalls HermitShell's packages and configures them. "
                  "Press Enter to accept a [default]; re-run any time to change settings.")
         home = self.choose_home()
         scripts = home / "scripts"
@@ -1321,7 +1322,7 @@ class Wizard:
             self.install(home, packages, owner)
         self.current = EnvFile(home / ".env").values()
         runner = Runner(self.args, scripts)
-        self.say(f"\nHermes commands: {runner.describe()}")
+        self.say(f"\nPackage commands run {runner.describe()}")
         if not self.args.no_prereqs:
             self.prerequisites(runner, scripts)
 
@@ -1344,14 +1345,16 @@ class Wizard:
                      "connected (a few minutes):\n  " + ("" if self.smtp_set() else "the email server, ")
                      + "your web search keys, your CV and the job search. The page's checklist shows what's left.")
         self.say(f"Settings: {home / '.env'}\nRe-run `python3 scripts/setup.py` to change anything, "
-                 "or `--advanced` to see every option.")
+                 "or `--advanced` to see every option.\nThe schedule runs while HermitShell's scheduler does: the "
+                 "container, or `sudo sh scripts/install-service.sh` for a service (docs/installation.md).")
         return 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Install and configure HermitShell packages for Hermes.")
+    parser = argparse.ArgumentParser(description="Install and configure HermitShell's packages.")
     parser.add_argument("packages", nargs="*", help="packages to set up (default: ask)")
-    parser.add_argument("--hermes-home", help="Hermes home (default: $HERMES_HOME, /opt/data or ~/.hermes)")
+    parser.add_argument("--home", "--hermes-home", dest="home",
+                        help="HermitShell's home folder (default: $HERMITSHELL_HOME, /data or ~/.hermitshell)")
     parser.add_argument("--advanced", action="store_true", help="ask for every setting, not just the essentials")
     parser.add_argument("--non-interactive", action="store_true",
                         help="no prompts: take values from --answers, then the environment, then current/defaults")
@@ -1363,11 +1366,11 @@ def main() -> int:
     parser.add_argument("--no-cron", action="store_true", help="skip the schedule step")
     parser.add_argument("--no-prereqs", action="store_true",
                         help="skip installing Python packages, starting Ollama and downloading its model")
-    parser.add_argument("--owner", help="uid:gid for written files (default: owner of the Hermes home when run as root)")
-    parser.add_argument("--container", help="Hermes Docker container for hermes/python commands "
-                                            "(auto-detects 'hermes-agent')")
-    parser.add_argument("--container-home", default="/opt/data", help="HERMES_HOME inside the container")
-    parser.add_argument("--container-user", default="hermes", help="user to run commands as in the container")
+    parser.add_argument("--owner", help="uid:gid for written files (default: owner of the home folder when run as root)")
+    parser.add_argument("--container", help=f"HermitShell container to run package commands in "
+                                            f"(auto-detects '{CONTAINER}')")
+    parser.add_argument("--container-home", default="/data", help="HERMITSHELL_HOME inside the container")
+    parser.add_argument("--container-user", default="hermitshell", help="user to run commands as in the container")
     parser.add_argument("--python", default="python3", help="Python used to run package scripts")
     args = parser.parse_args()
     try:

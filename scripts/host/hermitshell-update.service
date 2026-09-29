@@ -1,0 +1,9 @@
+[Unit]
+Description=HermitShell: move the container to the newest image
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh @SCRIPT@
+Nice=10

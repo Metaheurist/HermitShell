@@ -5,6 +5,7 @@ Run from the repository root:  python -m pytest scripts/tests
 
 import argparse
 import importlib.util
+import json
 import re
 import subprocess
 import sys
@@ -66,6 +67,14 @@ def test_every_package_script_exists():
         for _, job in setup.scheduled_jobs(pkg):
             assert (REPO / "packages" / pkg / job["script"]).is_file(), job["script"]
             assert setup.CRON_RE.match(job.get("schedule", info["schedule"]))
+
+
+def test_each_packages_standard_jobs_match_the_wizard():
+    for pkg, info in setup.PACKAGES.items():
+        shipped = json.loads((REPO / "packages" / pkg / "jobs.json").read_text(encoding="utf-8"))["jobs"]
+        wizard = [(job["cron"], job["title"], job["script"], job.get("schedule", info["schedule"]))
+                  for _, job in setup.scheduled_jobs(pkg)]
+        assert [(j["name"], j["title"], j["script"], j["schedule"]) for j in shipped] == wizard
 
 
 # --------------------------------------------------------------------------- small helpers
@@ -175,18 +184,18 @@ def test_env_file_starts_empty_when_missing(tmp_path):
 
 # --------------------------------------------------------------------------- prerequisites (doctor, Ollama)
 
-def make_args(tmp_path, answers="", dry_run=False, container="hermes-agent"):
+def make_args(tmp_path, answers="", dry_run=False, container="hermitshell"):
     path = tmp_path / "answers.env"
     path.write_text(answers, encoding="utf-8")
     return argparse.Namespace(non_interactive=True, answers=str(path), advanced=False, dry_run=dry_run,
-                              container=container, container_home="/opt/data", container_user="hermes",
+                              container=container, container_home="/data", container_user="hermitshell",
                               python="python3", no_prereqs=False)
 
 
 class FakeDocker:
     """Stands in for `docker` on the host: replies by subcommand and records every call."""
 
-    def __init__(self, networks="hermes-net", state="", fail_run=False, network_exists=True):
+    def __init__(self, networks="hermitshell-net", state="", fail_run=False, network_exists=True):
         self.calls, self.networks, self.state = [], networks, state
         self.fail_run, self.network_exists, self.info = fail_run, network_exists, ""
 
@@ -218,7 +227,7 @@ def prereq(tmp_path, monkeypatch):
     monkeypatch.setattr(setup.time, "sleep", lambda s: None)
     monkeypatch.setattr(setup.shutil, "which", lambda name: f"/usr/bin/{name}" if name == "docker" else None)
 
-    def build(answers="", current=None, replies=(), dry_run=False, docker=None, container="hermes-agent"):
+    def build(answers="", current=None, replies=(), dry_run=False, docker=None, container="hermitshell"):
         args = make_args(tmp_path, answers, dry_run, container)
         w, runner = setup.Wizard(args), setup.Runner(args, scripts)
         w.current = dict(current or {})
@@ -233,8 +242,54 @@ def prereq(tmp_path, monkeypatch):
 def test_runner_passes_extra_environment_into_the_container(tmp_path):
     runner = setup.Runner(make_args(tmp_path), tmp_path)
     assert runner.command(["python3", "doctor.py"], in_scripts=True, env={"OLLAMA_HOST": "http://ollama:11434"}) == [
-        "docker", "exec", "-u", "hermes", "-w", "/opt/data/scripts", "-e", "OLLAMA_HOST=http://ollama:11434",
-        "hermes-agent", "python3", "doctor.py"]
+        "docker", "exec", "-u", "hermitshell", "-w", "/data/scripts", "-e", "OLLAMA_HOST=http://ollama:11434",
+        "hermitshell", "python3", "doctor.py"]
+
+
+def test_cron_jobs_read_the_schedulers_list_and_skip_per_profile_jobs(tmp_path, monkeypatch):
+    runner = setup.Runner(make_args(tmp_path), tmp_path)
+    listed = [{"id": "a1", "name": "daily-vacancy-report", "script": "job_scanner.py",
+               "schedule": {"kind": "cron", "expr": "0 7 * * *"}},
+              {"id": "b2", "name": "vacancy-report-sam-lee-1", "script": "profile_report.py",
+               "schedule": {"expr": "15 8 * * *"}, "workdir": "/data/scripts/state/profiles/sam-lee-1"}]
+    seen = []
+
+    def run(cmd, **kwargs):
+        seen.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, json.dumps(listed), "")
+    monkeypatch.setattr(setup.subprocess, "run", run)
+    assert runner.cron_jobs() == [{"id": "a1", "name": "daily-vacancy-report", "script": "job_scanner.py",
+                                   "schedule": "0 7 * * *"}]
+    assert seen[0][-4:] == ["python3", "scheduler.py", "list", "--json"] and seen[0][:2] == ["docker", "exec"]
+    monkeypatch.setattr(setup.subprocess, "run", lambda cmd, **k: subprocess.CompletedProcess(cmd, 0, "oops", ""))
+    assert runner.cron_jobs() == []
+
+
+def test_a_changed_schedule_replaces_the_job_through_the_scheduler(tmp_path, capsys):
+    args = make_args(tmp_path)
+    w, runner = setup.Wizard(args), setup.Runner(args, tmp_path)
+    info = setup.PACKAGES["daily-vacancy-report"]
+    w._cron_jobs = [{"id": "a1", "name": "job-scanner", "script": "job_scanner.py", "schedule": "0 8 * * *"}]
+    w.schedule_plan = {"daily-vacancy-report": (info, "30 6 * * 1-5")}
+    calls = []
+    runner.run = lambda argv, **kw: calls.append(argv) or subprocess.CompletedProcess(argv, 0, "", "")
+    w.schedules(runner)
+    assert calls == [["python3", "scheduler.py", "remove", "a1"],
+                     ["python3", "scheduler.py", "create", "30 6 * * 1-5", "Daily Vacancy Report",
+                      "--name", "job-scanner", "--script", "job_scanner.py"]]
+    assert "scheduled weekdays 06:30" in capsys.readouterr().out
+
+
+def test_without_an_install_the_schedule_command_is_printed(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(setup.shutil, "which", lambda name: None)
+    args = make_args(tmp_path, container=None)
+    w, runner = setup.Wizard(args), setup.Runner(args, tmp_path)
+    assert runner.mode is None and "install first" in runner.describe()
+    w._cron_jobs = []
+    w.schedule_plan = {"x": (setup.PACKAGES["daily-vacancy-report"], "0 7 * * *")}
+    w.schedules(runner)
+    out = capsys.readouterr().out
+    assert "isn't installed here" in out and "scheduler.py create '0 7 * * *' 'Daily Vacancy Report'" in out
 
 
 def test_prerequisites_dry_run_runs_nothing(prereq, capsys):
@@ -283,7 +338,7 @@ def test_no_ollama_starts_a_container_and_downloads_the_model(prereq):
     w, runner, scripts = prereq(current={"OLLAMA_HOST": "http://localhost:11434"}, replies=[down, down, up])
     w.ollama(runner, scripts)
     run = runner.docker.ran("run")[0]
-    assert run[run.index("--network") + 1] == "hermes-net" and "ollama:/root/.ollama" in run
+    assert run[run.index("--network") + 1] == "hermitshell-net" and "ollama:/root/.ollama" in run
     assert run[-1] == "ollama/ollama" and "--gpus" not in run
     assert w.changes == {"OLLAMA_HOST": "http://ollama:11434"}
     assert w.doctor_calls == [(["--fix", "--only", "ollama", "--model", "qwen3:4b"],
@@ -364,22 +419,22 @@ def test_calibration_runs_autofit_once_the_model_is_there(prereq):
     assert calls == [(["python3", "autofit.py", "--calibrate"], {"in_scripts": True, "env": None})]
 
 
-def test_hermes_on_the_default_bridge_gets_a_named_network(prereq):
+def test_hermitshell_on_the_default_bridge_gets_a_named_network(prereq):
     w, runner, _ = prereq(docker=FakeDocker(networks="bridge", network_exists=False))
     assert w.start_ollama(runner) == "http://ollama:11434"
-    assert runner.docker.ran("network create") == [["network", "create", "hermes-net"]]
-    assert ["network", "connect", "hermes-net", "hermes-agent"] in runner.docker.calls
+    assert runner.docker.ran("network create") == [["network", "create", "hermitshell-net"]]
+    assert ["network", "connect", "hermitshell-net", "hermitshell"] in runner.docker.calls
 
 
 def test_a_stopped_ollama_container_is_reused(prereq):
     w, runner, _ = prereq(docker=FakeDocker(state="exited"))
     assert w.start_ollama(runner) == "http://ollama:11434"
     assert ["start", "ollama"] in runner.docker.calls
-    assert ["network", "connect", "hermes-net", "ollama"] in runner.docker.calls
+    assert ["network", "connect", "hermitshell-net", "ollama"] in runner.docker.calls
     assert runner.docker.ran("run") == []
 
 
-def test_hermes_on_the_host_network_reaches_ollama_on_localhost(prereq):
+def test_hermitshell_on_the_host_network_reaches_ollama_on_localhost(prereq):
     w, runner, _ = prereq(docker=FakeDocker(networks="host"))
     assert w.start_ollama(runner) == "http://localhost:11434"
     run = runner.docker.ran("run")[0]

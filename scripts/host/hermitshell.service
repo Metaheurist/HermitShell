@@ -1,0 +1,23 @@
+[Unit]
+Description=HermitShell scheduler: daily vacancy reports, cover letters, recruits and maintenance
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=@USER@
+Environment=HERMITSHELL_HOME=@HOME@
+WorkingDirectory=@HOME@/scripts
+ExecStart=@PYTHON@ @HOME@/scripts/scheduler.py run
+Restart=always
+RestartSec=10
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=@HOME@
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target
