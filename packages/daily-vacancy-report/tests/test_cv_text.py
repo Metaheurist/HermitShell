@@ -3,6 +3,7 @@
 import base64
 import io
 import sys
+import time
 import zipfile
 import zlib
 from pathlib import Path
@@ -109,6 +110,37 @@ def test_round_trips_a_letter_pdf():
 def test_scanned_or_broken_pdf_gives_empty_text():
     assert cv_text.extract_text(b"%PDF-1.4\n1 0 obj\n<< /Type /XObject /Filter /DCTDecode >>\nstream\n\xff\xd8\nendstream\nendobj\n", "pdf") == ""
     assert cv_text.extract_text(b"not a pdf at all", "pdf") == ""
+
+
+def test_hostile_pdfs_finish_quickly():
+    started = time.monotonic()
+    loop = build_pdf({1: b"<< /Type /Catalog /Pages 2 0 R >>",
+                      2: b"<< /Type /Pages /Kids [2 0 R 2 0 R 2 0 R 3 0 R] >>",
+                      3: b"<< /Type /Page /Parent 2 0 R /Contents 4 0 R >>", 4: stream(b"BT (Once) Tj ET")})
+    assert cv_text.extract_text(loop, "pdf") == "Once"
+    fanout = b"q " + b"/Fm1 Do " * 200 + b"Q"
+    forms = build_pdf({
+        1: b"<< /Type /Catalog /Pages 2 0 R >>", 2: b"<< /Type /Pages /Kids [3 0 R] >>",
+        3: b"<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /XObject << /Fm1 4 0 R >> >> >>",
+        4: b"<< /Type /XObject /Subtype /Form /Length %d >>\nstream\n%s\nendstream" % (len(fanout), fanout)})
+    assert cv_text.extract_text(forms, "pdf") == ""
+    assert cv_text.extract_text(b"%PDF-1.4\n" + b"1 0 obj " * 50_000, "pdf") == ""
+    ranges = b"beginbfrange " + b"<0000> <FFFF> <0041> " * 200 + b"endbfrange"
+    assert len(cv_text.parse_cmap(ranges)[0]) <= cv_text.MAX_CMAP
+    assert time.monotonic() - started < 20
+
+
+def test_inflating_stops_at_the_file_budget():
+    budget = cv_text._Budget()
+    bomb = zlib.compress(b"\0" * (cv_text.MAX_INFLATE + 1024))
+    total = sum(len(cv_text._inflate(bomb, budget)) for _ in range(5))
+    assert total == cv_text.MAX_TOTAL_INFLATE and cv_text._inflate(bomb, budget) == b""
+
+
+def test_isolated_extraction_reads_a_file(tmp_path):
+    path = tmp_path / "cv.pdf"
+    path.write_bytes(sample_pdf())
+    assert cv_text.extract_file_isolated(path).splitlines()[:2] == ["Sam Lee", "Python and SQL"]
 
 
 def docx(paragraphs: list[str], header: str = "") -> bytes:

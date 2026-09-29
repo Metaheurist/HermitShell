@@ -68,12 +68,6 @@ def test_every_package_script_exists():
 
 # --------------------------------------------------------------------------- small helpers
 
-@pytest.mark.parametrize("country, domain", [("gb", "uk.indeed.com"), ("US", "www.indeed.com"),
-                                             ("de", "de.indeed.com"), ("", "www.indeed.com")])
-def test_indeed_domain(country, domain):
-    assert setup.indeed_domain(country) == domain
-
-
 @pytest.mark.parametrize("country, symbol", [("gb", "£"), ("ie", "€"), ("us", "$"), ("zz", "")])
 def test_salary_symbol(country, symbol):
     assert setup.salary_symbol(country) == symbol

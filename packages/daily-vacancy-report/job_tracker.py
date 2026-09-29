@@ -29,10 +29,13 @@ ACTIONS = {
     "rejected": "Rejected",
     "good_match": "Good match",
     "cover_letter": "Generate cover letter",
+    "tailored_cv": "Tailored CV",
     "add_skill": "Add to my skills",
 }
-CARD_ACTIONS = ("applied", "good_match", "not_for_me", "interested", "cover_letter")
+CARD_ACTIONS = ("applied", "good_match", "not_for_me", "interested", "cover_letter", "tailored_cv")
 FOLLOWUP_ACTIONS = ("heard_back", "rejected")
+# Requests that cover_letter.py turns into a PDF and emails.
+REQUEST_ACTIONS = ("cover_letter", "tailored_cv")
 # Actions that describe where an application stands; the others (e.g. cover_letter) are requests.
 STATUS_ACTIONS = ("interested", "not_for_me", "applied", "heard_back", "rejected", "good_match")
 _STATUS_SQL = ", ".join(f"'{a}'" for a in STATUS_ACTIONS)
@@ -51,17 +54,35 @@ def clean_skill(text: str) -> str:
 
 # --------------------------------------------------------------------------- signed links
 
-def sign(secret: str, key: str, action: str, title: str, skills: str = "", profile: str = "") -> str:
-    """HMAC-SHA256 over key, action, title, any skill list and any profile id (first 32 hex chars); the Worker
-    checks the same."""
-    msg = (f"{key}\n{action}\n{title}" + (f"\n{skills}" if skills else "")
-           + (f"\nu={profile}" if profile else "")).encode("utf-8")
+def sign(secret: str, key: str, action: str, title: str, skills: str = "", profile: str = "",
+         day: int | str = "") -> str:
+    """HMAC-SHA256 (first 32 hex chars) over a fixed list of fields, empty ones included, so no field can be
+    shifted into another; the Worker checks the same. `day` is the issue day (days since 1970) for expiry."""
+    msg = "\n".join(["v2", key, action, title, skills, profile, str(day)]).encode("utf-8")
     return hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()[:32]
 
 
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _field(value: str) -> str:
+    return " ".join(_CONTROL_RE.sub(" ", str(value)).split())
+
+
+def secure_base(base_url: str) -> str:
+    """The feedback Worker's address when it is https (links carry signatures, the API a token), else ""."""
+    base = (base_url or "").strip().rstrip("/")
+    return base if base.lower().startswith("https://") and len(base) > 8 else ""
+
+
 def _link(base_url: str, params: dict[str, str], secret: str, profile: str) -> str:
-    params = {**params, **({"u": profile} if profile else {})}
-    params["t"] = sign(secret, params["j"], params["a"], params["n"], params.get("s", ""), profile)
+    if not secure_base(base_url):
+        return ""
+    params = {k: _field(v) for k, v in params.items()}
+    if profile:
+        params["u"] = profile
+    params["d"] = str(int(time.time() // DAY))
+    params["t"] = sign(secret, params["j"], params["a"], params["n"], params.get("s", ""), profile, params["d"])
     return f"{base_url.rstrip('/')}/f?{urlencode(params)}"
 
 
@@ -71,7 +92,7 @@ def action_link(base_url: str, secret: str, key: str, action: str, title: str, p
 
 def card_links(base_url: str, secret: str, key: str, title: str,
                actions: tuple[str, ...] = CARD_ACTIONS, profile: str = "") -> dict[str, str]:
-    if not (base_url and secret):
+    if not (secure_base(base_url) and secret):
         return {}
     return {a: action_link(base_url, secret, key, a, title, profile) for a in actions}
 
@@ -79,14 +100,14 @@ def card_links(base_url: str, secret: str, key: str, title: str,
 def skill_link(base_url: str, secret: str, key: str, title: str, skills: list[str], profile: str = "") -> str:
     """Signed link to the Worker page that adds a job's missing skills to your pool (append &p=<skill> to tick one)."""
     skills = [s for s in dict.fromkeys(clean_skill(s) for s in skills) if s][:MAX_SKILLS]
-    if not (base_url and secret and skills):
+    if not (secure_base(base_url) and secret and skills):
         return ""
     return _link(base_url, {"j": key, "a": "add_skill", "n": title[:120], "s": "|".join(skills)}, secret, profile)
 
 
 def unsubscribe_link(base_url: str, secret: str, name: str, profile: str = "") -> str:
     """Report footer link: deletes an extra profile, or only pauses the owner's reports (no profile id)."""
-    if not (base_url and secret):
+    if not (secure_base(base_url) and secret):
         return ""
     return _link(base_url, {"j": "profile" if profile else "profile-pause", "a": "unsubscribe", "n": name[:120]},
                  secret, profile)
@@ -123,8 +144,12 @@ DETAIL_FIELDS = ("location", "employment_type", "work_mode", "seniority", "salar
 class Tracker:
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(str(path))
+        # The daily scan and the cover-letter poller share this file: WAL lets one read while the other writes,
+        # and busy_timeout waits for a lock instead of failing with "database is locked".
+        self.db = sqlite3.connect(str(path), timeout=30)
         self.db.row_factory = sqlite3.Row
+        self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.execute("PRAGMA busy_timeout=30000")
         self.db.executescript(SCHEMA)
         if "details" not in {r["name"] for r in self.db.execute("PRAGMA table_info(jobs)")}:
             self.db.execute("ALTER TABLE jobs ADD COLUMN details TEXT")
@@ -133,6 +158,12 @@ class Tracker:
     def close(self) -> None:
         self.db.commit()
         self.db.close()
+
+    def __enter__(self) -> Tracker:
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
 
     # ------------------------------------------------------------------ jobs
 
@@ -182,8 +213,13 @@ class Tracker:
                 return False
             reason = ", ".join(skills)
         at = at or time.time()
-        cur = self.db.execute("INSERT OR IGNORE INTO events (id, key, action, reason, at) VALUES (?, ?, ?, ?, ?)",
-                              (event_id, key, action, (reason or "")[:300], at))
+        # The Worker's event ids repeat when the same answer is given again: a status answer then becomes the
+        # latest one again, while a repeated letter/CV request or skill list is ignored.
+        cur = self.db.execute(
+            "INSERT INTO events (id, key, action, reason, at) VALUES (?, ?, ?, ?, ?) "
+            f"ON CONFLICT(id) DO UPDATE SET at = excluded.at WHERE excluded.action IN ({_STATUS_SQL}) "
+            "AND excluded.at > events.at",
+            (event_id, key, action, (reason or "")[:300], at))
         if cur.rowcount == 1 and action == "add_skill":
             self.db.executemany("INSERT OR IGNORE INTO skills (skill, key, at) VALUES (?, ?, ?)",
                                 [(s, key, at) for s in skills])
@@ -244,13 +280,14 @@ class Tracker:
 
     # ------------------------------------------------------------------ cover letter requests
 
-    def pending_letters(self, max_attempts: int = LETTER_ATTEMPTS) -> list[dict]:
-        """Cover letter requests not yet sent, oldest first, with the note given on the confirmation page."""
+    def pending_letters(self, max_attempts: int = LETTER_ATTEMPTS, action: str = "cover_letter") -> list[dict]:
+        """Cover letter (or tailored CV) requests not yet sent, oldest first, with the note given on the
+        confirmation page."""
         rows = self.db.execute(
             """SELECT e.id AS event_id, e.key, e.reason, e.at, coalesce(l.attempts, 0) AS attempts
                FROM events e LEFT JOIN letters l ON l.event_id = e.id
-               WHERE e.action = 'cover_letter' AND coalesce(l.status, '') NOT IN ('sent', 'failed')
-               ORDER BY e.at""").fetchall()
+               WHERE e.action = ? AND coalesce(l.status, '') NOT IN ('sent', 'failed')
+               ORDER BY e.at""", (action,)).fetchall()
         return [dict(r) for r in rows if r["attempts"] < max_attempts]
 
     def mark_letter(self, event_id: str, key: str, status: str, error: str = "", file: str = "",
@@ -302,6 +339,8 @@ def sync_feedback(tracker: Tracker, base_url: str, api_token: str, ack: bool = T
     """
     if not (base_url and api_token):
         return 0, None
+    if not secure_base(base_url):
+        return 0, "JOB_FEEDBACK_URL must start with https://"
     headers = {"Authorization": f"Bearer {api_token}"}
     base = base_url.rstrip("/")
     params = {k: v for k, v in (("u", profile), ("full", "1" if full else "")) if v}
@@ -319,8 +358,12 @@ def sync_feedback(tracker: Tracker, base_url: str, api_token: str, ack: bool = T
         if not event_id:
             continue
         skills = ev.get("skills") if isinstance(ev.get("skills"), list) else None
+        try:
+            at = float(ev.get("at") or 0) / 1000 or None
+        except (TypeError, ValueError):
+            at = None
         saved += tracker.add_event(event_id, str(ev.get("j") or ""), str(ev.get("a") or ""),
-                                   str(ev.get("r") or ""), float(ev.get("at") or 0) / 1000 or None, skills)
+                                   str(ev.get("r") or ""), at, skills)
         ids.append(event_id)
     if ack and ids:
         try:

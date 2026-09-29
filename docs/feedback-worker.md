@@ -26,14 +26,19 @@ email button ──> Worker /f (confirm page) ──> KV ──> Hermes GET /eve
 
 ## How it stays safe
 
-- **Signed links.** Every button carries an HMAC signature of the job, action and title made
-  with `JOB_FEEDBACK_SECRET`. Changed or made-up links are refused.
+- **Signed links.** Every button carries an HMAC signature of the job, action, title, skills,
+  profile and the day the email was sent, made with `JOB_FEEDBACK_SECRET`. Changed or made-up
+  links are refused, links stop working 90 days after the email, and links for a deleted profile
+  are refused too. `JOB_FEEDBACK_URL` must start with `https://`; without it no buttons are added.
 - **Nothing is saved on click.** Opening a link only shows a confirmation page (with an
   optional note). Mail scanners that open every link can't record answers; only pressing
   **Confirm** saves one.
 - **Private API.** `/events`, `/ack` and `/api/*` need `Authorization: Bearer <JOB_FEEDBACK_API_TOKEN>`.
-- **Password-protected admin page.** `/admin` is off until you set `ADMIN_PASSWORD`; see
+- **Protected admin page.** `/admin` is off until you set `ADMIN_PASSWORD`, and can sit behind
+  Cloudflare Access (an emailed one-time code) as well; see
   [Extra profiles](#extra-profiles-and-the-admin-page).
+- **Size limits.** Request bodies are capped (answers and status reports at a few KB, sign-ups at
+  the CV limit), and uploaded CVs are checked to really be a PDF, .docx or text file.
 - **Short-lived data.** Answers are deleted once Hermes has saved them, and expire after 30 days
   in any case. Only the job key, action, optional note and time are stored.
 - **No secrets in git.** The two secrets live only in Hermes' `.env` and in the Worker's
@@ -267,8 +272,13 @@ from the Worker's admin page; Hermes applies the changes, since the Worker can't
 
 From then on every daily report, weekly roll-up and cover letter run also runs for each active
 profile, one after the other once your own run has finished, with their own seen jobs, tracker,
-feedback buttons and skills pool. They share your region, sources and model settings. Signing up
-again with the same email replaces the CV and rebuilds the profile.
+feedback buttons and skills pool. They share your region, sources and model settings. A sign-up
+that uses the email of an existing profile is not applied (so an invite can't take over someone
+else's profile); Hermes emails you about it instead. Opening the same invite twice creates only
+one profile.
+
+CVs are read in a separate process with a time and memory limit, so a broken or hostile file
+can't stall the server.
 
 You are the `owner` profile: your `.env`, `job_profile.md` and `cv_keywords.json` stay exactly as
 they are. `profiles.py` registers you on its first run.
@@ -284,9 +294,37 @@ they are. `profiles.py` registers you on its first run.
 - **Invites**: create, see and revoke unused links.
 
 Changes wait in KV and are applied by `profiles.py` within 5 minutes ("Waiting for Hermes" shows
-what is pending). Sign-in: five wrong passwords lock that address out for 15 minutes; sessions
-last 12 hours in an HttpOnly, SameSite=Strict cookie and every form carries a CSRF token.
-Changing `ADMIN_PASSWORD` signs everyone out.
+what is pending). Keys typed into the page are deleted from KV after 2 days if Hermes hasn't
+collected them.
+
+Sign-in: five wrong passwords lock that address (an IPv6 /64 counts as one address) out for 15
+minutes, and 30 wrong passwords from anywhere lock sign-in for everyone for 15 minutes. If KV
+can't be read, sign-in is refused rather than allowed. Sessions last 12 hours in a `__Host-`
+HttpOnly, SameSite=Strict cookie and every form carries a CSRF token. **Sign out** ends every
+session, and so does changing `ADMIN_PASSWORD`.
+
+#### Recommended: Cloudflare Access in front of /admin
+
+[Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) (part of
+Zero Trust, free for up to 50 users) can require an emailed one-time code before `/admin` even
+shows the password form. The Worker then checks Access' signed token on every admin request.
+
+1. In the Cloudflare dashboard open **Zero Trust**. The first time, pick a team name (this is your
+   `<team>.cloudflareaccess.com` domain) and the **Free** plan; a card is asked for but not charged.
+2. **Settings -> Authentication**: make sure **One-time PIN** is enabled.
+3. **Access -> Applications -> Add an application -> Self-hosted**. Name it, add the domain
+   `vacancy-feedback.<subdomain>.workers.dev` with the path `admin`, and add a policy **Allow**
+   with **Include -> Emails** set to your own address.
+4. Copy the application's **Application Audience (AUD) Tag**, then give the Worker both values:
+
+   ```sh
+   echo '<aud-tag>' | npx wrangler secret put ACCESS_AUD --config wrangler.local.jsonc
+   echo '<team>.cloudflareaccess.com' | npx wrangler secret put ACCESS_TEAM_DOMAIN --config wrangler.local.jsonc
+   ```
+
+With `ACCESS_AUD` set, `/admin` answers 403 to any request without a valid Access token for that
+audience, even if the password is right. Buttons, `/join` invites and the Hermes API are not
+behind Access and keep working.
 
 From the server:
 

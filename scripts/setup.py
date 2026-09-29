@@ -76,12 +76,6 @@ EMPLOYMENT_TYPES = [("Permanent", "Permanent / full-time"), ("Contract", "Contra
 WORK_MODES = [("On-site", "On-site"), ("Hybrid", "Hybrid"), ("Remote", "Remote")]
 # Title-exclude patterns that contradict a chosen employment type.
 TYPE_EXCLUDES = {"Internship": ("internship", "intern", "placement", "apprentice"), "Part-time": ("part-time",)}
-INDEED_HOSTS = {"gb": "uk", "us": "www"}
-
-
-def indeed_domain(country: str) -> str:
-    cc = country.strip().lower()
-    return f"{INDEED_HOSTS.get(cc, cc)}.indeed.com" if cc else "www.indeed.com"
 
 
 def friendly_schedule(cron: str) -> str:
@@ -568,10 +562,6 @@ class Wizard:
             self.say(f"  {YELLOW}use a two-letter code such as gb or us{RESET}")
         country = "gb" if country == "uk" else country
         self.set("JOB_SEARCH_COUNTRY", country)
-        if country:
-            self.set("JOB_INDEED_COUNTRY", country.upper())
-            self.set("JOB_INDEED_DOMAIN", indeed_domain(country), "www.indeed.com")
-            self.say(f"  {DIM}Indeed: {indeed_domain(country)}{RESET}")
         self.set("JOB_REMOTE_ANYWHERE", "1" if self.confirm(
             "Include fully remote jobs based outside that region?",
             self.preset("JOB_REMOTE_ANYWHERE", "0") == "1") else "0", "0")
@@ -675,19 +665,18 @@ class Wizard:
     def job_targets(self, scripts: Path) -> None:
         self.heading("Job titles")
         pkg = PACKAGES_DIR / "daily-vacancy-report"
-        builtin_titles = read_constant(pkg / "job_scanner.py", "DEFAULT_INDEED_QUERIES") or []
         builtin_exclude = read_constant(pkg / "job_scanner.py", "DEFAULT_TITLE_EXCLUDE") or ""
-        current = [t for t in self.value("JOB_INDEED_QUERIES").split("||") if t.strip()]
-        titles = self.listing("Job titles to search for (comma-separated)", current or builtin_titles)
+        current = [t for t in self.value("JOB_TARGET_TITLES").split("||") if t.strip()]
+        titles = self.listing("Job titles to search for (comma-separated)", current)
         location = self.value("JOB_SEARCH_LOCATION") or self.value("JOB_REGION_NAME")
         old_location = self.current.get("JOB_SEARCH_LOCATION") or self.current.get("JOB_REGION_NAME") or ""
         moved = location != old_location and bool(self.value("JOB_SCANNER_QUERIES"))
-        if not titles or (titles == (current or builtin_titles) and not moved):
+        if not titles or (titles == (current) and not moved):
             if self.args.advanced:
                 self.advanced_job_filters()
             return
         nijobs = bool(self.value("JOB_SCANNER_NIJOBS_KEYWORDS"))
-        self.set("JOB_INDEED_QUERIES", "||".join(titles))
+        self.set("JOB_TARGET_TITLES", "||".join(titles))
         queries = []
         for i in range(0, len(titles), 3):
             group = " OR ".join(f'"{t}"' for t in titles[i:i + 3])
@@ -710,11 +699,9 @@ class Wizard:
 
     def advanced_job_filters(self) -> None:
         for key, label in (("JOB_SCANNER_QUERIES", "Web search queries ('||'-separated)"),
-                           ("JOB_INDEED_QUERIES", "Indeed searches ('||'-separated job titles)"),
+                           ("JOB_TARGET_TITLES", "Job titles ('||'-separated)"),
                            ("JOB_TITLE_STRONG", "Strong title regex"),
-                           ("JOB_TITLE_EXCLUDE", "Exclude title regex"),
-                           ("JOB_INDEED_LOCATION", "Indeed location"),
-                           ("JOB_INDEED_DOMAIN", "Indeed site for job links")):
+                           ("JOB_TITLE_EXCLUDE", "Exclude title regex")):
             self.set(key, self.text(label + " (empty = built-in default)", self.value(key)))
 
     def job_profile(self, scripts: Path) -> None:
@@ -774,7 +761,7 @@ class Wizard:
             self.set("JOB_CANDIDATE_NAME", name, "the candidate")
         summary = self.multiline("Short summary: current role, years of experience, what you've built")
         skills = self.listing("Core skills (comma-separated)", [])
-        titles = self.listing("Job titles you want", [t for t in self.value("JOB_INDEED_QUERIES").split("||") if t])
+        titles = self.listing("Job titles you want", [t for t in self.value("JOB_TARGET_TITLES").split("||") if t])
         level = dict(JOB_LEVELS).get(self.value("JOB_LEVEL", "any"), "")
         seniority = self.text("Seniority you're targeting (e.g. mid-level individual contributor)",
                               "" if self.value("JOB_LEVEL", "any") == "any" else level)
@@ -797,36 +784,6 @@ class Wizard:
             parts += ["## Gaps (be honest, the model uses this)", "\n".join(f"- {g}" for g in gaps)]
         self.files[profile] = "\n\n".join(parts) + "\n"
         return skills
-
-    def indeed(self, runner: Runner) -> None:
-        if self.value("JOB_INDEED", "1") != "1":
-            return
-        self.heading("Indeed (MCP)")
-        server = self.value("JOB_INDEED_MCP_SERVER") or "indeed"
-        if not runner.mode:
-            self.say("Hermes commands aren't reachable from here. To enable Indeed later, run inside Hermes:\n"
-                     f"  hermes mcp install {server}\n  hermes mcp login {server}")
-            return
-        listed = runner.run(["hermes", "mcp", "list"], capture=True, timeout=60)
-        configured = bool(listed and re.search(rf"^\s*{re.escape(server)}\s", listed.stdout, re.M))
-        if not configured:
-            if not self.confirm(f"The '{server}' MCP server isn't in Hermes yet. Add it now (hermes mcp install {server})?"):
-                return
-            if self.args.dry_run:
-                self.say(f"  would run: hermes mcp install {server}")
-            else:
-                runner.run(["hermes", "mcp", "install", server], tty=True)
-        test = runner.run(["hermes", "mcp", "test", server], capture=True, timeout=120)
-        if test and test.returncode == 0 and "no cached tokens" not in (test.stdout + test.stderr):
-            self.say(f"  {GREEN}Indeed is authorised.{RESET}")
-            return
-        self.say("Indeed needs a one-time browser login. You can also do this from the Hermes dashboard's MCP page.")
-        if self.interactive and self.confirm(f"Run `hermes mcp login {server}` now?", True):
-            if self.args.dry_run:
-                self.say(f"  would run: hermes mcp login {server}")
-            else:
-                runner.run(["hermes", "mcp", "login", server], tty=True)
-                self.say("  Restart the Hermes session afterwards so the tools load.")
 
     # ------------------------------------------------------------------ package: news-digest
 
@@ -1024,8 +981,6 @@ class Wizard:
         saved = self.review_and_write(home, owner)
         if saved:
             self.upload_feedback_secrets(home)
-        if "daily-vacancy-report" in packages:
-            self.indeed(runner)
         known = [p for p in packages if p in PACKAGES]
         if not self.args.no_cron and (saved or self.args.dry_run or not self.changes):
             self.schedules(runner)

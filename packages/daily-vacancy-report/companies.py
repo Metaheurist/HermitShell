@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import hashlib
 import io
+import ipaddress
 import json
 import re
+import socket
 import time
+from html.parser import HTMLParser
 from urllib.parse import quote, urljoin, urlsplit
 
 import requests
@@ -20,6 +23,11 @@ CACHE_FILE = STATE_DIR / "companies.json"
 LOGO_DIR = STATE_DIR / "logos"
 CACHE_SECONDS = 30 * 86400
 LOGO_PX = 144  # shown as a 48px circle, rendered at 3x
+MAX_PAGE_BYTES = 1_000_000
+MAX_IMAGE_BYTES = 2_000_000
+MAX_IMAGE_PIXELS = 16_000_000
+MAX_REDIRECTS = 3
+IMAGE_FORMATS = ["PNG", "JPEG", "GIF", "ICO", "WEBP", "BMP"]
 
 NAME_NOISE = re.compile(r"\b(ltd|limited|plc|llp|llc|inc|group|holdings|uk|ni|ireland|northern|the|and|co)\b")
 NOT_COMPANY_SITES = re.compile(
@@ -47,6 +55,75 @@ def listing_domains(text: str) -> list[str]:
     return list(dict.fromkeys(d.lower() for d in DOMAIN_RE.findall(text or "") if not NOT_COMPANY_SITES.search(d)))
 
 
+def public_host(host: str) -> bool:
+    """True when every address the host resolves to is a public one (no LAN, loopback or cloud metadata)."""
+    try:
+        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except (OSError, UnicodeError):
+        return False
+    return bool(infos) and all(ipaddress.ip_address(info[4][0].split("%")[0]).is_global for info in infos)
+
+
+def safe_get(session: requests.Session, url: str, max_bytes: int, timeout: int = 10) -> requests.Response | None:
+    """GET a public http(s) URL, following at most MAX_REDIRECTS redirects that are checked the same way and
+    reading at most max_bytes; None when the URL, an address or the size is not allowed."""
+    for _ in range(MAX_REDIRECTS + 1):
+        parts = urlsplit(url)
+        if parts.scheme not in ("http", "https") or not parts.hostname or not public_host(parts.hostname):
+            return None
+        try:
+            resp = session.get(url, timeout=timeout, stream=True, allow_redirects=False)
+        except requests.RequestException:
+            return None
+        if resp.is_redirect and resp.headers.get("location"):
+            url = urljoin(url, resp.headers["location"])
+            resp.close()
+            continue
+        try:
+            if int(resp.headers.get("content-length") or 0) > max_bytes:
+                return None
+            body = b""
+            for chunk in resp.iter_content(65536):
+                body += chunk
+                if len(body) > max_bytes:
+                    return None
+        except (requests.RequestException, ValueError):
+            return None
+        finally:
+            resp.close()
+        resp._content = body  # noqa: SLF001 - lets .text/.content work on the capped body
+        return resp
+    return None
+
+
+class _Visible(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.skip = 0
+
+    def handle_starttag(self, tag, attrs):
+        self.skip += tag in ("script", "style")
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style") and self.skip:
+            self.skip -= 1
+
+    def handle_data(self, data):
+        if not self.skip:
+            self.parts.append(data)
+
+
+def visible_text(page: str, limit: int = 200_000) -> str:
+    parser = _Visible()
+    try:
+        parser.feed(page[:MAX_PAGE_BYTES])
+        parser.close()
+    except Exception:  # noqa: BLE001 - broken markup only loses text
+        pass
+    return " ".join(parser.parts)[:limit]
+
+
 def circle_logo(data: bytes) -> bytes | None:
     """Fit a logo inside a white circle with a thin grey ring; full-bleed icons fill the circle."""
     try:
@@ -54,7 +131,9 @@ def circle_logo(data: bytes) -> bytes | None:
     except ImportError:
         return None
     try:
-        im = Image.open(io.BytesIO(data))
+        im = Image.open(io.BytesIO(data), formats=IMAGE_FORMATS)
+        if im.width * im.height > MAX_IMAGE_PIXELS:
+            return None
         im.load()
     except Exception:  # noqa: BLE001 - any undecodable image just means "no logo"
         return None
@@ -136,21 +215,20 @@ class Companies:
         if domain not in self.pages:
             self.pages[domain] = ("", "")
             for url in (f"https://{domain}", f"https://www.{domain}"):
-                try:
-                    resp = self.session.get(url, timeout=12)
-                except requests.RequestException:
-                    continue
-                if resp.status_code == 200 and "html" in resp.headers.get("content-type", ""):
+                resp = safe_get(self.session, url, MAX_PAGE_BYTES, timeout=12)
+                if resp is not None and resp.status_code == 200 and "html" in resp.headers.get("content-type", ""):
                     self.pages[domain] = (resp.url, resp.text[:400_000])
                     break
         return self.pages[domain]
 
     def _clearbit(self, name: str) -> list[str]:
+        resp = safe_get(self.session, f"https://autocomplete.clearbit.com/v1/companies/suggest?query={quote(name)}",
+                        200_000)
         try:
-            resp = self.session.get(f"https://autocomplete.clearbit.com/v1/companies/suggest?query={quote(name)}",
-                                    timeout=10)
-            items = resp.json() if resp.status_code == 200 else []
-        except (requests.RequestException, ValueError):
+            items = resp.json() if resp is not None and resp.status_code == 200 else []
+        except ValueError:
+            return []
+        if not isinstance(items, list):
             return []
         key = norm(name)
         return [i["domain"] for i in items if isinstance(i, dict) and i.get("domain") and norm(i.get("name", "")) == key]
@@ -170,8 +248,8 @@ class Companies:
                 if len(exact) == 1 and len(key.replace(" ", "")) >= 6 and domain_matches(domain, name):
                     best, best_score = f"https://{domain}", 3
                 continue
-            visible = re.sub(r"<(script|style)[^>]*>.*?</\1>|<[^>]+>", " ", page, flags=re.S | re.I)
-            named = key in norm(visible[:200_000])
+            visible = visible_text(page)
+            named = key in norm(visible)
             score = (2 if named else 0) + (1 if self.region_re and self.region_re.search(visible) else 0) \
                 + (1 if named and domain_matches(domain, name) else 0) \
                 + (1 if named and len(key.replace(" ", "")) >= 6 and domain_matches(domain, name) else 0)
@@ -212,15 +290,19 @@ class Companies:
         urls = [u for w, u in candidates if w >= 64][:2]
         urls.append(f"https://www.google.com/s2/favicons?domain={domain}&sz=128")
         for icon_url in urls:
-            try:
-                resp = self.session.get(icon_url, timeout=10)
-            except requests.RequestException:
-                continue
-            if resp.status_code == 200 and resp.content:
-                png = circle_logo(resp.content)
-                if png:
-                    return png
+            png = self._image(icon_url)
+            if png:
+                return png
         return None
+
+    def _image(self, url: str) -> bytes | None:
+        resp = safe_get(self.session, url, MAX_IMAGE_BYTES)
+        if resp is None or resp.status_code != 200 or not resp.content:
+            return None
+        kind = resp.headers.get("content-type", "").split(";")[0].strip().lower()
+        if kind and not (kind.startswith("image/") or kind in ("application/octet-stream", "binary/octet-stream")):
+            return None
+        return circle_logo(resp.content)
 
     def lookup(self, name: str, logo_url: str = "", text: str = "") -> dict:
         """{"website": url or "", "logo": cid name or ""} for a company, cached."""
@@ -236,11 +318,7 @@ class Companies:
         website = (hit or {}).get("website") or self._resolve_site(name, text)
         png = None
         if logo_url:
-            try:
-                resp = self.session.get(logo_url, timeout=12)
-                png = circle_logo(resp.content) if resp.status_code == 200 else None
-            except requests.RequestException:
-                png = None
+            png = self._image(logo_url)
         if not png and website:
             png = self._site_icon(website)
         cid = ""

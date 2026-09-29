@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import base64
 import io
+import os
 import re
+import subprocess
 import sys
 import zipfile
 import zlib
@@ -20,10 +22,17 @@ from xml.etree import ElementTree
 
 MAX_OUTPUT = 60_000
 MAX_INFLATE = 20 * 1024 * 1024
+# Limits for hostile files: CVs are a few pages, so anything past these is not worth reading.
+MAX_TOTAL_INFLATE = 60 * 1024 * 1024
+MAX_OBJECTS = 50_000
+MAX_PAGES = 60
+MAX_DRAWS = 2_000
+MAX_CMAP = 200_000
+MAX_ZIP_PARTS = 2_000
 KINDS = ("pdf", "docx", "txt", "md")
 
-_OBJ_RE = re.compile(rb"(\d+)\s+(\d+)\s+obj\b(.*?)\bendobj", re.S)
-_STREAM_RE = re.compile(rb"^(.*?)\bstream\r?\n(.*)\bendstream", re.S)
+_OBJ_HEAD_RE = re.compile(rb"(\d{1,10})\s+(\d{1,5})\s+obj\b")
+_STREAM_START_RE = re.compile(rb"\bstream\r?\n")
 _W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 
@@ -53,13 +62,20 @@ def extract_text(data: bytes, kind: str) -> str:
 
 def docx_text(data: bytes) -> str:
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        if len(zf.infolist()) > MAX_ZIP_PARTS:
+            return ""
         names = [n for n in zf.namelist() if re.fullmatch(r"word/(header\d*|document)\.xml", n)]
         names.sort(key=lambda n: (not n.startswith("word/header"), n))
-        parts = []
+        parts, total = [], 0
         for name in names:
-            if zf.getinfo(name).file_size > MAX_INFLATE:
+            size = zf.getinfo(name).file_size
+            if size > MAX_INFLATE or total + size > MAX_TOTAL_INFLATE:
                 continue
-            xml = zf.read(name)
+            total += size
+            with zf.open(name) as part:
+                xml = part.read(MAX_INFLATE + 1)
+            if len(xml) > MAX_INFLATE:
+                continue
             if b"<!DOCTYPE" in xml or b"<!ENTITY" in xml:
                 continue
             root = ElementTree.fromstring(xml)
@@ -78,11 +94,22 @@ def docx_text(data: bytes) -> str:
 
 # --- PDF objects --------------------------------------------------------------------------------
 
-def _inflate(data: bytes) -> bytes:
+class _Budget:
+    """Work left for one file: bytes that may still be inflated and form drawings that may still run."""
+
+    def __init__(self) -> None:
+        self.inflate, self.draws = MAX_TOTAL_INFLATE, MAX_DRAWS
+
+
+def _inflate(data: bytes, budget: _Budget) -> bytes:
+    if budget.inflate <= 0:
+        return b""
     try:
-        return zlib.decompressobj().decompress(data, MAX_INFLATE)
+        out = zlib.decompressobj().decompress(data, min(MAX_INFLATE, budget.inflate))
     except zlib.error:
         return b""
+    budget.inflate -= len(out)
+    return out
 
 
 def _a85(data: bytes) -> bytes:
@@ -95,12 +122,12 @@ def _a85(data: bytes) -> bytes:
         return b""
 
 
-def _stream_data(head: bytes, raw: bytes) -> bytes | None:
+def _stream_data(head: bytes, raw: bytes, budget: _Budget) -> bytes | None:
     raw = raw.rstrip(b"\r\n")
     m = re.search(rb"/Filter\s*(\[[^\]]*\]|/\w+)", head)
     for name in re.findall(rb"/(\w+)", m.group(1)) if m else []:
         if name in (b"FlateDecode", b"Fl") and b"/Predictor" not in head:
-            raw = _inflate(raw)
+            raw = _inflate(raw, budget)
         elif name in (b"ASCII85Decode", b"A85"):
             raw = _a85(raw)
         elif name in (b"ASCIIHexDecode", b"AHx"):
@@ -111,14 +138,23 @@ def _stream_data(head: bytes, raw: bytes) -> bytes | None:
     return raw
 
 
-def _objects(data: bytes) -> dict[int, tuple[bytes, bytes | None]]:
+def _objects(data: bytes, budget: _Budget) -> dict[int, tuple[bytes, bytes | None]]:
     objects: dict[int, tuple[bytes, bytes | None]] = {}
-    for m in _OBJ_RE.finditer(data):
-        body = m.group(3)
-        sm = _STREAM_RE.match(body)
-        if sm:
-            head = sm.group(1)
-            objects[int(m.group(1))] = (head, _stream_data(head, sm.group(2)))
+    pos = 0
+    # Plain find() instead of one lazy regex: an "obj" without "endobj" must not make every later match rescan the file.
+    while len(objects) < MAX_OBJECTS:
+        m = _OBJ_HEAD_RE.search(data, pos)
+        if not m:
+            break
+        end = data.find(b"endobj", m.end())
+        if end < 0:
+            break
+        body, pos = data[m.end():end], end + 6
+        sm = _STREAM_START_RE.search(body)
+        stream_end = body.rfind(b"endstream") if sm else -1
+        if sm and stream_end >= sm.end():
+            head = body[:sm.start()]
+            objects[int(m.group(1))] = (head, _stream_data(head, body[sm.end():stream_end], budget))
         else:
             objects[int(m.group(1))] = (body, None)
     for head, stream in list(objects.values()):
@@ -130,6 +166,8 @@ def _objects(data: bytes) -> dict[int, tuple[bytes, bytes | None]]:
             nums = [int(n) for n in stream[:offset].split()]
             pairs = list(zip(nums[::2], nums[1::2]))
             for i, (num, start) in enumerate(pairs):
+                if len(objects) >= MAX_OBJECTS:
+                    return objects
                 end = pairs[i + 1][1] if i + 1 < len(pairs) else len(stream) - offset
                 objects.setdefault(num, (stream[offset + start:offset + end], None))
     return objects
@@ -168,11 +206,13 @@ def _pages(objects) -> list[int]:
     catalog = next((h for h, _ in objects.values() if re.search(rb"/Type\s*/Catalog\b", h)), b"")
     pages_root = _ref(catalog, b"Pages")
     order: list[int] = []
+    seen: set[int] = set()
 
     def walk(num: int, depth: int = 0) -> None:
         head = objects.get(num, (b"", None))[0]
-        if depth > 50 or num in order:
+        if depth > 50 or num in seen or len(order) >= MAX_PAGES:
             return
+        seen.add(num)
         if re.search(rb"/Type\s*/Pages\b", head):
             for kid in _refs(head, b"Kids"):
                 walk(kid, depth + 1)
@@ -181,7 +221,7 @@ def _pages(objects) -> list[int]:
 
     if pages_root is not None:
         walk(pages_root)
-    return order or sorted(n for n, (h, _) in objects.items() if re.search(rb"/Type\s*/Page\b", h))
+    return order or sorted(n for n, (h, _) in objects.items() if re.search(rb"/Type\s*/Page\b", h))[:MAX_PAGES]
 
 
 # --- Fonts --------------------------------------------------------------------------------------
@@ -204,9 +244,12 @@ def parse_cmap(data: bytes) -> tuple[dict[int, str], int]:
             mapping[int(src, 16)] = _utf16(dst)
     for block in re.findall(rb"beginbfrange(.*?)endbfrange", data, re.S):
         for lo, hi, rest in re.findall(rb"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*(\[[^\]]*\]|<[0-9A-Fa-f]*>)", block):
-            lo_i, hi_i = int(lo, 16), min(int(hi, 16), int(lo, 16) + 65535)
+            if len(mapping) >= MAX_CMAP:
+                return mapping, width
+            lo_i = int(lo, 16)
+            hi_i = min(int(hi, 16), lo_i + 65535, lo_i + MAX_CMAP - len(mapping) - 1)
             if rest.startswith(b"["):
-                for i, dst in enumerate(re.findall(rb"<([0-9A-Fa-f]*)>", rest)):
+                for i, dst in enumerate(re.findall(rb"<([0-9A-Fa-f]*)>", rest)[:hi_i - lo_i + 1]):
                     mapping[lo_i + i] = _utf16(dst)
             else:
                 base = _utf16(rest[1:-1])
@@ -241,14 +284,16 @@ def _page_resources(page_head: bytes, objects) -> bytes:
     return resources
 
 
-def _fonts(resources: bytes, objects) -> dict[bytes, Font]:
+def _fonts(resources: bytes, objects, cache: dict[int, Font]) -> dict[bytes, Font]:
     fonts: dict[bytes, Font] = {}
     for name, num in _NAMED_REF.findall(_subdict(resources, b"Font", objects)):
-        font_head = objects.get(int(num), (b"", None))[0]
-        two_byte = b"/Type0" in font_head
-        tu = _ref(font_head, b"ToUnicode")
-        stream = objects.get(tu, (b"", None))[1] if tu is not None else None
-        fonts[name] = Font(*parse_cmap(stream)) if stream else Font(None, 2 if two_byte else 1)
+        if int(num) not in cache:
+            font_head = objects.get(int(num), (b"", None))[0]
+            two_byte = b"/Type0" in font_head
+            tu = _ref(font_head, b"ToUnicode")
+            stream = objects.get(tu, (b"", None))[1] if tu is not None else None
+            cache[int(num)] = Font(*parse_cmap(stream)) if stream else Font(None, 2 if two_byte else 1)
+        fonts[name] = cache[int(num)]
     return fonts
 
 
@@ -347,11 +392,17 @@ def content_text(data: bytes, fonts: dict[bytes, Font], draw=None) -> str:
     font = Font()
     last_y: float | None = None
 
+    size = 0
+
     def newline():
         if out and not out[-1].endswith("\n"):
             out.append("\n")
 
     for kind, value in _tokens(data):
+        if len(out) > size + 1000:
+            size = len(out)
+            if sum(map(len, out)) > MAX_OUTPUT * 2:
+                break
         if kind == "[":
             array = []
         elif kind == "]":
@@ -399,31 +450,54 @@ def content_text(data: bytes, fonts: dict[bytes, Font], draw=None) -> str:
     return "".join(out)
 
 
-def _render(content: bytes, resources: bytes, objects, depth: int = 0) -> str:
+def _render(content: bytes, resources: bytes, objects, budget: _Budget, fonts: dict[int, Font],
+            depth: int = 0) -> str:
     forms = dict(_NAMED_REF.findall(_subdict(resources, b"XObject", objects)))
 
     def draw(name: bytes) -> str:
         num = forms.get(name)
         head, stream = objects.get(int(num), (b"", None)) if num else (b"", None)
-        if depth >= 6 or not stream or not re.search(rb"/Subtype\s*/Form\b", head):
+        if depth >= 6 or budget.draws <= 0 or not stream or not re.search(rb"/Subtype\s*/Form\b", head):
             return ""
-        return _render(stream, _subdict(head, b"Resources", objects) or resources, objects, depth + 1)
+        budget.draws -= 1
+        return _render(stream, _subdict(head, b"Resources", objects) or resources, objects, budget, fonts, depth + 1)
 
     if b"BT" not in content:
         return "\n".join(filter(None, (draw(n) for n in re.findall(rb"/([^\s/<>\[\]()]+)\s+Do\b", content))))
-    return content_text(content, _fonts(resources, objects), draw)
+    return content_text(content, _fonts(resources, objects, fonts), draw)
 
 
 def pdf_text(data: bytes) -> str:
     if b"/Encrypt" in data:
         return ""
-    objects = _objects(data)
-    pages = []
+    budget, fonts = _Budget(), {}
+    objects = _objects(data, budget)
+    pages, size = [], 0
     for num in _pages(objects):
         head = objects[num][0]
-        content = b"\n".join(objects.get(c, (b"", None))[1] or b"" for c in _refs(head, b"Contents"))
-        pages.append(_render(content, _page_resources(head, objects), objects))
+        content = b"\n".join(objects.get(c, (b"", None))[1] or b"" for c in _refs(head, b"Contents")[:50])
+        pages.append(_render(content, _page_resources(head, objects), objects, budget, fonts))
+        size += len(pages[-1])
+        if size > MAX_OUTPUT * 2:
+            break
     return "\n\n".join(pages)
+
+
+def _child_limits() -> None:
+    import resource
+
+    resource.setrlimit(resource.RLIMIT_AS, (1024 * 1024 * 1024,) * 2)
+    resource.setrlimit(resource.RLIMIT_CPU, (90, 90))
+
+
+def extract_file_isolated(path: Path, timeout: int = 60) -> str:
+    """extract_text() for an uploaded file, run in a child process that is killed after `timeout` seconds
+    (and on Linux limited to 1 GB of memory), so a hostile file cannot hang or exhaust the caller."""
+    env = {k: v for k, v in os.environ.items() if k in ("PATH", "SYSTEMROOT", "TEMP", "TMP")}
+    result = subprocess.run([sys.executable, str(Path(__file__).resolve()), str(path)], capture_output=True,
+                            timeout=timeout, env=env | {"PYTHONIOENCODING": "utf-8"}, check=True,
+                            preexec_fn=_child_limits if os.name == "posix" else None)
+    return result.stdout.decode("utf-8", errors="replace").strip()
 
 
 def main() -> int:
@@ -431,6 +505,7 @@ def main() -> int:
         print(__doc__.strip().splitlines()[-1].strip())
         return 2
     path = Path(sys.argv[1])
+    sys.stdout.reconfigure(encoding="utf-8")
     print(extract_text(path.read_bytes(), path.suffix))
     return 0
 

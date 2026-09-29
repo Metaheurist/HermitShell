@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Tailored cover letters for Daily Vacancy Report jobs, sent as a PDF attachment.
+"""Tailored cover letters and CVs for Daily Vacancy Report jobs, sent as PDF attachments.
 
-The "Cover letter" button on a job card is a signed link to the feedback Worker. Once you confirm
-(optionally adding a note such as "mention my Azure work"), the Worker queues the request. This
-script, run every few minutes by `hermes cron`, fetches the queue, writes the letter with Hermes'
-model from your CV profile and the job listing, lays it out as an A4 PDF and emails it to you with
-the job details. Your CV never leaves the Hermes server.
+The "Cover letter" and "Tailored CV" buttons on a job card are signed links to the feedback Worker.
+Once you confirm (optionally adding a note such as "mention my Azure work"), the Worker queues the
+request. This script, run every few minutes by `hermes cron`, fetches the queue, writes the letter
+(or tailors the CV, see tailored_cv.py) with Hermes' model from your CV and the job listing, lays it
+out as an A4 PDF and emails it to you with the job details. Your CV never leaves the Hermes server.
 
-    python3 cover_letter.py                         # fetch requests from the Worker and send letters
-    python3 cover_letter.py --job KEY [--note ...]  # write one for a tracked job now
-    python3 cover_letter.py --job KEY --dry-run     # save the PDF under state/cover_letters, no email
+    python3 cover_letter.py                         # fetch requests from the Worker and send them
+    python3 cover_letter.py --job KEY [--note ...]  # write a letter for a tracked job now
+    python3 cover_letter.py --job KEY --cv          # tailor the CV for it instead
+    python3 cover_letter.py --job KEY --dry-run     # save the PDF under state/, no email
 
 Prints nothing when there is nothing to do, so the cron job stays silent.
 Shared unchanged between the HermitShell package and the Hermes server copy.
@@ -20,7 +21,6 @@ from __future__ import annotations
 import argparse
 import html
 import json
-import os
 import re
 import smtplib
 import sys
@@ -33,16 +33,21 @@ import requests
 
 import hermes_common as hc
 import profiles
+import tailored_cv
 from hermes_common import EMAIL_HEAD, STATE_DIR, connect_model, env, env_int, load_env_file, log, ollama_chat
-from job_tracker import Tracker, skills_text, sync_feedback
-from letter_pdf import letter_pdf
+from job_tracker import REQUEST_ACTIONS, Tracker, skills_text, sync_feedback
+from letter_pdf import cv_pdf, letter_pdf
 
 hc.LOG_TAG = "cover_letter"
 PACKAGE_DIR = Path(__file__).resolve().parent
 TRACKER_FILE = STATE_DIR / "job_tracker.db"
 LETTER_DIR = STATE_DIR / "cover_letters"
+CV_DIR = STATE_DIR / "tailored_cvs"
+KIND_LABELS = {"cover_letter": "Cover letter", "tailored_cv": "Tailored CV"}
 LOCK_FILE = STATE_DIR / "cover_letter.lock"
-LOCK_STALE_SECONDS = 45 * 60
+# Hourly the Worker lists KV for real, in case its "something is waiting" flag was lost (free plan: 1,000 lists a day).
+FULL_SYNC_FILE = STATE_DIR / "feedback_full_sync"
+FULL_SYNC_EVERY = 3600
 MAX_LISTING_CHARS = 5000
 C_BG, C_CARD, C_INK, C_MUTED, C_ACCENT = "#eef1f7", "#ffffff", "#0f172a", "#64748b", "#4f46e5"
 
@@ -188,9 +193,24 @@ def esc(text) -> str:
     return html.escape(str(text or ""), quote=True)
 
 
-def email_bodies(job: dict, paragraphs: list[str], filename: str, note: str) -> tuple[str, str, str]:
+EMAIL_TEXT = {
+    "cover_letter": ("Cover letter ready", "Your tailored letter is attached as <b>{file}</b>. Read it through and "
+                     "adjust anything before you send it.", "Letter preview",
+                     "Written by Hermes&rsquo; model on your Hermes server from your CV profile and the job listing. "
+                     "Check every claim before sending."),
+    "tailored_cv": ("Tailored CV ready", "Your CV, tailored to this job, is attached as <b>{file}</b>. Job titles, "
+                    "employers and dates are copied from your CV; read it through before you send it.",
+                    "Profile and skills",
+                    "Tailored by Hermes&rsquo; model on your Hermes server: it only reorders and rephrases your own "
+                    "CV. Check every line before sending."),
+}
+
+
+def email_bodies(job: dict, paragraphs: list[str], filename: str, note: str,
+                 kind: str = "cover_letter") -> tuple[str, str, str]:
     title, company = job_title(job), employer(job)
-    subject = f"Cover letter: {title}" + (f" at {company}" if company else "")
+    eyebrow, intro, preview_label, footer = EMAIL_TEXT[kind]
+    subject = f"{KIND_LABELS[kind]}: {title}" + (f" at {company}" if company else "")
     rows = [(label, value) for label, value in (
         ("Employer", company), ("Advertised by", job.get("company") if job.get("company") != company else ""),
         ("Location", job.get("location")), ("Type", job.get("employment_type")), ("Salary", job.get("salary")),
@@ -212,26 +232,24 @@ def email_bodies(job: dict, paragraphs: list[str], filename: str, note: str) -> 
 <table width="100%" cellpadding="0" cellspacing="0" style="background:{C_BG}"><tr><td align="center" style="padding:24px 12px">
 <table width="680" cellpadding="0" cellspacing="0" style="max-width:680px;width:100%">
 <tr><td style="background:#1e1b4b;border-radius:20px;padding:26px 28px">
-  <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#c4b5fd;font-weight:700">Cover letter ready</div>
+  <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#c4b5fd;font-weight:700">{eyebrow}</div>
   <div style="font-size:24px;font-weight:800;color:#ffffff;margin:6px 0 4px">{esc(title)}</div>
   <div style="font-size:15px;color:#e0e7ff">{esc(company)}</div>
 </td></tr>
 <tr><td style="padding-top:18px">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:{C_CARD};border:1px solid #e2e8f0;border-radius:16px">
 <tr><td style="padding:22px 24px">
-  <div style="font-size:14px;color:#334155;line-height:1.5">Your tailored letter is attached as <b>{esc(filename)}</b>.
-  Read it through and adjust anything before you send it.</div>{note_block}
+  <div style="font-size:14px;color:#334155;line-height:1.5">{intro.format(file=esc(filename))}</div>{note_block}
   <table cellpadding="0" cellspacing="0" style="margin:16px 0">{table}</table>
   {view}
 </td></tr></table>
 <table width="100%" cellpadding="0" cellspacing="0" style="background:{C_CARD};border:1px solid #e2e8f0;border-radius:16px;margin-top:18px">
 <tr><td style="padding:22px 24px">
-  <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:{C_ACCENT};font-weight:700;margin-bottom:10px">Letter preview</div>
+  <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:{C_ACCENT};font-weight:700;margin-bottom:10px">{preview_label}</div>
   {preview}
 </td></tr></table>
 <div style="font-size:12px;color:{C_MUTED};line-height:1.6;padding:16px 6px;text-align:center">
-  Written by Hermes&rsquo; model on your Hermes server from your CV profile and the job listing.
-  Check every claim before sending.</div>
+  {footer}</div>
 </td></tr></table></td></tr></table></body></html>"""
     text = "\n".join([f"{subject}", "", f"Attached: {filename}", *(f"{k}: {v}" for k, v in rows),
                       f"Job: {job.get('url', '')}", "", *[f"{p}\n" for p in paragraphs]])
@@ -239,25 +257,6 @@ def email_bodies(job: dict, paragraphs: list[str], filename: str, note: str) -> 
 
 
 # --------------------------------------------------------------------------- run
-
-class Lock:
-    """Keeps overlapping cron runs from sending the same letter twice."""
-
-    def __enter__(self):
-        LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
-        if LOCK_FILE.exists() and time.time() - LOCK_FILE.stat().st_mtime > LOCK_STALE_SECONDS:
-            LOCK_FILE.unlink(missing_ok=True)
-        try:
-            os.close(os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-            self.held = True
-        except FileExistsError:
-            self.held = False
-        return self
-
-    def __exit__(self, *exc):
-        if self.held:
-            LOCK_FILE.unlink(missing_ok=True)
-
 
 def make_letter(tracker: Tracker, key: str, note: str, model_info: tuple[str, str, int | None],
                 dry_run: bool) -> Path:
@@ -282,30 +281,57 @@ def make_letter(tracker: Tracker, key: str, note: str, model_info: tuple[str, st
     return path
 
 
+def make_cv(tracker: Tracker, key: str, note: str, model_info: tuple[str, str, int | None],
+            dry_run: bool) -> Path:
+    job = tracker.job(key)
+    if not job:
+        raise LookupError(f"job {key} is not in the tracker")
+    master = tailored_cv.master_cv(lambda: model_info, tracker)
+    name = candidate_name(profile_text(tracker)) or "Candidate"
+    master |= {"name": name, "contact": env("COVER_LETTER_CONTACT", "") or ""}
+    cv = tailored_cv.tailored_cv(master, job, listing_text(job), note, model_info)
+    pdf = cv_pdf(cv, title=f"CV - {name} - {job_title(job)}")
+    when = datetime.now(ZoneInfo(env("HERMES_TIMEZONE", "UTC") or "UTC"))
+    CV_DIR.mkdir(parents=True, exist_ok=True)
+    path = CV_DIR / f"{when:%Y-%m-%d}-{slug(employer(job))}-{slug(job_title(job))}.pdf"
+    path.write_bytes(pdf)
+    if not dry_run:
+        filename = re.sub(r'[\\/:*?"<>|]+', "", f"CV - {name} - {job_title(job)}")[:120] + ".pdf"
+        preview = [p for p in (cv["headline"], cv["summary"], "Skills: " + ", ".join(cv["skills"])) if p]
+        subject, body, text = email_bodies(job, preview, filename, note, kind="tailored_cv")
+        hc.send_email(subject, body, text, env("COVER_LETTER_FROM_NAME", "Hermes cover letters") or "Hermes",
+                      attachments=[(filename, pdf, "application/pdf")])
+    return path
+
+
+MAKERS = {"cover_letter": make_letter, "tailored_cv": make_cv}
+
+
 def process_pending(tracker: Tracker, model_info_factory, dry_run: bool = False) -> list[str]:
-    """Send every queued letter; returns one line per request handled (printed for the cron log)."""
-    pending = tracker.pending_letters()
+    """Send every queued letter and CV; returns one line per request handled (printed for the cron log)."""
+    pending = [(kind, req) for kind in REQUEST_ACTIONS for req in tracker.pending_letters(action=kind)]
     if not pending:
         return []
     model_info = model_info_factory()
     lines = []
-    for req in pending:
+    for kind, req in pending:
+        what = KIND_LABELS[kind]
         job = tracker.job(req["key"]) or {}
         label = (job_title(job) if job else req["key"]) + (f" at {employer(job)}" if employer(job) else "")
         try:
-            path = make_letter(tracker, req["key"], req.get("reason") or "", model_info, dry_run)
+            path = MAKERS[kind](tracker, req["key"], req.get("reason") or "", model_info, dry_run)
         except LookupError as exc:
             tracker.mark_letter(req["event_id"], req["key"], "error", str(exc), max_attempts=1)
-            lines.append(f"Cover letter skipped for {label}: {exc}")
+            lines.append(f"{what} skipped for {label}: {exc}")
             continue
         except (requests.RequestException, smtplib.SMTPException, OSError, RuntimeError, ValueError) as exc:
             status = tracker.mark_letter(req["event_id"], req["key"], "error", f"{exc.__class__.__name__}: {exc}")
-            lines.append(f"Cover letter {'failed' if status == 'failed' else 'will retry'} for {label}: "
+            lines.append(f"{what} {'failed' if status == 'failed' else 'will retry'} for {label}: "
                          f"{exc.__class__.__name__}: {str(exc)[:160]}")
             continue
         if not dry_run:
             tracker.mark_letter(req["event_id"], req["key"], "sent", file=path.name)
-        lines.append(f"Cover letter {'saved' if dry_run else 'sent'} for {label}: {path.name}")
+        lines.append(f"{what} {'saved' if dry_run else 'sent'} for {label}: {path.name}")
     return lines
 
 
@@ -313,10 +339,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--job", help="tracker key of a job to write a letter for now")
     parser.add_argument("--note", default="", help="extra guidance for the letter (with --job)")
+    parser.add_argument("--cv", action="store_true", help="tailor the CV instead of writing a letter (with --job)")
     parser.add_argument("--dry-run", action="store_true", help="save the PDF but send no email")
     args = parser.parse_args(argv)
     load_env_file()
-    profiles.use_profile_keys()
     if not args.job:
         profiles.spawn_others("cover_letter.py", ["--dry-run"] if args.dry_run else [])
 
@@ -326,17 +352,21 @@ def main(argv: list[str] | None = None) -> int:
     tracker = Tracker(TRACKER_FILE)
     try:
         if args.job:
-            path = make_letter(tracker, args.job, args.note, model_info(), args.dry_run)
-            print(f"Cover letter {'saved' if args.dry_run else 'sent'}: {path}")
+            kind = "tailored_cv" if args.cv else "cover_letter"
+            path = MAKERS[kind](tracker, args.job, args.note, model_info(), args.dry_run)
+            print(f"{KIND_LABELS[kind]} {'saved' if args.dry_run else 'sent'}: {path}")
             return 0
-        with Lock() as lock:
-            if not lock.held:
+        with hc.run_lock(LOCK_FILE) as held:  # overlapping cron runs must not send the same letter twice
+            if not held:
                 return 0
+            full = not FULL_SYNC_FILE.is_file() or time.time() - FULL_SYNC_FILE.stat().st_mtime > FULL_SYNC_EVERY
             _, error = sync_feedback(tracker, env("JOB_FEEDBACK_URL", "") or "",
                                      env("JOB_FEEDBACK_API_TOKEN", "") or "", ack=not args.dry_run,
-                                     profile=env("JOB_PROFILE_ID", "") or "")
+                                     profile=env("JOB_PROFILE_ID", "") or "", full=full)
             if error:
                 log(error)
+            elif full and not args.dry_run:
+                FULL_SYNC_FILE.touch()
             lines = process_pending(tracker, model_info, args.dry_run)
         if lines:
             print("\n".join(lines))

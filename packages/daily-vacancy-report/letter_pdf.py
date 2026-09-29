@@ -1,4 +1,4 @@
-"""A4 cover letter PDF with no third-party dependencies.
+"""A4 cover letter and CV PDFs with no third-party dependencies.
 
 Uses the standard Helvetica fonts every PDF reader has, so the text stays real text (selectable
 and readable by applicant tracking systems) and nothing needs installing on the Hermes server.
@@ -95,12 +95,40 @@ class _Writer:
             r, g, b, width, MARGIN_X, y, PAGE_W - MARGIN_X, y))
 
     def paragraph(self, text: str, size: float = 10.5, leading: float = 15.5, font: str = "regular",
-                  colour=INK, after: float = 9.0) -> None:
-        for line in wrap(text, size, PAGE_W - 2 * MARGIN_X, font):
+                  colour=INK, after: float = 9.0, indent: float = 0.0) -> None:
+        for line in wrap(text, size, PAGE_W - 2 * MARGIN_X - indent, font):
             self.ensure(leading)
             self.y -= leading
-            self.text(MARGIN_X, line, size, font, colour)
+            self.text(MARGIN_X + indent, line, size, font, colour)
         self.y -= after
+
+    def bullet(self, text: str, size: float = 10.0, leading: float = 14.0) -> None:
+        lines = wrap(text, size, PAGE_W - 2 * MARGIN_X - 12)
+        for i, line in enumerate(lines):
+            self.ensure(leading)
+            self.y -= leading
+            if i == 0:
+                self.text(MARGIN_X + 2, "\u2022", size, "regular", ACCENT)
+            self.text(MARGIN_X + 12, line, size)
+        self.y -= 2
+
+    def split_line(self, left: str, right: str, size: float, left_font: str = "bold", leading: float = 15.0) -> None:
+        """Left-aligned text with right-aligned text (e.g. dates) on the same line."""
+        self.ensure(leading * 3)
+        self.y -= leading
+        right_w = text_width(right, size - 1) if right else 0
+        room = PAGE_W - 2 * MARGIN_X - right_w - 12
+        self.text(MARGIN_X, (wrap(left, size, room, left_font) or [""])[0], size, left_font)
+        if right:
+            self.text(PAGE_W - MARGIN_X - right_w, right, size - 1, "regular", MUTED)
+
+    def heading(self, text: str) -> None:
+        self.ensure(60)
+        self.y -= 20
+        self.text(MARGIN_X, text.upper(), 9.5, "bold", ACCENT)
+        self.y -= 5
+        self.rule(self.y, 0.6, (0.851, 0.867, 0.910))
+        self.y -= 2
 
 
 def letter_pdf(name: str, contact: str, date_text: str, recipient: list[str], subject: str, salutation: str,
@@ -130,6 +158,61 @@ def letter_pdf(name: str, contact: str, date_text: str, recipient: list[str], su
     if name:
         w.paragraph(name, font="bold", after=0)
     return _assemble(w.pages, title or subject, name)
+
+
+def cv_pdf(cv: dict, title: str = "") -> bytes:
+    """A CV from the structure tailored_cv.py builds: name, headline, contact, summary, skills, experience,
+    projects, education and certifications (sections without content are left out)."""
+    w = _Writer()
+    w.new_page()
+    name = cv.get("name", "")
+    if name:
+        w.y -= 22
+        w.text(MARGIN_X, name, 22, "bold", ACCENT)
+    if cv.get("headline"):
+        w.y -= 16
+        w.text(MARGIN_X, cv["headline"], 11.5, "regular", INK)
+    if cv.get("contact"):
+        w.y -= 15
+        w.text(MARGIN_X, cv["contact"], 9.5, "regular", MUTED)
+    w.y -= 12
+    w.rule(w.y, 1.6)
+    if cv.get("summary"):
+        w.heading("Profile")
+        w.paragraph(cv["summary"], size=10, leading=14.5, after=2)
+    if cv.get("skills"):
+        w.heading("Skills")
+        w.paragraph("  \xb7  ".join(cv["skills"]), size=10, leading=14.5, after=2)
+    if cv.get("experience"):
+        w.heading("Experience")
+        for job in cv["experience"]:
+            w.split_line(job.get("title", ""), " - ".join(x for x in (job.get("start"), job.get("end")) if x), 10.5)
+            place = "  \xb7  ".join(x for x in (job.get("employer"), job.get("location")) if x)
+            if place:
+                w.paragraph(place, size=9.5, leading=13, colour=MUTED, after=1)
+            for item in job.get("bullets", []):
+                w.bullet(item)
+            w.y -= 4
+    if cv.get("projects"):
+        w.heading("Projects")
+        for project in cv["projects"]:
+            w.split_line(project.get("name", ""), "", 10.5)
+            if project.get("description"):
+                w.paragraph(project["description"], size=10, leading=14, after=4)
+    if cv.get("education"):
+        w.heading("Education")
+        for edu in cv["education"]:
+            w.split_line(edu.get("qualification", ""), edu.get("dates", ""), 10.5)
+            if edu.get("institution"):
+                w.paragraph(edu["institution"], size=9.5, leading=13, colour=MUTED, after=1)
+            if edu.get("details"):
+                w.paragraph(edu["details"], size=10, leading=14, after=2)
+            w.y -= 3
+    if cv.get("certifications"):
+        w.heading("Certifications")
+        for cert in cv["certifications"]:
+            w.bullet(cert)
+    return _assemble(w.pages, title or f"CV - {name}", name)
 
 
 def _assemble(pages: list[list[bytes]], title: str, author: str) -> bytes:

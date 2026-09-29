@@ -6,11 +6,9 @@ optionally restricted to one region, rates each one with the model Hermes is
 configured to use (config.yaml) and emails a scored HTML report.
 
 Pipeline:
-  1. Discover: Indeed job search through the Indeed MCP server connected to Hermes,
-     web searches for single job postings (Firecrawl, Tavily backup), plus
-     nijobs.com keyword listings when JOB_SCANNER_NIJOBS_KEYWORDS is set.
-  2. Pre-filter on title relevance, drop already-seen jobs, fetch the rest
-     (Indeed descriptions come from the MCP job-detail tool, not scraping).
+  1. Discover: web searches for single job postings (Firecrawl, Tavily backup),
+     plus nijobs.com keyword listings when JOB_SCANNER_NIJOBS_KEYWORDS is set.
+  2. Pre-filter on title relevance, drop already-seen jobs, fetch the rest.
   3. Hard filters: inside JOB_REGION_* when configured; full-time / permanent
      or contract only (no part-time, internships).
   4. Hermes' model returns fit score, confidence, matched CV keywords, gaps,
@@ -45,12 +43,12 @@ import requests
 
 import hermes_common as hc
 import profiles
+import tailored_cv
 from companies import LOGO_DIR, Companies
 from companies import norm as company_key
 from hermes_common import (BROWSER_HEADERS, EMAIL_HEAD, STATE_DIR, WebClient, connect_model, env,
                            email_header, env_bool, env_int, first_sentences, html_to_text, inline_images,
                            load_env_file, log, ollama_chat)
-from indeed_mcp import IndeedMCP
 from job_extras import (below_min_salary, closing_date, combined_level, days_left, group_agency_posts,
                         parse_salary, rating_failed, repost_key, second_opinion, triage_titles)
 from job_tracker import (ACTIONS, FOLLOWUP_ACTIONS, Tracker, card_links, prompt_examples, skill_link, skills_text,
@@ -75,8 +73,6 @@ DEFAULT_QUERY_TEMPLATES = [
     '("automation engineer" OR "AI automation" OR "integration engineer") {location} job',
     '"data engineer" {location} job',
 ]
-DEFAULT_INDEED_QUERIES = ["AI engineer", "machine learning engineer", "LLM engineer", "automation engineer",
-                          "data engineer"]
 DEFAULT_TITLE_STRONG = (r"\bai\b|artificial intelligence|machine learning|\bml\b|mlops|\bllm|gen ?ai|generative|\bnlp\b|"
                         r"data scien|automation|agentic|data engineer|solutions engineer|integration|intelligent|"
                         r"applied scien")
@@ -131,13 +127,6 @@ def load_settings() -> SimpleNamespace:
         country=env("JOB_SEARCH_COUNTRY"),
         nijobs_keywords=nijobs,
         queries=queries,
-        indeed=env_bool("JOB_INDEED", True),
-        indeed_queries=[q.strip() for q in (env("JOB_INDEED_QUERIES") or "").split("||") if q.strip()]
-        or DEFAULT_INDEED_QUERIES,
-        indeed_location=env("JOB_INDEED_LOCATION", location),
-        indeed_country=env("JOB_INDEED_COUNTRY", env("JOB_SEARCH_COUNTRY", "")),
-        indeed_limit=env_int("JOB_INDEED_LIMIT", 15),
-        indeed_days=env_int("JOB_INDEED_DAYS", 14),
         title_strong=re.compile(env("JOB_TITLE_STRONG", DEFAULT_TITLE_STRONG), re.I),
         title_medium=re.compile(env("JOB_TITLE_MEDIUM", DEFAULT_TITLE_MEDIUM), re.I),
         title_exclude=re.compile(env("JOB_TITLE_EXCLUDE", title_exclude), re.I),
@@ -428,19 +417,10 @@ class Nijobs:
 
 
 def discover(web: WebClient, nijobs: Nijobs, nijobs_keywords: list[str], queries: list[str], tbs: str,
-             use_search: bool, indeed: IndeedMCP | None = None, health: dict | None = None) -> list[dict]:
+             use_search: bool, health: dict | None = None) -> list[dict]:
     """All candidate postings; `health` gets {source: {"found": n, "error": text}} for the report."""
     found: dict[str, dict] = {}
     health = {} if health is None else health
-
-    if indeed:
-        items = indeed.search(CFG.indeed_queries, CFG.indeed_location, CFG.indeed_limit,
-                              CFG.indeed_country, CFG.indeed_days)
-        for item in items:
-            key = f"indeed:{item['job_id'].lower()}" if item["job_id"] else job_key(item["url"])
-            found.setdefault(key, {"key": key, "url": item["url"], "title": clean_title(item["title"]),
-                                   "description": item["snippet"], "source": "indeed.com", "indeed": item})
-        health["Indeed"] = {"found": len(items), "error": indeed.error}
 
     if nijobs_keywords:
         total = 0
@@ -464,9 +444,9 @@ def discover(web: WebClient, nijobs: Nijobs, nijobs_keywords: list[str], queries
             search_total += len(results)
             kept = 0
             for item in results:
-                link = item.get("url") or ""
+                link = hc.safe_url(item.get("url") or "")
                 title = clean_title(item.get("title") or "")
-                if not SINGLE_POSTING.search(link) or AGGREGATE_TITLE.search(title):
+                if not link or not SINGLE_POSTING.search(link) or AGGREGATE_TITLE.search(title):
                     continue
                 key = job_key(link)
                 if key not in found:
@@ -576,16 +556,14 @@ def rate_job(host: str, model: str, num_ctx: int | None, profile: str, cv_keywor
              job: dict, feedback: str = "") -> dict | None:
     facts = job.get("facts") or {}
     fact_lines = "\n".join(f"{k}: {v}" for k, v in facts.items() if k not in ("logo_url", "links")) or "none"
+    # Everything that is the same for every job comes first, so Ollama reuses its cached prompt prefix
+    # and only processes the listing itself for each job.
     user = (
         f"CANDIDATE CV SUMMARY:\n{profile}\n\n"
         + (f"{feedback}\n\n" if feedback else "") +
         f"CV KEYWORDS (matched_skills must only use these exact strings):\n{', '.join(cv_keywords)}\n\n"
-        "JOB LISTING\n"
-        f"Title: {job['title']}\nURL: {job['url']}\nSource: {job['source']}\n"
-        f"Structured facts from the page:\n{fact_lines}\n"
-        f"Listing text:\n{job['text'][:MAX_LISTING_CHARS]}\n\n"
         f"CANDIDATE PREFERENCES: {preferences()}\n\n"
-        "TASK: Rate how well this job fits the candidate.\n"
+        "TASK: Rate how well the job listing at the end fits the candidate.\n"
         "fit_score rubric: 9-10 a role in the candidate's core field where most key requirements are on the CV "
         "and seniority matches their target level; 7-8 strong overlap with one or two notable gaps; 5-6 partial "
         "or adjacent fit; 0-4 weak fit, wrong discipline, or seniority far above/below the candidate. Be "
@@ -606,7 +584,11 @@ def rate_job(host: str, model: str, num_ctx: int | None, profile: str, cv_keywor
         "describe the agency's client, never the agency itself (company_profile describes the advertiser, so "
         "do not use it here); empty string if the listing does not describe the employer.\n"
         "closing_date: the application deadline as YYYY-MM-DD if the listing states one, else empty string.\n"
-        "Use empty string or 'Unknown' when the listing does not say. Keep every field brief."
+        "Use empty string or 'Unknown' when the listing does not say. Keep every field brief.\n\n"
+        "JOB LISTING\n"
+        f"Title: {job['title']}\nURL: {job['url']}\nSource: {job['source']}\n"
+        f"Structured facts from the page:\n{fact_lines}\n"
+        f"Listing text:\n{job['text'][:MAX_LISTING_CHARS]}"
     )
     for num_predict in (900, 1600):
         try:
@@ -616,9 +598,15 @@ def rate_job(host: str, model: str, num_ctx: int | None, profile: str, cv_keywor
             data["confidence"] = max(0, min(100, int(data.get("confidence", 0))))
             data["reasoning"] = first_sentences(str(data.get("reasoning", "")), 2)
             return data
+        except requests.Timeout as exc:
+            raise ModelTimeout(job["title"]) from exc
         except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
             log(f"rating failed for {job['title'][:50]}: {exc.__class__.__name__}: {str(exc)[:120]}")
     return None
+
+
+class ModelTimeout(Exception):
+    """The model did not answer in time; a second one in a row means Ollama is stuck, so the run stops rating."""
 
 
 def hermes_summary(host: str, model: str, num_ctx: int | None, jobs: list[dict]) -> str:
@@ -935,6 +923,12 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, pr
         f'<tr><td style="padding:18px 22px"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:{C_ACCENT};font-weight:700">Hermes&rsquo; take</div>'
         f'<div style="font-size:15px;color:#1e293b;line-height:1.6;margin-top:6px">{esc(summary)}</div></td></tr></table>'
     ) if summary else ""
+    cv_block = (
+        f'<table width="100%" cellpadding="0" cellspacing="0" style="background:#ecfeff;border:1px solid #a5f3fc;border-radius:16px;margin:22px 0 4px">'
+        f'<tr><td style="padding:14px 22px;font-size:14px;color:#155e75;line-height:1.5"><b>Added to your CV:</b> '
+        f'{esc(", ".join(stats["cv_added"]))}. The previous version is kept as a backup, and tailored CVs now '
+        f'include them.</td></tr></table>'
+    ) if stats.get("cv_added") else ""
     where = f" in {esc(CFG.region)}" if CFG.region else ""
     empty = "" if top or maybe else (
         f'<div style="background:#fff;border-radius:16px;padding:28px;text-align:center;color:{C_MUTED};margin-top:22px">'
@@ -957,7 +951,8 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, pr
                    if stats.get("verify_from") else "")
     feedback_note = ("<br>Buttons on each job record your answer after you confirm it. Thumbs up and down "
                      "teach Hermes what a good match looks like, Interested shortlists a job, I applied starts "
-                     "follow-up reminders, and Cover letter emails you a tailored PDF letter within minutes."
+                     "follow-up reminders, and Cover letter and Tailored CV email you a PDF made for that job "
+                     "within minutes."
                      if stats.get("feedback") else "")
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{EMAIL_HEAD}<title>{esc(CFG.title)}</title></head>
@@ -969,6 +964,7 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, pr
                (stats['avg_fit'], "Average fit"), (stats['scanned'], "Jobs scanned")], highlight=1)}
 <tr><td>
   {source_banner(problems or [])}
+  {cv_block}
   {summary_block}
   {section("Top matches", "Fit score 7 or higher: apply to these first. Jobs closing soon come first.", top, 1)}
   {section("Worth a look", "Partial fit: adjacent roles or a few gaps to cover.", maybe, len(top) + 1)}
@@ -1046,10 +1042,7 @@ def source_problems(health: dict, feedback_error: str | None) -> list[str]:
     problems = []
     for name, info in health.items():
         if info.get("error"):
-            hint = " Run `hermes mcp login indeed` where Hermes runs." \
-                if name == "Indeed" and re.search(r"auth|login|token|oauth", info["error"], re.I) \
-                and "mcp login" not in info["error"] else ""
-            problems.append(f"{name} failed: {info['error']}.{hint}")
+            problems.append(f"{name} failed: {info['error']}.")
         elif not info.get("found"):
             problems.append(f"{name} found no postings this run.")
     if feedback_error:
@@ -1073,7 +1066,6 @@ def main() -> int:
     parser.add_argument("--limit", type=int, help="max job pages to scrape and rate this run")
     parser.add_argument("--include-seen", action="store_true", help="re-rate jobs from previous runs")
     parser.add_argument("--no-search", action="store_true", help="board listings only (nijobs.com), skip web searches")
-    parser.add_argument("--no-indeed", action="store_true", help="skip the Indeed MCP source")
     parser.add_argument("--weekly", action="store_true", help="send the weekly roll-up from job_tracker.db and exit")
     parser.add_argument("--skills", action="store_true",
                         help="list the skills added from the email's missing-skill tags and exit")
@@ -1081,8 +1073,17 @@ def main() -> int:
     args = parser.parse_args()
 
     load_env_file()
-    profiles.use_profile_keys()
     CFG = load_settings()
+    if args.test_email or args.skills or args.remove_skill or args.dry_run:
+        return run(args)
+    with hc.run_lock(STATE_DIR / "job_scanner.lock") as held:
+        if not held:
+            log("Another scan is still running; skipping this one")
+            return 0
+        return run(args)
+
+
+def run(args: argparse.Namespace) -> int:
     tz = ZoneInfo(CFG.timezone)
     when = datetime.now(tz).strftime("%A %d %B %Y, %H:%M %Z")
     profile_id = env("JOB_PROFILE_ID", "") or ""
@@ -1126,11 +1127,15 @@ def main() -> int:
         log(str(exc))
         return 3
 
+    if not CFG.profile_file.is_file():
+        log(f"No CV yet ({CFG.profile_file.name} is missing): upload your CV on the dashboard's profile page")
+        return 0
+    cv_added = [] if args.dry_run else tailored_cv.merge_new_skills(tracker, CFG.profile_file, (host, model, num_ctx))
     try:
         profile = CFG.profile_file.read_text(encoding="utf-8").strip()
         cv_kw, other_kw = load_keywords()
     except OSError as exc:
-        log(f"Candidate profile missing ({exc}); copy job_profile.example.md and cv_keywords.example.json")
+        log(f"Candidate profile unreadable ({exc}); upload your CV again on the dashboard's profile page")
         return 4
     cv_kw, other_kw = with_added_skills(cv_kw, other_kw, tracker.skills())
     profile = "\n\n".join(x for x in (profile, skills_text(tracker)) if x)
@@ -1153,10 +1158,8 @@ def main() -> int:
     seen = load_seen()
     retries = load_retries()
 
-    indeed = IndeedMCP() if CFG.indeed and not args.no_indeed else None
     health: dict[str, dict] = {}
-    candidates = discover(web, nijobs, nijobs_kw, queries, tbs, use_search=not args.no_search, indeed=indeed,
-                          health=health)
+    candidates = discover(web, nijobs, nijobs_kw, queries, tbs, use_search=not args.no_search, health=health)
 
     fresh = [c for c in candidates if args.include_seen or c["key"] not in seen]
     retry_jobs = [c for c in fresh if c["key"] in retries]
@@ -1182,7 +1185,6 @@ def main() -> int:
     queue = (retry_jobs + [c for _, _, c in ranked])[:max_scrape]
     log(f"{len(candidates)} postings discovered, {len(fresh)} unseen ({len(retry_jobs)} retries), "
         f"{len(pool)} titles triaged ({len(off_target)} off-target), rating {len(queue)}")
-    indeed_details = indeed.details([j["indeed"] for j in queue if j["source"] == "indeed.com"]) if indeed else {}
 
     now = time.time()
     today = datetime.now(tz).date()
@@ -1192,16 +1194,14 @@ def main() -> int:
     texts: dict[str, str] = {}
     results = []
     excluded_location = excluded_type = below_min = excluded_salary = excluded_closed = reposts = 0
-    for i, job in enumerate(queue, 1):
+
+    def rate_one(i: int, job: dict) -> str:
+        """Filter, rate and score one queued job: "skipped" before the model, else "rated" or "failed"."""
+        nonlocal excluded_location, excluded_type, below_min, excluded_salary, excluded_closed, reposts
         facts, text = {}, ""
         if job["source"] == "nijobs.com":
             facts, text = nijobs.job(job["url"]) or ({}, "")
-        elif job["source"] == "indeed.com":
-            item = job["indeed"]
-            detail_facts, text = indeed_details.get(item["job_id"], ({}, ""))
-            facts = {k: item[k] for k in ("company", "location", "salary", "type_line", "published") if item[k]}
-            facts.update(detail_facts)
-        if not text and "linkedin.com" not in job["url"] and job["source"] != "indeed.com":
+        if not text and "linkedin.com" not in job["url"]:
             md = web.scrape(job["url"])
             if md:
                 facts, text = header_facts(md), clean_listing(md)
@@ -1215,21 +1215,21 @@ def main() -> int:
             reposts += 1
             done.append(job["key"])
             log(f"[{i}/{len(queue)}] skip (seen before on another board) {job['title'][:60]}")
-            continue
+            return "skipped"
         det_type = detect_type(job["facts"].get("type_line", "")) or \
             detect_type(f"{job['title']}\n{job['text'][:1500]}", check_internship=False)
         if det_type and det_type not in CFG.employment_types:
             excluded_type += 1
             done.append(job["key"])
             log(f"[{i}/{len(queue)}] skip ({det_type}) {job['title'][:70]}")
-            continue
+            return "skipped"
         loc_text = job["facts"].get("location") or ""
         mode = detect_mode(f"{job['facts'].get('type_line', '')} {loc_text}")
         if mode and mode not in CFG.work_modes:
             excluded_type += 1
             done.append(job["key"])
             log(f"[{i}/{len(queue)}] skip ({mode}) {job['title'][:70]}")
-            continue
+            return "skipped"
         remote_ok = CFG.remote_anywhere and (mode or detect_mode(full_text[:4000])) == "Remote"
         local = remote_ok or (in_region(loc_text) if loc_text else in_region(full_text[:5000]))
         if not local and (loc_text or job["source"] != "nijobs.com"):
@@ -1237,7 +1237,21 @@ def main() -> int:
             done.append(job["key"])
             log(f"[{i}/{len(queue)}] skip (outside region: '{loc_text or 'no matching location found'}') "
                 f"{job['title'][:60]}")
-            continue
+            return "skipped"
+
+        # Salary and closing date from the page itself are checked before spending model time on the job.
+        page_salary = job["facts"].get("salary") or ""
+        if page_salary and below_min_salary(parse_salary(page_salary), min_salary, salary_currency):
+            excluded_salary += 1
+            done.append(job["key"])
+            log(f"[{i}/{len(queue)}] skip (salary {page_salary} below {min_salary}) {job['title'][:60]}")
+            return "skipped"
+        page_left = days_left(closing_date(job["text"], ""), today)
+        if page_left is not None and page_left < 0:
+            excluded_closed += 1
+            done.append(job["key"])
+            log(f"[{i}/{len(queue)}] skip (closed) {job['title'][:60]}")
+            return "skipped"
 
         started = time.monotonic()
         rating = rate_job(host, model, num_ctx, profile, list(cv_kw), job, feedback)
@@ -1248,33 +1262,33 @@ def main() -> int:
             else:
                 log(f"[{i}/{len(queue)}] rating failed ({retries[job['key']]}/{MAX_RATING_ATTEMPTS}), "
                     "will retry next run")
-            continue
+            return "failed"
         retries.pop(job["key"], None)
         done.append(job["key"])
         if (CFG.region_re and not loc_text and job["source"] != "nijobs.com" and not remote_ok
                 and not rating.get("in_target_region") and not in_region(f"{job['title']}\n{job['description']}")):
             excluded_location += 1
             log(f"[{i}/{len(queue)}] skip (model: outside region) {job['title'][:60]}")
-            continue
+            return "rated"
         emp_type = det_type or rating.get("employment_type") or "Unknown"
         mode = mode or rating.get("work_mode") or detect_mode(full_text[:4000]) or "Unknown"
         if (emp_type != "Unknown" and emp_type not in CFG.employment_types) or \
                 (mode != "Unknown" and mode not in CFG.work_modes):
             excluded_type += 1
             log(f"[{i}/{len(queue)}] skip ({emp_type}, {mode}) {job['title'][:60]}")
-            continue
+            return "rated"
         salary_text = job["facts"].get("salary") or rating.get("salary") or ""
         salary = parse_salary(salary_text)
         if below_min_salary(salary, min_salary, salary_currency):
             excluded_salary += 1
             log(f"[{i}/{len(queue)}] skip (salary {salary_text} below {min_salary}) {job['title'][:60]}")
-            continue
+            return "rated"
         closing = closing_date(job["text"], rating.get("closing_date", ""))
         left = days_left(closing, today)
         if left is not None and left < 0:
             excluded_closed += 1
             log(f"[{i}/{len(queue)}] skip (closed {closing}) {job['title'][:60]}")
-            continue
+            return "rated"
         if left is not None and left > 365:
             closing, left = None, None
 
@@ -1321,9 +1335,33 @@ def main() -> int:
             tracker.upsert_job(job["key"], entry, emailed=False, now=now)
         if entry["fit"] < min_score:
             below_min += 1
-            continue
+            return "rated"
         enrich_company(companies, entry, job, rating)
         results.append(entry)
+        return "rated"
+
+    timeouts = 0
+    for i, job in enumerate(queue, 1):
+        if i % 5 == 0 and not args.dry_run:
+            save_retries(retries)
+        try:
+            outcome = rate_one(i, job)
+        except ModelTimeout:
+            timeouts += 1
+            if rating_failed(retries, job["key"], MAX_RATING_ATTEMPTS):
+                done.append(job["key"])
+            log(f"[{i}/{len(queue)}] the model timed out on {job['title'][:60]}")
+            if timeouts >= 2:
+                log("The model timed out twice in a row; stopping the ratings for this run")
+                break
+            continue
+        except Exception as exc:  # noqa: BLE001 - one odd listing must not cost the whole report
+            log(f"[{i}/{len(queue)}] skipped after an error ({exc.__class__.__name__}: {str(exc)[:120]}): "
+                f"{job['title'][:60]}")
+            if rating_failed(retries, job["key"], MAX_RATING_ATTEMPTS):
+                done.append(job["key"])
+            continue
+        timeouts = 0 if outcome != "skipped" else timeouts
     companies.save()
 
     dedup: dict[tuple, dict] = {}
@@ -1373,10 +1411,11 @@ def main() -> int:
         "excluded_closed": excluded_closed, "reposts": reposts, "grouped": grouped, "verify_from": verify_from,
         "feedback": bool(fb_url and fb_secret), "unsubscribe": report_unsubscribe_link(),
         "sources": ", ".join(f"{name} {info['found']}" for name, info in health.items()) or "none",
-        "web_usage": web.usage() + (f", Indeed MCP {indeed.calls} calls" if indeed and indeed.calls else ""),
+        "web_usage": web.usage(), "cv_added": cv_added,
     }
     html_body = fitted_html(top, maybe, stats, summary, problems, followups_html)
-    text_body = build_text(results, summary, followup_text(followups)) + \
+    text_body = (f"Added to your CV: {', '.join(cv_added)}\n\n" if cv_added else "") + \
+        build_text(results, summary, followup_text(followups)) + \
         (f"\n\nUnsubscribe: {stats['unsubscribe']}" if stats["unsubscribe"] else "")
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     LAST_REPORT.write_text(preview_html(html_body), encoding="utf-8")

@@ -54,16 +54,18 @@ class FakeApi:
 def home(tmp_path, monkeypatch):
     monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
     monkeypatch.setattr(profiles, "STATE_DIR", tmp_path / "state")
+    monkeypatch.setattr(profiles, "DASHBOARD_FILE", tmp_path / "state" / "dashboard.json")
+    monkeypatch.setattr(profiles.os, "environ", dict(profiles.os.environ))
     keywords = tmp_path / "owner_keywords.json"
     keywords.write_text(json.dumps({"cv_keywords": {"Python": r"\bpython\b"},
                                     "other_tech": {"Terraform": r"\bterraform\b", "Excel": r"\bexcel\b"}}))
     for key, value in {"ALERT_EMAIL": "owner@example.com", "COVER_LETTER_NAME": "Alex Morgan",
                        "COVER_LETTER_CONTACT": "owner@example.com", "JOB_KEYWORDS_FILE": str(keywords),
-                       "JOB_INDEED_LOCATION": "Belfast", "JOB_FEEDBACK_URL": "https://fb.example.workers.dev",
-                       "JOB_FEEDBACK_SECRET": "test-secret", "FIRECRAWL_API_KEY": "fc-envkey0001",
-                       "FIRECRAWL_BACKUP_KEYS": "fc-envkey0002", "JOB_SCANNER_QUERIES": "owner query"}.items():
+                       "JOB_REGION_NAME": "Belfast", "JOB_FEEDBACK_URL": "https://fb.example.workers.dev",
+                       "JOB_FEEDBACK_SECRET": "test-secret", "FIRECRAWL_API_KEY": "fc-envkey-longer0001",
+                       "FIRECRAWL_BACKUP_KEYS": "fc-envkey-longer0002", "JOB_SCANNER_QUERIES": "owner query"}.items():
         monkeypatch.setenv(key, value)
-    for key in ("JOB_PROFILE_ID", "JOB_SCANNER_NIJOBS_KEYWORDS", "JOB_SEARCH_LOCATION", "JOB_REGION_NAME"):
+    for key in ("JOB_PROFILE_ID", "JOB_SCANNER_NIJOBS_KEYWORDS", "JOB_SEARCH_LOCATION"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(profiles, "connect_model", lambda *_: ("http://ollama", "test-model", 8192))
     monkeypatch.setattr(profiles, "ollama_chat", lambda *a, **k: json.dumps(MODEL_REPLY))
@@ -96,7 +98,7 @@ def test_signup_builds_a_profile_from_the_cv(home):
     assert keywords["other_tech"] == {"Terraform": r"\bterraform\b"}
     settings = json.loads((d / "settings.json").read_text())
     assert settings["JOB_SCANNER_QUERIES"] == '("Data Analyst" OR "BI Analyst") "Belfast" job||("Reporting Analyst") "Belfast" job'
-    assert settings["JOB_INDEED_QUERIES"] == "Data Analyst||BI Analyst||Reporting Analyst"
+    assert settings["JOB_TARGET_TITLES"] == "Data Analyst||BI Analyst||Reporting Analyst"
     assert "JOB_SCANNER_NIJOBS_KEYWORDS" not in settings
     strong = profiles.re.compile(settings["JOB_TITLE_STRONG"], profiles.re.I)
     assert strong.search("Senior Power BI Developer") and not strong.search("Warehouse operative")
@@ -151,13 +153,32 @@ def test_model_trouble_is_retried_then_given_up(home, monkeypatch):
     assert api.acked and not (home[0] / "profiles" / "sam-lee-456789").exists()
 
 
-def test_signing_up_again_with_the_same_email_rebuilds_the_profile(home):
-    profiles.sync(FakeApi([signup()]))
-    again = signup(id="queue:1800000000000:ffffff", roles="BI developer")
-    profiles.sync(FakeApi([again]))
+def test_a_signup_cannot_take_over_a_profile_by_its_email(home):
+    tmp, sent = home
+    profiles.sync(FakeApi([signup(invite="a" * 32)]))
+    sent.clear()
+    again = signup(id="queue:1800000000000:ffffff", invite="b" * 32, name="Someone Else", roles="BI developer")
+    assert profiles.sync(FakeApi([again])) == ["signup: done (Someone Else)"]
     found = profiles.all_profiles()
     assert [p["id"] for p in found] == ["owner", "sam-lee-456789"]
-    assert found[1]["roles"] == "BI developer"
+    assert found[1]["roles"] == "Data analyst or BI developer, hybrid" and found[1]["name"] == "Sam Lee"
+    assert [m["to"] for m in sent] == ["owner@example.com"] and "not applied" in sent[0]["subject"]
+
+
+def test_a_repeated_invite_creates_one_profile(home):
+    profiles.sync(FakeApi([signup(invite="a" * 32),
+                           signup(id="queue:1700000000001:0b0b0b", invite="a" * 32, email="sam2@example.com")]))
+    assert [p["id"] for p in profiles.all_profiles()] == ["owner", "sam-lee-456789"]
+
+
+def test_admin_cv_upload_rebuilds_that_profile(home):
+    profiles.sync(FakeApi([signup()]))
+    item = {"id": "queue:2:0c0c0c", "type": "admin", "action": "cv", "u": "sam-lee-456789",
+            "cv_text": CV.replace("Data analyst", "BI developer"), "cv": None}
+    profiles.sync(FakeApi([item]))
+    found = profiles.all_profiles()
+    assert [p["id"] for p in found] == ["owner", "sam-lee-456789"]
+    assert "BI developer" in (home[0] / "profiles" / "sam-lee-456789" / "cv.txt").read_text()
 
 
 def test_unsubscribe_deletes_a_profile_but_only_pauses_the_owner(home):
@@ -177,8 +198,8 @@ def test_admin_actions_set_keys_pause_and_delete(home, monkeypatch):
     profiles.sync(FakeApi([signup()]))
     pid = "sam-lee-456789"
     api = FakeApi([
-        {"id": "queue:2:a", "type": "admin", "action": "set_key", "u": pid, "key": "fc-test-own-key"},
-        {"id": "queue:3:b", "type": "admin", "action": "global_keys", "keys": ["fc-global0001", "fc-global0002", "bad key"]},
+        {"id": "queue:2:a", "type": "admin", "action": "set_key", "u": pid, "key": "fc-test-own-long-key"},
+        {"id": "queue:3:b", "type": "admin", "action": "api_keys", "firecrawl": ["fc-global-longer0001", "fc-global-longer0002", "bad key"]},
         {"id": "queue:4:c", "type": "admin", "action": "pause", "u": pid},
         {"id": "queue:5:d", "type": "admin", "action": "delete", "u": "owner"},
     ])
@@ -187,27 +208,27 @@ def test_admin_actions_set_keys_pause_and_delete(home, monkeypatch):
     sam = profiles.load(pid)
     assert sam["status"] == "paused"
     environ = profiles.child_env(sam)
-    assert (environ["FIRECRAWL_API_KEY"], environ["FIRECRAWL_BACKUP_KEYS"]) == ("fc-test-own-key", "")
+    assert (environ["FIRECRAWL_API_KEY"], environ["FIRECRAWL_BACKUP_KEYS"]) == ("fc-test-own-long-key", "")
     payload = api.statuses[-1]
     row = next(p for p in payload["profiles"] if p["id"] == pid)
     assert row["crawler"] == "own" and row["key_hint"] == "fc-...-key"
-    assert "fc-test-own-key" not in json.dumps(payload) and "fc-global0001" not in json.dumps(payload)
-    assert payload["global"] == {"source": "admin", "key_hint": "fc-...0001"}
-    monkeypatch.setattr(profiles.os, "environ", dict(profiles.os.environ))
-    profiles.use_profile_keys()
-    assert profiles.os.environ["FIRECRAWL_API_KEY"] == "fc-global0001"
-    assert profiles.os.environ["FIRECRAWL_BACKUP_KEYS"] == "fc-global0002"
+    assert "fc-test-own-long-key" not in json.dumps(payload) and "fc-global-longer0001" not in json.dumps(payload)
+    assert payload["keys"]["firecrawl"] == {"source": "dashboard", "hint": "fc-...0001", "backups": 1}
+    assert profiles.dashboard_env()["FIRECRAWL_API_KEY"] == "fc-global-longer0001"
+    assert profiles.os.environ["FIRECRAWL_API_KEY"] == "fc-global-longer0001"
+    assert profiles.os.environ["FIRECRAWL_BACKUP_KEYS"] == "fc-global-longer0002"
 
 
 def test_admin_can_go_back_to_the_env_keys_and_delete(home):
     profiles.sync(FakeApi([signup()]))
     pid = "sam-lee-456789"
-    profiles.sync(FakeApi([{"id": "queue:2:a", "type": "admin", "action": "set_key", "u": pid, "key": "fc-test-own-key"},
-                           {"id": "queue:3:b", "type": "admin", "action": "global_keys", "keys": ["fc-global0001"]}]))
+    profiles.sync(FakeApi([{"id": "queue:2:a", "type": "admin", "action": "set_key", "u": pid, "key": "fc-test-own-long-key"},
+                           {"id": "queue:3:b", "type": "admin", "action": "api_keys", "firecrawl": ["fc-global-longer0001"]}]))
     profiles.sync(FakeApi([{"id": "queue:6:e", "type": "admin", "action": "use_global", "u": pid},
-                           {"id": "queue:7:f", "type": "admin", "action": "global_keys", "keys": []}]))
+                           {"id": "queue:7:f", "type": "admin", "action": "api_keys", "clear": ["firecrawl"]}]))
     environ = profiles.child_env(profiles.load(pid))
-    assert (environ["FIRECRAWL_API_KEY"], environ["FIRECRAWL_BACKUP_KEYS"]) == ("fc-envkey0001", "fc-envkey0002")
+    assert "FIRECRAWL_API_KEY" not in profiles.dashboard_env()
+    assert environ.get("FIRECRAWL_API_KEY") not in ("fc-global-longer0001", "fc-test-own-long-key")
     profiles.sync(FakeApi([{"id": "queue:8:g", "type": "admin", "action": "delete", "u": pid}]))
     assert profiles.load(pid) is None
 
@@ -287,3 +308,14 @@ def test_cli_list_and_delete(home, capsys):
     assert profiles.main(["--delete", "owner"]) == 1
     assert profiles.main(["--delete", "sam-lee-456789"]) == 0
     assert profiles.load("sam-lee-456789") is None
+
+
+def test_email_settings_drop_the_password_when_the_server_or_account_changes(home):
+    profiles.apply_email({"host": "smtp.gmail.com", "port": "587", "user": "me@example.com", "password": "app pass"})
+    assert profiles.env("SMTP_PASSWORD") == "app pass"
+    profiles.apply_email({"host": "smtp.gmail.com", "port": "465", "user": "me@example.com"})
+    assert profiles.env("SMTP_PASSWORD") == "app pass"
+    profiles.apply_email({"host": "smtp.evil.example", "port": "587", "user": "me@example.com"})
+    assert profiles.env("SMTP_PASSWORD") is None and profiles.dashboard_env()["SMTP_PASSWORD"] == ""
+    with pytest.raises(profiles.ProfileError):
+        profiles.update_dashboard_env({"PATH": "/tmp"})

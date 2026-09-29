@@ -338,6 +338,8 @@ def blocked(domain: str) -> bool:
 
 def is_article(url: str, title: str) -> bool:
     parts = urlsplit(url)
+    if parts.scheme.lower() not in ("http", "https") or not parts.netloc or re.search(r"[\x00-\x20\x7f\"<>]", url):
+        return False
     segments = [s.lower() for s in parts.path.split("/") if s]
     if not segments or parts.path.lower().endswith((".pdf", ".xml", ".rss")):
         return False

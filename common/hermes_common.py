@@ -8,10 +8,12 @@ variables or $HERMES_HOME/.env; see docs/configuration.md.
 
 from __future__ import annotations
 
+import contextlib
 import html
 import json
 import os
 import re
+import secrets
 import smtplib
 import ssl
 import sys
@@ -66,6 +68,33 @@ def load_env_file(path: Path = HERMES_HOME / ".env") -> None:
             os.environ[key] = value
 
 
+DASHBOARD_FILE = Path(os.environ.get("HERMES_DASHBOARD_FILE") or SCRIPT_DIR / "state" / "dashboard.json")
+_ENV_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
+# The dashboard may only change report, search, email and crawler settings, never paths or the Worker secrets.
+_DASHBOARD_PREFIXES = ("ALERT_", "COVER_LETTER_", "FIRECRAWL_", "JOB_", "SCRAPFLY_", "SMTP_", "TAVILY_")
+_DASHBOARD_DENIED = re.compile(r"^JOB_FEEDBACK_|_(FILE|DIR|PATH)$|^JOB_PROFILE_ID$")
+
+
+def dashboard_key_allowed(key: str) -> bool:
+    return bool(_ENV_KEY_RE.match(key)) and key.startswith(_DASHBOARD_PREFIXES) and not _DASHBOARD_DENIED.search(key)
+
+
+def load_dashboard_settings(path: Path = DASHBOARD_FILE) -> None:
+    """Settings saved from the feedback Worker's dashboard beat .env and anything inherited from Hermes. A process
+    whose parent already applied them (HERMES_DASHBOARD_APPLIED) keeps the environment its parent chose."""
+    if os.environ.get("HERMES_DASHBOARD_APPLIED"):
+        return
+    try:
+        values = json.loads(path.read_text(encoding="utf-8")).get("env", {})
+    except (OSError, ValueError, AttributeError):
+        values = {}
+    for key, value in values.items() if isinstance(values, dict) else ():
+        if dashboard_key_allowed(str(key)) and isinstance(value, str) and "\x00" not in value:
+            os.environ[key] = value
+    os.environ["HERMES_DASHBOARD_APPLIED"] = "1"
+
+
+load_dashboard_settings()
 load_env_file()
 STATE_DIR = Path(os.environ.get("HERMES_STATE_DIR") or SCRIPT_DIR / "state")
 
@@ -84,6 +113,60 @@ def env_int(name: str, default: int) -> int:
 
 def env_bool(name: str, default: bool) -> bool:
     return env(name, "1" if default else "0").lower() in {"1", "true", "yes", "on"}
+
+
+def safe_url(url: str) -> str:
+    """The URL when it is an http(s) link to a host, else "" (search results must not put javascript: or data:
+    links into an email)."""
+    url = (url or "").strip()
+    parts = urlsplit(url)
+    return url if parts.scheme.lower() in ("http", "https") and parts.netloc and not CONTROL_CHARS.search(url) else ""
+
+
+CONTROL_CHARS = re.compile(r"[\x00-\x20\x7f]")
+
+
+def mask_secret(value: str) -> str:
+    """Enough to recognise a stored key (its prefix and last 4 characters, and only for long ones), never more."""
+    return "" if not value else f"{value[:3]}...{value[-4:]}" if len(value) >= 20 else "****"
+
+
+def write_atomic(path: Path, data: str | bytes, private: bool = False) -> None:
+    """Write through a unique temp file and a rename, so readers never see half a file and concurrent writers
+    never share a temp file; private files are created 0600 from the start."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    raw = data.encode("utf-8") if isinstance(data, str) else data
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600 if private else 0o644)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(raw)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+@contextlib.contextmanager
+def run_lock(path: Path):
+    """Exclusive, non-blocking lock on `path`; yields False when another process holds it. The kernel releases
+    it when the process ends, so a crashed run never leaves a stale lock."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(path, "a")  # noqa: SIM115 - held open for the life of the lock
+    try:
+        try:
+            import fcntl
+        except ImportError:  # Windows development machines have no flock
+            yield True
+            return
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        yield True
+    finally:
+        handle.close()
 
 
 def normalize_url(url: str) -> str:
@@ -136,9 +219,7 @@ class Firecrawl:
         self.start_credits: dict[int, int | None] = {}
         self._activate_next(min_credits)
 
-    @staticmethod
-    def mask(key: str) -> str:
-        return f"{key[:7]}...{key[-4:]}"
+    mask = staticmethod(mask_secret)
 
     def _set_key(self, idx: int) -> None:
         self.headers = {"Authorization": f"Bearer {self.keys[idx]}", "Content-Type": "application/json"}
@@ -189,7 +270,12 @@ class Firecrawl:
                 time.sleep(5 * attempt)
                 continue
             if resp.status_code == 200:
-                return resp.json()
+                try:
+                    body = resp.json()
+                except ValueError:
+                    log(f"Firecrawl {path} returned a response that is not JSON")
+                    return None
+                return body if isinstance(body, dict) else None
             # A 403 from /scrape means "site not supported", not a bad key.
             out_of_credits = resp.status_code in (401, 402) or \
                 (resp.status_code == 403 and path != "scrape") or \
@@ -265,7 +351,11 @@ class Tavily:
             raise ProviderExhausted(f"Tavily {resp.status_code}: {resp.text[:120]}")
         if resp.status_code != 200:
             raise RuntimeError(f"Tavily {path} HTTP {resp.status_code}: {resp.text[:120]}")
-        return resp.json()
+        try:
+            body = resp.json()
+        except ValueError:
+            raise RuntimeError(f"Tavily {path} returned a response that is not JSON") from None
+        return body if isinstance(body, dict) else {}
 
     def search(self, query: str, limit: int, tbs: str | None, country: str | None, topic: str) -> list[dict]:
         text, include, exclude = _search_operators(query)
@@ -575,6 +665,15 @@ def connect_model(override_env: str) -> tuple[str, str, int | None]:
     return host, model, num_ctx
 
 
+def fit_ctx(num_ctx: int | None, *texts: str, num_predict: int = 500) -> int | None:
+    """The configured context size, raised (in 2k steps, at most 32k) only when the prompt would not fit, since
+    every change of num_ctx makes Ollama reload the model."""
+    needed = sum(len(t) for t in texts) // 3 + num_predict + 256
+    if needed <= (num_ctx or 4096):
+        return num_ctx
+    return min(32768, -(-needed // 2048) * 2048)
+
+
 def ollama_chat(host: str, model: str, system: str, user: str, num_ctx: int | None,
                 fmt: dict | None = None, num_predict: int = 500) -> str:
     options = {"temperature": 0, "num_predict": num_predict}
@@ -637,9 +736,9 @@ def send_email(subject: str, html_body: str, text_body: str, from_name: str,
     if not (user and password and to_addr):
         raise RuntimeError("SMTP_USER, SMTP_PASSWORD and ALERT_EMAIL must be set")
     msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = f"{from_name} <{env('SMTP_FROM', user)}>"
-    msg["To"] = to_addr
+    msg["Subject"] = _header(subject)
+    msg["From"] = f"{_header(from_name).replace('<', '').replace('>', '')} <{_header(env('SMTP_FROM', user))}>"
+    msg["To"] = _header(to_addr)
     original = html_size(html_body)
     html_body = compact_html(html_body)
     if html_size(html_body) != original:
@@ -654,10 +753,41 @@ def send_email(subject: str, html_body: str, text_body: str, from_name: str,
     for filename, data, mime in attachments or []:
         maintype, subtype = mime.split("/", 1)
         msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=filename)
-    with smtplib.SMTP(host, port, timeout=30) as smtp:
-        smtp.ehlo()
-        smtp.starttls(context=ssl.create_default_context())
-        smtp.ehlo()
+    for attempt, pause in enumerate(SMTP_RETRY_PAUSES + (None,), 1):
+        try:
+            _smtp_send(host, port, user, password, msg)
+            break
+        except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError, TimeoutError, ConnectionError) as exc:
+            error = exc
+        except smtplib.SMTPResponseException as exc:
+            if not 400 <= exc.smtp_code < 500:  # 5xx (wrong password, rejected address) will not fix itself
+                raise
+            error = exc
+        if pause is None:
+            raise error
+        log(f"Email attempt {attempt} failed ({error.__class__.__name__}); retrying in {pause}s")
+        time.sleep(pause)
+    log(f"Email sent to {to_addr}")
+
+
+SMTP_RETRY_PAUSES = (10, 60)
+
+
+def _header(value: str | None) -> str:
+    """A header value on one line: a newline in a job title or name must neither break nor inject headers."""
+    return " ".join(str(value or "").split())
+
+
+def _smtp_send(host: str, port: int, user: str, password: str, msg: EmailMessage) -> None:
+    context = ssl.create_default_context()
+    if port == 465:
+        smtp_conn = smtplib.SMTP_SSL(host, port, timeout=30, context=context)
+    else:
+        smtp_conn = smtplib.SMTP(host, port, timeout=30)
+    with smtp_conn as smtp:
+        if port != 465:
+            smtp.ehlo()
+            smtp.starttls(context=context)
+            smtp.ehlo()
         smtp.login(user, password.replace(" ", ""))
         smtp.send_message(msg)
-    log(f"Email sent to {to_addr}")

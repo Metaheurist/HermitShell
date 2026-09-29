@@ -32,8 +32,7 @@ It asks, in order:
    `--advanced`, you get every setting, including provider order, Ollama fallbacks, title regexes
    and limits.
 4. **Job search** (vacancy report). Where you're job hunting: region or city, the towns that
-   count as inside it, and a two-letter country code, which also picks the right Indeed site
-   (`gb` gives `uk.indeed.com`). Then whether fully remote jobs elsewhere count, and what kind of
+   count as inside it, and a two-letter country code. Then whether fully remote jobs elsewhere count, and what kind of
    job you want from numbered menus:
    - **Level:** junior, mid, senior, lead or any. Titles above or below it lose fit points.
    - **Employment types:** permanent, contract, temporary, part-time, internship. Choosing
@@ -44,7 +43,7 @@ It asks, in order:
    - **Unnamed agency adverts:** whether to hide recruitment-agency adverts that don't name the
      employer.
 5. **Job titles** (vacancy report). Enter the job titles you want. The wizard turns them into
-   Indeed searches, web search queries for your location and a title filter. It also removes
+   web search queries for your location and a title filter. It also removes
    any of your titles from the default exclude list, so a nurse or teacher isn't filtered out.
 6. **Candidate profile** (vacancy report). Answer a few questions, import a text or markdown CV,
    paste text, or start from the example. Your skills and gaps become `cv_keywords.json`.
@@ -63,11 +62,9 @@ It asks, in order:
 9. **Review.** Every change is listed (secrets masked) before anything is written. `.env` is
    backed up to `.env.bak-<timestamp>`, updated in place (other Hermes settings are left
    alone) and kept at mode 600.
-10. **Indeed MCP.** Adds the server to Hermes if it's missing and offers the one-time browser
-    login.
-11. **Schedules.** Creates or updates the `hermes cron` jobs with the run times you chose. If
+10. **Schedules.** Creates or updates the `hermes cron` jobs with the run times you chose. If
     Hermes isn't reachable from where the wizard runs, it prints the commands to run instead.
-12. **Test.** Sends a test email and offers a dry run.
+11. **Test.** Sends a test email and offers a dry run.
 
 The wizard finds Hermes by itself. It uses the `hermes` command when it's on your PATH;
 otherwise it runs commands in the `hermes-agent` container with `docker exec` (change this with
@@ -174,7 +171,7 @@ cat packages/news-digest/.env.example
 The settings the wizard asks about in its guided steps are, for the vacancy report,
 `JOB_REGION_NAME`, `JOB_REGION_PLACES`, `JOB_SEARCH_COUNTRY`, `JOB_REMOTE_ANYWHERE`, `JOB_LEVEL`,
 `JOB_EMPLOYMENT_TYPES`, `JOB_WORK_MODES`, `JOB_MIN_SALARY`, `JOB_SALARY_CURRENCY`,
-`JOB_HIDE_UNNAMED_AGENCY`, `JOB_INDEED_QUERIES` and the `JOB_FEEDBACK_*` values, and for the
+`JOB_HIDE_UNNAMED_AGENCY`, `JOB_TARGET_TITLES` and the `JOB_FEEDBACK_*` values, and for the
 digest, `NEWS_DIGEST_TOPICS` and `NEWS_DIGEST_CUSTOM_TOPICS`. The optional feedback buttons need
 a small Cloudflare Worker; [feedback-worker.md](feedback-worker.md) covers deploying it and
 setting the secrets.
@@ -188,17 +185,6 @@ cd $HERMES_HOME/scripts
 cp job_profile.example.md job_profile.md
 cp cv_keywords.example.json cv_keywords.json
 ```
-
-Optionally, connect the Indeed MCP server in Hermes so the vacancy report also searches Indeed.
-Add **indeed** from the dashboard's MCP catalog, then authorise it once:
-
-```sh
-docker exec -it -u hermes hermes-agent hermes mcp login indeed
-docker exec -u hermes hermes-agent hermes mcp test indeed
-```
-
-Setup details are in the package README's
-[Indeed MCP source](../packages/daily-vacancy-report/README.md#indeed-mcp-source) section.
 
 ### 4. Test
 

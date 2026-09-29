@@ -15,4 +15,6 @@
   //   JOB_FEEDBACK_API_TOKEN  protects /events, /ack and /api/* (same value as in Hermes' .env)
   //   ADMIN_PASSWORD          password for the /admin page (optional; /admin is off without it)
   //   ADMIN_USER              username for /admin (optional, defaults to "admin")
+  //   ACCESS_AUD              Cloudflare Access application AUD tag; when set, /admin also needs Access
+  //   ACCESS_TEAM_DOMAIN      your Access team domain, e.g. <team>.cloudflareaccess.com
 }

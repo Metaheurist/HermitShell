@@ -8,6 +8,16 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Tailored CV button.** Next to **Cover letter**, each job card has **Tailored CV**. Like the
+  letter, it queues a request (with optional guidance) that `cover_letter.py` picks up, and emails
+  an A4 PDF CV fitted to that job (`tailored_cv.py`). The CV is turned into a structured copy once
+  (`state/cv.json`, rebuilt when the CV changes); the model only chooses and rephrases, so job
+  titles, employers, dates and education always come from your CV and figures it doesn't
+  contain are refused.
+- **Skills from the email go into the CV.** Skills added with the missing-skill tags are worked
+  into the profile's skills section by the model (the previous version is kept as a `.bak`
+  copy; if the model's edit fails the checks, the skills are appended instead), and appear in
+  every tailored CV. The daily report says which skills were added.
 - **Extra vacancy profiles.** One Hermes can now send reports to other people:
   - The feedback Worker has a password-protected `/admin` page (`ADMIN_PASSWORD` secret, optional
     `ADMIN_USER`; lockout after five wrong passwords, 12-hour HttpOnly session, CSRF tokens) that
@@ -82,9 +92,8 @@ using [Semantic Versioning](https://semver.org/).
 - **Agency grouping.** The same job advertised by several agencies becomes one card listing the
   other advertisers. `JOB_HIDE_UNNAMED_AGENCY=1` drops agency adverts that don't name the
   employer.
-- **Source health.** Jobs found and errors per source (Indeed, nijobs.com, web search) appear in
-  the footer, and a warning banner explains failures, such as an expired Indeed login and how to
-  fix it.
+- **Source health.** Jobs found and errors per source (nijobs.com, web search) appear in the
+  footer, and a warning banner explains failures.
 - **Setup wizard:** minimum salary, currency and unnamed-agency questions; a feedback-buttons
   step that generates both secrets and pipes them to `wrangler secret put` without showing them;
   a weekly roll-up schedule; and `<day> HH:MM` run times such as `sunday 18:00`
@@ -111,12 +120,10 @@ using [Semantic Versioning](https://semver.org/).
     without echo, shown masked), timezone and each package's settings.
   - Settings, help text and defaults come from the `.env.example` files: `# @basic` settings
     are asked by default, and `--advanced` asks for everything.
-  - Vacancy report steps: turn your job titles into Indeed searches, web queries and title
-    filters; build `job_profile.md` from guided questions, an imported CV or the example;
-    generate `cv_keywords.json` from your skills and gaps; add and log in to the Indeed MCP
-    server.
-  - Guided job search step: region, towns, country (which also sets the Indeed site and
-    country), remote-anywhere, target level, employment types and work modes.
+  - Vacancy report steps: turn your job titles into web queries and title filters; build
+    `job_profile.md` from guided questions, an imported CV or the example; generate
+    `cv_keywords.json` from your skills and gaps.
+  - Guided job search step: region, towns, country, remote-anywhere, target level, employment types and work modes.
   - News topics step: pick from the topic catalog by number, then add your own topics.
   - Asks what time each package should run (`07:30`, `weekdays 08:00` or a cron expression) and
     creates or updates the `hermes cron` jobs, then sends a test email and offers a dry run.
@@ -155,21 +162,20 @@ using [Semantic Versioning](https://semver.org/).
 - The digest's default reader and editor prompt are no longer tech-specific, and the tagline is
   built from the chosen topic names.
 
-- **Indeed MCP source for the Daily Vacancy Report** (`packages/daily-vacancy-report/indeed_mcp.py`):
-  - Searches Indeed through the Indeed MCP server connected to Hermes, and fetches full job
-    descriptions with the MCP job-detail tool instead of scraping, so it uses no web credits.
-  - Reuses Hermes' OAuth provider and tokens (`hermes mcp login indeed`). The package holds no
-    credentials, and token refreshes stay coordinated with the Hermes gateway.
-  - Tool and argument names are discovered from the server's tool list, with
-    `JOB_INDEED_SEARCH_TOOL` / `JOB_INDEED_DETAIL_TOOL` overrides.
-  - Configured through `JOB_INDEED`, `JOB_INDEED_MCP_SERVER`, `JOB_INDEED_MCP_URL`,
-    `JOB_INDEED_QUERIES`, `JOB_INDEED_LOCATION`, `JOB_INDEED_COUNTRY`, `JOB_INDEED_LIMIT`,
-    `JOB_INDEED_DAYS`, `JOB_INDEED_DOMAIN` and `JOB_INDEED_TIMEOUT`.
-  - New `--no-indeed` flag. The report footer counts Indeed MCP calls.
-  - Indeed job keys (`jk`) are used for seen-state, so the same posting found by web search and
-    by the MCP source is only rated once.
-- **Documentation.** An "Indeed MCP source" setup section in the package README, an "MCP
-  sources" section in the configuration guide, and an optional step in the installation guide.
+- **Job titles are one setting, `JOB_TARGET_TITLES`** (`||`-separated), set from the
+  dashboard's profile page or the wizard; changing them rebuilds the web search queries and the
+  strong title filter.
+- **New feedback link format.** Button and unsubscribe links are now signed over every field
+  (job, action, title, skills, profile, send day) with an unambiguous encoding, and expire 90
+  days after the email. Links in emails sent before the update show "This link isn't valid";
+  deploy the Worker and the scripts together, after Hermes has collected any waiting answers.
+- **`JOB_FEEDBACK_URL` must be `https://`.** With an `http://` address no buttons are added and
+  feedback isn't synced.
+- The admin page's crawler-key forms queue an `api_keys` action (`clear` to go back to `.env`)
+  instead of `global_keys`.
+- Settings changed from the dashboard are limited to the `ALERT_`, `COVER_LETTER_`,
+  `FIRECRAWL_`, `JOB_`, `SCRAPFLY_`, `SMTP_` and `TAVILY_` families; paths, file names,
+  `JOB_FEEDBACK_*` and `JOB_PROFILE_ID` can only be set in `.env`.
 
 ### Changed
 
@@ -182,8 +188,6 @@ using [Semantic Versioning](https://semver.org/).
 - The model can no longer rule a job out of the region when its title or snippet names a place
   inside it.
 - Web search titles lose trailing "- Job <Month> <Year>" suffixes.
-- An unauthorised, unreachable or missing Indeed MCP server is logged and skipped, and the other
-  sources still run.
 - Relative `JOB_PROFILE_FILE`, `JOB_KEYWORDS_FILE` and `TECH_DIGEST_SECTIONS_FILE` paths are
   resolved against the scripts directory instead of the working directory, so they also work
   under cron.
@@ -208,8 +212,59 @@ using [Semantic Versioning](https://semver.org/).
   same at about half the size. If the vacancy report is still too big, the lowest-ranked jobs
   become one-line "More matches" entries. See
   [docs/email-rendering.md](docs/email-rendering.md#size-staying-under-gmails-clipping-limit).
-- The Indeed sign-in warning repeated "Run `hermes mcp login indeed`" when the error already
-  said so.
+- One failing job (a provider error, bad JSON, an unexpected exception) no longer ends the daily
+  run: it counts as a failed attempt and the run goes on. Two model timeouts in a row stop the
+  ratings for that run, and the retry list is saved every few jobs.
+- Emails are retried twice (after 10 s and 60 s) when the SMTP server drops the connection or
+  answers with a temporary 4xx error.
+- Overlapping runs of the vacancy report, cover letters and profiles are prevented with a lock
+  file, and the job tracker uses SQLite's WAL mode with a busy timeout, so a cron run and a manual
+  run can't corrupt state.
+- Cover letter polling does a full KV check once an hour instead of on every run.
+- Tests no longer read the real `.env` or `~/.hermes` (new root `conftest.py`).
+
+### Performance
+
+- Job rating prompts put the CV, feedback and rubric first and the listing last, so Ollama can
+  reuse the cached prompt prefix between jobs.
+- Jobs whose page shows a salary below the minimum or a closing date in the past are dropped
+  before the model is asked.
+- The model's context size is only raised above the default when the prompt needs it.
+- Adding a skill to the CV asks the model to rewrite only the skills section, not the whole CV.
+
+### Security
+
+A review of the whole app; none of these were known to be exploited.
+
+- **Feedback Worker:**
+  - Link signatures covered the fields joined with a separator that could appear in a title, so a
+    signed link could be re-split into different fields. Now encoded unambiguously (see above);
+    control characters are refused, answers are stored under replay-safe keys, and links for
+    deleted profiles are refused.
+  - `/admin` can require Cloudflare Access (`ACCESS_AUD`, `ACCESS_TEAM_DOMAIN`; guide in
+    [docs/feedback-worker.md](docs/feedback-worker.md#recommended-cloudflare-access-in-front-of-admin)).
+  - The sign-in lockout counts an IPv6 /64 as one address, adds a global limit of 30 failures,
+    and refuses sign-in when KV can't be read. **Sign out** ends every session; the cookie is
+    `__Host-` prefixed.
+  - Request bodies are size-limited while being read, uploaded .docx files are checked to be real
+    Word files, invite links are checked before the upload is read, and keys queued from the admin
+    page expire after 2 days.
+  - Security headers on every page, and unexpected errors return a plain 500 without details.
+- **CV reading** (`cv_text.py`): hostile PDFs could exhaust memory or CPU (compression bombs,
+  page loops, huge fonts). Decompression, objects, pages and drawing operations are now capped,
+  and CVs are read in a child process with a 60-second timeout (and memory and CPU limits on Linux).
+- **Company logos** (`companies.py`): homepage and logo downloads refuse private and local
+  addresses (also after redirects), follow at most 3 redirects, and cap page and image sizes.
+- **Profiles:** a sign-up with an existing profile's email no longer replaces that profile, and
+  the same invite can't create two profiles. Changing the SMTP host or user from the dashboard
+  clears the stored password instead of sending it to the new server.
+- **Files:** settings and profile files are written atomically with mode 600 from the start
+  instead of being chmodded afterwards.
+- **Email headers:** line breaks in subjects, names and addresses are removed. Short secrets are
+  masked completely.
+- **News Digest:** links that aren't plain `http(s)` URLs are dropped.
+- **CI:** GitHub Actions are pinned to commit SHAs, ruff to a fixed version, and the gitleaks
+  download is checked against its SHA-256.
 
 ## [0.1.0] - 2026-09-28
 

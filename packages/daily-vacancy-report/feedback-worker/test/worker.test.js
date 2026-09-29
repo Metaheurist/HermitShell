@@ -1,20 +1,23 @@
 import { describe, expect, it } from "vitest";
 import worker, { sign } from "../src/index.js";
+import { today } from "../src/lib.js";
 import { BASE, testEnv, valuesWith } from "./helpers.js";
 
-// Same values as the KNOWN_*SIGNATURE constants in packages/daily-vacancy-report/tests/test_vacancy_report.py.
-const KNOWN_SIGNATURE = "7a1921b9bd33f759be1489d932b2a57f";
-const KNOWN_SKILL_SIGNATURE = "2852e1bfe92031fafbd79fffc07522f5";
-const KNOWN_PROFILE_SIGNATURE = "4cab135492aab3ae0e242e623e497477";
+// Same values as the KNOWN_* constants in packages/daily-vacancy-report/tests/test_vacancy_report.py.
+const KNOWN_SIGNATURE = "bf5b2947e5f2b792d5a56680ef7d8ab8";
+const KNOWN_SKILL_SIGNATURE = "1c160ba1b9a49c362a7107d21ce864bd";
+const KNOWN_PROFILE_SIGNATURE = "981737ef0883273fc687a8aefaf92098";
+const KNOWN_DAY = 20000;
 
-async function link(action = "applied", key = "nijobs:123", title = "AI Engineer", profile = "") {
-  const t = await sign("test-secret", key, action, title, "", profile);
-  return { j: key, a: action, n: title, t, ...(profile ? { u: profile } : {}) };
+async function link(action = "applied", key = "nijobs:123", title = "AI Engineer", profile = "", day = today()) {
+  const t = await sign("test-secret", key, action, title, "", profile, day);
+  return { j: key, a: action, n: title, ...(profile ? { u: profile } : {}), d: String(day), t };
 }
 
-async function skillLink(skills = "Kubernetes|Terraform|Go") {
-  const t = await sign("test-secret", "nijobs:123", "add_skill", "AI Engineer", skills);
-  return { j: "nijobs:123", a: "add_skill", n: "AI Engineer", s: skills, t };
+async function skillLink(skills = "Kubernetes|Terraform|Go", profile = "") {
+  const d = String(today());
+  const t = await sign("test-secret", "nijobs:123", "add_skill", "AI Engineer", skills, profile, d);
+  return { j: "nijobs:123", a: "add_skill", n: "AI Engineer", s: skills, ...(profile ? { u: profile } : {}), d, t };
 }
 
 function formRequest(fields) {
@@ -23,7 +26,61 @@ function formRequest(fields) {
 
 describe("feedback worker", () => {
   it("signs links exactly like the Python scanner", async () => {
-    expect(await sign("test-secret", "nijobs:123", "applied", "AI Engineer")).toBe(KNOWN_SIGNATURE);
+    expect(await sign("test-secret", "nijobs:123", "applied", "AI Engineer", "", "", KNOWN_DAY)).toBe(KNOWN_SIGNATURE);
+  });
+
+  it("does not let a profile's link be re-read as the owner's", async () => {
+    // Under the old encoding "skills=u=sam-lee" with no profile signed the same bytes as profile "sam-lee".
+    const env = testEnv();
+    const sam = await skillLink("Go", "sam-lee");
+    const shifted = { ...sam, s: "Go\nu=sam-lee" };
+    delete shifted.u;
+    expect((await worker.fetch(new Request(`${BASE}/f?${new URLSearchParams(shifted)}`), env)).status).toBe(403);
+  });
+
+  it("rejects links with control characters, no issue day or a day in the future", async () => {
+    const env = testEnv();
+    const nl = await link("applied", "nijobs:1", "AI\nEngineer");
+    expect((await worker.fetch(new Request(`${BASE}/f?${new URLSearchParams(nl)}`), env)).status).toBe(403);
+    const { d, ...noDay } = await link();
+    expect(d).toBeTruthy();
+    expect((await worker.fetch(new Request(`${BASE}/f?${new URLSearchParams(noDay)}`), env)).status).toBe(403);
+    const future = await link("applied", "nijobs:123", "AI Engineer", "", today() + 5);
+    expect((await worker.fetch(new Request(`${BASE}/f?${new URLSearchParams(future)}`), env)).status).toBe(403);
+  });
+
+  it("expires links after 90 days", async () => {
+    const env = testEnv();
+    const old = await link("applied", "nijobs:123", "AI Engineer", "", today() - 91);
+    expect((await worker.fetch(new Request(`${BASE}/f?${new URLSearchParams(old)}`), env)).status).toBe(410);
+    expect((await worker.fetch(formRequest({ ...old, r: "" }), env)).status).toBe(410);
+    expect(env.FEEDBACK.store.size).toBe(0);
+  });
+
+  it("rejects links of profiles Hermes no longer reports", async () => {
+    const env = testEnv();
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "alex-kim" }] }));
+    const sam = await link("applied", "nijobs:9", "Analyst", "sam-lee");
+    expect((await worker.fetch(formRequest({ ...sam, r: "" }), env)).status).toBe(410);
+    const alex = await link("applied", "nijobs:9", "Analyst", "alex-kim");
+    expect((await worker.fetch(formRequest({ ...alex, r: "" }), env)).status).toBe(200);
+  });
+
+  it("stores a replayed answer once", async () => {
+    const env = testEnv();
+    const params = { ...(await link("cover_letter")), r: "mention Azure" };
+    await worker.fetch(formRequest(params), env);
+    await worker.fetch(formRequest(params), env);
+    expect(valuesWith(env, "event:")).toHaveLength(1);
+    await worker.fetch(formRequest({ ...params, r: "mention AWS" }), env);
+    expect(valuesWith(env, "event:")).toHaveLength(2);
+  });
+
+  it("refuses oversized answers", async () => {
+    const env = testEnv();
+    const res = await worker.fetch(formRequest({ ...(await link()), r: "x".repeat(20000) }), env);
+    expect(res.status).toBe(413);
+    expect(env.FEEDBACK.store.size).toBe(0);
   });
 
   it("shows a confirmation page for a valid link without saving anything", async () => {
@@ -53,7 +110,7 @@ describe("feedback worker", () => {
     expect(res.status).toBe(200);
     const [event] = [...env.FEEDBACK.store.values()].map((v) => JSON.parse(v));
     expect(event).toMatchObject({ j: "nijobs:123", a: "not_for_me", r: "too senior" });
-    expect(event.id).toMatch(/^event:\d+:/);
+    expect(event.id).toMatch(/^event:_:[0-9a-f]{32}:[0-9a-f]{12}$/);
   });
 
   it("queues a cover letter request with its guidance and says when it arrives", async () => {
@@ -76,7 +133,7 @@ describe("feedback worker", () => {
   });
 
   it("signs skill lists exactly like the Python scanner", async () => {
-    expect(await sign("test-secret", "nijobs:123", "add_skill", "AI Engineer", "Kubernetes|Terraform|Go"))
+    expect(await sign("test-secret", "nijobs:123", "add_skill", "AI Engineer", "Kubernetes|Terraform|Go", "", KNOWN_DAY))
       .toBe(KNOWN_SKILL_SIGNATURE);
   });
 
@@ -129,7 +186,7 @@ describe("feedback worker", () => {
   it("lists waiting events and deletes acknowledged ones", async () => {
     const env = testEnv();
     await worker.fetch(formRequest({ ...(await link("applied")), r: "" }), env);
-    await worker.fetch(formRequest({ ...(await link("interested", "indeed:abc", "ML Engineer")), r: "" }), env);
+    await worker.fetch(formRequest({ ...(await link("interested", "nijobs:abc", "ML Engineer")), r: "" }), env);
     const auth = { Authorization: "Bearer api-token" };
     const { events } = await (await worker.fetch(new Request(`${BASE}/events`, { headers: auth }), env)).json();
     expect(events.map((e) => e.a).sort()).toEqual(["applied", "interested"]);
@@ -138,7 +195,7 @@ describe("feedback worker", () => {
     });
     expect(await (await worker.fetch(ack, env)).json()).toEqual({ deleted: 1 });
     expect(valuesWith(env, "event:")).toHaveLength(1);
-    expect(env.FEEDBACK.store.has("flag:events")).toBe(true);
+    expect(env.FEEDBACK.store.has("flag:events:_")).toBe(true);
   });
 
   it("answers polls from a flag without listing KV, and clears it once everything is acknowledged", async () => {
@@ -147,7 +204,7 @@ describe("feedback worker", () => {
     const list = env.FEEDBACK.list;
     env.FEEDBACK.list = (...args) => { lists += 1; return list(...args); };
     const auth = { headers: { Authorization: "Bearer api-token" } };
-    await env.FEEDBACK.put("event:1:old", JSON.stringify({ id: "event:1:old", j: "nijobs:1", a: "applied" }));
+    await env.FEEDBACK.put("event:_:old", JSON.stringify({ id: "event:_:old", j: "nijobs:1", a: "applied" }));
     expect((await (await worker.fetch(new Request(`${BASE}/events`, auth), env)).json()).events).toEqual([]);
     expect(lists).toBe(0);
     const { events } = await (await worker.fetch(new Request(`${BASE}/events?full=1`, auth), env)).json();
@@ -161,7 +218,7 @@ describe("feedback worker", () => {
   });
 
   it("signs profile links exactly like the Python scanner", async () => {
-    expect(await sign("test-secret", "nijobs:123", "applied", "AI Engineer", "", "sam-lee")).toBe(KNOWN_PROFILE_SIGNATURE);
+    expect(await sign("test-secret", "nijobs:123", "applied", "AI Engineer", "", "sam-lee", KNOWN_DAY)).toBe(KNOWN_PROFILE_SIGNATURE);
   });
 
   it("keeps each profile's answers apart and rejects a swapped profile id", async () => {

@@ -20,9 +20,10 @@ from job_tracker import (Tracker, action_link, card_links, prompt_examples, sign
                          skills_text, sync_feedback, unsubscribe_link)
 
 # The feedback Worker's test suite checks the same values (feedback-worker/test/worker.test.js).
-KNOWN_SIGNATURE = "7a1921b9bd33f759be1489d932b2a57f"
-KNOWN_SKILL_SIGNATURE = "2852e1bfe92031fafbd79fffc07522f5"
-KNOWN_PROFILE_SIGNATURE = "4cab135492aab3ae0e242e623e497477"
+KNOWN_SIGNATURE = "bf5b2947e5f2b792d5a56680ef7d8ab8"
+KNOWN_SKILL_SIGNATURE = "1c160ba1b9a49c362a7107d21ce864bd"
+KNOWN_PROFILE_SIGNATURE = "981737ef0883273fc687a8aefaf92098"
+KNOWN_DAY = 20000
 
 
 # --------------------------------------------------------------------------- salary
@@ -122,39 +123,52 @@ def test_group_agency_posts_can_hide_unnamed_clients():
 
 # --------------------------------------------------------------------------- signed links
 
+@pytest.fixture
+def known_day(monkeypatch):
+    monkeypatch.setattr(job_tracker.time, "time", lambda: KNOWN_DAY * 86400 + 3600)
+
+
 def test_signature_matches_worker():
-    assert sign("test-secret", "nijobs:123", "applied", "AI Engineer") == KNOWN_SIGNATURE
+    assert sign("test-secret", "nijobs:123", "applied", "AI Engineer", "", "", KNOWN_DAY) == KNOWN_SIGNATURE
 
 
-def test_action_link_is_signed_and_truncates_title():
-    link = action_link("https://fb.example.workers.dev/", "s3cret", "indeed:abc", "interested", "x" * 200)
-    assert link.startswith("https://fb.example.workers.dev/f?j=indeed%3Aabc&a=interested&n=")
-    assert f"t={sign('s3cret', 'indeed:abc', 'interested', 'x' * 120)}" in link
+def test_signature_fields_cannot_be_shifted():
+    # A profile's link must not verify as the owner's with the profile id folded into the skills.
+    assert sign("s", "k", "add_skill", "t", "", "sam-lee", 1) != sign("s", "k", "add_skill", "t", "u=sam-lee", "", 1)
+    assert sign("s", "k", "a", "t", "", "", 1) != sign("s", "k", "a", "t", "", "", 2)
+
+
+def test_action_link_is_signed_and_truncates_title(known_day):
+    link = action_link("https://fb.example.workers.dev/", "s3cret", "nijobs:abc", "interested", "x" * 200)
+    assert link.startswith("https://fb.example.workers.dev/f?j=nijobs%3Aabc&a=interested&n=")
+    assert f"&d={KNOWN_DAY}&t={sign('s3cret', 'nijobs:abc', 'interested', 'x' * 120, '', '', KNOWN_DAY)}" in link
+    newline = action_link("https://x", "s3cret", "k", "applied", "AI\nEngineer\x00 ")
+    assert "n=AI+Engineer&" in newline
     assert card_links("", "s3cret", "k", "t") == {} and card_links("https://x", "", "k", "t") == {}
 
 
-def test_skill_link_signs_the_skill_list_like_the_worker():
+def test_skill_link_signs_the_skill_list_like_the_worker(known_day):
     link = skill_link("https://fb.example.workers.dev", "test-secret", "nijobs:123", "AI Engineer",
                       ["Kubernetes", "Terraform", "Go", "Go", "<script>"])
     assert "a=add_skill" in link and "s=Kubernetes%7CTerraform%7CGo%7Cscript&" in link
-    assert sign("test-secret", "nijobs:123", "add_skill", "AI Engineer", "Kubernetes|Terraform|Go") == \
+    assert sign("test-secret", "nijobs:123", "add_skill", "AI Engineer", "Kubernetes|Terraform|Go", "", KNOWN_DAY) == \
         KNOWN_SKILL_SIGNATURE
     assert skill_link("https://x", "s", "k", "t", []) == "" and skill_link("", "s", "k", "t", ["Go"]) == ""
 
 
-def test_profile_links_carry_the_signed_profile_id():
-    assert sign("test-secret", "nijobs:123", "applied", "AI Engineer", "", "sam-lee") == KNOWN_PROFILE_SIGNATURE
+def test_profile_links_carry_the_signed_profile_id(known_day):
+    assert sign("test-secret", "nijobs:123", "applied", "AI Engineer", "", "sam-lee", KNOWN_DAY) == KNOWN_PROFILE_SIGNATURE
     link = action_link("https://fb.example.workers.dev", "test-secret", "nijobs:123", "applied", "AI Engineer", "sam-lee")
-    assert link.endswith(f"&u=sam-lee&t={KNOWN_PROFILE_SIGNATURE}")
+    assert link.endswith(f"&u=sam-lee&d={KNOWN_DAY}&t={KNOWN_PROFILE_SIGNATURE}")
     owner = action_link("https://fb.example.workers.dev", "test-secret", "nijobs:123", "applied", "AI Engineer")
     assert "u=" not in owner and owner.endswith(f"t={KNOWN_SIGNATURE}")
     assert "&u=sam-lee&" in skill_link("https://x", "test-secret", "k", "t", ["Go"], "sam-lee")
 
 
-def test_unsubscribe_links_delete_profiles_and_pause_the_owner():
+def test_unsubscribe_links_delete_profiles_and_pause_the_owner(known_day):
     extra = unsubscribe_link("https://x", "test-secret", "Sam Lee", "sam-lee")
-    assert "j=profile&a=unsubscribe&n=Sam+Lee&u=sam-lee&t=" in extra
-    assert extra.endswith(sign("test-secret", "profile", "unsubscribe", "Sam Lee", "", "sam-lee"))
+    assert f"j=profile&a=unsubscribe&n=Sam+Lee&u=sam-lee&d={KNOWN_DAY}&t=" in extra
+    assert extra.endswith(sign("test-secret", "profile", "unsubscribe", "Sam Lee", "", "sam-lee", KNOWN_DAY))
     owner = unsubscribe_link("https://x", "test-secret", "Alex Morgan")
     assert "j=profile-pause" in owner and "u=" not in owner
     assert unsubscribe_link("", "test-secret", "Sam") == ""
@@ -194,10 +208,19 @@ def test_followups_at_7_and_14_days(tracker):
 
 
 def test_events_are_idempotent_and_validated(tracker):
-    assert tracker.add_event("e1", "k1", "interested")
-    assert not tracker.add_event("e1", "k1", "interested")
+    assert tracker.add_event("e1", "k1", "interested", at=100)
+    assert not tracker.add_event("e1", "k1", "interested", at=100)
     assert not tracker.add_event("e2", "k1", "delete_everything")
     assert tracker.latest_action("k1") == "interested"
+
+
+def test_repeated_status_answer_becomes_latest_but_requests_do_not_repeat(tracker):
+    tracker.add_event("e-int", "k1", "interested", at=100)
+    tracker.add_event("e-no", "k1", "not_for_me", at=200)
+    assert tracker.add_event("e-int", "k1", "interested", at=300)
+    assert tracker.latest_action("k1") == "interested"
+    assert tracker.add_event("e-cl", "k1", "cover_letter", at=100)
+    assert not tracker.add_event("e-cl", "k1", "cover_letter", at=400)
 
 
 def test_prompt_examples(tracker):
@@ -343,9 +366,9 @@ def test_report_renders_new_card_parts():
     import job_scanner
 
     job = report_job()
-    page = job_scanner.build_html([job], [], REPORT_STATS, "Summary.", ["Indeed failed: expired."], "")
+    page = job_scanner.build_html([job], [], REPORT_STATS, "Summary.", ["nijobs.com failed: HTTP 503."], "")
     for text in ("Closes in 2 days", "Salary not listed", "Missing from your CV", "Also on your CV: Docker",
-                 "Also advertised by Agency Ltd", "Checked twice", "Indeed failed: expired.",
+                 "Also advertised by Agency Ltd", "Checked twice", "nijobs.com failed: HTTP 503.",
                  "salary at least £40,000", "1 already closed", "/f?j=k1&amp;a=applied"):
         assert text in page, text
     plain = job_scanner.build_text([job], "Summary.")
@@ -400,9 +423,9 @@ def test_card_buttons_sit_next_to_view_job_with_icons():
 
     page = job_scanner.build_html([report_job()], [], REPORT_STATS, "Summary.")
     order = [page.index(s) for s in ("View job &rarr;", "a=applied", "a=good_match", "a=not_for_me",
-                                     "a=interested", "a=cover_letter")]
+                                     "a=interested", "a=cover_letter", "a=tailored_cv")]
     assert order == sorted(order)
-    for action in ("applied", "good_match", "not_for_me", "interested", "cover_letter"):
+    for action in ("applied", "good_match", "not_for_me", "interested", "cover_letter", "tailored_cv"):
         assert f'src="cid:btn-{action}"' in page
         assert (job_scanner.ICON_DIR / f"btn-{action}.png").is_file()
     assert 'title="Good match"' in page and 'alt="Not for me"' in page and ">Cover letter</a>" in page
@@ -429,16 +452,13 @@ def test_report_fits_gmail_by_listing_the_lowest_ranked_jobs_on_one_line(monkeyp
     assert "/f?j=m2&amp;a=not_for_me" in page
 
 
-def test_source_problems_suggests_the_indeed_login_once():
+def test_source_problems_lists_failures_empty_sources_and_feedback_errors():
     import job_scanner
 
-    health = {"Indeed": {"found": 0, "error": "not authorised yet; run `hermes mcp login indeed` and try again"},
-              "LinkedIn": {"found": 0}}
-    problems = job_scanner.source_problems(health, None)
-    assert problems[0].count("hermes mcp login indeed") == 1
-    assert problems[1] == "LinkedIn found no postings this run."
-    expired = job_scanner.source_problems({"Indeed": {"found": 0, "error": "OAuth token expired"}}, "HTTP 500")
-    assert "Run `hermes mcp login indeed`" in expired[0] and expired[1].startswith("Feedback buttons: HTTP 500")
+    health = {"nijobs.com": {"found": 0, "error": "HTTP 503"}, "web search": {"found": 0}}
+    problems = job_scanner.source_problems(health, "HTTP 500")
+    assert problems == ["nijobs.com failed: HTTP 503.", "web search found no postings this run.",
+                        "Feedback buttons: HTTP 500; answers wait in the Worker until the next run."]
 
 
 def test_weekly_roll_up_shows_jobs_applications_and_source_health():
@@ -449,8 +469,8 @@ def test_weekly_roll_up_shows_jobs_applications_and_source_health():
         "jobs": [{"key": "k1", "title": "AI Engineer", "company": "Acme", "url": "https://example.com/1", "fit": 8,
                   "confidence": 80, "emailed": 1, "gaps": '["Kubernetes"]'}],
         "events": [{"action": "applied"}],
-        "runs": [{"sources": '{"Indeed": {"found": 0, "error": "expired"}, "web search": {"found": 5}}'},
-                 {"sources": '{"Indeed": {"found": 0}, "web search": {"found": 3}}'}],
+        "runs": [{"sources": '{"nijobs.com": {"found": 0, "error": "expired"}, "web search": {"found": 5}}'},
+                 {"sources": '{"nijobs.com": {"found": 0}, "web search": {"found": 3}}'}],
         "applications": [{"key": "k1", "title": "AI Engineer", "company": "Acme", "status": "applied",
                           "applied_at": now - 3 * 86400}],
     }
@@ -459,7 +479,7 @@ def test_weekly_roll_up_shows_jobs_applications_and_source_health():
     for text in ("AI Engineer", "applied 3 days ago", "Kubernetes", "0 found, 1 failed runs, 1 empty runs",
                  "8 found</td>", "2 daily runs recorded"):
         assert text in page, text
-    assert "Sources: Indeed 0 found, web search 8 found" in plain
+    assert "Sources: nijobs.com 0 found, web search 8 found" in plain
 
 
 @pytest.mark.parametrize("raw, expected", [
@@ -473,3 +493,11 @@ def test_clean_title(raw, expected):
     import job_scanner
 
     assert job_scanner.clean_title(raw) == expected
+
+
+def test_feedback_links_and_sync_need_https(tracker):
+    assert action_link("http://fb.example.workers.dev", "s", "k", "applied", "t") == ""
+    assert card_links("http://fb.example.workers.dev", "s", "k", "t") == {}
+    assert unsubscribe_link("http://x.example", "s", "Sam") == ""
+    assert job_tracker.sync_feedback(tracker, "http://fb.example.workers.dev", "token") == \
+        (0, "JOB_FEEDBACK_URL must start with https://")

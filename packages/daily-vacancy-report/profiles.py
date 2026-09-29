@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Daily Vacancy Report profiles: more people on one Hermes, managed from the feedback Worker.
+"""Daily Vacancy Report profiles and dashboard settings, managed from the feedback Worker.
 
-The owner (whoever configured Hermes) keeps using .env, job_profile.md and cv_keywords.json as before.
-Everyone else joins through a single-use invite link made on the Worker's /admin page. Their details and
-CV wait in the Worker until this script collects them, reads the CV, has Hermes' model turn it into a
-profile and search terms, and emails them. Each extra profile lives in state/profiles/<id>/ and gets the
-same daily report, buttons, cover letters and weekly roll-up, run after the owner's; the unsubscribe
-link in its reports deletes it. Changes made on /admin (crawler keys, pause, resume, delete) arrive the
-same way. The Worker never reaches this server: this script polls it.
+The owner (whoever set up Hermes) uses .env, job_profile.md and cv_keywords.json, overlaid by anything saved
+on the Worker's /admin dashboard (state/dashboard.json, read by hermes_common before .env). Everyone else joins
+through a single-use invite link made on the dashboard. Their details and CV wait in the Worker until this
+script collects them, reads the CV, has Hermes' model turn it into a profile and search terms, and emails them.
+Each extra profile lives in state/profiles/<id>/ and gets the same daily report, buttons, cover letters,
+tailored CVs and weekly roll-up, run after the owner's; the unsubscribe link in its reports deletes it.
+Dashboard changes (email server, API keys, job search settings, new CVs, pause, resume, delete) arrive the
+same way; passwords and keys stay in the Worker only until this script collects them. The Worker never
+reaches this server: this script polls it.
 
     python3 profiles.py                        # sync with the Worker (cron, every 5 minutes)
     python3 profiles.py --list
@@ -35,20 +37,31 @@ import requests
 
 import cv_text
 import hermes_common as hc
+import job_settings
 from hermes_common import EMAIL_HEAD, STATE_DIR, connect_model, email_header, env, load_env_file, log, ollama_chat
+from job_settings import slug, term_regex
 from job_tracker import unsubscribe_link
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROFILES_DIR = Path(env("JOB_PROFILES_DIR") or STATE_DIR / "profiles")
+DASHBOARD_FILE = hc.DASHBOARD_FILE
 OWNER = "owner"
 RUNNABLE = ("job_scanner.py", "job_weekly.py", "cover_letter.py")
 # Settings that describe the owner; blanked for other profiles so .env cannot fill them back in.
 PERSONAL_KEYS = ("ALERT_EMAIL", "JOB_CANDIDATE_NAME", "JOB_PROFILE_FILE", "JOB_KEYWORDS_FILE", "JOB_SCANNER_QUERIES",
-                 "JOB_SCANNER_NIJOBS_KEYWORDS", "JOB_INDEED_QUERIES", "JOB_TITLE_STRONG", "JOB_TITLE_MEDIUM",
+                 "JOB_SCANNER_NIJOBS_KEYWORDS", "JOB_TARGET_TITLES", "JOB_TITLE_STRONG", "JOB_TITLE_MEDIUM",
                  "JOB_LEVEL", "JOB_MIN_SALARY", "JOB_REPORT_TAGLINE", "COVER_LETTER_NAME", "COVER_LETTER_CONTACT",
                  "COVER_LETTER_CV_FILE", "COVER_LETTER_SIGN_OFF")
+# What a profile's settings.json may set: its personal settings plus the job search ones it would otherwise
+# share with the owner (region, country, employment types...).
+PROFILE_KEYS = frozenset(PERSONAL_KEYS) | frozenset(job_settings.KEYS)
+SMTP_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM")
+API_KEYS = {"firecrawl": "FIRECRAWL_API_KEY", "firecrawl_backup": "FIRECRAWL_BACKUP_KEYS",
+            "tavily": "TAVILY_API_KEY", "scrapfly": "SCRAPFLY_API_KEY"}
 ID_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 KEY_RE = re.compile(r"^[A-Za-z0-9_-]{8,120}$")
+EMAIL_RE = re.compile(r"[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+")
+HOST_RE = re.compile(r"^[A-Za-z0-9.-]{3,120}$")
 QUEUE_ATTEMPTS = 5
 FULL_LIST_EVERY = 3600
 STATUS_EVERY = 3600
@@ -108,12 +121,7 @@ def read_json(path: Path, default):
 
 
 def write_json(path: Path, data, private: bool = False) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    if private:
-        os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
+    hc.write_atomic(path, json.dumps(data, indent=2, ensure_ascii=False), private)
 
 
 def profile_dir(pid: str) -> Path:
@@ -164,14 +172,30 @@ def remove_dir(pid: str) -> None:
     shutil.rmtree(profile_dir(pid), ignore_errors=True)
 
 
-# --------------------------------------------------------------------------- crawler keys and environment
+# --------------------------------------------------------------------------- dashboard settings, keys, environment
 
-def mask(key: str) -> str:
-    return f"{key[:3]}...{key[-4:]}" if key else ""
+mask = hc.mask_secret
 
 
-def global_keys() -> list[str]:
-    return [k for k in read_json(PROFILES_DIR / "global.json", {}).get("firecrawl_keys", []) if KEY_RE.match(k)]
+def dashboard_env() -> dict[str, str]:
+    values = read_json(DASHBOARD_FILE, {}).get("env", {})
+    return {k: v for k, v in values.items() if isinstance(v, str)} if isinstance(values, dict) else {}
+
+
+def update_dashboard_env(updates: dict[str, str | None]) -> None:
+    """Save settings from the dashboard (None removes one, so .env's value applies again) and use them at once."""
+    values = dashboard_env()
+    for key, value in updates.items():
+        if not hc.dashboard_key_allowed(key):
+            raise ProfileError(f"{key} cannot be set from the dashboard")
+        if value is None:
+            values.pop(key, None)
+            os.environ.pop(key, None)
+        else:
+            values[key] = value
+            os.environ[key] = value
+    write_json(DASHBOARD_FILE, {"env": values, "updated": time.time()}, private=True)
+    load_env_file()
 
 
 def own_key(pid: str) -> str:
@@ -180,24 +204,17 @@ def own_key(pid: str) -> str:
 
 
 def apply_keys(environ, pid: str) -> None:
-    """Point the Firecrawl settings at the profile's own key, else the admin's global keys, else leave .env's."""
-    keys = [own_key(pid)] if own_key(pid) else global_keys()
-    if keys:
-        environ["FIRECRAWL_API_KEY"] = keys[0]
-        environ["FIRECRAWL_BACKUP_KEYS"] = ",".join(keys[1:])
-
-
-def use_profile_keys() -> None:
-    """For the owner's own runs: apply keys set on /admin (children already get theirs from child_env)."""
-    if not env("JOB_PROFILE_ID"):
-        apply_keys(os.environ, OWNER)
+    """A profile with its own Firecrawl key uses only that; the others keep the global keys (dashboard, else .env)."""
+    if key := own_key(pid):
+        environ["FIRECRAWL_API_KEY"] = key
+        environ["FIRECRAWL_BACKUP_KEYS"] = ""
 
 
 def child_env(profile: dict) -> dict[str, str]:
     d = profile_dir(profile["id"])
     environ = dict(os.environ)
     environ.update({k: "" for k in PERSONAL_KEYS})
-    environ.update({k: str(v) for k, v in read_json(d / "settings.json", {}).items() if k in PERSONAL_KEYS})
+    environ.update({k: str(v) for k, v in read_json(d / "settings.json", {}).items() if k in PROFILE_KEYS})
     contact = " · ".join(x for x in (profile.get("email"), profile.get("phone"), profile.get("location")) if x)
     environ.update({
         "JOB_PROFILE_ID": profile["id"],
@@ -216,16 +233,6 @@ def child_env(profile: dict) -> dict[str, str]:
 
 
 # --------------------------------------------------------------------------- building a profile from a CV
-
-def slug(text: str, sep: str = "-") -> str:
-    return re.sub(r"[^a-z0-9]+", sep, text.lower()).strip(sep)
-
-
-def term_regex(terms: list[str]) -> str:
-    """Whole-term pattern (compile with re.I); C#, C++ and .NET keep their symbols."""
-    terms = [t for t in dict.fromkeys(t.strip().lower() for t in terms) if t]
-    return "|".join(("(?<![\\w+#])" if t[0].isalnum() else "") + re.escape(t) + "(?![\\w+#])" for t in terms)
-
 
 def _strings(value, limit: int, max_len: int = 120) -> list[str]:
     items = value if isinstance(value, list) else []
@@ -259,7 +266,8 @@ def ask_model(cv: str, item: dict, model_info) -> dict:
     host, model, num_ctx = model_info
     user = (f"CV:\n{cv[:MAX_CV_CHARS]}\n\nROLES THEY WANT: {item.get('roles', '')}\n"
             f"WHERE THEY LIVE: {item.get('location') or 'not given'}\n\n{BUILD_TASK}")
-    raw = ollama_chat(host, model, BUILD_SYSTEM, user, max(num_ctx or 0, 8192), fmt=PROFILE_SCHEMA, num_predict=1800)
+    raw = ollama_chat(host, model, BUILD_SYSTEM, user, hc.fit_ctx(num_ctx, BUILD_SYSTEM, user, num_predict=1800),
+                      fmt=PROFILE_SCHEMA, num_predict=1800)
     try:
         return clean_build(json.loads(raw), item.get("roles", ""))
     except ValueError as exc:
@@ -303,20 +311,15 @@ def keywords_json(built: dict) -> dict:
     return {"cv_keywords": cv, "other_tech": other}
 
 
-def search_settings(item: dict, built: dict) -> dict[str, str]:
-    location = env("JOB_SEARCH_LOCATION") or env("JOB_REGION_NAME") or env("JOB_INDEED_LOCATION") or ""
-    nijobs = bool(env("JOB_SCANNER_NIJOBS_KEYWORDS"))
+def search_settings(built: dict, get=env) -> dict[str, str]:
+    location = get("JOB_SEARCH_LOCATION") or get("JOB_REGION_NAME") or ""
+    nijobs = bool(get("JOB_SCANNER_NIJOBS_KEYWORDS"))
     titles = built["titles"]
-    queries = []
-    for i in range(0, min(len(titles), 8), 2):
-        group = " OR ".join(f'"{t}"' for t in titles[i:i + 2])
-        queries.append(f"({group})" + (f' "{location}"' if location else "") + " job"
-                       + (" -site:nijobs.com" if nijobs else ""))
     strong = term_regex(built["title_keywords"] + titles)
     medium = term_regex(built["related_title_keywords"]) or term_regex([s["name"] for s in built["skills"][:10]])
     settings = {
-        "JOB_SCANNER_QUERIES": "||".join(queries),
-        "JOB_INDEED_QUERIES": "||".join(titles),
+        "JOB_SCANNER_QUERIES": "||".join(job_settings.search_queries(titles, location, nijobs)),
+        "JOB_TARGET_TITLES": "||".join(titles),
         "JOB_TITLE_STRONG": strong,
         "JOB_TITLE_MEDIUM": medium,
         "JOB_LEVEL": built["level"],
@@ -334,15 +337,8 @@ def profile_id(item: dict) -> str:
     return f"{base}-{tail}"
 
 
-def create_profile(item: dict, api, model_info_factory=lambda: connect_model("JOB_SCANNER_MODEL")) -> dict:
-    name = " ".join(str(item.get("name", "")).split())[:80]
-    email = str(item.get("email", "")).strip()[:120]
-    if not name or not re.fullmatch(r"[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+", email):
-        raise ProfileError("sign-up without a valid name and email")
-    existing = next((p for p in all_profiles() if not p.get("owner") and p.get("email", "").lower() == email.lower()),
-                    None)
-    pid = existing["id"] if existing else profile_id(item)
-    d = profile_dir(pid)
+def read_cv(d: Path, item: dict, api) -> str:
+    """The CV text from the uploaded file (kept as cv.<kind>), else the pasted text; saved as cv.txt."""
     d.mkdir(parents=True, exist_ok=True)
     os.chmod(d, 0o700)
     text = ""
@@ -352,26 +348,58 @@ def create_profile(item: dict, api, model_info_factory=lambda: connect_model("JO
         data = api.file(cv["key"])
         (d / f"cv.{kind}").write_bytes(data)
         try:
-            text = cv_text.extract_text(data, kind)
-        except Exception as exc:  # a malformed file must not block the pasted fallback
-            log(f"Could not read {pid}'s CV file: {exc.__class__.__name__}")
+            text = cv_text.clean(cv_text.extract_file_isolated(d / f"cv.{kind}"))
+        except Exception as exc:  # a malformed or hostile file must not block the pasted fallback
+            log(f"Could not read the CV file in {d.name}: {exc.__class__.__name__}")
     pasted = cv_text.clean(str(item.get("cv_text") or ""))
     if len(text) < MIN_CV_CHARS and len(pasted) > len(text):
         text = pasted
     if len(text) < MIN_CV_CHARS:
         raise ProfileError("no readable text in the CV (a scanned image?) and nothing pasted")
     (d / "cv.txt").write_text(text, encoding="utf-8")
+    return text
+
+
+def create_profile(item: dict, api, model_info_factory=lambda: connect_model("JOB_SCANNER_MODEL"),
+                   existing: dict | None = None) -> dict:
+    """A new profile from a sign-up, or `existing` rebuilt from a CV uploaded for it on the dashboard."""
+    name = " ".join(str(item.get("name", "")).split())[:80]
+    email = str(item.get("email", "")).strip()[:120]
+    if not name or not EMAIL_RE.fullmatch(email):
+        raise ProfileError("sign-up without a valid name and email")
+    if existing is None:
+        others = [p for p in all_profiles() if not p.get("owner")]
+        invite = str(item.get("invite") or "")
+        repeat = next((p for p in others if invite and p.get("invite") == invite), None)
+        if repeat:
+            log(f"Sign-up for an invite that already created profile {repeat['id']}; ignoring the repeat")
+            return repeat
+        # A sign-up never takes over someone else's profile by giving their email address.
+        taken = next((p for p in others if p.get("email", "").lower() == email.lower()), None)
+        if taken:
+            log(f"Sign-up from {name} uses the email of profile {taken['id']}; left that profile unchanged")
+            notify(lambda: send_owner(f"Sign-up from {name} not applied",
+                                      [f"{name} signed up with {email}, which profile {taken['id']} already uses. "
+                                       "That profile was left unchanged.",
+                                       "If it is the same person with a new CV, upload it for them on /admin."]))
+            return taken
+    pid = existing["id"] if existing else profile_id(item)
+    d = profile_dir(pid)
+    text = read_cv(d, item, api)
 
     built = ask_model(text, {**item, "name": name}, model_info_factory())
     (d / "job_profile.md").write_text(profile_markdown({**item, "name": name}, built), encoding="utf-8")
     write_json(d / "cv_keywords.json", keywords_json(built))
-    write_json(d / "settings.json", search_settings(item, built))
+    kept = read_json(d / "settings.json", {})
+    write_json(d / "settings.json", {**kept, **search_settings(built, lambda k: kept[k] if k in kept else env(k))})
     now = time.time()
     profile = {**(existing or {}), "id": pid, "name": name, "email": email,
+               **({} if existing else {"invite": str(item.get("invite") or "")[:40]}),
                "phone": str(item.get("phone", ""))[:40], "location": str(item.get("location", ""))[:80],
                "roles": str(item.get("roles", ""))[:300], "titles": built["titles"],
-               "skills": [s["name"] for s in built["skills"]], "status": "active",
-               "created": (existing or {}).get("created", now), "updated": now}
+               "title_keywords": built["title_keywords"],
+               "skills": [s["name"] for s in built["skills"]], "status": (existing or {}).get("status", "active"),
+               "created": (existing or {}).get("created", now), "updated": now, "cv_updated": now}
     save(profile)
     log(f"{'Rebuilt' if existing else 'Created'} profile {pid} ({len(built['skills'])} skills, "
         f"{len(built['titles'])} titles)")
@@ -382,6 +410,49 @@ def create_profile(item: dict, api, model_info_factory=lambda: connect_model("JO
                                f"Searching for: {', '.join(built['titles'])}",
                                f"Skills read from the CV: {', '.join(profile['skills'])}"]))
     return profile
+
+
+def owner_files() -> tuple[Path, Path]:
+    return (SCRIPT_DIR / (env("JOB_PROFILE_FILE") or "job_profile.md"),
+            SCRIPT_DIR / (env("JOB_KEYWORDS_FILE") or "cv_keywords.json"))
+
+
+def backup(path: Path, keep: int = 5) -> None:
+    if path.is_file():
+        shutil.copy2(path, path.with_name(f"{path.name}.bak-{datetime.now():%Y%m%d-%H%M%S}"))
+        for old in sorted(path.parent.glob(f"{path.name}.bak-*"))[:-keep]:
+            old.unlink(missing_ok=True)
+
+
+def rebuild_owner(item: dict, api, model_info_factory=lambda: connect_model("JOB_SCANNER_MODEL")) -> dict:
+    """A CV uploaded for the owner on the dashboard: rebuild job_profile.md and cv_keywords.json (old copies kept
+    as .bak-*) and point cover letters and tailored CVs at it. Search titles are only filled in when none are set."""
+    owner = ensure_owner()
+    d = profile_dir(OWNER)
+    text = read_cv(d, item, api)
+    details = {"name": owner_name(), "location": owner.get("location", ""),
+               "roles": item.get("roles") or owner.get("roles") or (env("JOB_TARGET_TITLES") or "").replace("||", ", ")}
+    built = ask_model(text, details, model_info_factory())
+    keywords = keywords_json(built)
+    profile_file, keywords_file = owner_files()
+    for path in (profile_file, keywords_file):
+        backup(path)
+    profile_file.write_text(profile_markdown(details, built), encoding="utf-8")
+    write_json(keywords_file, keywords)
+    updates = {"COVER_LETTER_CV_FILE": str(d / "cv.txt")}
+    if not env("JOB_TARGET_TITLES"):
+        updates.update(search_settings(built))
+    update_dashboard_env(updates)
+    owner.update(titles=built["titles"], title_keywords=built["title_keywords"],
+                 skills=[s["name"] for s in built["skills"]], updated=time.time(), cv_updated=time.time())
+    save(owner)
+    log(f"Rebuilt the owner profile from a new CV ({len(built['skills'])} skills)")
+    notify(lambda: send_owner("Your CV was updated", [
+        "Hermes read the CV you uploaded on the dashboard and rebuilt your profile. The previous "
+        f"{profile_file.name} and {keywords_file.name} are kept as .bak copies.",
+        f"Skills read from the CV: {', '.join(owner['skills'])}",
+        f"Titles it suggests: {', '.join(built['titles'])}"]))
+    return owner
 
 
 # --------------------------------------------------------------------------- email
@@ -549,20 +620,126 @@ def unsubscribe(pid: str, reason: str = "") -> None:
                               + ([f"Their feedback: {reason}"] if reason else [])))
 
 
-def admin_action(item: dict) -> None:
-    action, pid = item.get("action"), str(item.get("u") or "")
-    if action == "global_keys":
-        keys = [k for k in item.get("keys") or [] if isinstance(k, str) and KEY_RE.match(k)][:5]
-        if keys:
-            write_json(PROFILES_DIR / "global.json", {"firecrawl_keys": keys}, private=True)
-        else:
-            (PROFILES_DIR / "global.json").unlink(missing_ok=True)
-        log(f"Global crawler keys {'set (' + str(len(keys)) + ')' if keys else 'reset to .env'}")
+def _text(value, limit: int) -> str:
+    return " ".join(str(value or "").split())[:limit]
+
+
+def apply_api_keys(item: dict) -> None:
+    updates: dict[str, str | None] = {}
+    firecrawl = [k for k in item.get("firecrawl") or [] if isinstance(k, str) and KEY_RE.match(k)][:5]
+    if firecrawl:
+        updates |= {"FIRECRAWL_API_KEY": firecrawl[0], "FIRECRAWL_BACKUP_KEYS": ",".join(firecrawl[1:])}
+    for name in ("tavily", "scrapfly"):
+        if isinstance(item.get(name), str) and KEY_RE.match(item[name]):
+            updates[API_KEYS[name]] = item[name]
+    for name in item.get("clear") or []:
+        if name == "firecrawl":
+            updates |= {"FIRECRAWL_API_KEY": None, "FIRECRAWL_BACKUP_KEYS": None}
+        elif name in ("tavily", "scrapfly"):
+            updates[API_KEYS[name]] = None
+    if not updates:
+        raise ProfileError("no valid API keys")
+    update_dashboard_env(updates)
+    log(f"API keys updated from the dashboard: {', '.join(sorted(updates))}")
+
+
+def apply_email(item: dict) -> None:
+    if item.get("clear"):
+        update_dashboard_env(dict.fromkeys(SMTP_KEYS))
+        log("Email server settings reset to .env")
         return
+    host, port = _text(item.get("host"), 120), _text(item.get("port"), 5) or "587"
+    user, sender = _text(item.get("user"), 120), _text(item.get("from"), 120)
+    if not HOST_RE.match(host) or not port.isdigit() or not 0 < int(port) < 65536 or not user \
+            or (sender and not EMAIL_RE.fullmatch(sender)):
+        raise ProfileError("invalid email server settings")
+    updates = {"SMTP_HOST": host, "SMTP_PORT": port, "SMTP_USER": user, "SMTP_FROM": sender}
+    if password := str(item.get("password") or "").strip():
+        updates["SMTP_PASSWORD"] = password[:200]
+    elif (host.lower(), user.lower()) != ((env("SMTP_HOST") or "").lower(), (env("SMTP_USER") or "").lower()):
+        # Never send the old account's password to a different server or account; "" also hides .env's.
+        updates["SMTP_PASSWORD"] = ""
+    update_dashboard_env(updates)
+    log(f"Email server set from the dashboard: {user} via {host}:{port}")
+
+
+def send_test_email(to: str = "") -> dict:
+    to = to if EMAIL_RE.fullmatch(to or "") else ((load(OWNER) or {}).get("email") or env("ALERT_EMAIL") or "")
+    result: dict = {"at": time.time(), "to": to}
+    try:
+        header = email_header(FROM_NAME, _today(), "Email works", "Sent from the dashboard's test button", [])
+        send(to, f"{FROM_NAME}: test email", _email(header, [
+            '<p style="margin:0;font-size:14px;line-height:21px;color:#334155">Your email server settings work. '
+            "Daily reports, cover letters and tailored CVs will be sent this way.</p>"]),
+            "Your email server settings work.")
+        result["ok"] = True
+    except Exception as exc:  # the dashboard shows the reason instead of the queue retrying it
+        result |= {"ok": False, "error": f"{exc.__class__.__name__}: {exc}"[:240]}
+        log(f"Test email failed: {result['error']}")
+    write_json(PROFILES_DIR / ".email_test.json", result)
+    return result
+
+
+def profile_getter(profile: dict):
+    if profile.get("owner"):
+        return env
+    environ = child_env(profile)
+    return lambda key, default=None: (environ.get(key) or "").strip() or default
+
+
+def apply_profile_settings(profile: dict, item: dict) -> None:
+    owner = bool(profile.get("owner"))
+    details = item.get("details") if isinstance(item.get("details"), dict) else None
+    if details:
+        new = {"name": _text(details.get("name"), 80) or profile.get("name", ""),
+               "email": _text(details.get("email"), 120) or profile.get("email", ""),
+               "phone": _text(details.get("phone"), 40), "location": _text(details.get("location"), 80)}
+        if not EMAIL_RE.fullmatch(new["email"]):
+            raise ProfileError("invalid email address")
+        if owner:
+            updates = {"ALERT_EMAIL": new["email"], "JOB_CANDIDATE_NAME": new["name"], "COVER_LETTER_NAME": new["name"]}
+            if (new["phone"], new["location"]) != (profile.get("phone", ""), profile.get("location", "")):
+                updates["COVER_LETTER_CONTACT"] = " · ".join(x for x in (new["email"], new["phone"], new["location"]) if x)
+            update_dashboard_env(updates)
+        profile.update(new)
+    job = item.get("job") if isinstance(item.get("job"), dict) else None
+    if job:
+        form = job_settings.clean_form(job)
+        updates = job_settings.env_updates(form, profile_getter(profile), profile.get("title_keywords") or [])
+        if owner:
+            update_dashboard_env(updates)
+        else:
+            path = profile_dir(profile["id"]) / "settings.json"
+            write_json(path, {**read_json(path, {}), **updates})
+        profile["titles"] = form["titles"] or profile.get("titles", [])
+    profile["updated"] = time.time()
+    save(profile)
+    log(f"Profile {profile['id']} settings saved from the dashboard")
+
+
+def admin_action(item: dict, api=None) -> None:
+    action, pid = item.get("action"), str(item.get("u") or "")
+    if action == "api_keys":
+        return apply_api_keys(item)
+    if action == "email":
+        return apply_email(item)
+    if action == "test_email":
+        send_test_email(str(item.get("to") or ""))
+        return None
     profile = load(pid)
     if not profile:
         raise ProfileError(f"no profile {pid}")
-    if action == "set_key":
+    if action == "profile":
+        apply_profile_settings(profile, item)
+    elif action == "cv":
+        if pid == OWNER:
+            rebuild_owner(item, api)
+        else:
+            create_profile({**item, **{k: profile.get(k, "") for k in ("name", "email", "phone", "location", "roles")}},
+                           api, existing=profile)
+    elif action == "set_key" and pid == OWNER:
+        apply_api_keys({"firecrawl": [str(item.get("key") or "")]})
+    elif action == "set_key":
         key = str(item.get("key") or "")
         if not KEY_RE.match(key):
             raise ProfileError("invalid crawler key")
@@ -587,7 +764,7 @@ def handle(item: dict, api: Api) -> None:
     elif kind == "unsubscribe":
         unsubscribe(str(item.get("u") or "") or OWNER, str(item.get("reason") or "")[:300])
     elif kind == "admin":
-        admin_action(item)
+        admin_action(item, api)
     else:
         raise ProfileError(f"unknown queue item type {kind!r}")
 
@@ -610,20 +787,42 @@ def _ms(seconds: float | None) -> int | None:
     return int(seconds * 1000) if seconds else None
 
 
+def _key_info(key: str) -> dict:
+    value = env(key) or ""
+    return {"source": "dashboard" if dashboard_env().get(key) else "env" if value else "none", "hint": mask(value)}
+
+
 def status_payload() -> dict:
+    """What the dashboard shows and prefills its forms with; no passwords or full keys."""
     profiles = []
     for p in all_profiles():
+        owner = bool(p.get("owner"))
         last = p.get("last_run")
-        if p.get("owner"):
+        if owner:
             last_file = STATE_DIR / "job_scanner_last.json"
             last = last_file.stat().st_mtime if last_file.is_file() else None
+            has_cv = owner_files()[0].is_file()
+            name, email = owner_name(), env("ALERT_EMAIL") or p.get("email", "")
+        else:
+            has_cv = (profile_dir(p["id"]) / "job_profile.md").is_file()
+            name, email = p.get("name", ""), p.get("email", "")
         key = own_key(p["id"])
-        profiles.append({"id": p["id"], "name": p.get("name", ""), "email": p.get("email", ""),
-                         "status": p.get("status", "active"), "owner": bool(p.get("owner")),
-                         "crawler": "own" if key else "global", "key_hint": mask(key),
-                         "created": _ms(p.get("created")), "last_run": _ms(last)})
-    keys = global_keys()
-    return {"profiles": profiles, "global": {"source": "admin" if keys else "env", "key_hint": mask(keys[0]) if keys else ""}}
+        profiles.append({
+            "id": p["id"], "name": name, "email": email, "status": p.get("status", "active"), "owner": owner,
+            "crawler": "own" if key else "global", "key_hint": mask(key), "has_cv": has_cv,
+            "created": _ms(p.get("created")), "last_run": _ms(last), "cv_updated": _ms(p.get("cv_updated")),
+            "details": {"name": name, "email": email, "phone": p.get("phone", ""), "location": p.get("location", "")},
+            "job": job_settings.form_values(profile_getter(p))})
+    test = read_json(PROFILES_DIR / ".email_test.json", {})
+    smtp_dash = any(dashboard_env().get(k) for k in SMTP_KEYS)
+    email = {"host": env("SMTP_HOST", "smtp.gmail.com"), "port": env("SMTP_PORT", "587"), "user": env("SMTP_USER", ""),
+             "from": env("SMTP_FROM", ""), "password_set": bool(env("SMTP_PASSWORD")),
+             "source": "dashboard" if smtp_dash else "env" if env("SMTP_USER") else "none",
+             "last_test": {"at": _ms(test.get("at")), "ok": test.get("ok"), "error": test.get("error", ""),
+                           "to": test.get("to", "")} if test else None}
+    keys = {name: _key_info(API_KEYS[name]) for name in ("firecrawl", "tavily", "scrapfly")}
+    keys["firecrawl"]["backups"] = len([k for k in (env("FIRECRAWL_BACKUP_KEYS") or "").split(",") if k.strip()])
+    return {"profiles": profiles, "email": email, "keys": keys}
 
 
 def push_status(api: Api, force: bool = False) -> None:
@@ -640,22 +839,8 @@ def push_status(api: Api, force: bool = False) -> None:
         log(f"Could not report profiles to the Worker: {exc.__class__.__name__}")
 
 
-@contextlib.contextmanager
 def lock(name: str):
-    PROFILES_DIR.mkdir(parents=True, exist_ok=True)
-    handle_ = open(PROFILES_DIR / f".{name}.lock", "w")
-    try:
-        try:
-            import fcntl
-            fcntl.flock(handle_, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except ImportError:
-            pass
-        except OSError:
-            yield False
-            return
-        yield True
-    finally:
-        handle_.close()
+    return hc.run_lock(PROFILES_DIR / f".{name}.lock")
 
 
 def sync(api: Api, full: bool = False) -> list[str]:

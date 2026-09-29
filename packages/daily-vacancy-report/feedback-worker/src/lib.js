@@ -1,4 +1,4 @@
-// Shared helpers: signing, escaping, pages and JSON responses.
+// Shared helpers: signing, escaping, pages, JSON responses, KV layout and Cloudflare Access.
 
 const encoder = new TextEncoder();
 
@@ -8,18 +8,51 @@ export const SECURITY_HEADERS = {
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
 };
+export const DAY_MS = 86400000;
+// Links in emails stop working after this many days.
+export const LINK_DAYS = 90;
+export const CONTROL_RE = /[\u0000-\u001f\u007f]/;
+
+const hmacKeys = new Map();
 
 export async function hmacHex(secret, message) {
-  const cryptoKey = await crypto.subtle.importKey(
-    "raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  let cryptoKey = hmacKeys.get(secret);
+  if (!cryptoKey) {
+    cryptoKey = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    if (hmacKeys.size > 8) hmacKeys.clear();
+    hmacKeys.set(secret, cryptoKey);
+  }
   const mac = await crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(message));
   return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// Same message layout as job_tracker.sign() in Python; skills and profile are only added when set.
-export async function sign(secret, key, action, title, skills = "", profile = "") {
-  const message = `${key}\n${action}\n${title}` + (skills ? `\n${skills}` : "") + (profile ? `\nu=${profile}` : "");
+export async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export function today() {
+  return Math.floor(Date.now() / DAY_MS);
+}
+
+// Same message as job_tracker.sign() in Python: a fixed list of fields, empty ones included. Fields may
+// not contain control characters (validLink rejects them), so every message has exactly one reading.
+export async function sign(secret, key, action, title, skills = "", profile = "", day = "") {
+  const message = ["v2", key, action, title, skills, profile, String(day)].join("\n");
   return (await hmacHex(secret, message)).slice(0, 32);
+}
+
+// Events are stored per profile ("_" is the owner) with one "something is waiting" flag each.
+export function eventPrefix(profile) {
+  return `event:${profile || "_"}:`;
+}
+
+export function eventFlag(profile) {
+  return `flag:events:${profile || "_"}`;
+}
+
+export async function setFlag(env, flag, ttl) {
+  if (!(await env.FEEDBACK.get(flag))) await env.FEEDBACK.put(flag, "1", { expirationTtl: ttl });
 }
 
 export function safeEqual(a, b) {
@@ -48,7 +81,8 @@ export function newId() {
 }
 
 export function when(ms) {
-  return ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never";
+  const n = Number(ms);
+  return Number.isFinite(n) && n > 0 && n < 8.64e15 ? new Date(n).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never";
 }
 
 const STYLE = `
@@ -107,6 +141,101 @@ export function json(data, status = 200) {
   });
 }
 
+export function text(body, status = 200, headers = {}) {
+  return new Response(body, { status, headers: { "Content-Type": "text/plain; charset=utf-8", ...SECURITY_HEADERS, ...headers } });
+}
+
 export function redirect(location, headers = {}) {
   return new Response(null, { status: 303, headers: { Location: location, ...SECURITY_HEADERS, ...headers } });
+}
+
+// The request body, read up to `max` bytes; null when it is larger.
+async function limitedBytes(request, max) {
+  if (Number(request.headers.get("Content-Length")) > max) return null;
+  const chunks = [];
+  let total = 0;
+  const reader = request.body?.getReader();
+  while (reader) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      reader.releaseLock();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(total);
+  chunks.reduce((offset, chunk) => (body.set(chunk, offset), offset + chunk.byteLength), 0);
+  return body;
+}
+
+// The request's form: null when the body is larger than `max`, an empty form when it is not a form.
+export async function limitedForm(request, max) {
+  const body = await limitedBytes(request, max);
+  if (!body) return null;
+  try {
+    return await new Response(body, { headers: { "Content-Type": request.headers.get("Content-Type") || "" } }).formData();
+  } catch {
+    return new FormData();
+  }
+}
+
+// The request's JSON: null when the body is larger than `max`, undefined when it is not JSON.
+export async function limitedJson(request, max) {
+  const body = await limitedBytes(request, max);
+  if (!body) return null;
+  try {
+    return JSON.parse(new TextDecoder().decode(body) || "{}");
+  } catch {
+    return undefined;
+  }
+}
+
+// ------------------------------------------------------------------------- Cloudflare Access
+
+let accessCerts = { url: "", at: 0, keys: [] };
+
+function b64url(part) {
+  return Uint8Array.from(atob(part.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+}
+
+async function certs(team) {
+  const url = `https://${team}/cdn-cgi/access/certs`;
+  if (accessCerts.url !== url || Date.now() - accessCerts.at > 3600000) {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Access certs HTTP ${resp.status}`);
+    accessCerts = { url, at: Date.now(), keys: (await resp.json()).keys || [] };
+  }
+  return accessCerts.keys;
+}
+
+async function verifyAccessJwt(token, env) {
+  const [head, body, sig] = String(token || "").split(".");
+  if (!head || !body || !sig) return null;
+  const header = JSON.parse(new TextDecoder().decode(b64url(head)));
+  const jwk = header.alg === "RS256" && (await certs(env.ACCESS_TEAM_DOMAIN)).find((k) => k.kid === header.kid);
+  if (!jwk) return null;
+  const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
+  if (!(await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, b64url(sig), encoder.encode(`${head}.${body}`)))) return null;
+  const claims = JSON.parse(new TextDecoder().decode(b64url(body)));
+  const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+  const now = Date.now() / 1000;
+  if (!aud.includes(env.ACCESS_AUD) || claims.iss !== `https://${env.ACCESS_TEAM_DOMAIN}` || !(claims.exp > now) ||
+      (claims.nbf && claims.nbf > now + 60)) return null;
+  return claims.email || claims.sub || "access";
+}
+
+// The signed-in Cloudflare Access user for this request, or null. Only used when ACCESS_AUD is set.
+export async function accessUser(request, env, ctx) {
+  try {
+    if (ctx?.access) {
+      const aud = Array.isArray(ctx.access.aud) ? ctx.access.aud : [ctx.access.aud];
+      if (aud.includes(env.ACCESS_AUD)) return (await ctx.access.getIdentity())?.email || "access";
+    }
+    return env.ACCESS_TEAM_DOMAIN ? await verifyAccessJwt(request.headers.get("Cf-Access-Jwt-Assertion"), env) : null;
+  } catch (err) {
+    console.error(`Access check failed: ${err.message}`);
+    return null;
+  }
 }

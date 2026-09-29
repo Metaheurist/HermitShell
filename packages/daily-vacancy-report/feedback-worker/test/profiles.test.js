@@ -36,7 +36,13 @@ function joinForm(id, fields = {}, file = null) {
   Object.entries({ i: id, name: "Sam Lee", email: "sam@example.com", roles: "Data analyst", consent: "yes", ...fields })
     .forEach(([k, v]) => form.append(k, v));
   if (file) form.append("cv", file);
-  return new Request(`${BASE}/join`, { method: "POST", body: form });
+  return new Request(`${BASE}/join?i=${id}`, { method: "POST", body: form });
+}
+
+// A minimal zip whose central directory lists the given part names.
+function zipWith(names) {
+  const parts = names.map((n) => `PK\u0001\u0002${"\u0000".repeat(42)}${n}`).join("");
+  return new TextEncoder().encode(`PK\u0003\u0004${"\u0000".repeat(26)}${parts}PK\u0005\u0006`);
 }
 
 describe("invite sign-up", () => {
@@ -75,6 +81,28 @@ describe("invite sign-up", () => {
     expect(valuesWith(env, "queue:")).toEqual([]);
     expect(keysWith(env, "invite:")).toHaveLength(1);
   });
+
+  it("checks Word and text files more closely", async () => {
+    const env = testEnv();
+    const id = await invite(env);
+    const notWord = new File([zipWith(["xl/workbook.xml"])], "cv.docx");
+    expect(await (await worker.fetch(joinForm(id, {}, notWord), env)).text()).toContain("must be a PDF");
+    const binary = new File([new Uint8Array([0xff, 0xfe, 0x00, 0x41])], "cv.txt");
+    expect(await (await worker.fetch(joinForm(id, {}, binary), env)).text()).toContain("must be a PDF");
+    const word = new File([zipWith(["[Content_Types].xml", "word/document.xml"])], "cv.docx");
+    await worker.fetch(joinForm(id, {}, word), env);
+    expect(valuesWith(env, "queue:")).toMatchObject([{ type: "signup", cv: { kind: "docx" } }]);
+  });
+
+  it("needs the invite in the address before reading the upload", async () => {
+    const env = testEnv();
+    const id = await invite(env);
+    const noInvite = new Request(`${BASE}/join`, { method: "POST", body: joinForm(id, { cv_text: CV_TEXT }).body, duplex: "half" });
+    expect((await worker.fetch(noInvite, env)).status).toBe(410);
+    const big = new File([new Uint8Array(6 * 1024 * 1024)], "cv.pdf");
+    expect(await (await worker.fetch(joinForm(id, {}, big), env)).text()).toContain("larger than 5 MB");
+    expect(valuesWith(env, "queue:")).toEqual([]);
+  });
 });
 
 describe("admin gateway", () => {
@@ -108,6 +136,42 @@ describe("admin gateway", () => {
     expect((await signIn(env, "root", ADMIN.ADMIN_PASSWORD)).res.status).toBe(429);
   });
 
+  it("locks sign-in for everyone after 30 wrong passwords from anywhere", async () => {
+    const env = testEnv(ADMIN);
+    for (let i = 0; i < 30; i++) {
+      const req = post("/admin/login", { username: "admin", password: "guess" }, { "CF-Connecting-IP": `198.51.100.${i}` });
+      expect((await worker.fetch(req, env)).status).toBe(401);
+    }
+    expect((await signIn(env)).res.status).toBe(429);
+  });
+
+  it("counts IPv6 failures per /64", async () => {
+    const env = testEnv(ADMIN);
+    for (let i = 0; i < 5; i++) {
+      const req = post("/admin/login", { username: "admin", password: "guess" }, { "CF-Connecting-IP": `2001:db8:1:2::${i + 1}` });
+      await worker.fetch(req, env);
+    }
+    const next = post("/admin/login", { username: "admin", password: ADMIN.ADMIN_PASSWORD }, { "CF-Connecting-IP": "2001:db8:1:2::99" });
+    expect((await worker.fetch(next, env)).status).toBe(429);
+  });
+
+  it("fails closed when a wrong password cannot be counted", async () => {
+    const env = testEnv(ADMIN);
+    env.FEEDBACK.put = async () => { throw new Error("KV write limit"); };
+    expect((await signIn(env, "admin", "guess")).res.status).toBe(503);
+  });
+
+  it("requires Cloudflare Access when ACCESS_AUD is set", async () => {
+    const env = testEnv({ ...ADMIN, ACCESS_AUD: "aud-123", ACCESS_TEAM_DOMAIN: "example.cloudflareaccess.com" });
+    expect((await worker.fetch(new Request(`${BASE}/admin`), env, {})).status).toBe(403);
+    const forged = new Request(`${BASE}/admin`, { headers: { "Cf-Access-Jwt-Assertion": "a.b.c" } });
+    expect((await worker.fetch(forged, env, {})).status).toBe(403);
+    const ctx = { access: { aud: "aud-123", getIdentity: async () => ({ email: "owner@example.com" }) } };
+    expect(await (await worker.fetch(new Request(`${BASE}/admin`), env, ctx)).text()).toContain("Admin sign-in");
+    const otherApp = { access: { aud: "aud-999", getIdentity: async () => ({ email: "x@example.com" }) } };
+    expect((await worker.fetch(new Request(`${BASE}/admin`), { ...env, ACCESS_TEAM_DOMAIN: "" }, otherApp)).status).toBe(403);
+  });
+
   it("rejects actions without the form's CSRF token", async () => {
     const env = testEnv(ADMIN);
     const { cookie } = await signIn(env);
@@ -132,7 +196,7 @@ describe("admin gateway", () => {
     const status = { profiles: [
       { id: "owner", name: "Owner", email: "owner@example.com", status: "active", owner: true, crawler: "global" },
       { id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active", crawler: "own", key_hint: "fc-...9f2" },
-    ], global: { source: "env" } };
+    ], keys: { firecrawl: { source: "env", hint: "fc-...0001" } } };
     await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: API, body: JSON.stringify(status) }), env);
     const { cookie } = await signIn(env);
     const { body, csrf } = await dashboard(env, cookie);
@@ -144,16 +208,19 @@ describe("admin gateway", () => {
     await adminAction(env, cookie, csrf, { action: "pause", u: "sam-lee" });
     expect((await adminAction(env, cookie, csrf, { action: "delete", u: "sam-lee" })).headers.get("Location")).toBe("/admin?done=confirm");
     await adminAction(env, cookie, csrf, { action: "delete", u: "sam-lee", confirm: "yes" });
-    expect((await adminAction(env, cookie, csrf, { action: "global_keys", keys: "bad key!" })).headers.get("Location")).toBe("/admin?done=badkey");
-    await adminAction(env, cookie, csrf, { action: "global_keys", keys: "fc-one11111, fc-two22222" });
+    expect(body).toContain("the key in Hermes&#39; .env fc-...0001");
+    expect((await adminAction(env, cookie, csrf, { action: "api_keys", keys: "bad key!" })).headers.get("Location")).toBe("/admin?done=badkey");
+    await adminAction(env, cookie, csrf, { action: "api_keys", keys: "fc-one11111, fc-two22222" });
+    await adminAction(env, cookie, csrf, { action: "api_keys_clear" });
     expect((await adminAction(env, cookie, csrf, { action: "pause", u: "../etc" })).status).toBe(400);
 
-    const queued = valuesWith(env, "queue:").map(({ action, u, key, keys }) => ({ action, u, key, keys }));
+    const queued = valuesWith(env, "queue:").map(({ action, u, key, firecrawl, clear }) => ({ action, u, key, firecrawl, clear }));
     expect(queued).toEqual([
-      { action: "set_key", u: "sam-lee", key: "fc-test-own-key", keys: undefined },
-      { action: "pause", u: "sam-lee", key: undefined, keys: undefined },
-      { action: "delete", u: "sam-lee", key: undefined, keys: undefined },
-      { action: "global_keys", u: undefined, key: undefined, keys: ["fc-one11111", "fc-two22222"] },
+      { action: "set_key", u: "sam-lee", key: "fc-test-own-key", firecrawl: undefined, clear: undefined },
+      { action: "pause", u: "sam-lee", key: undefined, firecrawl: undefined, clear: undefined },
+      { action: "delete", u: "sam-lee", key: undefined, firecrawl: undefined, clear: undefined },
+      { action: "api_keys", u: undefined, key: undefined, firecrawl: ["fc-one11111", "fc-two22222"], clear: undefined },
+      { action: "api_keys", u: undefined, key: undefined, firecrawl: undefined, clear: ["firecrawl"] },
     ]);
     expect((await dashboard(env, cookie)).body).toContain("Waiting for Hermes");
   });
@@ -163,6 +230,7 @@ describe("admin gateway", () => {
     const { cookie } = await signIn(env);
     const res = await worker.fetch(post("/admin/logout", {}, { Cookie: cookie }), env);
     expect(res.headers.get("Set-Cookie")).toContain("Max-Age=0");
+    expect((await dashboard(env, cookie)).body).toContain("Admin sign-in");
   });
 });
 
@@ -193,5 +261,9 @@ describe("Hermes API", () => {
     const env = testEnv();
     const res = await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: API, body: "{not json" }), env);
     expect(res.status).toBe(400);
+    const list = await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: API, body: '{"profiles":"x"}' }), env);
+    expect(list.status).toBe(400);
+    const huge = await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: API, body: "x".repeat(300000) }), env);
+    expect(huge.status).toBe(413);
   });
 });

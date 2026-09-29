@@ -226,3 +226,105 @@ def test_ollama_chat_with_a_schema_returns_undashed_json(monkeypatch):
     monkeypatch.setattr(hc.requests, "post", lambda url, json, timeout: FakeResponse({"message": {"content": content}}))
     reply = hc.ollama_chat("http://ollama:11434", "m", "s", "u", None, fmt={"type": "object"})
     assert json.loads(reply) == {"reason": "Strong, but junior"}
+
+
+def test_fit_ctx_keeps_the_configured_size_unless_the_prompt_needs_more():
+    assert hc.fit_ctx(8192, "x" * 3000, num_predict=500) == 8192
+    assert hc.fit_ctx(None, "x" * 3000, num_predict=500) is None
+    assert hc.fit_ctx(4096, "x" * 30000, num_predict=2000) == 12288
+    assert hc.fit_ctx(4096, "x" * 1_000_000) == 32768
+
+
+def test_safe_url_only_allows_http_links_to_a_host():
+    assert hc.safe_url(" https://jobs.example.com/job/1 ") == "https://jobs.example.com/job/1"
+    for bad in ("javascript:alert(1)", "data:text/html,x", "https://", "//evil.example", "https://a b.example/"):
+        assert hc.safe_url(bad) == ""
+
+
+def test_mask_secret_shows_little_of_short_keys():
+    assert hc.mask_secret("fc-" + "a" * 28 + "1234") == "fc-...1234"
+    assert hc.mask_secret("short-key-1") == "****" and hc.mask_secret("") == ""
+
+
+def test_write_atomic_creates_private_files_private(tmp_path):
+    path = tmp_path / "state" / "secrets.json"
+    hc.write_atomic(path, "{}", private=True)
+    hc.write_atomic(path, '{"a": 1}', private=True)
+    assert path.read_text() == '{"a": 1}' and [p.name for p in path.parent.iterdir()] == ["secrets.json"]
+    if os.name == "posix":
+        assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_run_lock_is_exclusive(tmp_path):
+    with hc.run_lock(tmp_path / "x.lock") as first:
+        assert first
+        if os.name == "posix":
+            with hc.run_lock(tmp_path / "x.lock") as second:
+                assert not second
+
+
+def test_dashboard_settings_cannot_set_paths_or_worker_secrets(tmp_path, monkeypatch):
+    monkeypatch.setattr(hc.os, "environ", {})
+    path = tmp_path / "dashboard.json"
+    path.write_text(json.dumps({"env": {"JOB_MIN_SALARY": "30000", "SMTP_HOST": "smtp.example.com",
+                                        "PATH": "/tmp/evil", "PYTHONPATH": "/tmp", "JOB_FEEDBACK_SECRET": "x",
+                                        "JOB_PROFILE_FILE": "/etc/passwd", "HERMES_STATE_DIR": "/tmp"}}))
+    hc.load_dashboard_settings(path)
+    assert {k: v for k, v in hc.os.environ.items() if k != "HERMES_DASHBOARD_APPLIED"} == \
+        {"JOB_MIN_SALARY": "30000", "SMTP_HOST": "smtp.example.com"}
+
+
+class FakeSMTP:
+    attempts = 0
+    sent: list = []
+
+    def __init__(self, host, port, timeout=None, context=None):
+        FakeSMTP.attempts += 1
+        if FakeSMTP.attempts == 1:
+            raise hc.smtplib.SMTPServerDisconnected("dropped")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def ehlo(self):
+        pass
+
+    def starttls(self, context=None):
+        pass
+
+    def login(self, user, password):
+        if password == "wrong":
+            raise hc.smtplib.SMTPAuthenticationError(535, b"bad credentials")
+
+    def send_message(self, msg):
+        FakeSMTP.sent.append(msg)
+
+
+@pytest.fixture
+def smtp(monkeypatch):
+    FakeSMTP.attempts, FakeSMTP.sent = 0, []
+    monkeypatch.setattr(hc.smtplib, "SMTP", FakeSMTP)
+    monkeypatch.setattr(hc, "SMTP_RETRY_PAUSES", (0, 0))
+    for key, value in {"SMTP_USER": "me@example.com", "SMTP_PASSWORD": "app pass", "ALERT_EMAIL": "me@example.com",
+                       "SMTP_PORT": "587", "SMTP_HOST": "smtp.example.com", "SMTP_FROM": ""}.items():
+        monkeypatch.setenv(key, value)
+    return FakeSMTP
+
+
+def test_send_email_retries_a_dropped_connection_and_keeps_headers_on_one_line(smtp):
+    hc.send_email("3 new jobs\nBcc: victim@example.com", "<p>hi</p>", "hi", "Job radar\r\nX-Evil: 1")
+    assert smtp.attempts == 2
+    msg = smtp.sent[0]
+    assert msg["Subject"] == "3 new jobs Bcc: victim@example.com" and msg["Bcc"] is None
+    assert msg["From"].startswith("Job radar X-Evil: 1 <") and msg["X-Evil"] is None
+
+
+def test_send_email_does_not_retry_a_wrong_password(smtp, monkeypatch):
+    smtp.attempts = 1
+    monkeypatch.setenv("SMTP_PASSWORD", "wrong")
+    with pytest.raises(hc.smtplib.SMTPAuthenticationError):
+        hc.send_email("s", "<p>x</p>", "x", "n")
+    assert smtp.attempts == 2

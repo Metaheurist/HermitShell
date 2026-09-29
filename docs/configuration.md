@@ -90,7 +90,7 @@ when its best case is below the minimum.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `JOB_FEEDBACK_URL` | none | Your feedback Worker, e.g. `https://vacancy-feedback.<subdomain>.workers.dev`. Empty = no buttons |
+| `JOB_FEEDBACK_URL` | none | Your feedback Worker, e.g. `https://vacancy-feedback.<subdomain>.workers.dev`. Must start with `https://`. Empty = no buttons |
 | `JOB_FEEDBACK_SECRET` | none | Signs the button links; the Worker holds the same value |
 | `JOB_FEEDBACK_API_TOKEN` | none | Lets Hermes fetch and clear answers from the Worker |
 
@@ -120,25 +120,6 @@ silent when idle). In an unattended `--answers` file, use `SCHEDULE_DAILY_VACANC
 `SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY`, `SCHEDULE_DAILY_VACANCY_REPORT_LETTERS` and
 `SCHEDULE_NEWS_DIGEST`.
 
-## MCP sources
-
-Some packages can use MCP servers that are connected to Hermes. Currently this is the Indeed
-source in the Daily Vacancy Report. HermitShell never holds MCP credentials. The server entry
-lives under `mcp_servers:` in Hermes' `config.yaml`, and Hermes stores and refreshes the OAuth
-tokens in `$HERMES_HOME/mcp-tokens/`. The package reuses Hermes' OAuth provider, so it needs to
-run inside Hermes' Python environment (the `hermes-agent` container).
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `JOB_INDEED` | `1` | Use the Indeed MCP source when it is configured and authorised |
-| `JOB_INDEED_MCP_SERVER` | `indeed` | Server name under `mcp_servers` in `config.yaml` |
-| `HERMES_AGENT_DIR` | `/opt/hermes` | Hermes source directory, for its MCP and OAuth modules. Environment only |
-
-Authorise once with `hermes mcp login indeed` or from the dashboard's MCP page. An unauthorised
-or unreachable server is logged and skipped, and the other sources still run. The remaining
-`JOB_INDEED_*` settings are listed in the package's
-[`.env.example`](../packages/daily-vacancy-report/.env.example).
-
 ## Keeping secrets safe
 
 - Prefer container environment variables for keys and passwords, and keep `$HERMES_HOME/.env`
@@ -147,8 +128,6 @@ or unreachable server is logged and skipped, and the other sources still run. Th
   `.gitignore` already excludes them.
 - Logs show only the index and a masked prefix and suffix of the Firecrawl key in use, never the
   full key.
-- MCP OAuth tokens stay in Hermes' `mcp-tokens/` directory and are handled only by Hermes' own
-  OAuth code. HermitShell never copies or logs them.
 - The feedback secrets live only in `.env` and in the Worker's encrypted secrets. The wizard
   pipes them to `wrangler secret put` instead of printing them, and your KV namespace ID belongs
   in the untracked `feedback-worker/wrangler.local.jsonc`.

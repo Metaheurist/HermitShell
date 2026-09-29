@@ -14,7 +14,9 @@ missing-skill tags) without opening any port on your server.
   `POST /ack` to delete them from KV. Both API calls need `Authorization: Bearer <JOB_FEEDBACK_API_TOKEN>`.
 - Links for extra profiles carry the profile id in `u` (covered by the signature); `/events?u=<id>`
   returns only that profile's answers. `a=unsubscribe` asks for confirmation, then queues the removal.
-- `/admin` (password in the `ADMIN_PASSWORD` secret, optional `ADMIN_USER`) creates single-use invite
+- Links are signed over every field plus the send day (`d`) and expire after 90 days.
+- `/admin` (password in the `ADMIN_PASSWORD` secret, optional `ADMIN_USER`; optionally behind
+  Cloudflare Access with `ACCESS_AUD` and `ACCESS_TEAM_DOMAIN`) creates single-use invite
   links, lists the profiles Hermes reports and queues changes: crawler keys, pause, resume, delete.
 - `/join?i=<invite>` is the sign-up form with the CV upload; the CV is kept raw in KV until Hermes
   collects it through `/api/queue`, `/api/file` and `/api/queue/ack`. Hermes reports its profiles

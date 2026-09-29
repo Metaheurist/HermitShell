@@ -14,7 +14,7 @@ includes credentials, API keys, your CV and your region.
 
 | Package | What you get | Schedule |
 | --- | --- | --- |
-| [Daily Vacancy Report](packages/daily-vacancy-report) | Jobs from Indeed (via Hermes' Indeed MCP connection) and the wider web in your region, level, job types, work modes and salary range, matched to your CV and scored 0-10 by the model, with closing dates, company logos, websites and profiles. Optional [feedback buttons](docs/feedback-worker.md) teach the model what you like and remind you to follow up on applications, and a weekly roll-up sums up your week | You choose (default 07:00, roll-up Sunday 18:00) |
+| [Daily Vacancy Report](packages/daily-vacancy-report) | Jobs from across the web in your region, level, job types, work modes and salary range, matched to your CV and scored 0-10 by the model, with closing dates, company logos, websites and profiles. Optional [feedback buttons](docs/feedback-worker.md) teach the model what you like and remind you to follow up on applications, and a weekly roll-up sums up your week | You choose (default 07:00, roll-up Sunday 18:00) |
 | [News Digest](packages/news-digest) | Curated news on the topics you pick (AI, security, space, markets, sport... or your own keywords), in sections with a model-written briefing | You choose (default 12:00) |
 
 <table>
@@ -55,8 +55,7 @@ The setup wizard installs the packages you pick and then walks you through every
 5. What time each package should run (for example `07:30`, `weekdays 08:00` or `sunday 18:00`).
 6. Along the way, each package's other essential settings, such as email titles and score
    thresholds. `--advanced` asks for every setting.
-7. Optional Indeed MCP connection and login, then the cron jobs, a test email and an optional dry
-   run.
+7. The cron jobs, a test email and an optional dry run.
 
 Settings are saved to `$HERMES_HOME/.env`, which is backed up first. Re-run the wizard any time;
 your current values are offered as the defaults. On a Docker host, point it at the bind-mounted
@@ -96,9 +95,6 @@ script from `$HERMES_HOME/scripts`.
   `$HERMES_HOME/config.yaml`, with overrides per package.
 - **Web provider failover.** Firecrawl comes first (with extra backup keys when credits run
   low), then Tavily and Scrapfly. See [docs/web-providers.md](docs/web-providers.md).
-- **Uses Hermes' MCP connections.** Packages can call MCP servers you have already authorised in
-  Hermes, such as Indeed for job search, without holding any tokens themselves. See
-  [MCP sources](docs/configuration.md#mcp-sources).
 - **Email that survives Gmail.** Table layout, inline CSS, PNG icons sent as inline attachments,
   and a dark-mode hack that keeps headers readable. See
   [docs/email-rendering.md](docs/email-rendering.md).
@@ -116,8 +112,6 @@ script from `$HERMES_HOME/scripts`.
 - An SMTP account, such as a Gmail App Password.
 - An API key for at least one of [Firecrawl](https://firecrawl.dev),
   [Tavily](https://tavily.com) or [Scrapfly](https://scrapfly.io). All three have free tiers.
-- Optional: the [Indeed MCP server](https://docs.indeed.com/mcp) added and authorised in Hermes,
-  for the vacancy report's Indeed source.
 
 ## Adding a package
 
