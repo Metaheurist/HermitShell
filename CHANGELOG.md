@@ -17,6 +17,11 @@ using [Semantic Versioning](https://semver.org/).
   salary, agency adverts) and uploading a new CV, which rebuilds their profile and keywords. Changes
   are applied by Hermes within about 5 minutes. A change Hermes rejects is shown at the top of the
   page for a day. Passwords and keys are never shown again, only their last four characters.
+- **Shorter setup with Cloudflare.** The wizard now asks for the Cloudflare account and token right
+  after the prerequisites. When the Worker can be deployed, it only asks for the `/admin` username
+  and password (required for a new Worker), the timezone, optionally the email server, and the run
+  times. It then points you to `/admin` for the rest. Without a token, or with `--advanced`, it asks
+  everything as before. The test email is only offered once an email server is set.
 - **Accounts and API keys guide.** [docs/api-keys.md](docs/api-keys.md) covers creating a Gmail app
   password and Firecrawl, Tavily and Scrapfly accounts, where each key goes, their free limits and
   how far one report's usage goes within them.

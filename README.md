@@ -57,24 +57,28 @@ python3 scripts/setup.py
 ```
 
 The setup wizard installs the job finder, sets up what it runs on (missing Python packages, an
-Ollama container next to Hermes if there's no Ollama yet, and the model), and then walks you
-through everything it needs:
+Ollama container next to Hermes if there's no Ollama yet, and the model). Then:
 
-1. Email (SMTP) details and any web search API keys you have (Firecrawl, Tavily, Scrapfly). Keys
-   are typed without being shown and are only ever displayed masked.
-2. Your job search: where you're looking (region, towns, country, remote), the level you're
-   targeting, employment types (permanent, contract, part-time, internship...), work modes,
-   minimum salary and the job titles to search for.
-3. Your candidate profile. Answer a few questions, import your CV as text, or start from the
-   example.
-4. Optionally, a Cloudflare account ID and API token: the wizard then deploys the feedback Worker
-   (buttons, `/admin` page, sign-up links) and sets its admin password for you (see
-   [docs/cloudflare-setup.md](docs/cloudflare-setup.md)).
-5. What time the report, the weekly roll-up and the request checks should run (for example
-   `07:30`, `weekdays 08:00` or `sunday 18:00`).
-6. Along the way, the other essential settings, such as email titles and score thresholds.
-   `--advanced` asks for every setting.
-7. The cron jobs, a test email, an optional dry run and a final health check.
+- **With a free Cloudflare account** (recommended): paste its account ID and an API token
+  ([how](docs/cloudflare-setup.md)). The wizard deploys the feedback Worker, then asks for:
+  - the `/admin` username and password;
+  - your timezone and, if you like, the email server;
+  - the run times.
+
+  Everything else is set on the Worker's `/admin` page: the email server, web search keys
+  ([how to get them, free](docs/api-keys.md)), your CV and the job search. A checklist there
+  shows what's left.
+- **Without Cloudflare, or with `--advanced`**, the wizard asks everything itself:
+  - email (SMTP) details and web search API keys (Firecrawl, Tavily, Scrapfly);
+  - your job search: region, towns, country, remote, level, employment types, work modes,
+    minimum salary and job titles;
+  - your candidate profile (answer a few questions or import your CV as text);
+  - the run times.
+
+  `--advanced` also asks for every other setting.
+
+Keys are typed without being shown and are only ever displayed masked. It finishes with the cron
+jobs, a test email when the email server is set, and a health check.
 
 Settings are saved to `$HERMES_HOME/.env`, which is backed up first. Re-run the wizard any time;
 your current values are offered as the defaults. On a Docker host, point it at the bind-mounted

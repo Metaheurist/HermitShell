@@ -20,7 +20,18 @@ python3 scripts/setup.py                  # local Hermes, or inside the containe
 sudo python3 scripts/setup.py --hermes-home /path/to/hermes/data   # from a Docker host
 ```
 
-It asks, in order:
+With a Cloudflare API token, setup is short. The wizard asks for:
+1. the Hermes home, and installs the prerequisites (steps 1 and 2 below);
+2. the Cloudflare account ID and token, and deploys the Worker;
+3. the `/admin` username and password;
+4. your timezone and, if you like, the email server;
+5. the run times.
+
+It then prints the Worker's `/admin` address. Everything else is done there, once Hermes has connected
+(a few minutes): the email server, web search keys ([how to get them](api-keys.md)), your CV and
+the job search. The page's checklist shows what's left.
+
+Without a token, or with `--advanced`, the wizard asks everything itself, in this order:
 
 1. **Hermes home.** Then it runs `install.sh` to copy the job finder in. Run as
    root on a Docker host, it gives the files the same owner as the Hermes home directory (the
@@ -55,7 +66,8 @@ It asks, in order:
    any of your titles from the default exclude list, so a nurse or teacher isn't filtered out.
 7. **Candidate profile** (vacancy report). Answer a few questions, import a text or markdown CV,
    paste text, or start from the example. Your skills and gaps become `cv_keywords.json`.
-   Then the optional **feedback buttons and admin page**: paste your Cloudflare account ID and an
+   Then the optional **feedback buttons and admin page** (without `--advanced` this is asked
+   first, right after the prerequisites): paste your Cloudflare account ID and an
    API token ([how to create them](cloudflare-setup.md)) and the wizard deploys the
    [feedback Worker](feedback-worker.md) itself: KV namespace, Worker code, `JOB_FEEDBACK_URL`,
    generated `JOB_FEEDBACK_SECRET` / `JOB_FEEDBACK_API_TOKEN`, the `/admin` username and password
@@ -71,7 +83,8 @@ It asks, in order:
    alone) and kept at mode 600.
 10. **Schedules.** Creates or updates the `hermes cron` jobs with the run times you chose. If
    Hermes isn't reachable from where the wizard runs, it prints the commands to run instead.
-11. **Test.** Sends a test email and offers a dry run.
+11. **Test.** Sends a test email when the email server is set, and offers a dry run (not when the
+   rest of the setup happens on `/admin`).
 12. **Health check.** Runs `doctor.py` once more and lists anything still missing, with the fix.
 
 The wizard finds Hermes by itself. It uses the `hermes` command when it's on your PATH;

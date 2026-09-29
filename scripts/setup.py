@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """HermitShell setup wizard: install the job finder, then configure every setting, API key, job search,
-candidate profile, the feedback Worker and cron schedule interactively.
+candidate profile, the feedback Worker and cron schedule interactively. Given a Cloudflare API token, it
+deploys the Worker first and leaves email, keys, the CV and the job search to the Worker's /admin page.
 
     python3 scripts/setup.py                          # guided setup (essential settings)
     python3 scripts/setup.py --advanced               # ask for every setting
@@ -549,9 +550,25 @@ class Wizard:
         if not any(self.value(k) for k in keys):
             self.say(f"{YELLOW}  No web search key set. The vacancy report needs at least one of "
                      f"Firecrawl, Tavily or Scrapfly (all have free tiers).{RESET}")
-        if not self.value("SMTP_USER") or not self.value("SMTP_PASSWORD"):
+        if not self.smtp_set():
             self.say(f"{YELLOW}  SMTP login incomplete: reports can't be emailed until it is set.{RESET}")
         self.data_key()
+
+    def dashboard_basics(self) -> None:
+        """With the Worker deployed, email, keys, the CV and the job search are set on its /admin page; only the
+        timezone (for the schedules) is needed here, and the email server if you'd rather type it now."""
+        self.heading("Timezone and, optionally, email")
+        self.say("Your web search keys, CV and job search are set on the Worker's /admin page once Hermes has\n"
+                 "connected (a few minutes after setup). docs/api-keys.md shows how to get each key.")
+        shared = {s.key: s for s in parse_example(REPO / ".env.example")}
+        self.run_settings([shared["HERMES_TIMEZONE"]])
+        if self.confirm("Set the email server here as well? (otherwise on /admin)", self.smtp_set()):
+            self.run_settings([shared[k] for k in ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD",
+                                                   "ALERT_EMAIL")])
+        self.data_key()
+
+    def smtp_set(self) -> bool:
+        return bool(self.value("SMTP_USER") and self.value("SMTP_PASSWORD"))
 
     def data_key(self) -> None:
         """HERMES_DATA_KEY encrypts CVs, profiles, letters and backups: made once and never replaced, since files
@@ -756,7 +773,11 @@ class Wizard:
                  "page for extra profiles and the sign-up links run on a small free Cloudflare Worker. With a free\n"
                  "Cloudflare account's ID and an API token the wizard deploys it for you and fills in its address;\n"
                  "docs/cloudflare-setup.md shows how to create both.")
+        if self.interactive and not self.args.advanced:
+            self.say("With it, your email server, web search keys, CV and job search are then set on its /admin\n"
+                     "page instead of here.")
         account, token = self.preset("CLOUDFLARE_ACCOUNT_ID"), self.preset("CLOUDFLARE_API_TOKEN")
+        new_worker = not self.preset("JOB_FEEDBACK_URL")
         if self.interactive:
             if not self.confirm("Set up the feedback Worker automatically with a Cloudflare API token?",
                                 bool(account and token) or not self.preset("JOB_FEEDBACK_URL")):
@@ -805,8 +826,8 @@ class Wizard:
         self.feedback_secrets()
         worker_secrets = {k: self.value(k) for k in ("JOB_FEEDBACK_SECRET", "JOB_FEEDBACK_API_TOKEN")}
 
-        self.say("\nThe /admin page (invite people, manage profiles and keys) stays off until it has a password.")
-        password = self.admin_password()
+        self.say("\nThe /admin page (settings, profiles, invites) stays off until it has a password.")
+        password = self.admin_password(required=new_worker and not self.args.advanced)
         if password:
             worker_secrets["ADMIN_USER"] = self.text("Admin page username", self.preset("ADMIN_USER", "admin")) \
                 or "admin"
@@ -827,16 +848,22 @@ class Wizard:
         self.cf_plan = {"cf": cf, "name": name, "subdomain": subdomain, "new_subdomain": new_subdomain,
                         "secrets": worker_secrets, "emails": emails}
 
-    def admin_password(self) -> str:
-        """A new /admin password (asked twice, 12+ characters), or "" to keep the Worker's current one."""
+    def admin_password(self, required: bool = False) -> str:
+        """A new /admin password (asked twice, 12+ characters), or "" to keep the Worker's current one. `required`
+        for a new Worker when the rest of the setup happens on /admin."""
         if not self.interactive:
             password = self.answers.get("ADMIN_PASSWORD", "")
             if password and len(password) < 12:
                 sys.exit("ADMIN_PASSWORD: use at least 12 characters")
             return password
+        keep = "" if required else "; Enter keeps the current one"
+        empty = 0
         while True:
-            first = self._input("New admin password (12+ characters; Enter keeps the current one): ",
-                                secret=True).strip()
+            first = self._input(f"New admin password (12+ characters{keep}): ", secret=True).strip()
+            if not first and required and empty < 2:
+                empty += 1
+                self.say(f"  {YELLOW}the rest of the setup happens on /admin, so it needs a password{RESET}")
+                continue
             if not first:
                 return ""
             if len(first) < 12:
@@ -1153,19 +1180,61 @@ class Wizard:
             if not ok and res is not None:
                 self.say((res.stdout + res.stderr).strip()[-400:])
 
-    def tests(self, runner: Runner, packages: list[str]) -> None:
+    def tests(self, runner: Runner, packages: list[str], on_dashboard: bool = False) -> None:
         if not self.interactive or self.args.dry_run or not runner.mode:
             return
         self.heading("Test")
         python = self.args.python
         for pkg in packages:
             info = PACKAGES[pkg]
-            if self.confirm(f"Send a {info['title']} test email now?", True):
+            if not self.smtp_set():
+                self.say("  No email server yet, so no test email: use Send a test email on /admin once it's set.")
+            elif self.confirm(f"Send a {info['title']} test email now?", True):
                 runner.run([python, info["script"], "--test-email"], in_scripts=True)
-            if self.confirm(f"Run a {info['title']} dry run now (no email; takes a few minutes)?", False):
+            if not on_dashboard and self.confirm(f"Run a {info['title']} dry run now (no email; takes a few "
+                                                 "minutes)?", False):
                 runner.run([python, info["script"], *info["dry_run"]], in_scripts=True)
 
     # ------------------------------------------------------------------ main flow
+
+    def settings_on_dashboard(self, packages: list[str]) -> bool:
+        """Asks for the Worker first; with a working token (and not --advanced) the email server, keys, CV and job
+        search are then left to its /admin page. Needs an admin password, unless the Worker already had one."""
+        if "daily-vacancy-report" not in packages or not self.interactive or self.args.advanced:
+            return False
+        had_worker = bool(self.preset("JOB_FEEDBACK_URL"))
+        self.feedback_buttons()
+        if not self.cf_plan:
+            return False
+        if "ADMIN_PASSWORD" not in self.cf_plan["secrets"] and not had_worker:
+            self.say(f"  {YELLOW}no admin password, so the settings are asked here instead{RESET}")
+            return False
+        return True
+
+    def configure(self, packages: list[str], scripts: Path, runner: Runner) -> bool:
+        """Every question before the review; returns whether the rest is done on the dashboard."""
+        on_dashboard = self.settings_on_dashboard(packages)
+        worker_asked = self.interactive and not self.args.advanced
+        if on_dashboard:
+            self.dashboard_basics()
+        else:
+            self.shared()
+        for pkg in packages:
+            info = PACKAGES.get(pkg, {"title": pkg})
+            if pkg != "daily-vacancy-report" or not on_dashboard:
+                self.heading(f"{info['title']} settings")
+                self.run_settings(parse_example(PACKAGES_DIR / pkg / ".env.example"))
+            if pkg == "daily-vacancy-report":
+                if not on_dashboard:
+                    self.job_search()
+                    self.job_targets(scripts)
+                    self.job_profile(scripts)
+                if not worker_asked:
+                    self.feedback_buttons()
+            if pkg in PACKAGES and not self.args.no_cron:
+                for job_id, job in scheduled_jobs(pkg):
+                    self.ask_schedule(runner, job_id, job)
+        return on_dashboard
 
     def run(self) -> int:
         self.say(f"{BOLD}HermitShell setup{RESET}\nInstalls packages into Hermes and configures them. "
@@ -1182,20 +1251,7 @@ class Wizard:
         if not self.args.no_prereqs:
             self.prerequisites(runner, scripts)
 
-        self.shared()
-        for pkg in packages:
-            info = PACKAGES.get(pkg, {"title": pkg})
-            self.heading(f"{info['title']} settings")
-            self.run_settings(parse_example(PACKAGES_DIR / pkg / ".env.example"))
-            if pkg == "daily-vacancy-report":
-                self.job_search()
-                self.job_targets(scripts)
-                self.job_profile(scripts)
-                self.feedback_buttons()
-            if pkg in PACKAGES and not self.args.no_cron:
-                for job_id, info in scheduled_jobs(pkg):
-                    self.ask_schedule(runner, job_id, info)
-
+        on_dashboard = self.configure(packages, scripts, runner)
         saved = self.review_and_write(home, owner)
         if self.cf_plan and (saved or self.args.dry_run):
             self.deploy_worker()
@@ -1205,10 +1261,14 @@ class Wizard:
         if not self.args.no_cron and (saved or self.args.dry_run or not self.changes):
             self.schedules(runner)
         if saved:
-            self.tests(runner, known)
+            self.tests(runner, known, on_dashboard)
             if not self.args.no_prereqs:
                 self.health_check(runner, scripts)
         self.heading("Done")
+        if on_dashboard:
+            self.say(f"{BOLD}Finish setting up at {self.value('JOB_FEEDBACK_URL')}/admin{RESET} once Hermes has "
+                     "connected (a few minutes):\n  " + ("" if self.smtp_set() else "the email server, ")
+                     + "your web search keys, your CV and the job search. The page's checklist shows what's left.")
         self.say(f"Settings: {home / '.env'}\nRe-run `python3 scripts/setup.py` to change anything, "
                  "or `--advanced` to see every option.")
         return 0

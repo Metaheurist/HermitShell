@@ -304,6 +304,91 @@ def test_wizard_deploy_creates_subdomain_then_worker_then_access(tmp_path, monke
                      ("access", ["sam@example.com"])]
 
 
+# --------------------------------------------------------------------------- settings on the dashboard
+
+def interactive(replies, advanced=False, current=None):
+    """An interactive wizard whose prompts are answered from `replies`; the prompts are kept in w.prompts."""
+    args = argparse.Namespace(non_interactive=False, answers=None, advanced=advanced, dry_run=False, no_cron=True)
+    w = setup.Wizard(args)
+    w.current, w.prompts, w.steps = dict(current or {}), [], []
+    w.cloudflare_factory = FakeCF
+    queue = list(replies)
+
+    def answer(prompt, secret=False):
+        w.prompts.append(prompt)
+        return queue.pop(0)
+    w._input = answer
+    w.left = queue
+    for step in ("shared", "job_search", "job_targets", "job_profile"):
+        setattr(w, step, lambda *a, step=step: w.steps.append(step))
+    return w
+
+
+WORKER_REPLIES = ["", ACCOUNT, TOKEN, "sam-demo"]  # use the token, account ID, token, new subdomain
+
+
+def test_with_a_token_the_rest_of_the_setup_moves_to_the_dashboard(tmp_path, capsys):
+    w = interactive([*WORKER_REPLIES, "", "correct-horse-battery", "correct-horse-battery", "", "n",
+                     "Europe/Dublin", ""])  # empty password refused, then set; admin user; no Access; tz; no email
+    assert w.configure(["daily-vacancy-report"], tmp_path, runner=None) is True
+    assert w.steps == [] and not w.left
+    assert w.cf_plan["secrets"]["ADMIN_PASSWORD"] == "correct-horse-battery"
+    assert w.changes["HERMES_TIMEZONE"] == "Europe/Dublin" and "HERMES_DATA_KEY" in w.changes
+    assert not any(k.startswith("SMTP_") for k in w.changes)
+    assert not any("Enter keeps the current one" in p for p in w.prompts if "admin password" in p)
+    out = capsys.readouterr().out
+    assert "needs a password" in out and "correct-horse-battery" not in out
+
+
+def test_the_email_server_can_still_be_set_in_the_wizard(tmp_path):
+    w = interactive([*WORKER_REPLIES, "correct-horse-battery", "correct-horse-battery", "", "n", "", "y",
+                     "smtp.gmail.com", "", "alex@example.com", "app-password-here", "alex@example.com"])
+    assert w.configure(["daily-vacancy-report"], tmp_path, runner=None) is True
+    assert w.changes["SMTP_HOST"] == "smtp.gmail.com" and w.changes["SMTP_PASSWORD"] == "app-password-here"
+    assert w.smtp_set() and not w.left
+
+
+def test_no_admin_password_falls_back_to_asking_everything(tmp_path):
+    w = interactive([*WORKER_REPLIES, "", "", "", "n"])  # three empty passwords, no Access
+    w.run_settings = lambda settings: None
+    assert w.configure(["daily-vacancy-report"], tmp_path, runner=None) is False
+    assert w.steps == ["shared", "job_search", "job_targets", "job_profile"] and not w.left
+
+
+def test_an_existing_worker_keeps_its_password_and_still_uses_the_dashboard(tmp_path):
+    current = {"CLOUDFLARE_ACCOUNT_ID": ACCOUNT, "CLOUDFLARE_API_TOKEN": TOKEN,
+               "JOB_FEEDBACK_URL": "https://vacancy-feedback.sam.workers.dev"}
+    w = interactive(["", "", "", "", "n", "", ""], current=current)  # keep all, no Access, keep tz, no email
+    w.cloudflare_factory = lambda a, t: FakeCF(a, t, subdomain="sam")
+    assert w.configure(["daily-vacancy-report"], tmp_path, runner=None) is True
+    assert "ADMIN_PASSWORD" not in w.cf_plan["secrets"] and not w.left
+
+
+def test_without_a_token_every_question_is_asked(tmp_path):
+    w = interactive(["n", ""])  # no automatic Worker, no manual URL
+    w.run_settings = lambda settings: None
+    assert w.configure(["daily-vacancy-report"], tmp_path, runner=None) is False
+    assert w.steps == ["shared", "job_search", "job_targets", "job_profile"] and not w.left
+
+
+def test_advanced_asks_everything_and_the_worker_last(tmp_path):
+    w = interactive([], advanced=True)
+    w.run_settings = lambda settings: None
+    w.feedback_buttons = lambda: w.steps.append("worker")
+    assert w.configure(["daily-vacancy-report"], tmp_path, runner=None) is False
+    assert w.steps == ["shared", "job_search", "job_targets", "job_profile", "worker"]
+
+
+def test_no_test_email_or_dry_run_offered_before_the_dashboard_is_done(capsys):
+    w = interactive([])
+    ran = []
+    runner = argparse.Namespace(mode="docker", run=lambda argv, **k: ran.append(argv))
+    w.args.python = "python3"
+    w.tests(runner, ["daily-vacancy-report"], on_dashboard=True)
+    assert ran == [] and not w.prompts
+    assert "Send a test email on /admin" in capsys.readouterr().out
+
+
 def test_wizard_dry_run_deploys_nothing(tmp_path, monkeypatch, capsys):
     w = wizard(tmp_path, ANSWERS, dry_run=True)
     w.cloudflare_factory = FakeCF

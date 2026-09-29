@@ -57,13 +57,18 @@ Don't give the wizard R2 or S3 credentials or a Global API Key; HermitShell does
 python3 scripts/setup.py
 ```
 
-At **Feedback buttons and admin page (Cloudflare)** answer yes, then paste the account ID and the
-token (the token is typed without echo). The wizard then asks for:
+At **Feedback buttons and admin page (Cloudflare)**, the first question after installing, answer yes.
+Then paste the account ID and the token (the token is typed without echo). The wizard then asks for:
 
 - a `workers.dev` subdomain, only if your account doesn't have one yet;
-- a new `/admin` password (12 or more characters, typed twice) and username; press Enter to keep the
-  Worker's current password (without one, `/admin` stays off);
+- a new `/admin` password (12 or more characters, typed twice) and username. A new Worker needs a
+  password; for an existing one, Enter keeps its current password;
 - whether to protect `/admin` with Cloudflare Access, and which emails may sign in.
+
+Then it asks only for your timezone, optionally the email server, and the run times. The job search,
+CV, web search keys and (if you skipped it) the email server are set on `/admin` instead
+([what to set there](feedback-worker.md#the-admin-page)). With `--advanced`, the wizard asks
+everything first and the Worker last.
 
 After you confirm the review, it deploys the Worker and prints its address. The account ID, token,
 Worker name and Access emails are saved in `$HERMES_HOME/.env` (mode 600); the admin password is
