@@ -4,7 +4,7 @@
 // first. Then sign in with ADMIN_USER (default "admin") and the ADMIN_PASSWORD secret; five wrong attempts
 // lock that address, and 30 from anywhere lock sign-in, for 15 minutes. Signed-in pages create invite
 // links, show the profiles HermitShell reports, and queue changes that HermitShell applies as soon as the live
-// link tells it (settings pages: settings.js; each profile's stats page: stats.js; crawler keys: keys.js; the live link: hub.js). Nothing here can reach the HermitShell
+// link tells it (settings pages: settings.js; each profile's stats page: stats.js; crawler keys: keys.js; profile search: search.js; the live link: hub.js). Nothing here can reach the HermitShell
 // server: HermitShell connects out to /api/live and reads /api/queue with its API token.
 
 import { hubConnect, hubPresence, hubSeen } from "./hub.js";
@@ -19,6 +19,7 @@ import {
   sendButton, settingsItem, settingsPage,
 } from "./settings.js";
 import { CRAWLERS, KEY_STYLE, crawlerCell, keyModal } from "./keys.js";
+import { SEARCH_STYLE, matchesProfile, noMatch, searchBar, searchQuery } from "./search.js";
 import { LINK_STYLE, MAX_STATS_BYTES, STATS_URL, statsLink, statsPage, validStats } from "./stats.js";
 
 const SESSION_SECONDS = 12 * 3600;
@@ -205,13 +206,18 @@ async function dashboard(request, env, s) {
     .map((i) => `<tr><td>${esc(i.note || "No note")}</td><td class="muted">expires ${esc(when(i.expires, current.timezone))}</td>
 <td>${button(s.csrf, "revoke", "Revoke", { invite: i.id })}</td></tr>`).join("");
   const done = DONE[url.searchParams.get("done")];
-  const profiles = (current.profiles || []).filter((p) => PROFILE_RE.test(p.id || ""));
-  const modals = profiles.map((p) => keyModal(p, s.csrf)).join("");
-  return page("Profiles", `<style>${LINK_STYLE}${KEY_STYLE}</style>${nav("profiles")}${done ? note(done) : ""}
+  const q = searchQuery(url);
+  const all = (current.profiles || []).map((p, i) => ({ p, stats: stats[i] }));
+  const shown = all.filter(({ p }) => matchesProfile(p, q));
+  const modals = shown.filter(({ p }) => PROFILE_RE.test(p.id || "")).map(({ p }) => keyModal(p, s.csrf)).join("");
+  const rows = shown.map(({ p, stats: st }) => profileRow(p, s.csrf, current.timezone, st)).join("")
+    || (all.length ? noMatch(q) : '<tr><td colspan="4" class="muted">HermitShell has not reported any profiles yet.</td></tr>');
+  return page("Profiles", `<style>${LINK_STYLE}${KEY_STYLE}${SEARCH_STYLE}</style>${nav("profiles")}${done ? note(done) : ""}
 ${lastUpdate(current, queued, presence)}
 ${problems(current)}${checklist(current)}
+${all.length ? searchBar(q, shown.length, all.length) : ""}
 <table class="list"><tr><th>Profile</th><th>Status</th><th>Crawler</th><th></th></tr>
-${(current.profiles || []).map((p, i) => profileRow(p, s.csrf, current.timezone, stats[i])).join("") || '<tr><td colspan="4" class="muted">HermitShell has not reported any profiles yet.</td></tr>'}</table>
+${rows}</table>
 <p class="muted">The email server and web search keys everyone shares are under <a href="${SETTINGS_URL}">Global settings</a>.</p>
 <h2>Invite someone</h2>
 <form method="post" action="/admin/action" class="inline"><input type="hidden" name="csrf" value="${esc(s.csrf)}"><input type="hidden" name="action" value="invite">

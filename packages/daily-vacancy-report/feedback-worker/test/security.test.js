@@ -249,6 +249,27 @@ describe("authentication", () => {
     expect(after).not.toContain(secret);
   });
 
+  it("keeps profile search behind a session and never reflects the query as markup", async () => {
+    const env = testEnv(ADMIN);
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "sam-lee", name: "Sam Lee", has_cv: true }] }));
+    const q = encodeURIComponent(HOSTILE);
+    const anonymous = await (await get(`/admin?q=${q}`, env)).text();
+    expect(anonymous).toContain("Admin sign-in");
+    expect(anonymous).not.toContain("Sam Lee");
+    const cookie = await signIn(env, "203.0.113.8");
+    for (const query of [q, `${q}${"a".repeat(5000)}`, encodeURIComponent('" autofocus onfocus="alert(1)'), "%00%0a%1b"]) {
+      const res = await get(`/admin?q=${query}`, env, { Cookie: cookie });
+      const body = await res.text();
+      expect(res.headers.get("Content-Security-Policy")).not.toContain("script-src");
+      expect(body).not.toContain("<script>");
+      expect(body).not.toContain("<img src=x");
+      expect(body).not.toContain('" autofocus');
+      const value = body.match(/name="q" value="([^"]*)"/)[1]
+        .replace(/&(lt|gt|quot|#39|amp);/g, (m) => ({ "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&amp;": "&" })[m]);
+      expect(value.length).toBeLessThanOrEqual(60);
+    }
+  });
+
   it("keeps the settings pages, including email and key forms, behind a session", async () => {
     const env = testEnv(ADMIN);
     await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "owner", owner: true, name: "Alex Morgan" }],
