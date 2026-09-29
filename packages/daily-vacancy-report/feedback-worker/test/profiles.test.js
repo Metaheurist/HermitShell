@@ -210,6 +210,7 @@ describe("admin gateway", () => {
     const { body, csrf } = await dashboard(env, cookie);
     expect(body).toContain("Sam Lee");
     expect(body).toContain("own key fc-...9f2");
+    expect(body).toContain('<a class="small" href="/admin/profile?u=sam-lee">Manage</a>');
     expect(body.match(/delete CV and history/g)).toHaveLength(1);
 
     await adminAction(env, cookie, csrf, { action: "set_key", u: "sam-lee", key: "fc-test-own-key" });

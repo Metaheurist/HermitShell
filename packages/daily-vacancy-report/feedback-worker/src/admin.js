@@ -139,7 +139,7 @@ function profileRow(p, csrf, tz) {
 <button class="small danger">Delete</button></form>`;
   const cv = p.has_cv === false ? ' <span class="pill paused">no CV</span>' : "";
   return `<tr><td><b>${esc(p.name)}</b>${cv}<div class="muted">${esc(p.email || "")}</div><div class="muted">since ${esc(when(p.created, tz))}</div>
-<a class="small" href="/admin/profile?u=${esc(p.id)}">Settings, job search and CV</a></td>
+<a class="small" href="/admin/profile?u=${esc(p.id)}">Manage</a></td>
 <td>${status}<div class="muted">last report ${esc(p.last_run ? `${ago(p.last_run)} (${when(p.last_run, tz)})` : "never")}</div></td>
 <td><div class="muted">${crawler}</div>
 <form method="post" action="/admin/action" class="inline" style="margin-top:6px">
