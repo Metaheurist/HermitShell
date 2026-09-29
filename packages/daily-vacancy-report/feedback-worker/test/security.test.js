@@ -148,7 +148,7 @@ describe("authentication", () => {
   it("keeps every HermitShell API route behind the token", async () => {
     const env = testEnv();
     const routes = [["GET", "/events"], ["POST", "/ack"], ["GET", "/api/queue"], ["GET", "/api/queue/flag"], ["GET", "/api/live"], ["POST", "/api/queue/ack"],
-      ["GET", "/api/file?key=cvfile:1"], ["POST", "/api/status"], ["POST", "/api/invite"]];
+      ["GET", "/api/file?key=cvfile:1"], ["POST", "/api/status"], ["POST", "/api/stats"], ["POST", "/api/invite"]];
     for (const [method, path] of routes) {
       for (const headers of [{}, { Authorization: "Bearer wrong-token" }, { Authorization: "api-token" }]) {
         const res = await worker.fetch(new Request(`${BASE}${path}`, { method, headers, body: method === "POST" ? "{}" : undefined }), env);
@@ -190,6 +190,34 @@ describe("authentication", () => {
     expect(page).not.toContain("<script>");
     expect(page).toContain('name="report_time" type="time" value=""');
     expect(valuesWith(env, "queue:")).toEqual([]);
+  });
+
+  it("keeps stats behind a session, escapes what HermitShell sends and takes only real profile ids", async () => {
+    const env = testEnv(ADMIN);
+    const api = { Authorization: "Bearer api-token" };
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "sam-lee", name: HOSTILE, has_cv: true }] }));
+    const stats = { days: { "2026-09-29": [5, 4, 3, 21, 3, 1, 1] }, since: HOSTILE, today: HOSTILE,
+      ranges: { 30: { employers: [[HOSTILE, 2]], sources: [[HOSTILE, 1]], modes: [[HOSTILE, 1]], fit: [HOSTILE], salary: HOSTILE,
+        best: [{ title: HOSTILE, employer: HOSTILE, fit: HOSTILE, day: HOSTILE }] } }, pipeline: { applied: HOSTILE } };
+    const put = (body) => worker.fetch(new Request(`${BASE}/api/stats`, { method: "POST", headers: api, body: JSON.stringify(body) }), env);
+    for (const u of ["../owner", "Sam", "stats:x", "a".repeat(41), "", 7]) expect((await put({ u, stats })).status).toBe(400);
+    expect((await put({ u: "sam-lee", stats: { days: { "<b>": [1] } } })).status).toBe(400);
+    expect((await put({ u: "sam-lee", stats })).status).toBe(200);
+    const anonymous = await (await get("/admin/stats?u=sam-lee", env)).text();
+    expect(anonymous).toContain("Admin sign-in");
+    expect(anonymous).not.toContain("<script>");
+    const cookie = await signIn(env, "203.0.113.6");
+    for (const r of ["30", "7", "90", "365", "<script>"]) {
+      const res = await get(`/admin/stats?u=sam-lee&r=${encodeURIComponent(r)}`, env, { Cookie: cookie });
+      expect(res.headers.get("Content-Security-Policy")).not.toContain("script-src");
+      const body = await res.text();
+      expect(body, r).not.toContain("<script>");
+      expect(body, r).not.toContain("<img src=x");
+    }
+    expect((await get("/admin/stats?u=..%2Fowner", env, { Cookie: cookie })).status).toBe(404);
+    const big = await worker.fetch(new Request(`${BASE}/api/stats`, {
+      method: "POST", headers: { ...api, "Content-Length": "5000000" }, body: "{}" }), env);
+    expect(big.status).toBe(413);
   });
 
   it("keeps the settings pages, including email and key forms, behind a session", async () => {

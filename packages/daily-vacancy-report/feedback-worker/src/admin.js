@@ -4,7 +4,7 @@
 // first. Then sign in with ADMIN_USER (default "admin") and the ADMIN_PASSWORD secret; five wrong attempts
 // lock that address, and 30 from anywhere lock sign-in, for 15 minutes. Signed-in pages create invite
 // links, show the profiles HermitShell reports, and queue changes that HermitShell applies as soon as the live
-// link tells it (settings pages: settings.js; the live link: hub.js). Nothing here can reach the HermitShell
+// link tells it (settings pages: settings.js; each profile's stats page: stats.js; the live link: hub.js). Nothing here can reach the HermitShell
 // server: HermitShell connects out to /api/live and reads /api/queue with its API token.
 
 import { hubConnect, hubPresence, hubSeen } from "./hub.js";
@@ -18,6 +18,7 @@ import {
   SETTINGS_DONE, SETTINGS_URL, STATUS_URL, button, checklist, cvUpload, nav, problems, profileChange, profilePage, saveStatus,
   sendButton, settingsItem, settingsPage,
 } from "./settings.js";
+import { LINK_STYLE, MAX_STATS_BYTES, STATS_URL, statsLink, statsPage, validStats } from "./stats.js";
 
 const SESSION_SECONDS = 12 * 3600;
 const LOCK_SECONDS = 15 * 60;
@@ -176,7 +177,7 @@ function schedule(p) {
   return `<div class="muted">daily report ${esc(r.time)}${r.days === "weekdays" ? " on weekdays" : ""}${r.pending ? " (moving)" : ""}</div>`;
 }
 
-function profileRow(p, csrf, tz) {
+function profileRow(p, csrf, tz, stats) {
   const status = `<span class="pill${p.owner ? " owner" : p.status === "paused" ? " paused" : ""}">${p.owner ? "owner, " : ""}${esc(p.status)}</span>`
     + (p.scanning ? ' <span class="pill scanning">scanning now</span>' : "");
   const crawler = p.crawler === "own" ? `own key ${esc(p.key_hint || "")}` : "global key";
@@ -188,7 +189,7 @@ function profileRow(p, csrf, tz) {
   const cv = p.has_cv === false ? ' <span class="pill paused">no CV</span>' : "";
   return `<tr><td><div class="who"><span class="avatar" aria-hidden="true">${esc(initials(p.name))}</span><div>
 <b>${esc(p.name)}</b>${cv}<div class="muted">${esc(p.email || "")}</div><div class="muted">since ${esc(when(p.created, tz))}</div>
-<a class="small" href="/admin/profile?u=${esc(p.id)}">Manage</a></div></div></td>
+<a class="small" href="/admin/profile?u=${esc(p.id)}">Manage</a><div>${statsLink(p, stats, tz)}</div></div></div></td>
 <td>${status}<div class="muted">last report ${esc(p.last_run ? `${ago(p.last_run)} (${when(p.last_run, tz)})` : "never")}</div>${schedule(p)}</td>
 <td><div class="muted">${crawler}</div>
 <form method="post" action="/admin/action" class="inline" style="margin-top:6px">
@@ -202,15 +203,17 @@ async function dashboard(request, env, s) {
   const url = new URL(request.url);
   const [current, invites, queued, presence] = await Promise.all([
     status(env), env.FEEDBACK.list({ prefix: "invite:", limit: 100 }), pending(env), hubPresence(env)]);
+  const stats = await Promise.all((current.profiles || []).map((p) =>
+    PROFILE_RE.test(p.id || "") ? env.FEEDBACK.get(`stats:${p.id}`, "json") : null));
   const inviteRows = (await Promise.all(invites.keys.map((k) => env.FEEDBACK.get(k.name, "json")))).filter(Boolean)
     .map((i) => `<tr><td>${esc(i.note || "No note")}</td><td class="muted">expires ${esc(when(i.expires, current.timezone))}</td>
 <td>${button(s.csrf, "revoke", "Revoke", { invite: i.id })}</td></tr>`).join("");
   const done = DONE[url.searchParams.get("done")];
-  return page("Profiles", `${nav("profiles")}${done ? note(done) : ""}
+  return page("Profiles", `<style>${LINK_STYLE}</style>${nav("profiles")}${done ? note(done) : ""}
 ${lastUpdate(current, queued, presence)}
 ${problems(current)}${checklist(current)}
 <table class="list"><tr><th>Profile</th><th>Status</th><th>Crawler</th><th></th></tr>
-${(current.profiles || []).map((p) => profileRow(p, s.csrf, current.timezone)).join("") || '<tr><td colspan="4" class="muted">HermitShell has not reported any profiles yet.</td></tr>'}</table>
+${(current.profiles || []).map((p, i) => profileRow(p, s.csrf, current.timezone, stats[i])).join("") || '<tr><td colspan="4" class="muted">HermitShell has not reported any profiles yet.</td></tr>'}</table>
 <p class="muted">The email server and web search keys everyone shares are under <a href="${SETTINGS_URL}">Global settings</a>.</p>
 <h2>Invite someone</h2>
 <form method="post" action="/admin/action" class="inline"><input type="hidden" name="csrf" value="${esc(s.csrf)}"><input type="hidden" name="action" value="invite">
@@ -296,6 +299,13 @@ export async function handleAdmin(request, env, ctx) {
     return profilePage(current, url.searchParams.get("u") || "", s.csrf,
       { done: DONE[done] || "", queue, saving: ["saved", "cvqueued", "sending"].includes(done) });
   }
+  if (path === STATS_URL && request.method === "GET") {
+    const url = new URL(request.url);
+    const u = url.searchParams.get("u") || "";
+    if (!PROFILE_RE.test(u)) return text("Not found", 404);
+    const [current, stats] = await Promise.all([status(env), env.FEEDBACK.get(`stats:${u}`, "json")]);
+    return statsPage(current, stats, u, url.searchParams.get("r"));
+  }
   if (path === STATUS_URL && request.method === "GET") {
     const url = new URL(request.url);
     const u = url.searchParams.get("u") || "";
@@ -342,6 +352,20 @@ export async function handleApi(request, env) {
       return json({ error: "invalid status" }, 400);
     }
     await env.FEEDBACK.put("status:profiles", JSON.stringify({ ...status, updated: Date.now() }));
+    return json({ saved: true });
+  }
+  // One profile's stats page numbers (profile_stats.py), or null to remove them.
+  if (url.pathname === "/api/stats" && request.method === "POST") {
+    const body = await limitedJson(request, MAX_STATS_BYTES);
+    if (body === null) return json({ error: "too large" }, 413);
+    const u = typeof body?.u === "string" ? body.u : "";
+    if (!PROFILE_RE.test(u)) return json({ error: "bad profile" }, 400);
+    if (body.stats === null) {
+      await env.FEEDBACK.delete(`stats:${u}`);
+      return json({ deleted: true });
+    }
+    if (!validStats(body.stats)) return json({ error: "invalid stats" }, 400);
+    await env.FEEDBACK.put(`stats:${u}`, JSON.stringify({ ...body.stats, updated: Date.now() }));
     return json({ saved: true });
   }
   if (url.pathname === "/api/invite" && request.method === "POST") {

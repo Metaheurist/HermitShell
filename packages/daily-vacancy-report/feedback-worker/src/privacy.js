@@ -13,7 +13,8 @@ ask for.`],
 sign-up form and can withdraw at any time with the unsubscribe link.`],
   ["Where", `Your CV and details are read on the HermitShell server, by an AI model running on that server, not a cloud
 AI service. This page, the sign-up form and the email buttons run on Cloudflare Workers, where what you send waits
-only until HermitShell collects it (at most 30 days); the operator's admin page there lists your name and email address
+only until HermitShell collects it (at most 30 days); the operator's admin page there lists your name and email address,
+and a stats page of counts (jobs found, buttons pressed, the employers and titles of jobs sent, without your notes),
 until HermitShell next reports that you have left. Job searches send job titles and a location to web search
 services, never your CV or contact details. Emails go through the operator's email provider.`],
   ["How long", `Everything is kept while you are subscribed, except that by default jobs, answers, letters and CVs

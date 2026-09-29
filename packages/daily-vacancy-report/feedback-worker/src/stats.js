@@ -1,0 +1,462 @@
+// A profile's stats page (/admin/stats): KPI tiles, charts and top lists for the last 7 days, 30 days, 90 days or
+// 12 months, drawn from the daily counts profiles.py sends (profile_stats.py; POST /api/stats, KV "stats:<id>").
+// Pages may not run scripts (see CSP), so the charts are inline SVG, the motion is CSS (off for reduced motion)
+// and hovering a bar shows its numbers through the SVG <title>.
+
+import { ago, esc, page } from "./lib.js";
+
+export const STATS_URL = "/admin/stats";
+export const MAX_STATS_BYTES = 150 * 1024;
+// Same order as FIELDS in profile_stats.py.
+export const FIELDS = ["scanned", "rated", "sent", "fit_sum", "fit_n", "strong", "runs", "interested", "good_match",
+  "not_for_me", "applied", "heard_back", "rejected", "cover_letter", "tailored_cv", "add_skill"];
+export const RANGES = { 7: "7 days", 30: "30 days", 90: "90 days", 365: "12 months" };
+export const DEFAULT_RANGE = 30;
+const DAY_MS = 86400000;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// ------------------------------------------------------------------------- what HermitShell may store
+
+export function validStats(s) {
+  if (!s || typeof s !== "object" || Array.isArray(s)) return false;
+  const days = s.days ?? {};
+  if (!days || typeof days !== "object" || Array.isArray(days)) return false;
+  const entries = Object.entries(days);
+  return entries.length <= 800 && entries.every(([k, v]) => DATE_RE.test(k) && Array.isArray(v) && v.length <= 40 &&
+    v.every((n) => typeof n === "number" && Number.isFinite(n))) &&
+    (s.ranges == null || (typeof s.ranges === "object" && !Array.isArray(s.ranges))) &&
+    (s.pipeline == null || (typeof s.pipeline === "object" && !Array.isArray(s.pipeline)));
+}
+
+// ------------------------------------------------------------------------- numbers
+
+const num = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
+const isoOf = (ms) => new Date(ms).toISOString().slice(0, 10);
+const msOf = (iso) => Date.parse(`${iso}T00:00:00Z`);
+const shortDay = (iso) => `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`;
+const weekday = (iso) => WEEKDAYS[new Date(msOf(iso)).getUTCDay()];
+
+export function zonedToday(timeZone, now = Date.now()) {
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: timeZone || "UTC", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  } catch {
+    return isoOf(now);
+  }
+}
+
+function dayList(end, count) {
+  const last = msOf(end);
+  return Array.from({ length: count }, (_, i) => isoOf(last - (count - 1 - i) * DAY_MS));
+}
+
+// The days of a range, split into chart bars (days; weeks for 90 days; calendar months for 12 months), and the
+// same number of days before it for the change arrows (none for 12 months: older data is pruned after a year).
+export function windowFor(range, today) {
+  if (range === 365) {
+    const [y, m] = today.split("-").map(Number);
+    const months = Array.from({ length: 12 }, (_, i) => isoOf(Date.UTC(y, m - 12 + i, 1)).slice(0, 7));
+    const days = dayList(today, Math.round((msOf(today) - msOf(`${months[0]}-01`)) / DAY_MS) + 1);
+    return { days, previous: null, buckets: months.map((mo) => ({ label: MONTHS[Number(mo.slice(5)) - 1], name: `${MONTHS[Number(mo.slice(5)) - 1]} ${mo.slice(0, 4)}`, days: days.filter((d) => d.startsWith(mo)) })) };
+  }
+  const size = range === 90 ? 7 : 1;
+  const days = dayList(today, range === 90 ? 91 : range);
+  const buckets = [];
+  for (let i = 0; i < days.length; i += size) {
+    const part = days.slice(i, i + size);
+    const n = buckets.length;
+    const label = range === 7 ? weekday(part[0]) : range === 30 ? (n % 5 === 0 || i === days.length - 1 ? String(Number(part[0].slice(8))) : "")
+      : n % 3 === 0 ? shortDay(part[0]) : "";
+    buckets.push({ label, name: size === 1 ? `${weekday(part[0])} ${shortDay(part[0])}` : `Week of ${shortDay(part[0])}`, days: part });
+  }
+  return { days, buckets, previous: dayList(isoOf(msOf(days[0]) - DAY_MS), days.length) };
+}
+
+export function totals(stats, days) {
+  const t = Object.fromEntries(FIELDS.map((f) => [f, 0]));
+  for (const d of days) {
+    const row = stats?.days?.[d];
+    if (Array.isArray(row)) FIELDS.forEach((f, i) => { t[f] += num(row[i]); });
+  }
+  t.liked = t.interested + t.good_match;
+  t.letters = t.cover_letter + t.tailored_cv;
+  t.fit = t.fit_n ? t.fit_sum / t.fit_n : 0;
+  return t;
+}
+
+function compact(n) {
+  if (n >= 10000) return `${Math.round(n / 1000)}k`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+  return String(Math.round(n));
+}
+
+// ------------------------------------------------------------------------- icons (24x24, animated by CSS)
+
+const ICONS = {
+  radar: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5" stroke-dasharray="2 2" opacity=".6"/><g class="spin"><path d="M12 12L12 3A9 9 0 0 1 19.8 7.5z" fill="currentColor" opacity=".3" stroke="none"/><path d="M12 12L19.8 7.5"/></g><circle cx="8" cy="15" r="1.3" fill="currentColor" stroke="none" class="ping"/>',
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.6" fill="currentColor" class="ping"/>',
+  mail: '<g class="bob"><rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M3.5 7l8.5 6 8.5-6"/></g>',
+  heart: '<path class="beat" d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20z" fill="currentColor" fill-opacity=".18"/>',
+  plane: '<g class="float"><path d="M21 3L3 10.5l7 2.5 2.5 7z" fill="currentColor" fill-opacity=".15"/><path d="M21 3l-11 10"/></g>',
+  chat: '<path d="M5 4.5h14a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-8.5L6 20.5V17H5a2 2 0 0 1-2-2V6.5a2 2 0 0 1 2-2z"/><circle class="dot" cx="8.5" cy="10.8" r="1.1" fill="currentColor" stroke="none"/><circle class="dot" cx="12" cy="10.8" r="1.1" fill="currentColor" stroke="none"/><circle class="dot" cx="15.5" cy="10.8" r="1.1" fill="currentColor" stroke="none"/>',
+  doc: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path class="write" pathLength="1" d="M10 12.5h6M10 15.5h6M10 18.5h3.5"/>',
+  star: '<path class="beat" d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z" fill="currentColor" fill-opacity=".18"/>',
+  chart: '<path d="M4 20h16"/><rect class="grow" x="5.5" y="11" width="3" height="7" rx="1"/><rect class="grow g2" x="10.5" y="6" width="3" height="12" rx="1"/><rect class="grow g3" x="15.5" y="9" width="3" height="9" rx="1"/>',
+  bolt: '<path class="beat" d="M13 2.5L5 13.5h6l-1 8 8-11h-6z" fill="currentColor" fill-opacity=".18"/>',
+  coin: '<circle cx="12" cy="12" r="8.5"/><path d="M14.5 8.8c-.6-.8-1.5-1.2-2.6-1.2-1.6 0-2.7.8-2.7 2 0 2.8 5.7 1.6 5.7 4.6 0 1.3-1.2 2.2-2.9 2.2-1.2 0-2.2-.5-2.8-1.3M12 6v1.6M12 16.4V18"/>',
+};
+
+export function icon(name, cls = "") {
+  return `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
+}
+
+// ------------------------------------------------------------------------- small charts
+
+export function sparkline(values, { width = 120, height = 34, cls = "spark" } = {}) {
+  const max = Math.max(...values, 0);
+  if (!values.length) return "";
+  const step = values.length > 1 ? width / (values.length - 1) : width;
+  const y = (v) => (max ? height - 3 - (v / max) * (height - 8) : height - 3).toFixed(1);
+  const points = values.map((v, i) => `${(i * step).toFixed(1)},${y(v)}`);
+  if (values.length === 1) points.push(`${width},${y(values[0])}`);
+  return `<svg class="${cls}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
+<path class="area" d="M0,${height} L${points.join(" L")} L${width},${height} Z"/><path class="line" pathLength="1" d="M${points.join(" L")}"/></svg>`;
+}
+
+function delta(now, before) {
+  if (before === null) return "";
+  if (!before && !now) return '<span class="delta flat">&ndash;</span>';
+  if (!before) return '<span class="delta up">new</span>';
+  const pct = Math.round(((now - before) / before) * 100);
+  if (pct === 0) return '<span class="delta flat">0%</span>';
+  return `<span class="delta ${pct > 0 ? "up" : "down"}" title="Compared with the period before">${pct > 0 ? "&#9650;" : "&#9660;"} ${Math.abs(pct)}%</span>`;
+}
+
+function ring(value, max, { size = 44, color = "currentColor", label = "" } = {}) {
+  const pct = max ? Math.min(100, (value / max) * 100) : 0;
+  return `<svg class="ring" viewBox="0 0 36 36" width="${size}" height="${size}" aria-hidden="true">
+<circle cx="18" cy="18" r="15.915" fill="none" stroke="#eceef6" stroke-width="3.5"/>
+<circle class="arc" cx="18" cy="18" r="15.915" fill="none" stroke="${color}" stroke-width="3.5" stroke-linecap="round"
+ stroke-dasharray="${pct.toFixed(1)} 100" stroke-dashoffset="25"/>${label ? `<text x="18" y="21.5" text-anchor="middle">${esc(label)}</text>` : ""}</svg>`;
+}
+
+// ------------------------------------------------------------------------- the page's sections
+
+const TILES = [
+  ["scanned", "Scanned", "radar", "indigo", "Postings the job boards and searches returned"],
+  ["rated", "Rated", "target", "violet", "Jobs HermitShell read and scored against the CV"],
+  ["sent", "Sent", "mail", "blue", "Jobs in the reports"],
+  ["fit", "Avg match", "star", "amber", "Average score of the jobs sent, out of 10"],
+  ["liked", "Liked", "heart", "rose", "Interested or Good match presses"],
+  ["applied", "Applied", "plane", "green", "I applied presses"],
+  ["heard_back", "Heard back", "chat", "sky", "Heard back presses"],
+  ["letters", "Letters & CVs", "doc", "orange", "Cover letters and tailored CVs asked for"],
+];
+
+function bucketValue(stats, bucket, key) {
+  const t = totals(stats, bucket.days);
+  return key === "fit" ? t.fit : t[key];
+}
+
+function tiles(stats, win, now, before) {
+  return `<div class="kpis">${TILES.map(([key, label, ico, color, hint], i) => {
+    const value = now[key];
+    const shown = key === "fit" ? (now.fit_n ? `${value.toFixed(1)}<small>/10</small>` : "&ndash;") : compact(value);
+    const change = before ? delta(value, key === "fit" && !before.fit_n ? null : before[key]) : "";
+    return `<div class="kpi k-${color}" style="animation-delay:${i * 45}ms" title="${esc(hint)}">
+<div class="kpi-top"><span class="ico">${icon(ico)}</span>${change}</div>
+<div class="kpi-num">${shown}</div><div class="kpi-label">${esc(label)}</div>
+${sparkline(win.buckets.map((b) => bucketValue(stats, b, key)))}</div>`;
+  }).join("")}</div>`;
+}
+
+function chips(stats, win, now, range, currency) {
+  const best = win.buckets.map((b) => ({ b, t: totals(stats, b.days) })).filter((x) => x.t.sent)
+    .sort((a, b) => b.t.sent - a.t.sent)[0];
+  const salary = num(stats.ranges?.[range]?.salary);
+  const items = [
+    ["bolt", `<b>${compact(now.strong)}</b> strong matches (8+)`],
+    ["radar", `<b>${compact(now.runs)}</b> scan${now.runs === 1 ? "" : "s"}`],
+    best ? ["chart", `Best ${range === 365 ? "month" : range === 90 ? "week" : "day"} <b>${esc(best.b.name)}</b> (${compact(best.t.sent)} sent)`] : null,
+    salary ? ["coin", `Median salary <b>${esc(currency || "")}${compact(salary)}</b>`] : null,
+    now.not_for_me ? ["target", `<b>${compact(now.not_for_me)}</b> not for me`] : null,
+  ].filter(Boolean);
+  return `<div class="chips">${items.map(([ico, html], i) => `<span class="chip" style="animation-delay:${300 + i * 60}ms">${icon(ico)}${html}</span>`).join("")}</div>`;
+}
+
+function activity(stats, win) {
+  const W = 720, H = 210, left = 34, bottom = 24, top = 10;
+  const rows = win.buckets.map((b) => ({ b, t: totals(stats, b.days) }));
+  const max = Math.max(1, ...rows.map((r) => r.t.rated), ...rows.map((r) => r.t.sent));
+  const slot = (W - left) / rows.length;
+  const bw = Math.min(26, slot * 0.64);
+  const y = (v) => top + (H - top - bottom) * (1 - v / max);
+  const ticks = [0, 0.5, 1].map((f) => Math.round(max * f));
+  const grid = [...new Set(ticks)].map((v) => `<line x1="${left}" x2="${W}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="gridline"/>
+<text x="${left - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" class="axis">${compact(v)}</text>`).join("");
+  const bars = rows.map(({ b, t }, i) => {
+    const x = left + i * slot + (slot - bw) / 2;
+    const delay = `style="animation-delay:${Math.round(i * (600 / rows.length))}ms"`;
+    const applied = t.applied ? `<circle cx="${(x + bw / 2).toFixed(1)}" cy="${(y(Math.max(t.rated, t.sent)) - 9).toFixed(1)}" r="${t.applied > 1 ? 7 : 4.5}" class="applied" ${delay}/>${t.applied > 1 ? `<text x="${(x + bw / 2).toFixed(1)}" y="${(y(Math.max(t.rated, t.sent)) - 5.8).toFixed(1)}" text-anchor="middle" class="count">${t.applied}</text>` : ""}` : "";
+    return `<g><title>${esc(b.name)}: ${t.rated} rated, ${t.sent} sent, ${t.liked} liked, ${t.applied} applied</title>
+<rect x="${x.toFixed(1)}" y="${top}" width="${bw.toFixed(1)}" height="${H - top - bottom}" class="hover"/>
+<rect x="${x.toFixed(1)}" y="${y(t.rated).toFixed(1)}" width="${bw.toFixed(1)}" height="${(H - bottom - y(t.rated)).toFixed(1)}" rx="4" class="bar rated" ${delay}/>
+<rect x="${(x + bw * 0.18).toFixed(1)}" y="${y(t.sent).toFixed(1)}" width="${(bw * 0.64).toFixed(1)}" height="${(H - bottom - y(t.sent)).toFixed(1)}" rx="3" class="bar sent" ${delay}/>
+${applied}${b.label ? `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle" class="axis">${esc(b.label)}</text>` : ""}</g>`;
+  }).join("");
+  const empty = rows.every((r) => !r.t.rated && !r.t.sent) ? `<text x="${(W + left) / 2}" y="${H / 2}" text-anchor="middle" class="empty">Nothing in this period yet</text>` : "";
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Jobs rated, sent and applied for over time">
+<defs><linearGradient id="g-sent" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
+${grid}${bars}${empty}</svg>`;
+}
+
+function funnel(now) {
+  const steps = [["Scanned", now.scanned, "indigo"], ["Rated", now.rated, "violet"], ["Sent", now.sent, "blue"],
+    ["Liked", now.liked, "rose"], ["Applied", now.applied, "green"], ["Heard back", now.heard_back, "sky"]];
+  const max = Math.max(1, ...steps.map((s) => s[1]));
+  return `<div class="funnel">${steps.map(([label, value, color], i) => {
+    const width = value ? Math.max(6, Math.sqrt(value / max) * 100) : 0;
+    const prev = i ? steps[i - 1][1] : 0;
+    const conv = i && prev ? `<span class="conv">${Math.round((value / prev) * 100)}%</span>` : i ? '<span class="conv">&ndash;</span>' : "";
+    return `<div class="step k-${color}"><span class="step-label">${label}</span><span class="track"><span class="fillbar" style="width:${width.toFixed(1)}%;animation-delay:${i * 90}ms"></span></span><b>${compact(value)}</b>${conv}</div>`;
+  }).join("")}</div>`;
+}
+
+const ANSWERS = [["interested", "Interested", "#6366f1"], ["good_match", "Good match", "#f59e0b"], ["applied", "Applied", "#10b981"],
+  ["heard_back", "Heard back", "#0ea5e9"], ["rejected", "Rejected", "#94a3b8"], ["not_for_me", "Not for me", "#f43f5e"]];
+
+function donut(now) {
+  const parts = ANSWERS.map(([k, label, color]) => [label, now[k], color]).filter((p) => p[1]);
+  const total = parts.reduce((s, p) => s + p[1], 0);
+  let offset = 25;
+  const arcs = parts.map(([label, value, color], i) => {
+    const pct = (value / total) * 100;
+    const arc = `<circle class="arc" cx="21" cy="21" r="15.915" fill="none" stroke="${color}" stroke-width="5.5" stroke-dasharray="${Math.max(0, pct - 0.8).toFixed(2)} ${(100 - Math.max(0, pct - 0.8)).toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}" style="animation-delay:${i * 120}ms"><title>${esc(label)}: ${value}</title></circle>`;
+    offset -= pct;
+    return arc;
+  }).join("");
+  const legend = parts.length ? parts.map(([label, value, color]) => `<li><span class="sw" style="background:${color}"></span>${esc(label)}<b>${compact(value)}</b></li>`).join("")
+    : '<li class="muted">No button presses in this period</li>';
+  return `<div class="donut"><svg viewBox="0 0 42 42" role="img" aria-label="Answers given with the report buttons">
+<circle cx="21" cy="21" r="15.915" fill="none" stroke="#eceef6" stroke-width="5.5"/>${arcs}
+<text x="21" y="22" text-anchor="middle" class="big">${compact(total)}</text><text x="21" y="27.5" text-anchor="middle" class="small">answers</text></svg>
+<ul class="legend">${legend}</ul></div>`;
+}
+
+function histogram(fit) {
+  const counts = Array.from({ length: 11 }, (_, i) => num(fit?.[i]));
+  const W = 330, H = 150, bottom = 20, max = Math.max(1, ...counts);
+  const slot = W / 11;
+  const color = (i) => (i >= 8 ? "#10b981" : i >= 7 ? "#84cc16" : i >= 5 ? "#f59e0b" : "#cbd5e1");
+  const bars = counts.map((c, i) => {
+    const h = ((H - bottom - 8) * c) / max;
+    return `<g><title>Score ${i}: ${c} job${c === 1 ? "" : "s"}</title><rect x="${(i * slot + 3).toFixed(1)}" y="${(H - bottom - h).toFixed(1)}" width="${(slot - 6).toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${color(i)}" class="bar" style="animation-delay:${i * 50}ms"/>
+<text x="${(i * slot + slot / 2).toFixed(1)}" y="${H - 5}" text-anchor="middle" class="axis">${i}</text></g>`;
+  }).join("");
+  const empty = counts.every((c) => !c) ? `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" class="empty">No jobs rated yet</text>` : "";
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="How well the jobs rated matched, from 0 to 10">${bars}${empty}</svg>`;
+}
+
+function pipeline(p) {
+  const items = [["applied", "Waiting", "plane", "green"], ["heard_back", "Heard back", "chat", "sky"],
+    ["rejected", "Rejected", "target", "slate"], ["interested", "Interested", "heart", "rose"]];
+  const applications = num(p?.applied) + num(p?.heard_back) + num(p?.rejected);
+  const replies = num(p?.heard_back) + num(p?.rejected);
+  const rate = applications ? Math.round((replies / applications) * 100) : 0;
+  return `<div class="pipe"><div class="rate">${ring(replies, applications, { size: 92, color: "#0ea5e9", label: applications ? `${rate}%` : "–" })}
+<span class="muted">reply rate</span></div><div class="bubbles">${items.map(([k, label, ico, color]) =>
+    `<div class="bubble k-${color}"><span class="ico">${icon(ico)}</span><b>${compact(num(p?.[k]))}</b><span>${label}</span></div>`).join("")}</div></div>`;
+}
+
+function topList(pairs, color) {
+  const rows = (Array.isArray(pairs) ? pairs : []).filter((p) => Array.isArray(p) && p[0]).slice(0, 5);
+  if (!rows.length) return '<p class="muted">Nothing sent in this period yet.</p>';
+  const max = Math.max(1, ...rows.map((p) => num(p[1])));
+  return `<ul class="toplist k-${color}">${rows.map(([name, n], i) => `<li><span class="name" title="${esc(name)}">${esc(String(name).slice(0, 60))}</span>
+<span class="track"><span class="fillbar" style="width:${Math.max(4, (num(n) / max) * 100).toFixed(1)}%;animation-delay:${i * 70}ms"></span></span><b>${compact(num(n))}</b></li>`).join("")}</ul>`;
+}
+
+function modes(pairs) {
+  const rows = (Array.isArray(pairs) ? pairs : []).filter((p) => Array.isArray(p) && p[0] && num(p[1]));
+  const total = rows.reduce((s, p) => s + num(p[1]), 0);
+  if (!total) return "";
+  const colors = ["#6366f1", "#10b981", "#f59e0b", "#94a3b8"];
+  return `<div class="stack">${rows.map(([name, n], i) => `<span style="flex:${num(n)};background:${colors[i % 4]}" title="${esc(name)}: ${num(n)}"></span>`).join("")}</div>
+<ul class="legend row">${rows.map(([name, n], i) => `<li><span class="sw" style="background:${colors[i % 4]}"></span>${esc(String(name).slice(0, 20))}<b>${Math.round((num(n) / total) * 100)}%</b></li>`).join("")}</ul>`;
+}
+
+function bestMatches(best) {
+  const rows = (Array.isArray(best) ? best : []).filter((b) => b && b.title).slice(0, 3);
+  if (!rows.length) return '<p class="muted">No jobs sent in this period yet.</p>';
+  return `<ul class="best">${rows.map((b, i) => {
+    const fit = Math.min(10, num(b.fit));
+    const color = fit >= 8 ? "#10b981" : fit >= 7 ? "#84cc16" : "#f59e0b";
+    return `<li style="animation-delay:${i * 80}ms">${ring(fit, 10, { size: 42, color, label: String(fit) })}<div><b>${esc(String(b.title).slice(0, 90))}</b>
+<span class="muted">${esc(String(b.employer || "").slice(0, 60))}${DATE_RE.test(b.day || "") ? ` &middot; ${shortDay(b.day)}` : ""}</span></div></li>`;
+  }).join("")}</ul>`;
+}
+
+function card(title, ico, body, cls = "") {
+  return `<section class="card ${cls}"><h3>${icon(ico)}${esc(title)}</h3>${body}</section>`;
+}
+
+function rangeTabs(pid, range) {
+  return `<nav class="tabs" aria-label="Time range">${Object.entries(RANGES).map(([r, label]) =>
+    `<a href="${STATS_URL}?u=${esc(pid)}&amp;r=${r}"${Number(r) === range ? ' class="on" aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
+}
+
+// The dashboard row's link: this week's jobs sent as a sparkline and a number.
+export function statsLink(p, stats, timeZone) {
+  const href = `${STATS_URL}?u=${esc(p.id)}`;
+  if (!stats) return `<a class="statlink" href="${href}">${icon("chart")}Stats</a>`;
+  const days = dayList(zonedToday(timeZone), 7);
+  const week = totals(stats, days);
+  return `<a class="statlink" href="${href}" title="Stats. The line: jobs sent each day this week">${sparkline(days.map((d) => totals(stats, [d]).sent), { width: 56, height: 20, cls: "mini" })}<b>${compact(week.sent)}</b> sent</a>`;
+}
+
+export function statsPage(status, stats, pid, rangeParam) {
+  const p = (status.profiles || []).find((x) => x.id === pid);
+  const back = { wide: true, before: '<a class="back" href="/admin">&larr; Back to profiles</a>' };
+  if (!p) return page("Profile not found", '<p>HermitShell has not reported this profile. <a href="/admin">Back to profiles</a></p>', { status: 404 });
+  const range = RANGES[rangeParam] ? Number(rangeParam) : DEFAULT_RANGE;
+  const heading = p.owner ? "Your stats" : `${p.name || "Profile"}: stats`;
+  const manage = `<a class="small" href="/admin/profile?u=${esc(pid)}">Manage profile</a>`;
+  if (!stats) {
+    return page(heading, `<style>${STYLE}</style>${rangeTabs(pid, range)}
+<div class="nostats">${icon("radar", "hero")}<p><b>No stats yet.</b> HermitShell sends them within a few minutes of its next check-in, and after every report.</p>${manage}</div>`, back);
+  }
+  const today = zonedToday(status.timezone);
+  const win = windowFor(range, today);
+  const now = totals(stats, win.days);
+  const covered = win.previous && DATE_RE.test(stats.since || "") && stats.since <= win.previous[0];
+  const before = covered ? totals(stats, win.previous) : null;
+  const r = stats.ranges?.[String(range)] || {};
+  const updated = stats.updated ? `Updated ${esc(ago(stats.updated))}` : "";
+  return page(heading, `<style>${STYLE}</style>
+<div class="statbar">${rangeTabs(pid, range)}<span class="muted">${updated}${updated ? " &middot; " : ""}${manage}</span></div>
+${tiles(stats, win, now, before)}${chips(stats, win, now, String(range), p.job?.currency)}
+${card("Activity", "chart", `<div class="legend row key"><span><i class="sw" style="background:#e0e7ff"></i>Rated</span><span><i class="sw" style="background:#6366f1"></i>Sent</span><span><i class="sw round" style="background:#10b981"></i>Applied</span></div>${activity(stats, win)}`, "wide")}
+<div class="cards">
+${card("Funnel", "bolt", funnel(now))}
+${card("Answers", "heart", donut(now))}
+${card("Match scores", "star", histogram(r.fit))}
+${card("Where applications stand", "plane", pipeline(stats.pipeline))}
+${card("Top employers", "target", topList(r.employers, "violet"))}
+${card("Top sources", "radar", `${topList(r.sources, "blue")}${modes(r.modes)}`)}
+</div>
+${card("Best matches sent", "star", bestMatches(r.best), "wide")}`, back);
+}
+
+// ------------------------------------------------------------------------- look and motion
+
+const STYLE = `
+.statbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+.statbar nav.tabs{margin:6px 0 10px}
+.k-indigo{--c:#6366f1;--cb:#eef0ff}.k-violet{--c:#8b5cf6;--cb:#f3efff}.k-blue{--c:#2563eb;--cb:#e8f0ff}
+.k-amber{--c:#d97706;--cb:#fff4de}.k-rose{--c:#e11d48;--cb:#ffecf1}.k-green{--c:#059669;--cb:#e6f8f0}
+.k-sky{--c:#0284c7;--cb:#e4f5fd}.k-orange{--c:#ea580c;--cb:#ffefe4}.k-slate{--c:#64748b;--cb:#eceff5}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:4px 0 14px}
+.kpi{position:relative;overflow:hidden;background:#fff;border:1px solid var(--line);border-radius:18px;padding:14px 14px 0;
+animation:rise .5s var(--ease) both;transition:transform .2s var(--ease),box-shadow .2s}
+.kpi:hover{transform:translateY(-3px);box-shadow:0 16px 30px -18px rgba(30,27,75,.4)}
+.kpi-top{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.ico{flex:none;width:36px;height:36px;border-radius:12px;display:grid;place-items:center;color:var(--c);background:var(--cb)}
+.ico svg{width:21px;height:21px;overflow:visible}
+.kpi-num{font-size:32px;font-weight:800;letter-spacing:-.035em;line-height:1.05;margin-top:12px;color:var(--ink)}
+.kpi-num small{font-size:14px;color:var(--muted);font-weight:650;letter-spacing:0;margin-left:2px}
+.kpi-label{font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;margin-top:3px}
+svg.spark{display:block;width:calc(100% + 28px);height:36px;margin:8px -14px 0}
+svg.spark .line,svg.mini .line{fill:none;stroke:var(--c,#6366f1);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;
+stroke-dasharray:1;animation:draw 1.4s var(--ease) both .25s}
+svg.spark .area{fill:var(--cb);animation:fade 1s ease both .6s}svg.mini .area{fill:#eef0ff}
+.delta{font-size:11.5px;font-weight:750;border-radius:99px;padding:2px 8px;white-space:nowrap}
+.delta.up{background:var(--ok-bg);color:#047857}.delta.down{background:var(--bad-bg);color:#b91c1c}.delta.flat{background:#f1f5f9;color:var(--muted)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
+.chip{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:99px;background:#fff;border:1px solid var(--line);
+font-size:13px;color:var(--text);animation:rise .45s var(--ease) both}
+.chip svg{width:16px;height:16px;color:var(--brand)}.chip b{color:var(--ink)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px;margin:14px 0}
+.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px 18px;animation:rise .55s var(--ease) both .1s;min-width:0}
+.card.wide{margin:14px 0}
+.card h3{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:750}
+.card h3 svg{width:17px;height:17px;color:var(--brand)}
+svg.chart{display:block;width:100%;height:auto;overflow:visible}
+.chart .gridline{stroke:#eef0f5;stroke-width:1}.chart .axis{font-size:11px;fill:#94a3b8}
+.chart .empty{font-size:14px;fill:#94a3b8;font-weight:600}
+.chart .hover{fill:transparent}.chart g:hover .hover{fill:#f5f6ff}
+.chart .bar{transform-box:fill-box;transform-origin:50% 100%;animation:grow .8s var(--ease) both}
+.chart .rated{fill:#e0e7ff}.chart .sent{fill:url(#g-sent)}
+.chart .applied{fill:#10b981;stroke:#fff;stroke-width:2;transform-box:fill-box;transform-origin:center;animation:pop .5s var(--ease) both .6s}
+.chart .count{font-size:9px;font-weight:800;fill:#fff}
+.legend{list-style:none;padding:0;margin:0;display:grid;gap:7px;font-size:13px;color:var(--text)}
+.legend li{display:flex;align-items:center;gap:8px}.legend b{margin-left:auto;color:var(--ink)}
+.legend.row{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px}.legend.row b{margin-left:4px}
+.legend.key{margin:0 0 8px;font-size:12.5px;color:var(--muted)}.legend.key span{display:inline-flex;align-items:center;gap:6px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;flex:none}.sw.round{border-radius:50%}
+.funnel{display:grid;gap:9px}
+.step{display:grid;grid-template-columns:82px 1fr 44px 40px;align-items:center;gap:8px;font-size:13px}
+.step-label{color:var(--text);font-weight:600}.step b{text-align:right;color:var(--ink);font-size:15px}
+.track{display:block;height:12px;border-radius:99px;background:#f1f3f9;overflow:hidden}
+.fillbar{display:block;height:100%;border-radius:inherit;background:var(--c);background:linear-gradient(90deg,var(--c),color-mix(in srgb,var(--c) 60%,#fff));
+transform-origin:left;animation:growx .9s var(--ease) both}
+.conv{font-size:11px;font-weight:700;color:var(--muted);text-align:right}
+.donut{display:grid;grid-template-columns:130px 1fr;gap:16px;align-items:center}
+.donut svg{width:130px;height:130px}.donut .big{font-size:9px;font-weight:800;fill:var(--ink)}.donut .small{font-size:3.6px;fill:#94a3b8;font-weight:600}
+.arc{animation:arc 1.1s var(--ease) both .2s}
+.ring text{font-size:9px;font-weight:800;fill:var(--ink)}
+.pipe{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center}
+.rate{display:grid;justify-items:center;gap:2px}
+.bubbles{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.bubble{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:9px;align-items:center;padding:8px 10px;
+border-radius:14px;background:var(--cb)}
+.bubble .ico{grid-row:span 2;width:30px;height:30px;background:#fff}.bubble .ico svg{width:17px;height:17px}
+.bubble b{font-size:19px;line-height:1.1;color:var(--ink)}.bubble span:last-child{font-size:11.5px;color:var(--muted);font-weight:650}
+.toplist{list-style:none;padding:0;margin:0;display:grid;gap:9px}
+.toplist li{display:grid;grid-template-columns:minmax(0,1.3fr) 1fr 30px;gap:10px;align-items:center;font-size:13px}
+.toplist .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);font-weight:600}.toplist b{text-align:right}
+.stack{display:flex;height:12px;border-radius:99px;overflow:hidden;gap:2px;margin-top:16px;animation:growx .9s var(--ease) both .3s;transform-origin:left}
+.best{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+.best li{display:flex;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:14px;animation:rise .45s var(--ease) both}
+.best li div{min-width:0;display:grid}.best b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.best .muted{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.best svg{flex:none}
+.nostats{display:grid;justify-items:center;text-align:center;gap:6px;padding:30px 10px}
+.nostats svg.hero{width:84px;height:84px;color:var(--brand)}
+.ico .spin,.hero .spin{transform-box:view-box;transform-origin:12px 12px;animation:spin 3.2s linear infinite}
+.ico .ping,.hero .ping{transform-box:fill-box;transform-origin:center;animation:ping 2s ease-out infinite}
+.ico .beat{transform-box:fill-box;transform-origin:center;animation:heart 1.8s ease-in-out infinite}
+.ico .float{animation:float 2.8s ease-in-out infinite}.ico .bob{animation:bob 2.4s ease-in-out infinite}
+.ico .dot{animation:blink .9s ease-in-out infinite alternate}.ico .dot:nth-of-type(2){animation-delay:.3s}.ico .dot:nth-of-type(3){animation-delay:.6s}
+.ico .write{stroke-dasharray:1;animation:draw 2.4s ease-in-out infinite alternate}
+svg .grow{transform-box:fill-box;transform-origin:50% 100%;animation:grow 1.6s var(--ease) infinite alternate}
+svg .g2{animation-delay:.25s}svg .g3{animation-delay:.5s}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes ping{0%{transform:scale(.7);opacity:1}100%{transform:scale(1.7);opacity:.2}}
+@keyframes heart{0%,100%{transform:scale(1)}14%{transform:scale(1.16)}28%{transform:scale(1)}42%{transform:scale(1.08)}}
+@keyframes float{50%{transform:translate(1.5px,-1.5px)}}
+@keyframes bob{50%{transform:translateY(-1.5px)}}
+@keyframes draw{from{stroke-dashoffset:1}}
+@keyframes grow{from{transform:scaleY(0)}}
+@keyframes growx{from{transform:scaleX(0)}}
+@keyframes fade{from{opacity:0}}
+@keyframes pop{from{transform:scale(0)}}
+@keyframes arc{from{stroke-dasharray:0 100}}
+@media (max-width:760px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.donut{grid-template-columns:1fr;justify-items:center}}
+`;
+
+// The dashboard's Stats links; added to the shared page style.
+export const LINK_STYLE = `
+a.statlink{display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:4px 10px 4px 6px;border-radius:10px;background:var(--soft);white-space:nowrap;
+color:var(--brand-ink);font-size:12.5px;font-weight:650;text-decoration:none;transition:transform .15s var(--ease),background .15s}
+a.statlink:hover{background:#e2e5ff;transform:translateY(-1px)}
+a.statlink svg{width:18px;height:18px}a.statlink svg.mini{width:56px;height:20px}
+a.statlink .line{fill:none;stroke:#6366f1;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;
+animation:draw 1.4s var(--ease) both .25s}
+a.statlink .area{fill:#dfe3ff}
+a.statlink .grow{transform-box:fill-box;transform-origin:50% 100%;animation:grow 1.6s var(--ease) infinite alternate}
+a.statlink .g2{animation-delay:.25s}a.statlink .g3{animation-delay:.5s}
+@keyframes draw{from{stroke-dashoffset:1}}@keyframes grow{from{transform:scaleY(0)}}
+`;

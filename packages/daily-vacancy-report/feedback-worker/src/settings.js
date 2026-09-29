@@ -6,6 +6,7 @@
 import { COUNTRIES, countryCode } from "./countries.js";
 import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem } from "./join.js";
 import { CSP, SECURITY_HEADERS, ago, esc, limitedForm, newId, note, page, redirect, safeEqual, when } from "./lib.js";
+import { LINK_STYLE, STATS_URL, icon } from "./stats.js";
 
 export const LEVELS = ["junior", "mid", "senior", "lead", "any"];
 export const EMPLOYMENT_TYPES = ["Permanent", "Contract", "Temporary", "Part-time", "Internship"];
@@ -340,7 +341,8 @@ export function profilePage(status, pid, csrf,
   const latest = latestValues(p, queue);
   const v = draft || latest;
   const message = error ? note(error, "bad") : done ? note(done) : "";
-  return page(p.owner ? "Your profile" : p.name, `${nav("profiles")}
+  return page(p.owner ? "Your profile" : p.name, `<style>${LINK_STYLE}</style>${nav("profiles")}
+<p><a class="statlink" href="${STATS_URL}?u=${esc(pid)}">${icon("chart")}${p.owner ? "Your stats" : "View stats"}</a></p>
 ${message}<iframe class="saving" src="${STATUS_URL}?u=${esc(pid)}${saving ? "&amp;n=1" : ""}" title="Save status"></iframe>
 ${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
 <form method="post" action="/admin/action">${hidden({ csrf, action: "profile", u: pid, base: JSON.stringify(base || latest) })}
