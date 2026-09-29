@@ -140,7 +140,7 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
-      IMAGE: ghcr.io/${{ github.repository_owner }}/hermitshell
+      OWNER: ${{ github.repository_owner }}
       DIGEST: ${{ needs.image.outputs.digest }}
       REF_TYPE: ${{ github.ref_type }}
       REF_NAME: ${{ github.ref_name }}
@@ -150,6 +150,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$DIGEST" in sha256:*) ;; *) echo "no image digest from the build"; exit 1 ;; esac
+          IMAGE=ghcr.io/$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')/hermitshell
           if [ "$REF_TYPE" = tag ]; then name=${REF_NAME#v}; else name=$(git rev-parse --short=7 HEAD); fi
           case "$name" in *[!A-Za-z0-9._-]*) echo "unexpected release name"; exit 1 ;; esac
           command -v skopeo >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq skopeo; }
@@ -161,7 +162,7 @@ jobs:
           done
           cp docker-compose.yml dist/
           (cd dist && sha256sum -- * > SHA256SUMS)
-          echo "NAME=$name" >> "$GITHUB_ENV"
+          printf 'NAME=%s\nIMAGE=%s\n' "$name" "$IMAGE" >> "$GITHUB_ENV"
       - name: Release notes
         run: |
           set -euo pipefail
