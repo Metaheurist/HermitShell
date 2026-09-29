@@ -2,7 +2,7 @@
 // jobs sent and the email button's confirmation page.
 import { describe, expect, it } from "vitest";
 import worker, { sign } from "../src/index.js";
-import { jobHash } from "../src/docs.js";
+import { DOC_STYLE, jobHash } from "../src/docs.js";
 import { today } from "../src/lib.js";
 import { BASE, keysWith, testEnv, valuesWith } from "./helpers.js";
 
@@ -93,6 +93,11 @@ describe("letters and CVs from HermitShell", () => {
 });
 
 describe("asking for a letter or CV from the dashboard", () => {
+  it("keeps the loading circle round: the rule that stretches a document's text does not reach it", () => {
+    expect(DOC_STYLE).toMatch(/\.dspin\{flex:none;width:22px;height:22px/);
+    expect(DOC_STYLE).not.toMatch(/\.doc span\{[^}]*flex:1/);
+  });
+
   it("stores the request as an email button would, kept for download rather than emailed, and opens the job again", async () => {
     const { env, ask, get } = await setup();
     const res = await ask({});

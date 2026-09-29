@@ -192,7 +192,7 @@ export const DOC_STYLE = `
 flex:1 1 250px;min-width:0;transition:border-color .15s,box-shadow .15s}
 .doc:hover{border-color:#c7cbf5;box-shadow:0 10px 22px -18px rgba(30,27,75,.5)}
 .doc>svg{flex:none;width:30px;height:30px;padding:6px;border-radius:10px;background:var(--soft);color:var(--brand-ink)}
-.doc span{display:grid;min-width:0;flex:1}.doc span b{font-size:13.5px}.doc small{font-size:12px;color:var(--muted)}
+.doc span:not(.dspin){display:grid;min-width:0;flex:1}.doc span b{font-size:13.5px}.doc small{font-size:12px;color:var(--muted)}
 .doc form{margin:0}.doc button{margin:0;white-space:nowrap}
 .doc.ready>svg{background:var(--ok-bg);color:#047857}
 .doc a.dl{display:inline-flex;align-items:center;padding:7px 13px;border-radius:10px;font-size:13px;font-weight:650;color:#fff;text-decoration:none;
