@@ -8,6 +8,12 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Every image build is attached to a GitHub release.** The Image workflow's new release job gives a version
+  tag its own release and replaces the rolling `latest-build` pre-release on each push to `main`. Each holds the
+  digest-pinned `docker pull` command, the image for amd64 and arm64 as `docker load` files (for servers
+  without registry access), `docker-compose.yml` and `SHA256SUMS`
+  ([installation](docs/installation.md#without-registry-access)).
+
 - **Who is signed in, at the top right of every dashboard page.** A badge with your initials, name and roles,
   and under it a key button (**Change password**) and **Sign out**, fixed in the corner like **Back to
   recruits**. On narrower windows they sit in a row above the page; the old "Signed in as" line at the foot of

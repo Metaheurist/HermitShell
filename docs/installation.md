@@ -75,6 +75,21 @@ It copies [`hermitshell-update.sh`](../scripts/host/hermitshell-update.sh) to `/
 argument picks another folder; it must be root-owned and not mounted into any container, since systemd runs it
 as root) and enables `hermitshell-update.timer`. To update by hand: `docker compose pull && docker compose up -d`.
 
+### Without registry access
+
+Each build is also attached to a [GitHub release](https://github.com/Metaheurist/HermitShell/releases): a
+version tag (`v1.2.0`) gets its own release, and every push to `main` replaces the `latest-build` pre-release.
+A release holds the image for amd64 and arm64 as files `docker load` reads, `docker-compose.yml` and
+`SHA256SUMS`, and its notes give the `docker pull` command pinned to that build's digest:
+
+```sh
+sha256sum -c --ignore-missing SHA256SUMS
+gunzip -c hermitshell-<version>-amd64.tar.gz | sudo docker load
+sudo HERMITSHELL_IMAGE=ghcr.io/metaheurist/hermitshell:<version> docker compose up -d
+```
+
+The updater only follows the registry, so an image loaded this way is updated by loading the next one.
+
 ### Build it yourself
 
 ```sh

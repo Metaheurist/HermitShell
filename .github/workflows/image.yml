@@ -2,7 +2,8 @@
 # Every push and pull request builds the image, starts it with an empty data folder to check the scheduler comes up
 # with the standard jobs, and scans it for fixable critical CVEs (Trivy). Pushes to main and version tags then
 # publish it for amd64 and arm64 to ghcr.io/<owner>/hermitshell, where servers running
-# scripts/host/hermitshell-update.sh pick it up within 10 minutes.
+# scripts/host/hermitshell-update.sh pick it up within 10 minutes, and attach it to a GitHub release: a version tag
+# gets its own release, and each push to main replaces the rolling "latest-build" pre-release.
 name: Image
 
 on:
@@ -28,6 +29,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
     env:
       TEST_TAG: hermitshell:test
     steps:
@@ -104,6 +107,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish (amd64 and arm64)
+        id: publish
         if: github.event_name != 'pull_request'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -126,3 +130,66 @@ jobs:
             echo "$TAGS"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: "Image · GitHub release"
+    needs: image
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      IMAGE: ghcr.io/${{ github.repository_owner }}/hermitshell
+      DIGEST: ${{ needs.image.outputs.digest }}
+      REF_TYPE: ${{ github.ref_type }}
+      REF_NAME: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Save the published image for each platform
+        run: |
+          set -euo pipefail
+          case "$DIGEST" in sha256:*) ;; *) echo "no image digest from the build"; exit 1 ;; esac
+          if [ "$REF_TYPE" = tag ]; then name=${REF_NAME#v}; else name=$(git rev-parse --short=7 HEAD); fi
+          case "$name" in *[!A-Za-z0-9._-]*) echo "unexpected release name"; exit 1 ;; esac
+          command -v skopeo >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq skopeo; }
+          mkdir dist
+          for arch in amd64 arm64; do
+            skopeo copy --quiet --override-os linux --override-arch "$arch" "docker://$IMAGE@$DIGEST" \
+              "docker-archive:dist/hermitshell-$name-$arch.tar:$IMAGE:$name"
+            gzip -6 "dist/hermitshell-$name-$arch.tar"
+          done
+          cp docker-compose.yml dist/
+          (cd dist && sha256sum -- * > SHA256SUMS)
+          echo "NAME=$name" >> "$GITHUB_ENV"
+      - name: Release notes
+        run: |
+          set -euo pipefail
+          {
+            echo "Container image \`$IMAGE@$DIGEST\`, built from $GITHUB_SHA."
+            echo
+            echo '```sh'
+            echo "docker pull $IMAGE@$DIGEST"
+            echo '```'
+            echo
+            echo "Without registry access, load the file for your platform and run it with the compose file:"
+            echo
+            echo '```sh'
+            echo "sha256sum -c --ignore-missing SHA256SUMS"
+            echo "gunzip -c hermitshell-$NAME-amd64.tar.gz | docker load"
+            echo "HERMITSHELL_IMAGE=$IMAGE:$NAME docker compose up -d"
+            echo '```'
+            echo
+            echo "Setup, updates and moving from Hermes: [docs/installation.md](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/docs/installation.md)."
+          } > notes.md
+      - name: Publish the release
+        run: |
+          set -euo pipefail
+          if [ "$REF_TYPE" = tag ]; then
+            gh release create "$REF_NAME" dist/* --verify-tag --title "HermitShell $NAME" \
+              --notes-file notes.md --generate-notes
+          else
+            gh release delete latest-build --cleanup-tag --yes 2>/dev/null || true
+            gh release create latest-build dist/* --target "$GITHUB_SHA" --prerelease \
+              --title "Latest build ($NAME)" --notes-file notes.md
+          fi
