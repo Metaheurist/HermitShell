@@ -111,6 +111,7 @@ const STATUS = {
   keys: { firecrawl: { source: "env", hint: "fc-...41b7", backups: 1 }, tavily: { source: "dashboard", hint: "tvly...8c1e" },
     scrapfly: { source: "none", hint: "" } },
   problems: [],
+  timezone: "Europe/London",
 };
 await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: STATUS });
 await save("link-profile-removed", await call(`/f?${new URLSearchParams(await link("interested", TITLE, { profile: "casey-quinn" }))}`));

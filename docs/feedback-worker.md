@@ -319,6 +319,9 @@ whole tool shares).
 
 <img src="images/worker/admin-dashboard-setup.png" alt="Admin page right after setup, with the checklist" width="720">
 
+- **Last update from HermitShell**: how long ago it reported (it does so at least every 15
+  minutes), with times on every admin page shown in your timezone (`HERMES_TIMEZONE`). If it
+  hasn't reported for 45 minutes, a warning asks you to check its `vacancy-profiles` job.
 - **Finish setting up**: a checklist until HermitShell has connected, the email server is set and a
   test email worked, there is a web search key, and your CV and job search are in. Each item links
   to its form.
@@ -436,7 +439,8 @@ you run HermitShell (for example turn encryption off or change the retention day
 Workers KV's free plan allows 1,000 list operations a day. Polling (`/events` every 5 minutes for
 cover letters, `/api/queue` for profiles) reads a small flag key instead of listing, and only lists
 when something is waiting, plus an hourly and a daily full check. Status reports from HermitShell are
-only written when something changed or once an hour.
+only written when something changed or every 15 minutes (at most 96 of the 1,000 writes a day the
+free plan allows).
 
 ## Removing it
 

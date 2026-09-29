@@ -8,6 +8,11 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Dashboard times in your timezone.** The admin pages showed every time in UTC, so during
+  British Summer Time the last update looked an hour old. Times now use `HERMES_TIMEZONE` (sent by
+  HermitShell with its status), and the status line says how long ago it was ("4 minutes ago").
+  HermitShell now refreshes its status every 15 minutes instead of hourly, and a warning appears
+  if it hasn't reported for 45 minutes.
 - **Simpler profile page.** Country is now a dropdown of countries by name instead of a
   two-letter code box. The separate "Location used in web searches" box is gone: searches use
   Region or city (a dashboard save clears `JOB_SEARCH_LOCATION`). "Towns that count as inside it
