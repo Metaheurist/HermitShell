@@ -56,7 +56,7 @@ def test_scheduled_jobs_include_the_weekly_roll_up_cover_letters_and_profiles():
         ["daily-vacancy-report", "daily-vacancy-report-weekly", "daily-vacancy-report-letters",
          "daily-vacancy-report-profiles"]
     assert setup.cron_expression("*/5 * * * *") == "*/5 * * * *"
-    assert [job for job, _ in setup.scheduled_jobs("news-digest")] == ["news-digest"]
+    assert list(setup.PACKAGES) == ["daily-vacancy-report"]
 
 
 def test_every_package_script_exists():

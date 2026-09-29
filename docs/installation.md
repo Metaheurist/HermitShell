@@ -1,9 +1,9 @@
 # Installation
 
-HermitShell packages are plain Python scripts that Hermes runs on a schedule. Installing one
+HermitShell is a set of plain Python scripts that Hermes runs on a schedule. Installing it
 means three things:
 
-1. Copying the script and the shared `hermes_common.py` into `$HERMES_HOME/scripts`.
+1. Copying the scripts and the shared `hermes_common.py` into `$HERMES_HOME/scripts`.
 2. Giving it settings.
 3. Registering a cron job.
 
@@ -21,7 +21,7 @@ sudo python3 scripts/setup.py --hermes-home /path/to/hermes/data   # from a Dock
 
 It asks, in order:
 
-1. **Hermes home and packages.** Then it runs `install.sh` for the packages you choose. Run as
+1. **Hermes home.** Then it runs `install.sh` to copy the job finder in. Run as
    root on a Docker host, it gives the files the same owner as the Hermes home directory (the
    official image uses `10000:10000`).
 2. **Shared settings.** SMTP server, login and recipient, then Firecrawl (plus backup keys),
@@ -54,20 +54,16 @@ It asks, in order:
    you choose and, optionally, Cloudflare Access. Without a token you can paste the URL of a Worker
    you deployed by hand instead; the wizard then offers to pipe the secrets into
    `wrangler secret put` so they never appear on screen.
-7. **News topics** (digest). Pick topics from a numbered catalog of 23 (AI, cybersecurity,
-   cloud, space, science, climate, health, business, markets, world news, gaming, sport and
-   more), then add any of your own as `Title: keyword, keyword`. With `--advanced` you can switch
-   to a `sections.json` file for full control.
-8. **Run time,** asked for each package straight after its settings: `07:00` runs daily,
+7. **Run times:** `07:00` runs daily,
    `weekdays 07:30` runs Monday to Friday, `sunday 18:00` once a week, and a cron expression or
    `-` (don't schedule) also work. The vacancy report also asks when to send its weekly roll-up
    (default `sunday 18:00`). Times use Hermes' timezone (`timezone:` in `config.yaml`).
-9. **Review.** Every change is listed (secrets masked) before anything is written. `.env` is
+8. **Review.** Every change is listed (secrets masked) before anything is written. `.env` is
    backed up to `.env.bak-<timestamp>`, updated in place (other Hermes settings are left
    alone) and kept at mode 600.
-10. **Schedules.** Creates or updates the `hermes cron` jobs with the run times you chose. If
-    Hermes isn't reachable from where the wizard runs, it prints the commands to run instead.
-11. **Test.** Sends a test email and offers a dry run.
+9. **Schedules.** Creates or updates the `hermes cron` jobs with the run times you chose. If
+   Hermes isn't reachable from where the wizard runs, it prints the commands to run instead.
+10. **Test.** Sends a test email and offers a dry run.
 
 The wizard finds Hermes by itself. It uses the `hermes` command when it's on your PATH;
 otherwise it runs commands in the `hermes-agent` container with `docker exec` (change this with
@@ -81,14 +77,14 @@ Useful options:
 | `--dry-run` | Show what would change; write and run nothing |
 | `--no-install` / `--no-cron` | Skip copying files / the schedule step |
 | `--non-interactive --answers FILE` | Unattended: values from a `KEY=VALUE` file, then the environment, then current values |
-| `daily-vacancy-report news-digest` | Set up only these packages without asking |
+| `daily-vacancy-report` | Skip the "which packages" question |
 
 Re-running the wizard is safe: current values are the defaults, and pressing Enter everywhere
 changes nothing.
 
-An answers file for an unattended setup uses the normal setting names, plus one
-`SCHEDULE_<PACKAGE>` line per package for the run time (and
-`SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY` for the roll-up). If you set `JOB_FEEDBACK_URL` without
+An answers file for an unattended setup uses the normal setting names, plus
+`SCHEDULE_DAILY_VACANCY_REPORT` for the run time (and `SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY` for
+the roll-up). If you set `JOB_FEEDBACK_URL` without
 the two secrets, they are generated:
 
 ```sh
@@ -100,19 +96,9 @@ JOB_EMPLOYMENT_TYPES=Permanent,Contract
 JOB_WORK_MODES=Hybrid,Remote
 JOB_MIN_SALARY=50000
 JOB_SALARY_CURRENCY=€
-NEWS_DIGEST_TOPICS=security,cloud,world
-NEWS_DIGEST_CUSTOM_TOPICS=Formula 1: F1, Grand Prix
 SCHEDULE_DAILY_VACANCY_REPORT=weekdays 07:30
 SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY=sunday 18:00
-SCHEDULE_NEWS_DIGEST=12:00
 ```
-
-### Upgrading from Noon Tech Digest
-
-The digest used to be the `noon-tech-digest` package (`tech_digest.py`, `TECH_DIGEST_*`
-settings). Pull the repo and re-run the wizard for `news-digest`: it copies your `TECH_DIGEST_*`
-values to `NEWS_DIGEST_*` and replaces the old cron job with one for `news_digest.py`. Delete the
-old script and settings afterwards if you like.
 
 ## Manual installation
 
@@ -133,21 +119,22 @@ the mounted directory.
 ```sh
 git clone https://github.com/Metaheurist/HermitShell.git
 cd HermitShell
-HERMES_HOME=/opt/data ./scripts/install.sh daily-vacancy-report news-digest
+HERMES_HOME=/opt/data ./scripts/install.sh daily-vacancy-report
 ```
 
 The installer does the following:
 
-- Copies `common/hermes_common.py` plus each package's scripts, example files and icons flat
+- Copies `common/hermes_common.py` plus the job finder's scripts, example files and icons flat
   into `$HERMES_HOME/scripts`.
-- Renames each package's `.env.example` to `<package>.env.example`, so templates don't collide.
+- Renames the package's `.env.example` to `daily-vacancy-report.env.example`, so it doesn't
+  collide with the shared one.
 - Strips Windows line endings.
 - Never overwrites your real `job_profile.md`, `cv_keywords.json` or `.env`.
 
 If you install from the Docker host, set the owner to the container user:
 
 ```sh
-sudo HERMES_OWNER=10000:10000 HERMES_HOME=/path/to/hermes/data ./scripts/install.sh news-digest
+sudo HERMES_OWNER=10000:10000 HERMES_HOME=/path/to/hermes/data ./scripts/install.sh daily-vacancy-report
 ```
 
 #### Without the installer
@@ -155,8 +142,8 @@ sudo HERMES_OWNER=10000:10000 HERMES_HOME=/path/to/hermes/data ./scripts/install
 Copy these files into the scripts directory yourself:
 
 - `common/hermes_common.py`
-- Everything in `packages/<name>/` except the README.
-- For the digest, the `icons/` folder. Only the PNGs are needed at runtime.
+- Everything in `packages/daily-vacancy-report/` except the README, `tests/` and `feedback-worker/`.
+  From `icons/` only the PNGs are needed at runtime.
 
 ### 3. Configure
 
@@ -166,18 +153,17 @@ environment variables:
 ```sh
 # shared: SMTP + at least one web search key
 cat .env.example                                  # copy what you need
-# per package, all optional
+# the job finder, all optional
 cat packages/daily-vacancy-report/.env.example
-cat packages/news-digest/.env.example
 ```
 
 The settings the wizard asks about in its guided steps are, for the vacancy report,
 `JOB_REGION_NAME`, `JOB_REGION_PLACES`, `JOB_SEARCH_COUNTRY`, `JOB_REMOTE_ANYWHERE`, `JOB_LEVEL`,
 `JOB_EMPLOYMENT_TYPES`, `JOB_WORK_MODES`, `JOB_MIN_SALARY`, `JOB_SALARY_CURRENCY`,
-`JOB_HIDE_UNNAMED_AGENCY`, `JOB_TARGET_TITLES` and the `JOB_FEEDBACK_*` values, and for the
-digest, `NEWS_DIGEST_TOPICS` and `NEWS_DIGEST_CUSTOM_TOPICS`. The optional feedback buttons need
-a small Cloudflare Worker; [feedback-worker.md](feedback-worker.md) covers deploying it and
-setting the secrets.
+`JOB_HIDE_UNNAMED_AGENCY`, `JOB_TARGET_TITLES`, the `CLOUDFLARE_*` and the `JOB_FEEDBACK_*`
+values. The feedback buttons need a small Cloudflare Worker: `python3 scripts/cloudflare_worker.py`
+deploys it with a token ([cloudflare-setup.md](cloudflare-setup.md)), and
+[feedback-worker.md](feedback-worker.md) covers deploying it by hand and setting the secrets.
 
 See [configuration.md](configuration.md) for how settings are resolved.
 
@@ -196,11 +182,10 @@ Run the scripts as the same user Hermes uses. In Docker, that means:
 ```sh
 docker exec -u hermes -w /opt/data hermes-agent python3 scripts/job_scanner.py --test-email
 docker exec -u hermes -w /opt/data hermes-agent python3 scripts/job_scanner.py --dry-run --limit 3
-docker exec -u hermes -w /opt/data hermes-agent python3 scripts/news_digest.py --dry-run
 ```
 
 Dry runs write the email HTML to `scripts/state/*_last.html`. Copy that file along with the
-`logos/` or `icons/` folder next to it to preview the email in a browser.
+`logos/` folder next to it to preview the email in a browser.
 
 ### 5. Schedule
 
@@ -213,8 +198,6 @@ docker exec -u hermes -w /opt/data hermes-agent hermes cron create "*/5 * * * *"
     --name vacancy-cover-letters --script cover_letter.py --no-agent --deliver local
 docker exec -u hermes -w /opt/data hermes-agent hermes cron create "*/5 * * * *" "Vacancy profiles" \
     --name vacancy-profiles --script profiles.py --no-agent --deliver local
-docker exec -u hermes -w /opt/data hermes-agent hermes cron create "0 12 * * *" "News Digest" \
-    --name news-digest --script news_digest.py --no-agent --deliver local
 docker exec -u hermes -w /opt/data hermes-agent hermes cron list
 ```
 

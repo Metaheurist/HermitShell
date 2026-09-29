@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""HermitShell setup wizard: install packages, then configure every setting, API key, job search,
-news topic, candidate profile and cron schedule interactively.
+"""HermitShell setup wizard: install the job finder, then configure every setting, API key, job search,
+candidate profile, the feedback Worker and cron schedule interactively.
 
     python3 scripts/setup.py                          # guided setup (essential settings)
     python3 scripts/setup.py --advanced               # ask for every setting
@@ -64,10 +64,6 @@ PACKAGES = {
                         "intro": "Adds people you invite from the feedback Worker's /admin page (their CV becomes "
                                  "their own daily report), applies unsubscribes and admin changes. Needs the "
                                  "feedback Worker; runs silently when idle."}],
-    },
-    "news-digest": {
-        "title": "News Digest", "script": "news_digest.py", "cron": "news-digest",
-        "schedule": "0 12 * * *", "dry_run": ["--dry-run"], "legacy_scripts": ["tech_digest.py"],
     },
 }
 JOB_LEVELS = [("junior", "Junior / graduate / entry level"), ("mid", "Mid level"), ("senior", "Senior"),
@@ -533,7 +529,7 @@ class Wizard:
         self.run_settings(parse_example(REPO / ".env.example"))
         keys = ("FIRECRAWL_API_KEY", "TAVILY_API_KEY", "SCRAPFLY_API_KEY")
         if not any(self.value(k) for k in keys):
-            self.say(f"{YELLOW}  No web search key set. The vacancy report and digest need at least one of "
+            self.say(f"{YELLOW}  No web search key set. The vacancy report needs at least one of "
                      f"Firecrawl, Tavily or Scrapfly (all have free tiers).{RESET}")
         if not self.value("SMTP_USER") or not self.value("SMTP_PASSWORD"):
             self.say(f"{YELLOW}  SMTP login incomplete: reports can't be emailed until it is set.{RESET}")
@@ -911,48 +907,6 @@ class Wizard:
         self.files[profile] = "\n\n".join(parts) + "\n"
         return skills
 
-    # ------------------------------------------------------------------ package: news-digest
-
-    def migrate_digest_settings(self) -> None:
-        """Carry TECH_DIGEST_* values from the old noon-tech-digest package over to NEWS_DIGEST_*."""
-        legacy = {k: v for k, v in self.current.items() if k.startswith("TECH_DIGEST_")}
-        moved = [k for k in legacy if "NEWS_DIGEST_" + k[len("TECH_DIGEST_"):] not in self.current]
-        for key in moved:
-            self.changes["NEWS_DIGEST_" + key[len("TECH_DIGEST_"):]] = legacy[key]
-        if moved:
-            self.say(f"  {DIM}copied {len(moved)} TECH_DIGEST_* setting(s) to NEWS_DIGEST_*; the old keys are "
-                     f"left in place and can be deleted{RESET}")
-
-    def digest_topics(self, scripts: Path) -> None:
-        self.heading("News topics")
-        pkg = PACKAGES_DIR / "news-digest"
-        sections_file = self.value("NEWS_DIGEST_SECTIONS_FILE")
-        if sections_file:
-            self.say(f"Using custom sections from {sections_file}.")
-            if self.confirm("Keep it?", True):
-                return
-            self.set("NEWS_DIGEST_SECTIONS_FILE", "")
-        catalog = read_constant(pkg / "news_digest.py", "TOPICS") or []
-        defaults = read_constant(pkg / "news_digest.py", "DEFAULT_TOPICS") or []
-        options = [(t["id"], t["title"]) for t in catalog]
-        current = [t.strip() for t in self.preset("NEWS_DIGEST_TOPICS").split(",") if t.strip()] or defaults
-        self.say("Choose the topics for your digest; each becomes a section of the email, in this order.")
-        topics = self.choose("Topics", options, [t for t in current if t in dict(options)])
-        self.set("NEWS_DIGEST_TOPICS", ",".join(topics), ",".join(defaults))
-
-        self.say("\nAdd topics of your own as 'Title: keyword, keyword', several separated by ||\n"
-                 f"  {DIM}e.g. Formula 1: F1, Grand Prix || Home Brewing: homebrew, craft beer{RESET}")
-        custom = self.text("Custom topics (empty = none, '-' clears)", self.preset("NEWS_DIGEST_CUSTOM_TOPICS"))
-        self.set("NEWS_DIGEST_CUSTOM_TOPICS", custom)
-
-        if self.args.advanced and self.confirm(
-                "Use a sections file instead, for full control over sites and search queries?", False):
-            target = scripts / "sections.json"
-            if not target.is_file():
-                self.files[target] = (pkg / "sections.example.json").read_text(encoding="utf-8")
-            self.set("NEWS_DIGEST_SECTIONS_FILE", "sections.json")
-            self.say(f"  {DIM}edit {target}; it replaces the topics above{RESET}")
-
     # ------------------------------------------------------------------ saving
 
     def review_and_write(self, home: Path, owner: str | None) -> bool:
@@ -1005,9 +959,7 @@ class Wizard:
     def existing_job(self, runner: Runner, info: dict) -> dict | None:
         if self._cron_jobs is None:
             self._cron_jobs = runner.cron_jobs() if runner.mode else []
-        scripts = [info["script"], *info.get("legacy_scripts", [])]
-        return next((j for s in scripts for j in self._cron_jobs
-                     if j.get("script", "").rsplit("/", 1)[-1] == s), None)
+        return next((j for j in self._cron_jobs if j.get("script", "").rsplit("/", 1)[-1] == info["script"]), None)
 
     def ask_schedule(self, runner: Runner, job_id: str, info: dict) -> None:
         existing = self.existing_job(runner, info)
@@ -1090,16 +1042,12 @@ class Wizard:
         for pkg in packages:
             info = PACKAGES.get(pkg, {"title": pkg})
             self.heading(f"{info['title']} settings")
-            if pkg == "news-digest":
-                self.migrate_digest_settings()
             self.run_settings(parse_example(PACKAGES_DIR / pkg / ".env.example"))
             if pkg == "daily-vacancy-report":
                 self.job_search()
                 self.job_targets(scripts)
                 self.job_profile(scripts)
                 self.feedback_buttons()
-            elif pkg == "news-digest":
-                self.digest_topics(scripts)
             if pkg in PACKAGES and not self.args.no_cron:
                 for job_id, info in scheduled_jobs(pkg):
                     self.ask_schedule(runner, job_id, info)
@@ -1128,7 +1076,7 @@ def main() -> int:
     parser.add_argument("--non-interactive", action="store_true",
                         help="no prompts: take values from --answers, then the environment, then current/defaults")
     parser.add_argument("--answers", help="KEY=VALUE file of settings for --non-interactive; schedules go in "
-                                          "SCHEDULE_<PACKAGE>=HH:MM (e.g. SCHEDULE_NEWS_DIGEST=weekdays 12:00, "
+                                          "SCHEDULE_<PACKAGE>=HH:MM (e.g. SCHEDULE_DAILY_VACANCY_REPORT=weekdays 07:30, "
                                           "SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY=sunday 18:00)")
     parser.add_argument("--dry-run", action="store_true", help="show what would change; write and run nothing")
     parser.add_argument("--no-install", action="store_true", help="skip copying package files")

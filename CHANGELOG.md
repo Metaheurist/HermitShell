@@ -113,7 +113,7 @@ using [Semantic Versioning](https://semver.org/).
 - **CI** (`.github/workflows/ci.yml`), on every push and pull request, with one named job per
   check:
   - Ruff lint (`ruff.toml`) and a compile check on Python 3.10.
-  - Unit tests for the shared library, vacancy report, news digest and setup wizard, each on
+  - Unit tests for the shared library, vacancy report and setup wizard, each on
     Python 3.10 and 3.12, with a results table in the run summary.
   - The feedback Worker's Vitest tests, then a `wrangler deploy --dry-run` build check.
   - An "All CI checks passed" job to use as a single required check.
@@ -121,8 +121,8 @@ using [Semantic Versioning](https://semver.org/).
   every Monday: Gitleaks secret scan of the full history, `pip-audit` and `npm audit` CVE
   checks, dependency review on pull requests, and CodeQL scanning of Python, JavaScript and the
   workflows.
-- **More tests:** the shared library (`common/tests`), the News Digest
-  (`packages/news-digest/tests`) and the setup wizard (`scripts/tests`), which also checks that
+- **More tests:** the shared library (`common/tests`) and the setup wizard (`scripts/tests`),
+  which also checks that
   no `.env.example` ships a real-looking secret. `requirements-dev.txt` lists the test
   dependencies.
 - **Setup wizard** (`scripts/setup.py`, standard library only):
@@ -134,11 +134,9 @@ using [Semantic Versioning](https://semver.org/).
     `job_profile.md` from guided questions, an imported CV or the example; generate
     `cv_keywords.json` from your skills and gaps.
   - Guided job search step: region, towns, country, remote-anywhere, target level, employment types and work modes.
-  - News topics step: pick from the topic catalog by number, then add your own topics.
   - Asks what time each package should run (`07:30`, `weekdays 08:00` or a cron expression) and
     creates or updates the `hermes cron` jobs, then sends a test email and offers a dry run.
     Unattended runs take `SCHEDULE_<PACKAGE>` from the answers file.
-  - Migrates `TECH_DIGEST_*` settings and the old digest cron job to the renamed News Digest.
   - Works locally or from a Docker host: runs `hermes` in the `hermes-agent` container and
     matches file ownership to the Hermes home.
   - Backs up `.env` before writing, updates it in place (other Hermes settings untouched) and
@@ -157,20 +155,13 @@ using [Semantic Versioning](https://semver.org/).
   - `JOB_REMOTE_ANYWHERE` lets fully remote jobs through the region filter.
   - The model is told the target level, types, modes and region when scoring, and its rubric no
     longer assumes an AI / ML role.
-- **News Digest topic catalog:** 23 topics to choose from with `NEWS_DIGEST_TOPICS`, adding
-  cybersecurity, cloud, programming, web development, data, open source, smart home, robotics,
-  space, science, climate, health, business, markets, tech policy, world news, gaming and sport
-  to the original five, each with its own sites, queries, colour and icon. Also
-  `NEWS_DIGEST_CUSTOM_TOPICS` for keyword-based topics of your own.
+### Removed
+
+- **Noon Tech Digest.** HermitShell is now solely a job-finder platform: the digest package, its
+  setup wizard steps, tests and CI job are gone. Existing installs keep their copy of
+  `tech_digest.py`, its settings and its cron job; nothing is deleted from the server.
 
 ### Changed (breaking)
-
-- **Noon Tech Digest is now News Digest.** The package is `packages/news-digest`, the script
-  `news_digest.py`, the settings `NEWS_DIGEST_*` (previously `TECH_DIGEST_*`), the default cron
-  job `news-digest` and the state files `state/news_digest_*`. Re-run `scripts/setup.py` to
-  migrate settings and the cron job; see the [upgrade notes](packages/news-digest/README.md#upgrading-from-noon-tech-digest).
-- The digest's default reader and editor prompt are no longer tech-specific, and the tagline is
-  built from the chosen topic names.
 
 - **Job titles are one setting, `JOB_TARGET_TITLES`** (`||`-separated), set from the
   dashboard's profile page or the wizard; changing them rebuilds the web search queries and the
@@ -198,7 +189,7 @@ using [Semantic Versioning](https://semver.org/).
 - The model can no longer rule a job out of the region when its title or snippet names a place
   inside it.
 - Web search titles lose trailing "- Job <Month> <Year>" suffixes.
-- Relative `JOB_PROFILE_FILE`, `JOB_KEYWORDS_FILE` and `TECH_DIGEST_SECTIONS_FILE` paths are
+- Relative `JOB_PROFILE_FILE` and `JOB_KEYWORDS_FILE` paths are
   resolved against the scripts directory instead of the working directory, so they also work
   under cron.
 - `install.sh` points to the setup wizard when it finishes. `.env.example` files mark the
@@ -272,7 +263,6 @@ A review of the whole app; none of these were known to be exploited.
   instead of being chmodded afterwards.
 - **Email headers:** line breaks in subjects, names and addresses are removed. Short secrets are
   masked completely.
-- **News Digest:** links that aren't plain `http(s)` URLs are dropped.
 - **CI:** GitHub Actions are pinned to commit SHAs, ruff to a fixed version, and the gitleaks
   download is checked against its SHA-256.
 

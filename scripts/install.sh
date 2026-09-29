@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # Install one or more HermitShell packages into a Hermes scripts directory.
 #
-#   HERMES_HOME=/opt/data ./scripts/install.sh daily-vacancy-report news-digest
+#   HERMES_HOME=/opt/data ./scripts/install.sh daily-vacancy-report
 #
 # Copies the shared hermes_common.py plus each package's files flat into $HERMES_HOME/scripts,
 # the directory Hermes cron jobs run scripts from. Existing personal files (job_profile.md,

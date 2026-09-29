@@ -6,7 +6,7 @@ providers. It fails over between them automatically.
 | Provider | Used for | Key |
 | --- | --- | --- |
 | [Firecrawl](https://firecrawl.dev) | Search (with recency filters) and page scraping to markdown | `FIRECRAWL_API_KEY`, `FIRECRAWL_BACKUP_KEYS` |
-| [Tavily](https://tavily.com) | Search (general and news topics) and page extraction | `TAVILY_API_KEY` |
+| [Tavily](https://tavily.com) | Search and page extraction | `TAVILY_API_KEY` |
 | [Scrapfly](https://scrapfly.io) | Scraping bot-protected pages | `SCRAPFLY_API_KEY` |
 
 Only providers with a key are used. You need at least one search provider: Firecrawl or Tavily.
@@ -22,7 +22,7 @@ Only providers with a key are used. You need at least one search provider: Firec
 ## Firecrawl backup keys
 
 At startup the client checks the remaining credits on `FIRECRAWL_API_KEY`. If the balance is
-below the package's minimum (`JOB_SCANNER_MIN_CREDITS`, `NEWS_DIGEST_MIN_CREDITS`), it moves on
+below the package's minimum (`JOB_SCANNER_MIN_CREDITS`), it moves on
 to the next key in `FIRECRAWL_BACKUP_KEYS`. It also switches keys mid-run if one runs out. Logs
 only ever show a masked key such as `fc-1a2b...9z8y`.
 
@@ -38,7 +38,6 @@ used.
 | Package | Firecrawl credits |
 | --- | --- |
 | Daily Vacancy Report | about 20-40: 4 searches plus up to `JOB_SCANNER_MAX_SCRAPE` scrapes |
-| News Digest | about 15-20 with five topics: 2-3 searches plus one article per topic |
 
-Both fit comfortably inside Firecrawl's free monthly allowance when run once a day. Tavily's
+That fits comfortably inside Firecrawl's free monthly allowance when run once a day. Tavily's
 free tier covers occasional failover.

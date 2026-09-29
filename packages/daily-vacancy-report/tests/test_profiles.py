@@ -279,7 +279,7 @@ def test_run_all_runs_each_active_profile_with_its_environment(home):
     assert calls == [([str(profiles.SCRIPT_DIR / "job_scanner.py"), "--limit", "5"], "sam-lee-456789")]
     assert profiles.load("sam-lee-456789")["last_run"]
     with pytest.raises(profiles.ProfileError):
-        profiles.run_all("tech_digest.py", [], runner=runner)
+        profiles.run_all("other_script.py", [], runner=runner)
 
 
 def test_spawn_only_from_the_owner_with_extra_profiles(home, monkeypatch):
