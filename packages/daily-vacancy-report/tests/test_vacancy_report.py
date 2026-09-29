@@ -5,6 +5,7 @@ Run from the repository root:  python -m pytest packages/daily-vacancy-report/te
 
 import re
 import sys
+import threading
 import time
 from datetime import date
 from pathlib import Path
@@ -541,3 +542,58 @@ def test_feedback_links_and_sync_need_https(tracker):
     assert unsubscribe_link("http://x.example", "s", "Sam") == ""
     assert job_tracker.sync_feedback(tracker, "http://fb.example.workers.dev", "token") == \
         (0, "JOB_FEEDBACK_URL must start with https://")
+
+
+# --------------------------------------------------------------------------- rating in order, on one or more instances
+
+def _pipeline(events, stop_at=None, fail=()):
+    def prepare(i, job):
+        events.append(f"prepare {i}")
+        return None if job == "skip" else {"i": i}
+
+    def rate(job):
+        events.append(f"rate {job}")
+        if job in fail:
+            raise RuntimeError(job)
+        return {"fit_score": 5, "job": job}
+
+    def settle(i, job, ctx, started, result):
+        try:
+            events.append(f"settle {i} {result()['job']}")
+        except RuntimeError:
+            events.append(f"settle {i} failed")
+        return i != stop_at
+    return prepare, rate, settle
+
+
+def test_one_instance_rates_and_settles_each_job_before_preparing_the_next():
+    import job_scanner
+
+    events = []
+    job_scanner.rate_in_order(enumerate(["a", "skip", "b"], 1), *_pipeline(events), workers=1)
+    assert events == ["prepare 1", "rate a", "settle 1 a", "prepare 2", "prepare 3", "rate b", "settle 3 b"]
+
+
+def test_two_instances_rate_two_jobs_at_once_and_settle_them_in_order():
+    import job_scanner
+
+    together, events = threading.Barrier(2, timeout=5), []
+
+    def rate(job):
+        together.wait()
+        return {"job": job}
+
+    prepare, _, settle = _pipeline(events)
+    job_scanner.rate_in_order(enumerate(["a", "b", "c", "d"], 1), prepare, rate, settle, workers=2)
+    assert [e for e in events if e.startswith("settle")] == ["settle 1 a", "settle 2 b", "settle 3 c", "settle 4 d"]
+
+
+def test_a_failed_rating_reaches_settle_and_a_stop_ends_the_run():
+    import job_scanner
+
+    events = []
+    job_scanner.rate_in_order(enumerate(["a", "b", "c", "d"], 1), *_pipeline(events, stop_at=2, fail={"a"}), workers=1)
+    assert events == ["prepare 1", "rate a", "settle 1 failed", "prepare 2", "rate b", "settle 2 b"]
+    events = []
+    job_scanner.rate_in_order(enumerate(["a", "b", "c", "d", "e"], 1), *_pipeline(events, stop_at=2), workers=2)
+    assert "settle 3 c" not in events and "prepare 5" not in events

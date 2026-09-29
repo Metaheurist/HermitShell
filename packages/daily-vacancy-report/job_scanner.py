@@ -32,6 +32,8 @@ import re
 import smtplib
 import sys
 import time
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
@@ -41,6 +43,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
+import autofit
 import hermes_common as hc
 import profiles
 import tailored_cv
@@ -607,6 +610,32 @@ def rate_job(host: str, model: str, num_ctx: int | None, profile: str, cv_keywor
 
 class ModelTimeout(Exception):
     """The model did not answer in time; a second one in a row means Ollama is stuck, so the run stops rating."""
+
+
+def rate_in_order(items, prepare, rate, settle, workers: int = 1) -> None:
+    """Prepare each (i, job) on this thread (None skips it), rate it, and settle the ratings in order with
+    settle(i, job, ctx, started, result), where result() returns the rating or raises; stops when settle returns
+    False. With more than one worker the next jobs are rated on other threads (one per model instance) while
+    earlier ones are settled; with one, each job is rated and settled before the next is prepared."""
+    pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="rate") if workers > 1 else None
+    in_flight: deque = deque()
+    try:
+        for i, job in items:
+            ctx = prepare(i, job)
+            if ctx is None:
+                continue
+            started = time.monotonic()
+            result = pool.submit(rate, job).result if pool else (lambda job=job: rate(job))
+            in_flight.append((i, job, ctx, started, result))
+            while len(in_flight) >= workers:
+                if not settle(*in_flight.popleft()):
+                    return
+        while in_flight:
+            if not settle(*in_flight.popleft()):
+                return
+    finally:
+        if pool:
+            pool.shutdown(wait=True, cancel_futures=True)
 
 
 def hermes_summary(host: str, model: str, num_ctx: int | None, jobs: list[dict]) -> str:
@@ -1193,9 +1222,9 @@ def run(args: argparse.Namespace) -> int:
     results = []
     excluded_location = excluded_type = below_min = excluded_salary = excluded_closed = reposts = 0
 
-    def rate_one(i: int, job: dict) -> str:
-        """Filter, rate and score one queued job: "skipped" before the model, else "rated" or "failed"."""
-        nonlocal excluded_location, excluded_type, below_min, excluded_salary, excluded_closed, reposts
+    def prepare(i: int, job: dict) -> str | dict:
+        """Fetch and filter one queued job before the model: "skipped", or what `finish` needs."""
+        nonlocal excluded_location, excluded_type, excluded_salary, excluded_closed, reposts
         facts, text = {}, ""
         if job["source"] == "nijobs.com":
             facts, text = nijobs.job(job["url"]) or ({}, "")
@@ -1250,9 +1279,14 @@ def run(args: argparse.Namespace) -> int:
             done.append(job["key"])
             log(f"[{i}/{len(queue)}] skip (closed) {job['title'][:60]}")
             return "skipped"
+        return {"loc_text": loc_text, "remote_ok": remote_ok, "full_text": full_text, "det_type": det_type,
+                "mode": mode}
 
-        started = time.monotonic()
-        rating = rate_job(host, model, num_ctx, profile, list(cv_kw), job, feedback)
+    def finish(i: int, job: dict, ctx: dict, rating: dict | None, started: float) -> str:
+        """Score one rated job and keep it: "rated", or "failed" when the model gave no rating."""
+        nonlocal excluded_location, excluded_type, below_min, excluded_salary, excluded_closed
+        loc_text, remote_ok, full_text = ctx["loc_text"], ctx["remote_ok"], ctx["full_text"]
+        det_type, mode = ctx["det_type"], ctx["mode"]
         if not rating:
             if rating_failed(retries, job["key"], MAX_RATING_ATTEMPTS):
                 done.append(job["key"])
@@ -1338,13 +1372,22 @@ def run(args: argparse.Namespace) -> int:
         results.append(entry)
         return "rated"
 
+    def model_rating(job: dict) -> dict | None:
+        return rate_job(host, model, num_ctx, profile, list(cv_kw), job, feedback)
+
+    def skipped_after(i: int, job: dict, exc: Exception) -> None:
+        log(f"[{i}/{len(queue)}] skipped after an error ({exc.__class__.__name__}: {str(exc)[:120]}): "
+            f"{job['title'][:60]}")
+        if rating_failed(retries, job["key"], MAX_RATING_ATTEMPTS):
+            done.append(job["key"])
+
     timeouts = 0
-    for i, job in enumerate(queue, 1):
-        progress("Rating jobs", i - 1, len(queue))
-        if i % 5 == 0 and not args.dry_run:
-            save_retries(retries)
+
+    def settle(i: int, job: dict, ctx: dict, started: float, result) -> bool:
+        """Finish one job once its rating is in; False when the model has timed out twice in a row."""
+        nonlocal timeouts
         try:
-            outcome = rate_one(i, job)
+            finish(i, job, ctx, result(), started)
         except ModelTimeout:
             timeouts += 1
             if rating_failed(retries, job["key"], MAX_RATING_ATTEMPTS):
@@ -1352,15 +1395,29 @@ def run(args: argparse.Namespace) -> int:
             log(f"[{i}/{len(queue)}] the model timed out on {job['title'][:60]}")
             if timeouts >= 2:
                 log("The model timed out twice in a row; stopping the ratings for this run")
-                break
-            continue
+                return False
+            return True
         except Exception as exc:  # noqa: BLE001 - one odd listing must not cost the whole report
-            log(f"[{i}/{len(queue)}] skipped after an error ({exc.__class__.__name__}: {str(exc)[:120]}): "
-                f"{job['title'][:60]}")
-            if rating_failed(retries, job["key"], MAX_RATING_ATTEMPTS):
-                done.append(job["key"])
-            continue
-        timeouts = 0 if outcome != "skipped" else timeouts
+            skipped_after(i, job, exc)
+            return True
+        timeouts = 0
+        return True
+
+    def prepared(i: int, job: dict) -> dict | None:
+        progress("Rating jobs", i - 1, len(queue))
+        if i % 5 == 0 and not args.dry_run:
+            save_retries(retries)
+        try:
+            ctx = prepare(i, job)
+        except Exception as exc:  # noqa: BLE001 - one odd listing must not cost the whole report
+            skipped_after(i, job, exc)
+            return None
+        return None if ctx == "skipped" else ctx
+
+    workers = max(1, min(8, autofit.slots(host)))
+    if workers > 1:
+        log(f"Rating {workers} jobs at a time over the model instances in use")
+    rate_in_order(enumerate(queue, 1), prepared, model_rating, settle, workers)
     companies.save()
 
     dedup: dict[tuple, dict] = {}
