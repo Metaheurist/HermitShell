@@ -8,6 +8,18 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A cleaner, more modern look for the Worker's pages.** The dashboard, sign-in, sign-up and button
+  pages have a softer background with a slow-moving glow and a lighter card that eases in.
+  - Tabs are now a segmented switch. Buttons use a gradient and lift on hover. Boxes glow when
+    focused, and the checkboxes for employment type and work location are pill toggles. File
+    pickers have a styled button.
+  - The setup checklist has a progress bar and animated ticks, and the steps still to do pulse
+    gently. Profiles show initials avatars, and status pills have a coloured dot.
+  - Messages after a save or an error appear as banners. The save status box has a spinner while
+    waiting and a tick once applied.
+  - It is all CSS: the pages still load no scripts, fonts or images, and every animation stops if
+    your system asks for reduced motion. The screenshots are taken with reduced motion, so they
+    show pages as they end up.
 - **Saves no longer vanish, and two people can't overwrite each other.** A profile's details and
   job search are now one form with one **Save changes** button, next to one **Upload CV**. Before,
   saving reloaded the page with the old values until HermitShell's next check, so the form looked

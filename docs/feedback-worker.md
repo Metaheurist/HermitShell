@@ -329,7 +329,7 @@ whole tool shares).
 - **Last update from HermitShell**: how long ago it reported (it does so at least every 15
   minutes), with times on every admin page shown in your timezone (`HERMES_TIMEZONE`). If it
   hasn't reported for 45 minutes, a warning asks you to check its `vacancy-profiles` job.
-- **Finish setting up**: a checklist until HermitShell has connected, the email server is set and a
+- **Finish setting up**: a progress bar and checklist until HermitShell has connected, the email server is set and a
   test email worked, there is a web search key, and your CV and job search are in. Each item links
   to its form.
 - **HermitShell could not apply**: changes HermitShell rejected in the last day (a mistyped SMTP server,

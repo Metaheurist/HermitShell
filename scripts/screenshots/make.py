@@ -328,6 +328,8 @@ def capture(chrome: str, profile: Path, html: Path, png: Path, width: int, heigh
         shot = profile / "shot.png"
         shot.unlink(missing_ok=True)
         subprocess.run([chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run",
+                        # Pages animate in; the reduced-motion setting shows them as they end up.
+                        "--force-prefers-reduced-motion",
                         "--force-device-scale-factor=2", f"--user-data-dir={profile}", f"--window-size={width},{tall}",
                         "--virtual-time-budget=3000", f"--screenshot={shot}", html.as_uri()],
                        check=True, capture_output=True, timeout=120)
