@@ -1,6 +1,7 @@
 # HermitShell
 
 [![CI](https://github.com/Metaheurist/HermitShell/actions/workflows/ci.yml/badge.svg)](https://github.com/Metaheurist/HermitShell/actions/workflows/ci.yml)
+[![Security](https://github.com/Metaheurist/HermitShell/actions/workflows/security.yml/badge.svg)](https://github.com/Metaheurist/HermitShell/actions/workflows/security.yml)
 
 A collection of ready-to-install packages for [Hermes Agent](https://github.com/NousResearch/hermes-agent).
 Each package is a self-contained scheduled script that runs through `hermes cron`. The packages use
@@ -75,11 +76,14 @@ in an AI agent or with wrangler by hand.
 
 ```
 common/hermes_common.py    shared plumbing: .env loading, model discovery, web providers, SMTP
+common/tests/              unit tests for the shared library
 packages/<name>/           one directory per package: entry script, README, examples, tests
 packages/daily-vacancy-report/feedback-worker/
                            optional Cloudflare Worker for the report's feedback buttons (not copied into Hermes)
 scripts/setup.py           interactive wizard: install, API keys, job search, topics, profile, schedules
+scripts/tests/             unit tests for the wizard's helpers and the .env.example files
 scripts/install.sh         copies common + chosen packages flat into $HERMES_HOME/scripts
+.github/workflows/         CI (lint, tests, Worker build) and Security (secrets, CVEs, CodeQL)
 docs/                      installation, configuration, feedback Worker, email rendering, web providers
 ```
 
@@ -126,10 +130,27 @@ script from `$HERMES_HOME/scripts`.
    `# @wizard` when a guided step in `scripts/setup.py` fills it in. Add the package to
    `PACKAGES` in `scripts/setup.py` so the wizard can schedule it.
 4. Support `--dry-run` and `--test-email`.
-5. Put unit tests in `packages/<name>/tests/` and add a step for them to
-   [`.github/workflows/ci.yml`](.github/workflows/ci.yml), which runs on every push and pull
-   request.
+5. Put unit tests in `packages/<name>/tests/` and add the folder to the `suite` list in
+   [`.github/workflows/ci.yml`](.github/workflows/ci.yml) so it gets its own CI job.
 6. Add an entry to [CHANGELOG.md](CHANGELOG.md).
+
+## Tests and CI
+
+Run everything locally from the repository root:
+
+```bash
+python -m pip install -r requirements-dev.txt ruff
+ruff check .
+python -m pytest common/tests packages/*/tests scripts/tests
+cd packages/daily-vacancy-report/feedback-worker && npm ci && npm test
+```
+
+Two GitHub Actions workflows run on every push and pull request:
+
+| Workflow | Jobs |
+| --- | --- |
+| [CI](.github/workflows/ci.yml) | Ruff lint; a compile check on Python 3.10; unit tests for the shared library, vacancy report, news digest and setup wizard, each on Python 3.10 and 3.12; the feedback Worker's Vitest tests and a `wrangler deploy --dry-run` build check; and a final "All CI checks passed" job to use as a required check |
+| [Security](.github/workflows/security.yml) | Gitleaks secret scan of the full history; CVE audits of the Python packages (`pip-audit`) and the Worker's npm packages (`npm audit`, high and critical fail); dependency review on pull requests; CodeQL code scanning of the Python, JavaScript and workflow files. It also runs every Monday, so newly published CVEs are reported even when nothing has changed |
 
 ## Security
 

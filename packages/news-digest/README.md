@@ -79,6 +79,7 @@ A section without its own icon PNGs uses the generic set.
 | `icons/build_icons.py` | Re-renders the PNGs from the SVGs in each topic's colour |
 | `sections.example.json` | Example sections file |
 | `.env.example` | Every package setting with its default |
+| `tests/` | Unit tests (`python -m pytest packages/news-digest/tests`) |
 
 It also needs `hermes_common.py` from [`common/`](../../common) in the same directory, which the
 installer handles.
