@@ -291,7 +291,7 @@ deleted ([data protection](configuration.md#data-protection)).
 
 | Control | What it does |
 | --- | --- |
-| Status line | How long ago HermitShell last reported, with the time in your timezone (`HERMES_TIMEZONE`), and changes still **Waiting for HermitShell** (applied by `profiles.py` within about 5 minutes). A warning appears above it if HermitShell hasn't reported for 45 minutes |
+| Status line | How long ago HermitShell last reported, with the time in your timezone (`HERMES_TIMEZONE`), and changes still **Waiting for HermitShell** (applied by `profiles.py`, usually within a minute). A warning appears above it if HermitShell hasn't reported for 45 minutes |
 | Profile, Status | Name, email and start date, **no CV** when there is none yet; owner, active or paused; time of the last report |
 | **Manage** | Opens [that profile's page](#a-profiles-page): details, job search and CV |
 | Crawler: **Their Firecrawl key** + **Save** | Gives that profile its own Firecrawl key, used instead of the global one |
@@ -340,9 +340,21 @@ HermitShell hasn't collected them.
 | Section | What it sets |
 | --- | --- |
 | **Back to profiles** | Floats in the top-left corner while you scroll |
+| Status box | Under the tabs: **Up to date**, **Waiting for HermitShell** while a save is queued (it checks again by itself), **Applied by HermitShell**, or why a change couldn't be applied |
 | Details | Name, the email address reports go to, phone and home town (for cover letters) |
 | Job search | Job titles (up to 8), region or city (used in web searches), country from a list, towns, remote elsewhere, seniority, minimum salary (empty = none) and currency, employment types, work location, hiding unnamed agency adverts |
-| CV | A new CV file or pasted text; HermitShell rebuilds the profile and skills from it and emails a summary |
+| **Save changes** | One button for details and job search; only the fields you changed are sent |
+| CV + **Upload CV** | A new CV file or pasted text; HermitShell rebuilds the profile and skills from it and emails a summary |
+
+<table><tr><th>Just saved</th><th>Someone else changed the same field</th></tr>
+<tr><td><img src="images/worker/admin-profile-saved.png" alt="Profile page right after saving, waiting for HermitShell" width="380"></td>
+<td><img src="images/worker/admin-profile-conflict.png" alt="Profile page showing a clash with another change" width="380"></td></tr></table>
+
+After **Save changes** the form keeps the saved values (the page lays every change still waiting
+for HermitShell over what it last reported) and the status box follows it until it is applied. If
+someone else changed the same field since you opened the page, nothing is saved: the box lists each
+clashing field with both values and your version stays in the form, so **Save changes** again keeps
+yours. Changes to different fields are both kept.
 
 ## Regenerating these images
 

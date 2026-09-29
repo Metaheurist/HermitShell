@@ -50,6 +50,16 @@ async function save(name, response) {
   writeFileSync(join(out, `${name}.html`), await response.text());
 }
 
+// A profile page with its save-status frame inlined, since the screenshots open the pages as files.
+async function framed(response, get) {
+  const html = await response.text();
+  const src = html.match(/<iframe class="saving" src="([^"]+)"/)?.[1];
+  if (!src) return new Response(html);
+  const box = (await (await get(src.replaceAll("&amp;", "&"))).text()).replace(/<meta http-equiv="refresh"[^>]*>/, "");
+  const escaped = box.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+  return new Response(html.replace(`src="${src}"`, `srcdoc="${escaped}"`));
+}
+
 async function link(action, title, { skills = "", profile = "", day = today(), job = "job-northwind-data-engineer" } = {}) {
   const params = { j: job, a: action, n: title };
   if (skills) params.s = skills;
@@ -142,7 +152,7 @@ await call("/api/invite", { method: "POST", headers: { Authorization: `Bearer ${
 await save("admin-invite-link", await admin("/admin/action", { method: "POST", form: { csrf, action: "invite", note: "Casey from the course" } }));
 await admin("/admin/action", { method: "POST", form: { csrf, action: "resume", u: "jordan-patel" } });
 await save("admin-dashboard", await admin("/admin?done=queued"));
-await save("admin-profile", await admin("/admin/profile?u=owner"));
+await save("admin-profile", await framed(await admin("/admin/profile?u=owner"), admin));
 await save("admin-settings", await admin("/admin/settings"));
 
 // A fresh install: HermitShell has connected, nothing else is set yet.
@@ -156,6 +166,31 @@ await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${
 
 for (let i = 0; i < 5; i++) await call("/admin/login", { method: "POST", form: { username: "admin", password: `wrong-${i}` } });
 await save("admin-locked", await call("/admin/login", { method: "POST", form: { username: "admin", password: "wrong" } }));
+
+// Saving a profile: the saved values stay on the page while HermitShell applies them, and a clash with
+// someone else's change to the same field is shown before anything is saved.
+const unescape = (s) => s.replaceAll("&quot;", '"').replaceAll("&#39;", "'").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+async function profileForm(u) {
+  const html = await (await admin(`/admin/profile?u=${u}`)).text();
+  const base = unescape(html.match(/name="base" value="([^"]*)"/)[1]);
+  const v = JSON.parse(base);
+  const form = new URLSearchParams({ csrf, action: "profile", u, base, name: v.name, email: v.email, phone: v.phone,
+    location: v.location, titles: v.titles.join("\n"), region: v.region, places: v.places.join(", "), country: v.country,
+    level: v.level, min_salary: v.min_salary, currency: v.currency });
+  v.types.forEach((t) => form.append("types", t));
+  v.modes.forEach((m) => form.append("modes", m));
+  if (v.remote_anywhere) form.append("remote_anywhere", "1");
+  if (v.hide_agency) form.append("hide_agency", "1");
+  return form;
+}
+const mine = await profileForm("owner");
+const theirs = await profileForm("owner");
+theirs.set("email", "alex.m@example.com");
+await admin("/admin/action", { method: "POST", form: theirs });
+await save("admin-profile-saved", await framed(await admin("/admin/profile?u=owner&done=saved"), admin));
+mine.set("email", "alex@example.org");
+mine.set("titles", `${mine.get("titles")}\nData Platform Engineer`);
+await save("admin-profile-conflict", await framed(await admin("/admin/action", { method: "POST", form: mine }), admin));
 
 env = freshEnv();
 await save("admin-dashboard-empty", await call("/admin").then(async () => {

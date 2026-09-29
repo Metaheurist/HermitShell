@@ -260,7 +260,7 @@ One HermitShell can send reports to other people too, each built from their own 
 from the Worker's admin page; HermitShell applies the changes, since the Worker can't reach your server.
 
 ```
-/admin (you) ──> invite link ──> /join (them: details + CV) ──> KV ──> profiles.py every 5 min
+/admin (you) ──> invite link ──> /join (them: details + CV) ──> KV ──> profiles.py (checks every 15 s)
 ```
 
 1. Set an admin password on the Worker (and optionally a username; the default is `admin`). Pipe
@@ -278,12 +278,18 @@ from the Worker's admin page; HermitShell applies the changes, since the Worker 
        --name vacancy-profiles --script profiles.py --no-agent --deliver local
    ```
 
+   Each run syncs, then keeps watching until just before the next run: every 15 seconds it reads
+   `/api/queue/flag` (one KV read, no list) and syncs as soon as something new is queued, so
+   dashboard changes and sign-ups are picked up within seconds. `python3 profiles.py --once` syncs
+   once and exits. `JOB_PROFILES_WATCH_SECONDS` (default 270, `0` turns watching off) and
+   `JOB_PROFILES_POLL_SECONDS` (default 15, at least 5) change this.
+
 3. Open `https://vacancy-feedback.<subdomain>.workers.dev/admin`, sign in and press
    **Create invite link**. Each link works once and expires after 7 days; send it to the person.
    (`python3 profiles.py --invite "note"` makes one from the server too.)
 4. They fill in their name, email, optional phone and town, the roles they want, and upload a CV
    (PDF, Word .docx or text, up to 5 MB) or paste it. The CV waits in KV, deleted once HermitShell has it.
-5. Within 5 minutes `profiles.py` downloads it, reads the text (`cv_text.py`, no extra packages;
+5. Within a minute `profiles.py` downloads it, reads the text (`cv_text.py`, no extra packages;
    scanned image-only PDFs can't be read, so the pasted text is used instead), and asks HermitShell's
    model for a summary, job titles, skills and gaps. From those it writes the person's
    `job_profile.md`, `cv_keywords.json` and search settings under `state/profiles/<id>/`, emails
@@ -354,7 +360,8 @@ whole tool shares).
 
 Keys and passwords are stored on the HermitShell server (`state/dashboard.json` and
 `state/profiles/`, mode 600) and shown only as their last four characters. Changes wait in KV and
-are applied by `profiles.py` within 5 minutes ("Waiting for HermitShell" shows what is pending).
+are applied by `profiles.py`, usually within a minute ("Waiting for HermitShell" shows what is
+pending). Until then the email server form shows what you saved rather than the old values.
 Passwords and keys typed into the page are deleted from KV after 2 days if HermitShell hasn't collected
 them.
 
@@ -363,7 +370,8 @@ them.
 <img src="images/worker/admin-profile.png" alt="A profile's settings page" width="720">
 
 **Back to profiles** stays in the top-left corner while you scroll. Each box has a short hint
-under it.
+under it. Details and job search are one form with one **Save changes** button; the CV has its own
+**Upload CV**.
 
 - **Details**: name, the email address their reports go to, phone and home town (shown on cover
   letters). For you, the address is `ALERT_EMAIL`.
@@ -376,6 +384,23 @@ under it.
 - **CV**: upload a PDF, Word or text file, or paste it. HermitShell reads it, rebuilds the profile and
   skills the jobs are rated against, and emails a summary. Your previous `job_profile.md` and
   `cv_keywords.json` are kept as `.bak` copies.
+
+**Saving without losing anything.** The Worker can't reach your server, so a save waits in KV until
+`profiles.py` collects it (usually within a minute). Meanwhile:
+
+- The page shows what HermitShell last reported with every save still waiting laid over it, so the
+  form keeps what you saved instead of jumping back to the old values.
+- A small box at the top says **Waiting for HermitShell**, then **Applied by HermitShell** (or why
+  it couldn't be applied). It reloads itself every 5 seconds for a minute, then every 20 seconds for
+  3 more, then stops; each check lists the KV queue, which the free plan limits to 1,000 a day.
+  The page has no JavaScript: the box is a small frame that only the dashboard itself can embed.
+- Only the fields you changed are saved. Each form remembers the values it opened with, so if
+  someone else (another admin tab, a CV rebuild) changed *other* fields in the meantime, both
+  changes are kept. If they changed the *same* field, nothing is saved: the page comes back with
+  your version still in the form and a list of each clashing field with both values. **Save
+  changes** again keeps yours.
+- A save with nothing changed says so and queues nothing. A bad email address or an empty name
+  shows the page again with what you typed.
 
 Every control is described in [screenshots.md](screenshots.md#profiles).
 
@@ -436,11 +461,14 @@ you run HermitShell (for example turn encryption off or change the retention day
 
 ### Free-plan limits
 
-Workers KV's free plan allows 1,000 list operations a day. Polling (`/events` every 5 minutes for
-cover letters, `/api/queue` for profiles) reads a small flag key instead of listing, and only lists
-when something is waiting, plus an hourly and a daily full check. Status reports from HermitShell are
-only written when something changed or every 15 minutes (at most 96 of the 1,000 writes a day the
-free plan allows).
+Workers KV's free plan allows 1,000 list operations, 1,000 writes and 100,000 reads a day, and
+Workers 100,000 requests. Polling (`/events` every 5 minutes for cover letters, `/api/queue` for
+profiles) reads a small flag key instead of listing, and only lists when something is waiting, plus
+an hourly and a daily full check. Between runs `profiles.py` reads `/api/queue/flag` every 15
+seconds (about 5,200 reads and requests a day) and only syncs when its value changes, so an item
+that keeps failing is retried by the next run rather than listed every 15 seconds. Admin pages
+also skip the listing when the flag says the queue is empty. Status reports from HermitShell are
+only written when something changed or every 15 minutes (at most 96 of the 1,000 writes a day).
 
 ## Removing it
 

@@ -8,6 +8,26 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Saves no longer vanish, and two people can't overwrite each other.** A profile's details and
+  job search are now one form with one **Save changes** button, next to one **Upload CV**. Before,
+  saving reloaded the page with the old values until HermitShell's next check, so the form looked
+  as if it had been wiped. Now the page lays every change still waiting for HermitShell over what
+  it last reported, so what you saved stays on screen. The email server form on Global settings does
+  the same. A small status box at the top of the profile page says **Waiting for HermitShell**, then
+  **Applied by HermitShell** (or why it couldn't be applied), checking again by itself. It is a
+  framed page, not JavaScript, and it slows down and then stops so it doesn't use up the free
+  plan's daily KV list quota. Each form remembers the values it opened with, and only the fields
+  you changed are saved. If someone else changed *other* fields in the meantime (another admin, a
+  CV rebuild), both changes are kept. If they changed the *same* field, nothing is saved: the page
+  comes back showing both values, with your version still in the form. HermitShell applies each
+  change field by field onto the current settings.
+- **HermitShell picks up dashboard changes within seconds.** `profiles.py` no longer waits up to 5
+  minutes for its next run. After each sync it keeps checking a new `/api/queue/flag` endpoint every
+  15 seconds until just before the next run: one KV read each time, well inside the free plan. It
+  syncs as soon as something new is queued. Sign-ups, deletions, CV uploads and settings all
+  benefit. `profiles.py --once` syncs once and exits. `JOB_PROFILES_WATCH_SECONDS` (`0` turns
+  watching off) and `JOB_PROFILES_POLL_SECONDS` tune it. Admin pages also skip listing the queue
+  when it is empty.
 - **Dashboard times in your timezone.** The admin pages showed every time in UTC, so during
   British Summer Time the last update looked an hour old. Times now use `HERMES_TIMEZONE` (sent by
   HermitShell with its status), and the status line says how long ago it was ("4 minutes ago").

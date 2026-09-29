@@ -110,6 +110,8 @@ when its best case is below the minimum.
 | `CLOUDFLARE_API_TOKEN` | none | API token for that deployment (Workers Scripts Edit, Workers KV Storage Edit; Access: Apps and Policies Edit for Access). Not changeable from the dashboard |
 | `CLOUDFLARE_WORKER_NAME` | `vacancy-feedback` | Worker name, the first part of its `workers.dev` address |
 | `CLOUDFLARE_ACCESS_EMAILS` | none | Emails Cloudflare Access lets through to `/admin`; empty = password only |
+| `JOB_PROFILES_WATCH_SECONDS` | `270` | After each 5-minute sync, how long `profiles.py` keeps watching the Worker for dashboard changes and sign-ups; `0` = only sync at each run |
+| `JOB_PROFILES_POLL_SECONDS` | `15` | How often it checks while watching (one KV read each time; at least 5) |
 
 The wizard generates both secrets and, with a Cloudflare token, deploys the Worker itself
 ([cloudflare-setup.md](cloudflare-setup.md)). Deploying by hand (with the Cloudflare MCP in an AI
@@ -121,7 +123,8 @@ Run times aren't `.env` settings: they are `hermes cron` jobs. The wizard asks f
 time (`07:30`, `weekdays 08:00`, `sunday 18:00` or a cron expression) and creates or updates
 the job. There are four more jobs: the weekly roll-up (`job_weekly.py`, default Sunday
 18:00), the cover letter and tailored CV requests check (`cover_letter.py`) and the profiles
-check (`profiles.py`), both every 5 minutes and silent when idle, and nightly maintenance
+check (`profiles.py`, which also watches for dashboard changes between runs), both every 5
+minutes and silent when idle, and nightly maintenance
 (`maintenance.py`, 03:30). In an unattended `--answers` file, use `SCHEDULE_DAILY_VACANCY_REPORT`,
 `SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY`, `SCHEDULE_DAILY_VACANCY_REPORT_LETTERS`,
 `SCHEDULE_DAILY_VACANCY_REPORT_PROFILES` and `SCHEDULE_DAILY_VACANCY_REPORT_MAINTENANCE`.
@@ -154,7 +157,7 @@ This is how it is carried out:
   Restore with `python3 maintenance.py --restore FILE --to EMPTY_DIR`, then copy back
   what you need.
 - **Unsubscribe and deletion.** An extra profile's unsubscribe link, or Delete on `/admin`,
-  removes its folder (profile, CV, tracker, letters, keys) within about 5 minutes, drops its
+  removes its folder (profile, CV, tracker, letters, keys) within about a minute, drops its
   answers still waiting on the Worker, replaces its name, email address and profile id with
   `[deleted]` in the logs, and emails the person a confirmation. Your own unsubscribe link only
   pauses your reports. `profiles.py --delete ID` does the same from the command line.
