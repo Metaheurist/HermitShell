@@ -1080,7 +1080,9 @@ def main() -> int:
         if not held:
             log("Another scan is still running; skipping this one")
             return 0
-        return run(args)
+        if args.weekly or env("JOB_PROFILE_ID") or env("JOB_REPORT_ALONE"):
+            return run(args)
+        return profiles.reported(profiles.OWNER, lambda: run(args))
 
 
 def run(args: argparse.Namespace) -> int:

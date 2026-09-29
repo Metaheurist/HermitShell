@@ -114,6 +114,36 @@ def test_the_live_link_keeps_tls_and_never_logs_the_api_token(capsys):
     assert token not in out.out + out.err
 
 
+@pytest.mark.parametrize("when", ["08:00 * * * 1; rm -rf /", "08:00\n0 * * * *", "--script=x.py", "8:00 --paused",
+                                  "24:00", "", HOSTILE])
+def test_a_report_time_from_the_dashboard_only_becomes_a_plain_schedule(when):
+    assert profiles.schedule_expr(when, "weekdays") == ""
+    assert profiles.schedule_expr("07:05", "weekdays; rm") == "5 7 * * *"
+
+
+@pytest.mark.parametrize("pid", ["--help", "../owner", "owner --script x.py", "a" * 41])
+def test_send_now_and_hermes_jobs_take_only_real_profile_ids(tmp_path, monkeypatch, pid):
+    monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
+    monkeypatch.setattr(profiles.subprocess, "Popen", lambda *a, **k: pytest.fail("started a process"))
+    monkeypatch.setattr(profiles.subprocess, "run", lambda *a, **k: pytest.fail("ran hermes"))
+    with pytest.raises(profiles.ProfileError):
+        profiles.admin_action({"type": "admin", "action": "send_now", "u": pid})
+    with pytest.raises(profiles.ProfileError):
+        profiles.run_report(pid)
+
+
+def test_a_report_job_only_runs_for_a_folder_inside_the_profiles_folder(tmp_path, monkeypatch):
+    monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
+    outside = tmp_path / "elsewhere" / "sam-lee"
+    outside.mkdir(parents=True)
+    monkeypatch.chdir(outside)
+    assert profiles.profile_from_cwd() == ""
+    inside = tmp_path / "profiles" / "Sam Lee"
+    inside.mkdir(parents=True)
+    monkeypatch.chdir(inside)
+    assert profiles.profile_from_cwd() == ""
+
+
 def test_log_scrubbing_treats_names_as_text_not_patterns(tmp_path, monkeypatch):
     monkeypatch.setattr(hc, "HERMES_HOME", tmp_path)
     monkeypatch.setattr(profiles, "STATE_DIR", tmp_path / "state")
