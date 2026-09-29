@@ -233,7 +233,7 @@ describe("emailing a job to its profile from the list of jobs sent", () => {
     await sentWith(env, "owner");
     const page = await (await get("/admin/sent?u=owner&r=7")).text();
     expect(page).toContain("Email to you</b>");
-    expect(page).not.toContain("Alex");
+    expect(page.slice(page.indexOf("<main"))).not.toContain("Alex");
   });
 
   it("only takes the mark from HermitShell's token, for a good profile and job", async () => {

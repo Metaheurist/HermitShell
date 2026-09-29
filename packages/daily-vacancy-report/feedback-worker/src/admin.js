@@ -31,7 +31,7 @@ import {
 import { LINK_STYLE, MAX_STATS_BYTES, SENT_RANGES, SENT_URL, STATS_URL, sentPage, splitStats, statsLink, statsPage, validStats } from "./stats.js";
 import { TASKS_STYLE, TASKS_URL, cancelTask, requests, taskRows, tasksButton, tasksModal, tasksPage } from "./tasks.js";
 import {
-  ADMIN_ID, PASSWORD_URL, ROLES, USERS_DONE, USERS_STYLE, USER_RE, accounts, canSee, changeOwnPassword, checkUser, displayName, initials,
+  ADMIN_ID, KEY_ICON, PASSWORD_URL, ROLES, USERS_DONE, USERS_STYLE, USER_RE, accounts, canSee, changeOwnPassword, checkUser, displayName, initials,
   passwordModal, recruiterOf, recruiters, signOutUser, signedIn, userAction, usersPage,
 } from "./users.js";
 
@@ -284,7 +284,6 @@ background:var(--soft);color:var(--brand-ink);box-shadow:none}
 .iconbtn:hover{background:#e2e5ff;filter:none;box-shadow:none}.iconbtn svg{width:15px;height:15px}
 .rowlinks{display:flex;gap:10px;align-items:center;flex-wrap:nowrap;margin-top:8px}
 .rowlinks .statpair,.rowlinks .statlink{margin-top:0}
-.whoami{display:flex;align-items:center;gap:10px;margin-top:32px}.whoami .signout{margin:0}.whoami .mine{margin-left:auto}
 `;
 
 // The recruiter's initials and a list to pick another; Assign shows once the pick changes (where the browser
@@ -381,7 +380,6 @@ async function dashboard(request, env, s) {
   const rows = grouped + shown.filter((e) => !listed.has(e)).map((e) => row(e, false)).join("")
     || (all.length ? noMatch(q) : `<tr><td colspan="4" class="muted">${admin ? "HermitShell has not reported any recruits yet."
       : "You have no recruits yet. The people you invite join your recruits, and an admin can assign others to you."}</td></tr>`);
-  const who = `${esc(displayName(s.me, current))} (${s.me.roles.map((r) => ROLES[r].label.toLowerCase()).join(", ")})`;
   const deletes = admin ? shown.filter(({ p }) => !p.owner && !p.pending).map(({ p }) => deleteRecruitModal(p, s.csrf)).join("") : "";
   return page("Recruits", `<style>${LINK_STYLE}${MODAL_STYLE}${CONFIRM_STYLE}${SEARCH_STYLE}${PENDING_STYLE}${TASKS_STYLE}${RECRUITER_STYLE}</style>${nav("profiles", admin)}${done ? note(done) : ""}
 ${lastUpdate(current, waiting, presence)}
@@ -392,7 +390,7 @@ ${rows}</table>
 ${admin ? `<p class="muted">The email server and web search keys everyone shares are under <a href="${SETTINGS_URL}">Global settings</a>; dashboard users and recruiters under <a href="${USERS_URL}">Users and roles</a>.</p>` : ""}
 ${inviteForm(s, recs)}
 ${inviteRows ? `<table class="list">${inviteRows}</table>` : ""}
-<div class="whoami"><span class="muted">Signed in as <b>${who}</b></span><a class="small quiet mine" href="#password">Change password</a><form method="post" action="/admin/logout" class="signout"><button class="small quiet">Sign out</button></form></div>`,
+`,
   { wide: true, before: tasksModal() + passwordModal(s.me, s.csrf, env) + deletes, headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` } });
 }
 
@@ -546,6 +544,51 @@ export async function handleAdmin(request, env, ctx) {
     return redirect("/admin", { "Set-Cookie": cookieHeader("", 0) });
   }
   if (!s) return loginPage();
+  return withSignedIn(await signedInRoute(request, env, s, path), env, s, path, request.method);
+}
+
+const LOGOUT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h3.5A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5H14"/><path d="M10 16.5 5.5 12 10 7.5M5.5 12H15"/></svg>';
+// Wide screens keep it fixed like the Back button; narrower ones let it scroll away, and phones put it in
+// the flow above the card. The card's 56px top margin collapses into the body, which the absolute box is
+// placed against, hence the negative top.
+const ME_STYLE = `
+.me{position:fixed;top:20px;right:20px;z-index:10;display:flex;flex-direction:column;align-items:flex-end;gap:8px;animation:drop .45s var(--ease) both}
+.mecard{display:flex;align-items:center;gap:10px;padding:6px 14px 6px 6px;background:rgba(255,255,255,.92);border:1px solid var(--line);
+border-radius:14px;box-shadow:0 8px 24px -12px rgba(15,23,42,.25)}
+.mecard .avatar{width:34px;height:34px;border-radius:11px;font-size:13px}
+.mecard .avatar.rec{background:linear-gradient(135deg,#2dd4bf,#0891b2);box-shadow:0 6px 14px -8px rgba(8,145,178,.9)}
+.mename{display:flex;flex-direction:column;line-height:1.25}.mename b{font-size:13.5px;color:var(--ink)}
+.mename small{font-size:11.5px;color:var(--muted);font-weight:600}
+.mebtns{display:flex;gap:6px}.mebtns form{margin:0}
+.mebtn{margin:0;display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:12px;font:inherit;font-size:13.5px;
+font-weight:650;color:var(--brand-ink);text-decoration:none;background:rgba(255,255,255,.92);border:1px solid var(--line);
+box-shadow:0 8px 24px -12px rgba(15,23,42,.25);cursor:pointer;transition:transform .18s var(--ease),box-shadow .18s,background .18s}
+.mebtn:hover{transform:translateY(-1px);background:#fff;filter:none;box-shadow:0 12px 28px -12px rgba(15,23,42,.3)}
+a.mebtn{width:34px;padding:0;justify-content:center}.mebtn svg{flex:none;width:16px;height:16px}
+@media (max-width:1360px){.me{position:absolute;top:-46px;right:10px;flex-direction:row;align-items:center}
+.mecard{padding:3px}.mename{display:none}.mecard .avatar{width:30px;height:30px;border-radius:10px;font-size:12px}}
+@media (max-width:560px){.me{position:static;justify-content:flex-end;margin:12px 16px 0}}
+`;
+
+// The signed-in user's initials, name and roles, with Change password and Sign out.
+function signedInBox(s, current) {
+  const name = displayName(s.me, current);
+  const roles = s.me.roles.map((r) => ROLES[r].label).join(", ");
+  const label = `Signed in as ${name} (${roles.toLowerCase()})`;
+  return `<style>${ME_STYLE}</style><div class="me" role="region" aria-label="${esc(label)}">
+<div class="mecard" title="${esc(label)}"><span class="avatar${s.me.admin ? "" : " rec"}" aria-hidden="true">${esc(initials(name))}</span><span class="mename"><b>${esc(name)}</b><small>${esc(roles)}</small></span></div>
+<div class="mebtns"><a class="mebtn" href="/admin#password" title="Change password" aria-label="Change password">${KEY_ICON}</a><form method="post" action="/admin/logout"><button class="mebtn">${LOGOUT_ICON}Sign out</button></form></div></div>`;
+}
+
+// Every signed-in page gets the box, except those shown inside another page (the Tasks window, save status).
+async function withSignedIn(res, env, s, path, method) {
+  if (method === "GET" && [TASKS_URL, STATUS_URL].includes(path)) return res;
+  if (!(res.headers.get("Content-Type") || "").startsWith("text/html")) return res;
+  const [html, current] = await Promise.all([res.text(), status(env)]);
+  return new Response(html.replace("<body>", () => `<body>${signedInBox(s, current)}`), { status: res.status, headers: res.headers });
+}
+
+async function signedInRoute(request, env, s, path) {
   if (path === "/admin" && request.method === "GET") return dashboard(request, env, s);
   if (path === "/admin/action" && request.method === "POST") return action(request, env, s);
   if (path === "/admin/cv" && request.method === "POST") {

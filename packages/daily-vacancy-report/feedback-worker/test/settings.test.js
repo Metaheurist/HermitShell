@@ -308,7 +308,7 @@ describe("profile page", () => {
     expect(body.match(/<button>Save changes<\/button>/g)).toHaveLength(1);
     expect(body.match(/<button>Upload CV<\/button>/g)).toHaveLength(1);
     expect(body.match(/<button class="small">Send jobs now<\/button>/g)).toHaveLength(1);
-    expect(body.match(/<form /g)).toHaveLength(3);
+    expect(body.slice(body.indexOf("<main")).match(/<form /g)).toHaveLength(3);
     expect(body).not.toContain("Save details");
     expect(body).not.toContain("Save job search");
     expect(body.indexOf('id="details"')).toBeGreaterThan(body.indexOf('action="/admin/action"'));
@@ -401,7 +401,8 @@ describe("profile page", () => {
     expect(body).toContain('<label for="min_salary">Minimum salary</label>');
     expect(body).toContain("Jobs that don&#39;t show a salary are always included.");
     expect(body).not.toContain("All profiles");
-    expect(body).toMatch(/<body><a class="back" href="\/admin"><svg [^>]*aria-hidden="true"><path [^>]*\/><\/svg>Back to recruits<\/a><main class="wide">/);
+    expect(body).toMatch(/<\/div><\/div><a class="back" href="\/admin"><svg [^>]*aria-hidden="true"><path [^>]*\/><\/svg>Back to recruits<\/a><main class="wide">/);
+    expect(body).toMatch(/<body><style>[^<]*<\/style><div class="me" role="region" aria-label="Signed in as /);
     expect(body).not.toMatch(/&larr;|[\u2190-\u21ff]/);
     expect((await get("/admin/profile?u=owner")).body).toContain('id="min_salary" name="min_salary" value=""');
     for (const min_salary of ["£45,000", "", "45k"]) await save(get, act, "owner", { min_salary });

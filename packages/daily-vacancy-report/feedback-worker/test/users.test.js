@@ -128,7 +128,7 @@ describe("recruiter sign-in and what they can see", () => {
     expect(board).not.toContain('value="delete"');
     expect(board).not.toContain('class="binbtn"');
     expect(board).not.toContain('id="del-sam-lee"');
-    expect(board).toContain("Signed in as <b>Casey Quinn (recruiter)</b>");
+    expect(board).toContain('aria-label="Signed in as Casey Quinn (recruiter)"');
     expect(board).toContain("The person joins your recruits.");
     expect(board).not.toContain('name="recruiter"');
   });
@@ -242,7 +242,7 @@ describe("recruiters' pools", () => {
     expect(await admin.where("/admin/users", { op: "admin_roles", roles: "recruiter" })).toBe("/admin/users?done=updated");
     board = await admin.text("/admin");
     expect(board).toContain('<option value="admin" selected>Alex Morgan&#39;s recruit</option>');
-    expect(board).toContain("Signed in as <b>Alex Morgan (admin, recruiter)</b>");
+    expect(board).toContain('aria-label="Signed in as Alex Morgan (admin, recruiter)"');
     const made = await (await admin.send("/admin/action", { action: "invite", note: "For me", recruiter: "admin" })).text();
     expect(made).toContain("They join your recruits.");
     expect(await admin.where("/admin/action", { action: "invite", recruiter: "nobody" })).toBe("/admin?done=badrecruiter");
@@ -309,7 +309,7 @@ describe("signing users out", () => {
     expect(await casey.text("/admin")).toContain("Admin sign-in");
     expect((await signIn(env, "casey", CASEY_PASSWORD, "203.0.113.13")).res.status).toBe(401);
     const again = client(env, (await signIn(env, "casey", "a new passphrase here", "203.0.113.14")).cookie);
-    expect(await again.text("/admin")).toContain("Signed in as <b>Casey Q (recruiter)</b>");
+    expect(await again.text("/admin")).toContain('aria-label="Signed in as Casey Q (recruiter)"');
     await worker.fetch(post("/admin/logout", {}, { Cookie: again.cookie }), env);
     expect(await again.text("/admin")).toContain("Admin sign-in");
     expect(await admin.text("/admin")).toContain("Signed in as");
@@ -350,7 +350,7 @@ describe("passwords", () => {
     const { env, casey } = await setup();
     const other = client(env, (await signIn(env, "casey", CASEY_PASSWORD, "203.0.113.20")).cookie);
     const page = await casey.text("/admin");
-    expect(page).toContain('<a class="small quiet mine" href="#password">Change password</a>');
+    expect(page).toContain('<a class="mebtn" href="/admin#password" title="Change password" aria-label="Change password">');
     expect(page).toContain('<div class="modal" id="password"');
     expect(page).toContain('<form method="post" action="/admin/password">');
     expect(page).toContain('autocomplete="current-password"');
@@ -448,5 +448,34 @@ describe("passwords", () => {
     expect(res.status).toBe(403);
     expect(env.FEEDBACK.store.get("accounts")).toBe(before);
     expect(await casey.text("/admin")).not.toContain("#reset-");
+  });
+});
+
+describe("the signed-in box", () => {
+  it("shows who is signed in, Change password and Sign out at the top right of every signed-in page", async () => {
+    const { admin, casey } = await setup();
+    for (const path of ["/admin", "/admin/users", "/admin/settings", "/admin/profile?u=owner", "/admin/stats?u=owner", "/admin/sent?u=owner&r=7"]) {
+      const body = await admin.text(path);
+      expect(body, path).toContain('<div class="me" role="region" aria-label="Signed in as Alex Morgan (admin)">');
+      expect(body, path).toContain('<span class="avatar" aria-hidden="true">AM</span><span class="mename"><b>Alex Morgan</b><small>Admin</small></span>');
+      expect(body, path).toContain('<form method="post" action="/admin/logout"><button class="mebtn">');
+      expect(body.match(/class="me"/g), path).toHaveLength(1);
+    }
+    const board = await casey.text("/admin/profile?u=sam-lee");
+    expect(board).toContain('<span class="avatar rec" aria-hidden="true">CQ</span><span class="mename"><b>Casey Quinn</b><small>Recruiter</small></span>');
+    expect(await casey.text("/admin")).not.toContain("whoami");
+  });
+
+  it("stays out of pages shown inside another page, the sign-in page and non-HTML answers", async () => {
+    const { env, admin } = await setup();
+    expect(await admin.text("/admin/tasks")).not.toContain('class="me"');
+    const saving = await admin.get("/admin/profile/status?u=owner");
+    expect(saving.headers.get("Content-Type")).toContain("text/html");
+    expect(await saving.text()).not.toContain('class="me"');
+    const anon = await worker.fetch(new Request(`${BASE}/admin`), env);
+    expect(await anon.text()).not.toContain('class="me"');
+    const signedOut = await worker.fetch(post("/admin/logout", {}, { Cookie: admin.cookie }), env);
+    expect(signedOut.status).toBe(303);
+    expect(await admin.text("/admin")).not.toContain('class="me"');
   });
 });

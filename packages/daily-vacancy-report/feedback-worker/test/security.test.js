@@ -724,3 +724,17 @@ describe("changing and resetting passwords", () => {
     expect(await (await get("/admin", env, { Cookie: casey })).text()).not.toContain("passphrase");
   });
 });
+
+describe("the signed-in box", () => {
+  it("escapes the signed-in user's name", async () => {
+    const env = testEnv(ADMIN);
+    await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: { Authorization: "Bearer api-token" },
+      body: JSON.stringify({ profiles: [{ id: "owner", name: HOSTILE, email: "alex@example.com", status: "active", owner: true }] }) }), env);
+    const cookie = await signIn(env, "203.0.113.70");
+    const body = await (await get("/admin/users", env, { Cookie: cookie })).text();
+    const box = body.slice(body.indexOf('<div class="me"'), body.indexOf("<main"));
+    expect(box).toContain("&lt;script&gt;");
+    expect(box).not.toContain("<script>");
+    expect(box).not.toContain("<img");
+  });
+});

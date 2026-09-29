@@ -133,7 +133,7 @@ const ROLE_ICONS = {
   recruiter: '<circle cx="10" cy="8" r="3.5"/><path d="M3.5 20c.8-3.8 3.3-5.5 6.5-5.5 1.3 0 2.5.3 3.5.8M19 14v6M16 17h6"/>',
 };
 
-const KEY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.8-9.8M16.5 6.5l3 3M14 9l2.5 2.5"/></svg>';
+export const KEY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.8-9.8M16.5 6.5l3 3M14 9l2.5 2.5"/></svg>';
 
 function roleIcon(role) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ROLE_ICONS[role]}</svg>`;
@@ -169,7 +169,7 @@ function newPasswordFields(prefix, username = "") {
 <span class="hint">At least ${STRONG_PASSWORD} characters is best.</span>`;
 }
 
-// The Change password window on the Recruits page, for whoever is signed in.
+// The Change password window on the Recruits page (the key button at the top right of every page opens it).
 export function passwordModal(me, csrf, env) {
   if (me.main) {
     return modal("password", "Change password", "Your password is the Worker's ADMIN_PASSWORD secret, so it can't be changed here.",
@@ -274,7 +274,7 @@ export const USERS_DONE = {
   mismatch: "The two new passwords were different, so nothing changed.",
   badroles: "Pick at least one role.",
   self: "You can't delete or demote the account you are signed in with.",
-  ownpass: "Change your own password from Change password on the Recruits page.",
+  ownpass: "Change your own password with the key button at the top right.",
   confirmuser: "Tick the box to delete the user.",
   full: `There can be at most ${MAX_USERS} users.`,
 };
@@ -292,7 +292,7 @@ export function usersPage(acc, status, csrf, me, env, done = "") {
 <h2>Roles</h2><div class="rolecards">${roles}</div>
 <div class="tabletools"><h2 style="margin:0">Dashboard users</h2><a class="addkey" href="#user-new">${USER_ICON}Add user</a></div>
 <table class="list"><tr><th>User</th><th>Roles</th><th>Recruits</th><th></th></tr>${rows}</table>
-<p class="muted">Passwords are kept only as salted hashes. Resetting a password or deleting a user signs them out at once; everyone changes their own password from <b>Change password</b> on the <a href="/admin">Recruits</a> page. Assign recruits to a recruiter from the <a href="/admin">Recruits</a> list; the people a recruiter invites join their pool.</p>`,
+<p class="muted">Passwords are kept only as salted hashes. Resetting a password or deleting a user signs them out at once; everyone changes their own password with the key button at the top right. Assign recruits to a recruiter from the <a href="/admin">Recruits</a> list; the people a recruiter invites join their pool.</p>`,
   { wide: true, before: userModals(acc, csrf, `${main.name} (main admin)`, me) + deletes });
 }
 
