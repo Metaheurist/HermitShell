@@ -759,6 +759,51 @@ def about_block(job: dict) -> str:
             f'margin-bottom:4px">About the company</div>{body}</div>')
 
 
+PERIOD_WORDS = {"year": "a year", "day": "a day", "hour": "an hour"}
+
+
+def salary_figure(text: str, parsed: dict | None) -> tuple[str, str, str]:
+    """(headline, period, yearly estimate), e.g. ('£350 - £400', 'a day', 'about £77,000 - £88,000 a year')."""
+    if not parsed:
+        return " ".join(text.split())[:60], "", ""
+
+    def money(value: float) -> str:
+        return f"{parsed['currency']}{value:,.2f}" if value % 1 else f"{parsed['currency']}{value:,.0f}"
+
+    low, high = parsed["low"], parsed["high"]
+    headline = money(low) if low == high else f"{money(low)} - {money(high)}"
+    if low == high and re.search(r"\bup to\b", text, re.I):
+        headline = f"Up to {headline}"
+    yearly = ""
+    if parsed["period"] != "year":
+        y_low, y_high = parsed["year_low"], parsed["year_high"]
+        span = f"{parsed['currency']}{y_low:,}" + (f" - {parsed['currency']}{y_high:,}" if y_high != y_low else "")
+        yearly = f"about {span} a year"
+    return headline, PERIOD_WORDS[parsed["period"]], yearly
+
+
+def salary_line(job: dict) -> str:
+    headline, period, yearly = salary_figure(job["salary"], job.get("salary_range"))
+    return f"{headline} {period}".strip() + (f" ({yearly})" if yearly else "")
+
+
+def salary_block(job: dict) -> str:
+    """Salary as a headline under the company line; empty when the listing gives none."""
+    if not job.get("salary"):
+        return ""
+    headline, period, yearly = salary_figure(job["salary"], job.get("salary_range"))
+    period_html = f' <span style="font-size:12px;font-weight:600;color:#047857">{period}</span>' if period else ""
+    yearly_html = (f'<td valign="middle" style="padding-left:10px;font-size:12px;color:{C_MUTED}">{yearly}</td>'
+                   if yearly else "")
+    return (f'<table cellpadding="0" cellspacing="0" style="margin:0 0 10px"><tr>'
+            f'<td valign="middle" style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;'
+            f'padding:6px 12px 6px 10px"><table cellpadding="0" cellspacing="0"><tr>'
+            f'<td valign="middle" width="20" style="padding-right:8px"><img src="cid:icon-salary" width="20" '
+            f'height="20" alt="Salary" style="display:block;width:20px;height:20px;border:0"></td>'
+            f'<td valign="middle" style="font-size:17px;font-weight:800;color:#065f46;white-space:nowrap">'
+            f'{esc(headline)}{period_html}</td></tr></table></td>{yearly_html}</tr></table>')
+
+
 def gap_tags(gaps: list[str], link: str) -> str:
     """Missing skills as amber tags; with the feedback Worker each one opens the add-to-my-skills page."""
     if not gaps:
@@ -782,7 +827,7 @@ def job_card(job: dict, rank: int) -> str:
                if job.get("company_site") and job["company"] else esc(job["company"]))
     meta = " &middot; ".join(x for x in (company, esc(job["location"])) if x)
     pills = closing_pill(job.get("days_left")) + "".join(
-        pill(p) for p in (job["employment_type"], job["work_mode"], job["salary"] or "Salary not listed",
+        pill(p) for p in (job["employment_type"], job["work_mode"], "" if job["salary"] else "Salary not listed",
                           job["seniority"], job.get("published")) if p and p != "Unknown")
     top_skills = chips(job["matched"][:3], "#047857", "#ecfdf5", "#34d399").replace(
         "font-size:12px;", "font-size:12px;font-weight:700;") or \
@@ -808,6 +853,7 @@ def job_card(job: dict, rank: int) -> str:
       <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:{C_ACCENT};font-weight:700">#{rank} &middot; {esc(job['source'])}</div>
       <a href="{esc(job['url'])}" style="display:block;font-size:19px;font-weight:700;color:{C_INK};text-decoration:none;line-height:1.3;margin:4px 0">{esc(job['title'])}</a>
       <div style="font-size:13px;color:#475569;margin-bottom:10px">{meta}</div>
+      {salary_block(job)}
       <div>{pills}</div>
     </td>
     <td width="84" valign="top" align="right">
@@ -956,7 +1002,8 @@ def preview_html(html_body: str) -> str:
     """The email with CID images pointed at their files, so the saved copy opens in a browser."""
     icons = Path(os.path.relpath(ICON_DIR, STATE_DIR)).as_posix()
     return re.sub(r'src="cid:([\w-]+)"',
-                  lambda m: f'src="{icons if m.group(1).startswith("btn-") else "logos"}/{m.group(1)}.png"', html_body)
+                  lambda m: f'src="{icons if m.group(1).startswith(("btn-", "icon-")) else "logos"}/{m.group(1)}.png"',
+                  html_body)
 
 
 def build_text(jobs: list[dict], summary: str, followups: str = "") -> str:
@@ -965,6 +1012,7 @@ def build_text(jobs: list[dict], summary: str, followups: str = "") -> str:
         closing = f", closes in {j['days_left']} days" if j.get("days_left") is not None else ""
         parts.append(f"#{i} [{j['fit']}/10, confidence {j['confidence']}%, CV match {j['coverage']}%{closing}] "
                      f"{j['title']} - {j['company']} ({j['location']}, {j['employment_type']})\n"
+                     + (f"   Salary: {salary_line(j)}\n" if j.get("salary") else "") +
                      f"   {j['reasoning']}\n   Matches: {', '.join(j['matched']) or '-'}\n   {j['url']}"
                      + "".join(f"\n   {label}: {j[k]}" for label, k in (("Employer", "employer"), ("About", "about"),
                                                                         ("Company site", "company_site"))

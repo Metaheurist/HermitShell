@@ -35,6 +35,7 @@ CARD_BUTTONS = {
     "interested": ("Interested", "bookmark", "#b45309", "#fffbeb", "#fde68a", False),
     "cover_letter": ("Cover letter", "file-text", "#6d28d9", "#f5f3ff", "#ddd6fe", False),
 }
+CARD_ICONS = {"salary": ("banknote", "#047857")}
 ICON_DIR = Path(__file__).resolve().parent / "icons"
 
 

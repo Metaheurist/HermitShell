@@ -37,7 +37,8 @@ light and dark modes.
 5. **Enrich.** Adds the hiring company's website, a circular logo and an expandable "About the
    company" section. Lookups are cached for 30 days in `state/companies.json`. The same job
    advertised by several agencies becomes one card that lists the other advertisers.
-6. **Email.** Sends a summary, then one card per job with the closing date (jobs closing within
+6. **Email.** Sends a summary, then one card per job with the salary as a headline under the
+   company (day and hourly rates also show a yearly estimate), the closing date (jobs closing within
    three days come first), your three strongest matching skills, the skills your CV is missing and a link to
    apply. A banner warns when a source failed (for example an expired Indeed login). With the
    optional [feedback buttons](../../docs/feedback-worker.md), each card also has **I applied**,

@@ -30,6 +30,10 @@ using [Semantic Versioning](https://semver.org/).
   rewritten, and failed requests are retried up to 3 times. Settings:
   `COVER_LETTER_NAME`, `COVER_LETTER_CONTACT`, `COVER_LETTER_CV_FILE`, `COVER_LETTER_SIGN_OFF`,
   `COVER_LETTER_FROM_NAME` and `COVER_LETTER_MODEL`. `send_email()` now takes attachments.
+- **Salary headline on job cards.** When a listing gives a salary it now appears under the
+  company line in a green box with a banknote icon (`icons/icon-salary.png`), formatted from the
+  parsed range, e.g. "£45,000 - £55,000 a year"; day and hourly rates add a yearly estimate. The
+  salary tag is gone; "Salary not listed" stays as a tag. The plain-text email gets a Salary line.
 - **Add missing skills from the email.** A card's missing skills are now amber tags. With the
   feedback Worker, tapping one opens a page with that skill ticked, the job's other missing
   skills beside it and a box for more. Confirmed skills join a pool in `state/job_tracker.db`:

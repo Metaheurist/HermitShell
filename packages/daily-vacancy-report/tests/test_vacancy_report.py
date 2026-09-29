@@ -322,6 +322,34 @@ def test_report_renders_new_card_parts():
     assert "Generate cover letter: https://fb.example.workers.dev/f?" in plain
 
 
+@pytest.mark.parametrize("text, expected", [
+    ("£40,000 - £55,000 per annum", ("£40,000 - £55,000", "a year", "")),
+    ("up to £60k", ("Up to £60,000", "a year", "")),
+    ("£350 - £400 per day", ("£350 - £400", "a day", "about £77,000 - £88,000 a year")),
+    ("£25 per hour", ("£25", "an hour", "about £48,750 a year")),
+    ("£12.50 per hour", ("£12.50", "an hour", "about £24,375 a year")),
+    ("Competitive plus  bonus", ("Competitive plus bonus", "", "")),
+])
+def test_salary_figure(text, expected):
+    import job_scanner
+
+    assert job_scanner.salary_figure(text, parse_salary(text)) == expected
+
+
+def test_salary_is_a_headline_not_a_tag():
+    import job_scanner
+
+    job = {**report_job(), "salary": "£350 - £400 per day", "salary_range": parse_salary("£350 - £400 per day")}
+    page = job_scanner.build_html([job], [], REPORT_STATS, "Summary.")
+    assert 'src="cid:icon-salary"' in page and "£350 - £400" in page and "about £77,000 - £88,000 a year" in page
+    assert page.index("£350 - £400") < page.index("Contract</span>")
+    assert "Salary not listed" not in page and (job_scanner.ICON_DIR / "icon-salary.png").is_file()
+    assert "Salary: £350 - £400 a day (about £77,000 - £88,000 a year)" in job_scanner.build_text([job], "")
+    unlisted = job_scanner.build_html([report_job()], [], REPORT_STATS, "Summary.")
+    assert "Salary not listed" in unlisted and "icon-salary" not in unlisted
+    assert "Salary:" not in job_scanner.build_text([report_job()], "")
+
+
 def test_missing_skill_tags_open_the_add_skill_page_with_that_skill_ticked():
     import job_scanner
 
