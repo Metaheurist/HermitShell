@@ -4,7 +4,7 @@
 // first. Then sign in with ADMIN_USER (default "admin") and the ADMIN_PASSWORD secret; five wrong attempts
 // lock that address, and 30 from anywhere lock sign-in, for 15 minutes. Signed-in pages create invite
 // links, show the profiles HermitShell reports, and queue changes that HermitShell applies as soon as the live
-// link tells it (settings pages: settings.js; each profile's stats page: stats.js; the live link: hub.js). Nothing here can reach the HermitShell
+// link tells it (settings pages: settings.js; each profile's stats page: stats.js; crawler keys: keys.js; the live link: hub.js). Nothing here can reach the HermitShell
 // server: HermitShell connects out to /api/live and reads /api/queue with its API token.
 
 import { hubConnect, hubPresence, hubSeen } from "./hub.js";
@@ -18,6 +18,7 @@ import {
   SETTINGS_DONE, SETTINGS_URL, STATUS_URL, button, checklist, cvUpload, nav, problems, profileChange, profilePage, saveStatus,
   sendButton, settingsItem, settingsPage,
 } from "./settings.js";
+import { CRAWLERS, KEY_STYLE, crawlerCell, keyModal } from "./keys.js";
 import { LINK_STYLE, MAX_STATS_BYTES, STATS_URL, statsLink, statsPage, validStats } from "./stats.js";
 
 const SESSION_SECONDS = 12 * 3600;
@@ -180,7 +181,6 @@ function schedule(p) {
 function profileRow(p, csrf, tz, stats) {
   const status = `<span class="pill${p.owner ? " owner" : p.status === "paused" ? " paused" : ""}">${p.owner ? "owner, " : ""}${esc(p.status)}</span>`
     + (p.scanning ? ' <span class="pill scanning">scanning now</span>' : "");
-  const crawler = p.crawler === "own" ? `own key ${esc(p.key_hint || "")}` : "global key";
   const toggle = p.status === "paused" ? button(csrf, "resume", "Resume", { u: p.id }) : button(csrf, "pause", "Pause", { u: p.id });
   const remove = p.owner ? "" : `<form method="post" action="/admin/action" class="inline" style="margin-top:6px">
 <input type="hidden" name="csrf" value="${esc(csrf)}"><input type="hidden" name="action" value="delete"><input type="hidden" name="u" value="${esc(p.id)}">
@@ -191,11 +191,7 @@ function profileRow(p, csrf, tz, stats) {
 <b>${esc(p.name)}</b>${cv}<div class="muted">${esc(p.email || "")}</div><div class="muted">since ${esc(when(p.created, tz))}</div>
 <a class="small" href="/admin/profile?u=${esc(p.id)}">Manage</a><div>${statsLink(p, stats, tz)}</div></div></div></td>
 <td>${status}<div class="muted">last report ${esc(p.last_run ? `${ago(p.last_run)} (${when(p.last_run, tz)})` : "never")}</div>${schedule(p)}</td>
-<td><div class="muted">${crawler}</div>
-<form method="post" action="/admin/action" class="inline" style="margin-top:6px">
-<input type="hidden" name="csrf" value="${esc(csrf)}"><input type="hidden" name="action" value="set_key"><input type="hidden" name="u" value="${esc(p.id)}">
-<input name="key" type="password" placeholder="Their Firecrawl key" autocomplete="off"><button class="small">Save</button></form>
-${p.crawler === "own" ? button(csrf, "use_global", "Use global key", { u: p.id }) : ""}</td>
+<td>${crawlerCell(p, csrf)}</td>
 <td><div class="actions">${sendButton(p, csrf)}${toggle}</div>${remove}</td></tr>`;
 }
 
@@ -209,7 +205,9 @@ async function dashboard(request, env, s) {
     .map((i) => `<tr><td>${esc(i.note || "No note")}</td><td class="muted">expires ${esc(when(i.expires, current.timezone))}</td>
 <td>${button(s.csrf, "revoke", "Revoke", { invite: i.id })}</td></tr>`).join("");
   const done = DONE[url.searchParams.get("done")];
-  return page("Profiles", `<style>${LINK_STYLE}</style>${nav("profiles")}${done ? note(done) : ""}
+  const profiles = (current.profiles || []).filter((p) => PROFILE_RE.test(p.id || ""));
+  const modals = profiles.map((p) => keyModal(p, s.csrf)).join("");
+  return page("Profiles", `<style>${LINK_STYLE}${KEY_STYLE}</style>${nav("profiles")}${done ? note(done) : ""}
 ${lastUpdate(current, queued, presence)}
 ${problems(current)}${checklist(current)}
 <table class="list"><tr><th>Profile</th><th>Status</th><th>Crawler</th><th></th></tr>
@@ -220,7 +218,7 @@ ${(current.profiles || []).map((p, i) => profileRow(p, s.csrf, current.timezone,
 <input name="note" maxlength="80" placeholder="Who it is for (only you see this)"><button class="small">Create invite link</button></form>
 <p class="muted">Each link works once and expires after 7 days.</p>
 ${inviteRows ? `<table class="list">${inviteRows}</table>` : ""}
-<form method="post" action="/admin/logout" class="signout"><button class="small quiet">Sign out</button></form>`, { wide: true });
+<form method="post" action="/admin/logout" class="signout"><button class="small quiet">Sign out</button></form>`, { wide: true, before: modals });
 }
 
 async function action(request, env, s) {
@@ -257,8 +255,9 @@ async function action(request, env, s) {
   }
   if (act === "set_key") {
     const key = String(form.get("key") || "").trim();
-    if (!KEY_RE.test(key)) return redirect("/admin?done=badkey");
-    await queueItem(env, { type: "admin", action: act, u, key }, SECRET_TTL_SECONDS);
+    const provider = String(form.get("provider") || "firecrawl");
+    if (!KEY_RE.test(key) || !CRAWLERS.includes(provider)) return redirect("/admin?done=badkey");
+    await queueItem(env, { type: "admin", action: act, u, key, provider }, SECRET_TTL_SECONDS);
   } else if (act === "delete") {
     if (form.get("confirm") !== "yes") return redirect("/admin?done=confirm");
     await queueItem(env, { type: "admin", action: act, u });

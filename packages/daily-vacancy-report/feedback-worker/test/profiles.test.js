@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import worker from "../src/index.js";
+import { queueItem } from "../src/join.js";
 import { BASE, keysWith, testEnv, valuesWith } from "./helpers.js";
+
+describe("queue order", () => {
+  it("keeps changes saved in the same millisecond in the order they were saved", async () => {
+    const env = testEnv();
+    for (let n = 0; n < 20; n++) await queueItem(env, { type: "admin", action: "pause", u: `p${n}` });
+    const ids = keysWith(env, "queue:");
+    expect([...ids].sort().map((id) => JSON.parse(env.FEEDBACK.store.get(id)).u))
+      .toEqual(Array.from({ length: 20 }, (_, n) => `p${n}`));
+  });
+});
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const API = { Authorization: "Bearer api-token" };
@@ -200,7 +211,7 @@ describe("admin gateway", () => {
     const env = testEnv(ADMIN);
     const status = { profiles: [
       { id: "owner", name: "Owner", email: "owner@example.com", status: "active", owner: true, crawler: "global" },
-      { id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active", crawler: "own", key_hint: "fc-...9f2" },
+      { id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active", crawler: "own", provider: "firecrawl", key_hint: "fc-...9f2" },
     ], keys: { firecrawl: { source: "env", hint: "fc-...0001" } } };
     await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: API, body: JSON.stringify(status) }), env);
     await env.FEEDBACK.put("event:sam-lee:1:abc", JSON.stringify({ a: "interested" }));
@@ -209,7 +220,8 @@ describe("admin gateway", () => {
     const { cookie } = await signIn(env);
     const { body, csrf } = await dashboard(env, cookie);
     expect(body).toContain("Sam Lee");
-    expect(body).toContain("own key fc-...9f2");
+    expect(body).toContain("<b>Firecrawl</b>");
+    expect(body).toContain("fc-...9f2");
     expect(body).toContain('<a class="small" href="/admin/profile?u=sam-lee">Manage</a>');
     expect(body.match(/delete CV and history/g)).toHaveLength(1);
 
@@ -229,6 +241,7 @@ describe("admin gateway", () => {
     expect((await adminAction(env, cookie, csrf, { action: "pause", u: "../etc" })).status).toBe(400);
 
     const queued = valuesWith(env, "queue:").map(({ action, u, key, firecrawl, clear }) => ({ action, u, key, firecrawl, clear }));
+    expect(valuesWith(env, "queue:")[0].provider).toBe("firecrawl");
     expect(queued).toEqual([
       { action: "set_key", u: "sam-lee", key: "fc-test-own-key", firecrawl: undefined, clear: undefined },
       { action: "pause", u: "sam-lee", key: undefined, firecrawl: undefined, clear: undefined },

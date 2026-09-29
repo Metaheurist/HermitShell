@@ -16,9 +16,14 @@ const CV_TYPES = { pdf: "application/pdf", docx: "application/vnd.openxmlformats
   txt: "text/plain", md: "text/markdown" };
 const EXPIRED = ["Invite not valid", "<p>This invite link has expired or has already been used. Ask for a new one.</p>", { status: 410 }];
 
+// HermitShell applies the queue in id order, so two changes saved in the same millisecond must not be ordered by
+// their random part.
+let lastQueued = 0;
+
 export async function queueItem(env, item, ttl = QUEUE_TTL_SECONDS) {
-  const id = `queue:${Date.now()}:${newId()}`;
-  await env.FEEDBACK.put(id, JSON.stringify({ id, at: Date.now(), ...item }), { expirationTtl: ttl });
+  const at = lastQueued = Math.max(Date.now(), lastQueued + 1);
+  const id = `queue:${at}:${newId()}`;
+  await env.FEEDBACK.put(id, JSON.stringify({ id, at, ...item }), { expirationTtl: ttl });
   // A new value for every item: pushed down the live link at once, and read from /api/queue/flag when HermitShell
   // polls instead.
   await env.FEEDBACK.put("flag:queue", id, { expirationTtl: QUEUE_TTL_SECONDS });

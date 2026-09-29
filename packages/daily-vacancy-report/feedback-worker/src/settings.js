@@ -11,7 +11,7 @@ import { LINK_STYLE, STATS_URL, icon } from "./stats.js";
 export const LEVELS = ["junior", "mid", "senior", "lead", "any"];
 export const EMPLOYMENT_TYPES = ["Permanent", "Contract", "Temporary", "Part-time", "Internship"];
 export const WORK_MODES = ["On-site", "Hybrid", "Remote"];
-const PROVIDERS = {
+export const PROVIDERS = {
   firecrawl: { label: "Firecrawl", signup: "https://www.firecrawl.dev/app/api-keys" },
   tavily: { label: "Tavily", signup: "https://app.tavily.com/home" },
   scrapfly: { label: "Scrapfly", signup: "https://scrapfly.io/dashboard" },
