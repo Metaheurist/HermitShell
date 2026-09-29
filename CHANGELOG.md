@@ -388,6 +388,8 @@ using [Semantic Versioning](https://semver.org/).
     every report; the welcome email and the docs cover them.
   - The unsubscribe line is just **Unsubscribe** and what it does. The cover letter, tailored CV and
     welcome email footers are one or two short lines.
+- The **View job** buttons on report cards and in the cover letter and tailored CV emails no longer end
+  in an arrow.
 - The one-line entries under **More matches** in the vacancy report use smaller versions of the card
   buttons, with the same icons, instead of underlined text links. Cover letter and Tailored CV sit on a
   line of their own, as on the full cards.
