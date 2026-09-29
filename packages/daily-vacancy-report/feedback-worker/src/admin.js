@@ -131,8 +131,14 @@ function describe(items) {
     ? `Unsubscribe ${i.u || "owner"}` : `${String(i.action || i.type).replaceAll("_", " ")}${i.u ? ` for ${i.u}` : ""}`);
 }
 
-async function pending(env) {
-  return describe(await queued(env));
+// Sign-ups still in the queue, shown as pending rows until HermitShell reports the profile it built. HermitShell
+// reports the new profile before it takes the sign-up off the queue, and a profile with the same email hides
+// its pending row, so a new person never drops off the dashboard in between.
+function pendingSignups(items, profiles) {
+  const known = new Set(profiles.map((p) => String(p.email || "").toLowerCase()).filter(Boolean));
+  return items.filter((i) => i.type === "signup" && !known.has(String(i.email || "").toLowerCase()))
+    .map((i) => ({ pending: true, id: "", name: String(i.name || "New sign-up"), email: String(i.email || ""),
+      status: "pending", at: Number(i.at) || 0, roles: String(i.roles || ""), details: { location: String(i.location || "") } }));
 }
 
 // One save for a profile's details and job search: only the fields changed since the form opened are queued,
@@ -179,6 +185,23 @@ function schedule(p) {
   return `<div class="muted">daily report ${esc(r.time)}${r.days === "weekdays" ? " on weekdays" : ""}${r.pending ? " (moving)" : ""}</div>`;
 }
 
+const PENDING_STYLE = `
+.pill.pending{background:#fff7ed;color:#c2410c}.pill.pending::before{animation:blink .8s ease-in-out infinite alternate}
+tr.pendingrow td{background:linear-gradient(90deg,rgba(255,247,237,0),rgba(255,247,237,.7),rgba(255,247,237,0)) 0 0/200% 100%;
+animation:sweep 2.4s linear infinite}
+tr.pendingrow .avatar{background:linear-gradient(135deg,#fdba74,#fb923c);box-shadow:0 6px 14px -8px rgba(234,88,12,.9)}
+@keyframes sweep{to{background-position:-200% 0}}
+`;
+
+function pendingRow(p, tz, live) {
+  const roles = p.roles ? `<div class="muted">looking for ${esc(p.roles.slice(0, 80))}</div>` : "";
+  const doing = live ? "HermitShell is reading their CV and building the profile. It shows here in full within a few minutes."
+    : "HermitShell builds the profile as soon as it connects.";
+  return `<tr class="pendingrow"><td><div class="who"><span class="avatar" aria-hidden="true">${esc(initials(p.name))}</span><div>
+<b>${esc(p.name)}</b><div class="muted">${esc(p.email)}</div><div class="muted">signed up ${esc(p.at ? `${ago(p.at)} (${when(p.at, tz)})` : "just now")}</div>${roles}</div></div></td>
+<td><span class="pill pending">pending</span><div class="muted">${doing}</div></td><td></td><td></td></tr>`;
+}
+
 function profileRow(p, csrf, tz, stats) {
   const status = `<span class="pill${p.owner ? " owner" : p.status === "paused" ? " paused" : ""}">${p.owner ? "owner, " : ""}${esc(p.status)}</span>`
     + (p.scanning ? ' <span class="pill scanning">scanning now</span>' : "");
@@ -198,8 +221,10 @@ function profileRow(p, csrf, tz, stats) {
 
 async function dashboard(request, env, s) {
   const url = new URL(request.url);
-  const [current, invites, queued, presence] = await Promise.all([
-    status(env), env.FEEDBACK.list({ prefix: "invite:", limit: 100 }), pending(env), hubPresence(env)]);
+  const [current, invites, queue, presence] = await Promise.all([
+    status(env), env.FEEDBACK.list({ prefix: "invite:", limit: 100 }), queued(env), hubPresence(env)]);
+  const signups = pendingSignups(queue, current.profiles || []);
+  const waiting = describe(queue.filter((i) => !signups.some((p) => i.type === "signup" && p.email === String(i.email || ""))));
   const stats = await Promise.all((current.profiles || []).map((p) =>
     PROFILE_RE.test(p.id || "") ? env.FEEDBACK.get(`stats:${p.id}`, "json") : null));
   const inviteRows = (await Promise.all(invites.keys.map((k) => env.FEEDBACK.get(k.name, "json")))).filter(Boolean)
@@ -207,13 +232,14 @@ async function dashboard(request, env, s) {
 <td>${button(s.csrf, "revoke", "Revoke", { invite: i.id })}</td></tr>`).join("");
   const done = DONE[url.searchParams.get("done")];
   const q = searchQuery(url);
-  const all = (current.profiles || []).map((p, i) => ({ p, stats: stats[i] }));
+  const all = [...(current.profiles || []).map((p, i) => ({ p, stats: stats[i] })), ...signups.map((p) => ({ p }))];
   const shown = all.filter(({ p }) => matchesProfile(p, q));
-  const modals = shown.filter(({ p }) => PROFILE_RE.test(p.id || "")).map(({ p }) => keyModal(p, s.csrf)).join("");
-  const rows = shown.map(({ p, stats: st }) => profileRow(p, s.csrf, current.timezone, st)).join("")
+  const modals = shown.filter(({ p }) => !p.pending && PROFILE_RE.test(p.id || "")).map(({ p }) => keyModal(p, s.csrf)).join("");
+  const rows = shown.map(({ p, stats: st }) => p.pending ? pendingRow(p, current.timezone, presence.live)
+    : profileRow(p, s.csrf, current.timezone, st)).join("")
     || (all.length ? noMatch(q) : '<tr><td colspan="4" class="muted">HermitShell has not reported any profiles yet.</td></tr>');
-  return page("Profiles", `<style>${LINK_STYLE}${KEY_STYLE}${SEARCH_STYLE}</style>${nav("profiles")}${done ? note(done) : ""}
-${lastUpdate(current, queued, presence)}
+  return page("Profiles", `<style>${LINK_STYLE}${KEY_STYLE}${SEARCH_STYLE}${PENDING_STYLE}</style>${nav("profiles")}${done ? note(done) : ""}
+${lastUpdate(current, waiting, presence)}
 ${problems(current)}${checklist(current)}
 ${all.length ? searchBar(q, shown.length, all.length) : ""}
 <table class="list"><tr><th>Profile</th><th>Status</th><th>Crawler</th><th></th></tr>

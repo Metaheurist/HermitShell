@@ -249,6 +249,22 @@ describe("authentication", () => {
     expect(after).not.toContain(secret);
   });
 
+  it("shows a pending sign-up only to a session, without its phone, CV or invite, and escaped", async () => {
+    const env = testEnv(ADMIN);
+    const { queueItem } = await import("../src/join.js");
+    await queueItem(env, { type: "signup", invite: "invite-id-0123456789abcdef", name: HOSTILE, email: HOSTILE, roles: HOSTILE,
+      location: HOSTILE, phone: "07700 900999", cv: "cvfile:secret-cv-key", cv_text: "Private CV text" });
+    const anonymous = await (await get("/admin", env)).text();
+    expect(anonymous).toContain("Admin sign-in");
+    expect(anonymous).not.toContain("pendingrow");
+    const cookie = await signIn(env, "203.0.113.4");
+    const body = await (await get("/admin", env, { Cookie: cookie })).text();
+    expect(body).toContain('class="pendingrow"');
+    for (const hidden of ["<script>", "<img src=x", "07700 900999", "secret-cv-key", "Private CV text", "invite-id-0123456789abcdef"]) {
+      expect(body).not.toContain(hidden);
+    }
+  });
+
   it("keeps profile search behind a session and never reflects the query as markup", async () => {
     const env = testEnv(ADMIN);
     await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "sam-lee", name: "Sam Lee", has_cv: true }] }));
