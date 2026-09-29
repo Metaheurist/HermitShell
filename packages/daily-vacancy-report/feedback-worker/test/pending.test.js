@@ -30,10 +30,10 @@ describe("pending sign-ups", () => {
     expect(row).toContain("Riley.Chen@example.com");
     expect(row).toContain('<span class="pill pending">pending</span>');
     expect(row).toContain("looking for Data analyst or BI developer, hybrid");
-    expect(row).toContain("signed up");
+    expect(row).toContain("Signed up");
     expect(row).not.toContain("07700");
     expect(row).not.toContain("cvfile");
-    expect(row).not.toContain("Send jobs now");
+    expect(row).not.toContain(">Send jobs<");
     expect(body).not.toContain("Sign-up from Riley Chen");
     expect(body).toContain('<span class="count">2 recruits</span>');
     expect(body).not.toContain('id="key-"');

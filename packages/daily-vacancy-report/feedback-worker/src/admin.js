@@ -242,7 +242,21 @@ function lastUpdate(current, queued, presence) {
 function schedule(p) {
   const r = p.report || {};
   if (!r.time) return "";
-  return `<div class="muted">daily report ${esc(r.time)}${r.days === "weekdays" ? " on weekdays" : ""}${r.pending ? " (moving)" : ""}</div>`;
+  return `<div class="muted">${r.days === "weekdays" ? "Weekdays" : "Daily"} at ${esc(r.time)}${r.pending ? " (moving)" : ""}</div>`;
+}
+
+// When something happened, with the exact time in a tooltip.
+function whenTip(at, tz, prefix, never = "never") {
+  if (!at) return `<div class="muted">${esc(prefix)} ${esc(never)}</div>`;
+  return `<div class="muted" title="${esc(when(at, tz))}">${esc(prefix)} ${esc(ago(at))}</div>`;
+}
+
+const PAUSE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1.3"/><rect x="13.5" y="5" width="4" height="14" rx="1.3"/></svg>';
+const RESUME_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.6v12.8a1 1 0 0 0 1.5.86l10.2-6.4a1 1 0 0 0 0-1.72L9.5 4.74A1 1 0 0 0 8 5.6z"/></svg>';
+
+function toggleButton(p, csrf) {
+  const [action, label, icon] = p.status === "paused" ? ["resume", "Resume reports", RESUME_ICON] : ["pause", "Pause reports", PAUSE_ICON];
+  return `<form method="post" action="/admin/action" style="display:inline"><input type="hidden" name="csrf" value="${esc(csrf)}"><input type="hidden" name="action" value="${action}"><input type="hidden" name="u" value="${esc(p.id)}"><button class="iconbtn" title="${label}" aria-label="${label} for ${esc(p.name)}">${icon}</button></form>`;
 }
 
 const PENDING_STYLE = `
@@ -256,24 +270,38 @@ tr.pendingrow .avatar{background:linear-gradient(135deg,#fdba74,#fb923c);box-sha
 const RECRUITER_STYLE = `
 .avatar.rec{background:linear-gradient(135deg,#2dd4bf,#0891b2);box-shadow:0 6px 14px -8px rgba(8,145,178,.9)}
 .avatar.sm{width:30px;height:30px;border-radius:10px;font-size:12px}
-.reccell .who{align-items:center;gap:9px}.reccell b{font-size:13.5px}
-form.assign{display:flex;gap:6px;align-items:center;margin-top:8px}
-form.assign select{width:auto;min-width:0;max-width:150px;padding:6px 30px 6px 10px;font-size:13px;height:auto}
+table.list .avatar.rec.none{background:#eef0f5;color:#94a3b8;box-shadow:none}
+.recpick{display:flex;gap:9px;align-items:center;font-size:13.5px}
+form.assign{display:flex;gap:6px;align-items:center;flex-wrap:nowrap}
+form.assign select{width:auto;min-width:0;max-width:150px;padding:6px 8px;font-size:13.5px;font-weight:600;border-radius:10px;
+border-color:transparent;background:transparent;cursor:pointer}
+form.assign select:hover{border-color:var(--line);background:var(--field)}
+@supports selector(:has(a)){form.assign button{display:none}form.assign:has(option:checked:not([selected])) button{display:inline-block}}
+.rowacts{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:nowrap}
+.rowacts button.small{white-space:nowrap}
+.iconbtn{margin:0;display:inline-grid;place-items:center;width:34px;height:34px;padding:0;border-radius:10px;
+background:var(--soft);color:var(--brand-ink);box-shadow:none}
+.iconbtn:hover{background:#e2e5ff;filter:none;box-shadow:none}.iconbtn svg{width:15px;height:15px}
+.rowlinks{display:flex;gap:10px;align-items:center;flex-wrap:nowrap;margin-top:8px}
+.rowlinks .statpair,.rowlinks .statlink{margin-top:0}
 .whoami{display:flex;align-items:center;gap:10px;margin-top:32px}.whoami .signout{margin:0}.whoami .mine{margin-left:auto}
 `;
 
+// The recruiter's initials and a list to pick another; Assign shows once the pick changes (where the browser
+// supports :has, otherwise always).
 function recruiterCell(p, rec, recs, csrf) {
   if (p.owner) return '<span class="muted">The main admin</span>';
   const r = recs.find((x) => x.id === rec);
-  const current = r ? `<div class="who"><span class="avatar rec sm" aria-hidden="true">${esc(initials(r.name))}</span><div><b>${esc(r.name)}</b>
-<div class="muted"><code>${esc(r.username)}</code></div></div></div>` : '<span class="muted">Unassigned</span>';
-  if (p.pending) return current;
-  if (!recs.length) return `${current}<div class="muted"><a href="${USERS_URL}">Add a recruiter</a></div>`;
+  const face = `<span class="avatar rec sm${r ? "" : " none"}" aria-hidden="true">${r ? esc(initials(r.name)) : "?"}</span>`;
+  if (p.pending || !recs.length) {
+    const add = !p.pending && !recs.length ? ` <a class="small" href="${USERS_URL}">Add a recruiter</a>` : "";
+    return `<div class="recpick">${face}<span class="${r ? "" : "muted"}">${r ? esc(r.name) : "Unassigned"}</span>${add}</div>`;
+  }
   const options = [["", "Unassigned"], ...recs.map((x) => [x.id, x.name])].map(([id, name]) =>
     `<option value="${esc(id)}"${id === (r ? rec : "") ? " selected" : ""}>${esc(name)}</option>`).join("");
-  return `<div class="reccell">${current}</div><form method="post" action="/admin/action" class="assign">
+  return `<form method="post" action="/admin/action" class="assign">
 <input type="hidden" name="csrf" value="${esc(csrf)}"><input type="hidden" name="action" value="assign"><input type="hidden" name="u" value="${esc(p.id)}">
-<select name="recruiter" aria-label="Recruiter for ${esc(p.name)}">${options}</select><button class="small quiet">Assign</button></form>`;
+${face}<select name="recruiter" aria-label="Recruiter for ${esc(p.name)}">${options}</select><button class="small">Assign</button></form>`;
 }
 
 function pendingRow(p, tz, live, third) {
@@ -281,22 +309,22 @@ function pendingRow(p, tz, live, third) {
   const doing = live ? "HermitShell is reading their CV and setting them up. They show here in full within a few minutes."
     : "HermitShell sets them up as soon as it connects.";
   return `<tr class="pendingrow"><td><div class="who"><span class="avatar" aria-hidden="true">${esc(initials(p.name))}</span><div>
-<b>${esc(p.name)}</b><div class="muted">${esc(p.email)}</div><div class="muted">signed up ${esc(p.at ? `${ago(p.at)} (${when(p.at, tz)})` : "just now")}</div>${roles}</div></div></td>
+<b>${esc(p.name)}</b><div class="muted">${esc(p.email)}</div>${whenTip(p.at, tz, "Signed up", "just now")}${roles}</div></div></td>
 <td><span class="pill pending">pending</span><div class="muted">${doing}</div></td>${third === null ? "" : `<td>${third}</td>`}<td></td></tr>`;
 }
 
 function profileRow(p, csrf, tz, stats, { admin, third, inPool }) {
   const status = `<span class="pill${p.owner ? " owner" : p.status === "paused" ? " paused" : ""}">${p.owner ? "owner, " : ""}${esc(p.status)}</span>`
     + (p.scanning ? ' <span class="pill scanning">scanning now</span>' : "");
-  const toggle = p.status === "paused" ? button(csrf, "resume", "Resume", { u: p.id }) : button(csrf, "pause", "Pause", { u: p.id });
   const remove = p.owner || !admin ? "" : binButton(`del-${p.id}`, `Delete ${p.name}`);
   const cv = p.has_cv === false ? ' <span class="pill paused">no CV</span>' : "";
+  const joined = p.created ? `<div class="muted" title="${esc(when(p.created, tz))}">Joined ${esc(when(p.created, tz).slice(0, 10))}</div>` : "";
   return `<tr${inPool ? ' class="inpool"' : ""}><td><div class="who"><span class="avatar" aria-hidden="true">${esc(initials(p.name))}</span><div>
-<b>${esc(p.name)}</b>${cv}<div class="muted">${esc(p.email || "")}</div><div class="muted">since ${esc(when(p.created, tz))}</div>
-<a class="small" href="/admin/profile?u=${esc(p.id)}">Manage</a><div>${statsLink(p, stats, tz)}</div></div></div></td>
-<td>${status}<div class="muted">last report ${esc(p.last_run ? `${ago(p.last_run)} (${when(p.last_run, tz)})` : "never")}</div>${schedule(p)}</td>
+<b>${esc(p.name)}</b>${cv}<div class="muted">${esc(p.email || "")}</div>${joined}
+<div class="rowlinks"><a class="small" href="/admin/profile?u=${esc(p.id)}">Manage</a>${statsLink(p, stats, tz)}</div></div></div></td>
+<td>${status}${whenTip(p.last_run, tz, "Last report")}${schedule(p)}</td>
 ${third === null ? "" : `<td>${third}</td>`}
-<td><div class="actions">${sendButton(p, csrf)}${toggle}${remove}</div></td></tr>`;
+<td><div class="rowacts">${sendButton(p, csrf, {}, "Send jobs")}${toggleButton(p, csrf)}${remove}</div></td></tr>`;
 }
 
 function deleteRecruitModal(p, csrf) {

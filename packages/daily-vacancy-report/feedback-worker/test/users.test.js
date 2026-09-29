@@ -263,6 +263,10 @@ describe("recruiters' pools", () => {
     expect(board).toContain("<th>Recruiter</th>");
     expect(board).toContain('<select name="recruiter" aria-label="Recruiter for Jordan Patel">');
     expect(board).toContain('<span class="muted">The main admin</span>');
+    expect(board).toContain('<button class="iconbtn" title="Pause reports" aria-label="Pause reports for Jordan Patel">');
+    expect(board).toContain('<span class="avatar rec sm none" aria-hidden="true">?</span><select name="recruiter" aria-label="Recruiter for Jordan Patel">');
+    expect(board).toContain('<span class="avatar rec sm" aria-hidden="true">CQ</span><select name="recruiter" aria-label="Recruiter for Sam Lee">');
+    expect(board).toMatch(/<div class="muted" title="[^"]+">Last report never|<div class="muted">Last report never<\/div>/);
     expect(await admin.where("/admin/action", { action: "assign", u: "jordan-patel", recruiter: "casey" })).toBe("/admin?done=assigned");
     for (const fields of [{ u: "owner", recruiter: "casey" }, { u: "jordan-patel", recruiter: "riley" }, { u: "nobody", recruiter: "casey" },
       { u: "jordan-patel", recruiter: "admin" }]) {

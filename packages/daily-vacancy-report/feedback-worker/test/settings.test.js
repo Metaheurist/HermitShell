@@ -442,8 +442,8 @@ describe("daily report and Send jobs now", () => {
   it("shows each profile's report time and queues a new one as { time, days }", async () => {
     const { env, get, act } = await setup(scheduled());
     const dash = (await get("/admin")).body;
-    expect(dash).toContain("daily report 08:00</div>");
-    expect(dash).toContain("daily report 08:15 on weekdays</div>");
+    expect(dash).toContain("Daily at 08:00</div>");
+    expect(dash).toContain("Weekdays at 08:15</div>");
     const { body } = await get("/admin/profile?u=sam-lee");
     expect(body).toContain('<input id="report_time" name="report_time" type="time" value="08:15">');
     expect(body).toContain('<option value="weekdays" selected>Weekdays (Monday to Friday)</option>');
@@ -470,7 +470,7 @@ describe("daily report and Send jobs now", () => {
 
   it("says when a new time is still to be applied, or can't be", async () => {
     const pending = await setup(scheduled({ report: { time: "07:00", days: "daily", schedule: "0 7 * * *", pending: true } }));
-    expect((await pending.get("/admin")).body).toContain("daily report 07:00 (moving)");
+    expect((await pending.get("/admin")).body).toContain("Daily at 07:00 (moving)");
     expect((await pending.get("/admin/profile?u=sam-lee")).body).toContain("HermitShell moves the report to this time when it next checks in");
     const outside = await setup({ ...scheduled(), scheduler: false });
     expect((await outside.get("/admin/profile?u=owner")).body).toContain("HermitShell&#39;s scheduler isn&#39;t set up");
@@ -481,7 +481,7 @@ describe("daily report and Send jobs now", () => {
   it("queues Send jobs now for one profile, from the dashboard or its page", async () => {
     const { env, get, act } = await setup(scheduled());
     const dash = (await get("/admin")).body;
-    expect(dash.match(/>Send jobs now</g)).toHaveLength(1);
+    expect(dash.match(/>Send jobs</g)).toHaveLength(1);
     expect(dash).toContain('name="action" value="send_now"><input type="hidden" name="u" value="sam-lee">');
     const res = await act({ action: "send_now", u: "sam-lee" });
     expect(res.headers.get("Location")).toBe("/admin?done=sending");
@@ -504,7 +504,7 @@ describe("daily report and Send jobs now", () => {
     const dash = (await get("/admin")).body;
     expect(dash).toContain('<span class="pill scanning">scanning now</span>');
     expect(dash).toContain('<button class="small" disabled>Scanning&hellip;</button>');
-    expect(dash).not.toContain(">Send jobs now<");
+    expect(dash).not.toContain(">Send jobs<");
     expect((await get("/admin/profile?u=sam-lee")).body).toContain("Scanning now (started ");
     const box = (await get("/admin/profile/status?u=sam-lee&n=1")).body;
     expect(box).toContain('<body class="wait">');

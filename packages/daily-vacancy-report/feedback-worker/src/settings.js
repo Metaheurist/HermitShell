@@ -301,9 +301,9 @@ function reportHint(p, status) {
 }
 
 // A report now, rather than at the daily time; the email follows when the scan finishes.
-export function sendButton(p, csrf, fields = {}) {
+export function sendButton(p, csrf, fields = {}, label = "Send jobs now") {
   if (p.scanning) return '<button class="small" disabled>Scanning&hellip;</button>';
-  return p.has_cv === false ? "" : button(csrf, "send_now", "Send jobs now", { u: p.id, ...fields }, "small");
+  return p.has_cv === false ? "" : button(csrf, "send_now", label, { u: p.id, ...fields }, "small");
 }
 
 export function sendSection(p, csrf, tz) {
