@@ -185,16 +185,91 @@ describe("the email button when one was made", () => {
   });
 });
 
+function emailed(env, { u = "sam-lee", j = JOB } = {}, headers = API) {
+  return worker.fetch(new Request(`${BASE}/api/emailed?${new URLSearchParams({ u, j })}`, { method: "POST", headers }), env);
+}
+
+async function sentWith(env, u = "sam-lee") {
+  const stats = { days: {}, sent: [{ title: "Data Engineer", employer: "Northwind", day: new Date().toISOString().slice(0, 10), fit: 8, key: JOB }] };
+  await worker.fetch(new Request(`${BASE}/api/stats`, { method: "POST", headers: API, body: JSON.stringify({ u, stats }) }), env);
+}
+
+describe("emailing a job to its profile from the list of jobs sent", () => {
+  it("shows a third tile, addressed to the profile by first name, that asks HermitShell to email the job", async () => {
+    const { env, ask, get } = await setup();
+    await sentWith(env);
+    const before = await (await get("/admin/sent?u=sam-lee&r=7")).text();
+    expect(before).toMatch(/Email to Sam<\/b><small>this job&rsquo;s card<\/small>[\s\S]*?name="k" value="send_job"[\s\S]*?>Send<\/button>/);
+    expect(before).not.toContain("sam@example.com");
+    const h = await jobHash(JOB);
+    const res = await ask({ k: "send_job", fresh: "1" });
+    expect(res.headers.get("Location")).toBe(`/admin/sent?u=sam-lee&r=30&a=applied&open=${h.slice(0, 16)}&done=mail#job-${h.slice(0, 16)}`);
+    const [event] = valuesWith(env, "event:sam-lee:");
+    expect(event).toMatchObject({ j: JOB, a: "send_job", u: "sam-lee", via: "dashboard" });
+    expect(event.fresh).toBeUndefined();
+    expect(event.id).toMatch(/:mg\d+$/);
+    const page = await (await get(`/admin/sent?u=sam-lee&r=7&open=${h.slice(0, 16)}&done=mail`)).text();
+    expect(page).toContain("HermitShell will email this job within a few minutes.");
+    expect(page).toMatch(/Email to Sam<\/b><small>Sending&hellip;<\/small><\/span><span class="dspin"/);
+    expect(page).toContain('http-equiv="refresh" content="15"');
+    expect(await (await get("/admin/tasks")).text()).toContain("Job email");
+  });
+
+  it("marks the job as emailed once HermitShell says it went, with Send again", async () => {
+    const { env, get } = await setup();
+    await sentWith(env);
+    expect((await emailed(env)).status).toBe(200);
+    const [entry] = JSON.parse(env.FEEDBACK.store.get("emailed:sam-lee"));
+    expect(entry).toEqual({ h: await jobHash(JOB), at: expect.any(Number) });
+    expect(env.FEEDBACK.store.get("emailed:sam-lee")).not.toContain("jobs.example.com");
+    await emailed(env);
+    expect(JSON.parse(env.FEEDBACK.store.get("emailed:sam-lee"))).toHaveLength(1);
+    const page = await (await get("/admin/sent?u=sam-lee&r=7")).text();
+    expect(page).toMatch(/class="doc ready"[^>]*>[\s\S]*?Emailed to Sam<\/b><small>just now<\/small>[\s\S]*?>Send again<\/button>/);
+  });
+
+  it("addresses the owner's own list to you", async () => {
+    const { env, get } = await setup();
+    await sentWith(env, "owner");
+    const page = await (await get("/admin/sent?u=owner&r=7")).text();
+    expect(page).toContain("Email to you</b>");
+    expect(page).not.toContain("Alex");
+  });
+
+  it("only takes the mark from HermitShell's token, for a good profile and job", async () => {
+    const { env } = await setup();
+    expect((await emailed(env, {}, {})).status).toBe(401);
+    expect((await emailed(env, {}, { Authorization: "Bearer wrong" })).status).toBe(401);
+    for (const bad of [{ u: "../owner" }, { u: "" }, { j: "" }, { j: "x".repeat(301) }, { j: "a\nb" }]) {
+      expect((await emailed(env, bad)).status).toBe(400);
+    }
+    expect(keysWith(env, "emailed:")).toEqual([]);
+  });
+
+  it("cannot be asked for from a signed email link", async () => {
+    const { env } = await setup();
+    const q = await link("send_job", JOB, "Data Engineer", "sam-lee");
+    const res = await worker.fetch(new Request(`${BASE}/f?${q}`), env);
+    expect(res.status).toBe(403);
+    const form = new URLSearchParams(q);
+    form.set("r", "");
+    expect((await worker.fetch(new Request(`${BASE}/f`, { method: "POST", body: form }), env)).status).toBe(403);
+    expect(keysWith(env, "event:")).toEqual([]);
+  });
+});
+
 describe("removing a profile", () => {
-  it("drops its kept letters and CVs, their list and its jobs sent", async () => {
+  it("drops its kept letters and CVs, their list, the jobs it was emailed and its jobs sent", async () => {
     const { env, csrf, cookie } = await setup();
     await upload(env);
     await upload(env, { k: "tailored_cv" });
+    await emailed(env);
     await env.FEEDBACK.put("sent:sam-lee", "[]");
     await worker.fetch(new Request(`${BASE}/admin/action`, { method: "POST", headers: { Cookie: cookie },
       body: new URLSearchParams({ csrf, action: "delete", u: "sam-lee", confirm: "yes" }) }), env);
     expect(keysWith(env, "doc:sam-lee:")).toEqual([]);
     expect(keysWith(env, "docs:sam-lee")).toEqual([]);
+    expect(keysWith(env, "emailed:sam-lee")).toEqual([]);
     expect(keysWith(env, "sent:sam-lee")).toEqual([]);
   });
 });

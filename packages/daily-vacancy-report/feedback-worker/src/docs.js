@@ -7,15 +7,21 @@
 //
 // Asking from the dashboard stores the same request an email button does, marked "via: dashboard" (kept for
 // download, not emailed) and "fresh" for Regenerate (a new one even if one was made recently).
+//
+// The same list has a third request, "send_job": the job's report card emailed to the profile (job_mail.py). Once
+// sent, HermitShell tells POST /api/emailed, and "emailed:<id>" keeps when each job last went (by its hash only).
 
 import {
-  CONTROL_RE, EVENT_TTL_SECONDS, SECURITY_HEADERS, ago, docIndexKey, docKey, esc, eventFlag, eventPrefix, json, limitedBytes,
-  setFlag, sha256Hex,
+  CONTROL_RE, EVENT_TTL_SECONDS, SECURITY_HEADERS, ago, docIndexKey, docKey, emailedKey, esc, eventFlag, eventPrefix, json,
+  limitedBytes, setFlag, sha256Hex,
 } from "./lib.js";
 import { rememberRequest } from "./tasks.js";
 
 export const DOC_URL = "/admin/doc";
 export const DOC_KINDS = { cover_letter: "Cover letter", tailored_cv: "Tailored CV" };
+export const REQUEST_KINDS = { ...DOC_KINDS, send_job: "Job email" };
+const REQUEST_CODES = { cover_letter: "c", tailored_cv: "v", send_job: "m" };
+export const EMAILED_DAYS = 90;
 // The owner's profile id, as HermitShell reports it; the owner's email links carry no profile id.
 export const OWNER_ID = "owner";
 export const MAX_DOC_BYTES = 2 * 1024 * 1024;
@@ -107,6 +113,25 @@ export async function readDoc(env, profile, kind, h) {
   }
 }
 
+// When each job was last emailed from the dashboard: [{ h, at }], newest last.
+export async function emailedIndex(env, profile) {
+  if (!PROFILE_RE.test(profile || "")) return [];
+  const list = await env.FEEDBACK.get(emailedKey(profile), "json");
+  return (Array.isArray(list) ? list : []).filter((e) => e && HASH_RE.test(e.h) && Number.isFinite(e.at));
+}
+
+// POST /api/emailed?u=<id>&j=<job key> (HermitShell's API token): the job has been emailed to the profile.
+export async function markEmailed(request, env) {
+  const url = new URL(request.url);
+  const [u, j] = [url.searchParams.get("u") || "", url.searchParams.get("j") || ""];
+  if (!PROFILE_RE.test(u) || !validJobKey(j)) return json({ error: "bad job" }, 400);
+  const h = await jobHash(j);
+  const index = (await emailedIndex(env, u)).filter((e) => e.h !== h);
+  index.push({ h, at: Date.now() });
+  await env.FEEDBACK.put(emailedKey(u), JSON.stringify(index.slice(-MAX_INDEX)), { expirationTtl: EMAILED_DAYS * 86400 });
+  return json({ saved: true });
+}
+
 // The kept document for a job, if any: its index entry.
 export async function docFor(env, profile, kind, j) {
   if (!validJobKey(j) || !DOC_KINDS[kind]) return null;
@@ -133,23 +158,24 @@ export async function requestDoc(env, { profile, owner, j, kind, title, fresh })
   const at = Date.now();
   const u = owner ? "" : profile;
   const h = await jobHash(j);
+  fresh = fresh && Boolean(DOC_KINDS[kind]);
   const event = { j, a: kind, r: "", at, via: "dashboard", ...(fresh ? { fresh: 1 } : {}), ...(u ? { u } : {}) };
-  event.id = `${eventPrefix(u)}dash-${h.slice(0, 20)}:${kind === "cover_letter" ? "c" : "v"}${fresh ? "n" : "g"}${Math.floor(at / 60000)}`;
+  event.id = `${eventPrefix(u)}dash-${h.slice(0, 20)}:${REQUEST_CODES[kind]}${fresh ? "n" : "g"}${Math.floor(at / 60000)}`;
   await env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });
   await setFlag(env, eventFlag(u), EVENT_TTL_SECONDS);
   await rememberRequest(env, event, title, EVENT_TTL_SECONDS);
   return h;
 }
 
-// Letters and CVs asked for and not made yet, as "<kind>\n<job key>": from HermitShell's task list and from the
-// requests it has not collected yet.
+// Letters, CVs and job emails asked for and not done yet, as "<kind>\n<job key>": from HermitShell's task list and
+// from the requests it has not collected yet.
 export function pendingDocs(status, held, profile, owner) {
   const busy = new Set();
   for (const t of Array.isArray(status.tasks) ? status.tasks : []) {
-    if (t && t.u === profile && DOC_KINDS[t.kind] && typeof t.j === "string") busy.add(`${t.kind}\n${t.j}`);
+    if (t && t.u === profile && REQUEST_KINDS[t.kind] && typeof t.j === "string") busy.add(`${t.kind}\n${t.j}`);
   }
   for (const r of held) {
-    if (r && (r.u || (owner ? profile : "")) === profile && DOC_KINDS[r.a] && typeof r.j === "string") busy.add(`${r.a}\n${r.j}`);
+    if (r && (r.u || (owner ? profile : "")) === profile && REQUEST_KINDS[r.a] && typeof r.j === "string") busy.add(`${r.a}\n${r.j}`);
   }
   return busy;
 }
@@ -157,6 +183,7 @@ export function pendingDocs(status, held, profile, owner) {
 const DOC_ICONS = {
   cover_letter: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h5"/>',
   tailored_cv: '<rect x="4" y="5" width="16" height="14" rx="2.5"/><circle cx="9" cy="11" r="2"/><path d="M6.5 16c.6-1.6 4.4-1.6 5 0M14 10h3.5M14 13.5h3.5"/>',
+  send_job: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/>',
 };
 
 function docIcon(kind) {
@@ -164,8 +191,9 @@ function docIcon(kind) {
 }
 
 // One job's letter and CV on the dashboard's list of jobs sent: Download and Regenerate when one is kept, a spinner
-// while one is being made, Generate otherwise. `ctx` has the profile, the job's hash, the kept documents, what is
-// pending, the CSRF token and where to come back to.
+// while one is being made, Generate otherwise. Then the job emailed to the profile: Send, a spinner while it goes,
+// then when it went and Send again. `ctx` has the profile, the job's hash, the kept documents, the jobs emailed,
+// what is pending, who the email goes to ("you" or a first name), the CSRF token and where to come back to.
 export function docActions(j, h, ctx) {
   if (!validJobKey(j) || !HASH_RE.test(h || "")) return "";
   const hidden = (kind, fresh) => `<input type="hidden" name="csrf" value="${esc(ctx.csrf)}"><input type="hidden" name="u" value="${esc(ctx.profile)}">
@@ -183,7 +211,21 @@ export function docActions(j, h, ctx) {
     }
     return `<form class="doc" method="post" action="${DOC_URL}">${docIcon(kind)}<span><b>${label}</b><small>for this job</small></span>${hidden(kind, false)}
 <button class="small">Generate</button></form>`;
-  }).join("");
+  }).join("") + emailAction(j, h, ctx, hidden);
+}
+
+function emailAction(j, h, ctx, hidden) {
+  const to = esc(ctx.recipient || "the profile");
+  const sent = (ctx.emailed || []).find((e) => e.h === h);
+  if (ctx.pending.has(`send_job\n${j}`)) {
+    return `<div class="doc busy">${docIcon("send_job")}<span><b>Email to ${to}</b><small>Sending&hellip;</small></span><span class="dspin" aria-hidden="true"></span></div>`;
+  }
+  if (sent) {
+    return `<form class="doc ready" method="post" action="${DOC_URL}">${docIcon("send_job")}<span><b>Emailed to ${to}</b><small>${esc(ago(sent.at))}</small></span>${hidden("send_job", false)}
+<button class="small quiet" title="Email this job again">Send again</button></form>`;
+  }
+  return `<form class="doc" method="post" action="${DOC_URL}">${docIcon("send_job")}<span><b>Email to ${to}</b><small>this job&rsquo;s card</small></span>${hidden("send_job", false)}
+<button class="small">Send</button></form>`;
 }
 
 export const DOC_STYLE = `

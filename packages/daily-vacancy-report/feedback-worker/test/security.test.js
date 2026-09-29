@@ -595,3 +595,60 @@ describe("letters and CVs kept for download", () => {
     expect((await put([{ title: "x", more: {} }])).status).toBe(200);
   });
 });
+
+describe("jobs emailed from the list of jobs sent", () => {
+  const API = { Authorization: "Bearer api-token" };
+  const JOB = "https://jobs.example.com/1";
+  const mark = (env, params = {}, headers = API) => worker.fetch(new Request(`${BASE}/api/emailed?${new URLSearchParams({
+    u: "sam-lee", j: JOB, ...params })}`, { method: "POST", headers }), env);
+  const sentList = (env, u = "sam-lee") => worker.fetch(new Request(`${BASE}/api/stats`, { method: "POST", headers: API,
+    body: JSON.stringify({ u, stats: { days: {}, sent: [{ title: "Data Engineer", day: new Date().toISOString().slice(0, 10), fit: 8, key: JOB }] } }) }), env);
+
+  it("only takes the emailed mark from HermitShell's API token, for a real profile id and job key", async () => {
+    const env = testEnv(ADMIN);
+    expect((await mark(env, {}, {})).status).toBe(401);
+    expect((await mark(env, {}, { Authorization: "Bearer wrong" })).status).toBe(401);
+    expect((await worker.fetch(new Request(`${BASE}/api/emailed?u=sam-lee&j=x`, { headers: API }), env)).status).toBe(404);
+    for (const params of [{ u: "../owner" }, { u: "Sam Lee" }, { u: "" }, { j: "" }, { j: "x".repeat(301) }, { j: "a\u0000b" }]) {
+      expect((await mark(env, params)).status).toBe(400);
+    }
+    expect([...env.FEEDBACK.store.keys()].filter((k) => k.startsWith("emailed:"))).toEqual([]);
+  });
+
+  it("keeps only a hash and a time per job, capped, and drops entries that do not look right", async () => {
+    const env = testEnv(ADMIN);
+    for (let i = 0; i < 305; i += 1) await mark(env, { j: `https://jobs.example.com/${i}` });
+    const index = JSON.parse(env.FEEDBACK.store.get("emailed:sam-lee"));
+    expect(index).toHaveLength(300);
+    expect(index.every((e) => Object.keys(e).join() === "h,at" && /^[0-9a-f]{32}$/.test(e.h))).toBe(true);
+    expect(env.FEEDBACK.store.get("emailed:sam-lee")).not.toContain("jobs.example.com");
+    await env.FEEDBACK.put("emailed:sam-lee", JSON.stringify([{ h: HOSTILE, at: 1 }, { h: "0".repeat(32), at: "soon" }, "x"]));
+    const { emailedIndex } = await import("../src/docs.js");
+    expect(await emailedIndex(env, "sam-lee")).toEqual([]);
+  });
+
+  it("needs a signed-in session and the form's CSRF token to ask for one", async () => {
+    const env = testEnv(ADMIN);
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "sam-lee", name: "Sam Lee" }] }));
+    const fields = { u: "sam-lee", j: JOB, k: "send_job", n: "Data Engineer" };
+    const anonymous = await worker.fetch(new Request(`${BASE}/admin/doc`, { method: "POST", body: new URLSearchParams({ csrf: "x", ...fields }) }), env);
+    expect(await anonymous.text()).toContain("Admin sign-in");
+    const cookie = await signIn(env, "203.0.113.36");
+    const forged = await worker.fetch(new Request(`${BASE}/admin/doc`, { method: "POST", headers: { Cookie: cookie },
+      body: new URLSearchParams({ csrf: "0".repeat(32), ...fields }) }), env);
+    expect(forged.status).toBe(403);
+    expect([...env.FEEDBACK.store.keys()].filter((k) => k.startsWith("event:"))).toEqual([]);
+  });
+
+  it("escapes the profile's name on the tile and never shows its email address", async () => {
+    const env = testEnv(ADMIN);
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "sam-lee", name: `${HOSTILE} Lee`, email: "sam@example.com" }] }));
+    await sentList(env);
+    await mark(env);
+    const body = await (await get("/admin/sent?u=sam-lee&r=7", env, { Cookie: await signIn(env, "203.0.113.37") })).text();
+    expect(body).toContain("Emailed to &lt;script&gt;");
+    expect(body).not.toContain("<script>");
+    expect(body).not.toContain("<img");
+    expect(body).not.toContain("sam@example.com");
+  });
+});

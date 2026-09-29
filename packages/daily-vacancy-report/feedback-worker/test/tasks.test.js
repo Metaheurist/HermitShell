@@ -135,6 +135,19 @@ describe("the task list", () => {
     expect(env.FEEDBACK.store.has(REQUESTS_KEY)).toBe(false);
   });
 
+  it("names a job email from the list of jobs sent, with its own icon and stage while it is sent", async () => {
+    const sending = { ...LETTER, id: "letter:sam-lee-456789:event:sam-lee-456789:dash-0a1b:mg1", kind: "send_job", u: "sam-lee-456789",
+      state: "running", trigger: "dashboard" };
+    const { get } = await setup([sending]);
+    const body = await (await get("/admin/tasks")).text();
+    expect(body).toContain("<b>Job email</b>");
+    expect(body).toContain("Sending the email");
+    expect(body).toContain("Data Engineer at Northwind Traders");
+    expect(body).toContain('<path d="m4 7 8 6 8-6"/>');
+    const held = [{ id: "event:_:dash-0a1b:mg1", a: "send_job", n: "Data Engineer", u: "", at: Date.now(), via: "dashboard" }];
+    expect(taskRows({ profiles: [OWNER] }, [], held)[0]).toMatchObject({ kind: "send_job", trigger: "dashboard", where: "worker" });
+  });
+
   it("only remembers cover letter and tailored CV presses", async () => {
     const { env } = await setup();
     expect(await press(env, "applied")).toEqual([]);

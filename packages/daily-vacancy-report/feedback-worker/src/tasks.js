@@ -2,19 +2,19 @@
 // button (a spinning ring and a count while there is anything). Pages run no JavaScript, so the modal opens with
 // :target (#tasks) and holds a small page, /admin/tasks, that refreshes itself while it is open; the frame has
 // loading="lazy", so a closed modal does not load it. Every task can be cancelled there:
-// - what the Worker still holds (queued dashboard changes, sign-ups, unsubscribes, and cover letter and tailored CV
-//   requests HermitShell has not collected yet) is deleted at once;
+// - what the Worker still holds (queued dashboard changes, sign-ups, unsubscribes, and cover letter, tailored CV and
+//   job email requests HermitShell has not collected yet) is deleted at once;
 // - what HermitShell has (a running report, a request it has collected) is stopped by a "cancel" queue item.
 
 import { queueItem } from "./join.js";
 import { SECURITY_HEADERS, ago, deleteAndUnflag, esc, eventFlag, eventPrefix, when } from "./lib.js";
 
 export const TASKS_URL = "/admin/tasks";
-// Cover letter and tailored CV requests not yet collected by HermitShell, kept in one key so the list costs a
-// read rather than one of the free plan's 1,000 daily list operations. Two presses in the same instant can lose
-// one entry here; the request itself is still made, it just does not show until HermitShell reports it.
+// Cover letter, tailored CV and job email requests not yet collected by HermitShell, kept in one key so the list
+// costs a read rather than one of the free plan's 1,000 daily list operations. Two presses in the same instant can
+// lose one entry here; the request itself is still made, it just does not show until HermitShell reports it.
 export const REQUESTS_KEY = "tasks:requests";
-export const REQUEST_ACTIONS = ["cover_letter", "tailored_cv"];
+export const REQUEST_ACTIONS = ["cover_letter", "tailored_cv", "send_job"];
 const MAX_REQUESTS = 50;
 const QUEUE_ID = /^queue:\d{1,16}:[0-9a-f]{8,64}$/;
 const EVENT_ID = /^event:[a-z0-9_-]{1,40}:[A-Za-z0-9:_-]{1,120}$/;
@@ -54,7 +54,9 @@ const ADMIN_LABELS = {
   set_key: "Crawler key", use_global: "Use the global key", profile: "Profile changes", cv: "New CV",
   api_keys: "Global API keys", email: "Email settings", test_email: "Test email",
 };
-const KIND_LABELS = { report: "Daily report", cover_letter: "Cover letter", tailored_cv: "Tailored CV", signup: "Sign-up", unsubscribe: "Unsubscribe" };
+const KIND_LABELS = {
+  report: "Daily report", cover_letter: "Cover letter", tailored_cv: "Tailored CV", send_job: "Job email", signup: "Sign-up", unsubscribe: "Unsubscribe",
+};
 const TRIGGERS = { schedule: "scheduled", dashboard: "from the dashboard", email: "email button", signup: "sign-up form", link: "unsubscribe link" };
 
 function queueKind(item) {
@@ -127,6 +129,7 @@ const ICONS = {
   report: '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/><path d="M8.5 11.5 10.5 13.5 14 9.5"/>',
   cover_letter: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h5"/>',
   tailored_cv: '<rect x="4" y="5" width="16" height="14" rx="2.5"/><circle cx="9" cy="11" r="2"/><path d="M6.5 16c.6-1.6 4.4-1.6 5 0M14 10h3.5M14 13.5h3.5"/>',
+  send_job: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/>',
   signup: '<circle cx="10" cy="8" r="3.5"/><path d="M3.5 20c.8-3.8 3.3-5.5 6.5-5.5s5.7 1.7 6.5 5.5M19 8v6M16 11h6"/>',
   unsubscribe: '<circle cx="10" cy="8" r="3.5"/><path d="M3.5 20c.8-3.8 3.3-5.5 6.5-5.5s5.7 1.7 6.5 5.5M16 11h6"/>',
   send: '<path d="M21 3 10 14M21 3l-7 18-4-7-7-4z"/>',
@@ -174,7 +177,8 @@ function detail(t) {
   const since = t.at ? ago(t.at) : "";
   if (t.state === "stopping") return "Stopping&hellip;";
   if (t.state === "running") {
-    const stage = t.kind === "report" ? esc(t.stage || "Starting") : t.kind === "tailored_cv" ? "Tailoring the CV" : "Writing the letter";
+    const stage = t.kind === "report" ? esc(t.stage || "Starting") : t.kind === "tailored_cv" ? "Tailoring the CV"
+      : t.kind === "send_job" ? "Sending the email" : "Writing the letter";
     const count = t.total ? ` &middot; ${t.done} of ${t.total}` : "";
     return `${stage}${count}${since ? ` &middot; started ${esc(since)}` : ""}`;
   }
@@ -196,8 +200,7 @@ function spinPhase(now = Date.now()) {
 }
 
 function taskRow(t, csrf, tz) {
-  const name = t.kind === "report" || t.kind === "cover_letter" || t.kind === "tailored_cv" || t.kind === "signup" || t.kind === "unsubscribe"
-    ? KIND_LABELS[t.kind] : t.title;
+  const name = KIND_LABELS[t.kind] || t.title;
   const sub = ["report", "signup", "unsubscribe", "send", "delete", "key", "cv", "change"].includes(t.kind) ? "" : t.title;
   return `<li class="task k-${esc(t.kind)} s-${t.state}"${t.state === "running" ? spinPhase() : ""}><span class="ticon">${icon(t.state === "waiting" ? "clock" : t.kind)}</span>
 <div class="tbody"><div class="thead"><b>${esc(name)}</b><span class="twho">${esc(t.who)}</span><span class="chip">${esc(TRIGGERS[t.trigger])}</span></div>

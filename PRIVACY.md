@@ -33,7 +33,9 @@ pressed, the employers and titles of jobs sent) and the jobs sent to you in the 
 advert's title, employer, place, salary, link, the details shown on its email card and the last
 button you pressed on it), never your notes, until HermitShell next reports that you have left.
 Cover letters and tailored CVs made for you are also kept there, encrypted, for 7 days so they can
-be downloaded again. Job searches send job titles and a location to web search services, never
+be downloaded again, and when the operator emails you a job from that list, the time it was sent
+is kept for 90 days (with a scrambled form of the job's link, not the link itself). Job searches
+send job titles and a location to web search services, never
 your CV or contact details. Emails go through the operator's email provider.
 
 ## How long

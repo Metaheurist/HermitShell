@@ -317,6 +317,10 @@ export function docIndexKey(profile) {
   return `docs:${profile}`;
 }
 
+export function emailedKey(profile) {
+  return `emailed:${profile}`;
+}
+
 // An extra profile that unsubscribes or is deleted: its answers not yet collected by HermitShell, its stats, its
 // list of jobs sent and the letters and CVs kept for download are dropped.
 export async function purgeProfileEvents(env, profile) {
@@ -324,7 +328,8 @@ export async function purgeProfileEvents(env, profile) {
   const docs = await env.FEEDBACK.get(docIndexKey(profile), "json");
   await Promise.all((Array.isArray(docs) ? docs : []).filter((d) => d && /^[0-9a-f]{32}$/.test(d.h) && /^[a-z_]{1,20}$/.test(d.k))
     .map((d) => env.FEEDBACK.delete(docKey(profile, d.k, d.h))));
-  await Promise.all([env.FEEDBACK.delete(docIndexKey(profile)), env.FEEDBACK.delete(`sent:${profile}`), env.FEEDBACK.delete(`stats:${profile}`)]);
+  await Promise.all([env.FEEDBACK.delete(docIndexKey(profile)), env.FEEDBACK.delete(emailedKey(profile)),
+    env.FEEDBACK.delete(`sent:${profile}`), env.FEEDBACK.delete(`stats:${profile}`)]);
   let cursor;
   do {
     const listed = await env.FEEDBACK.list({ prefix: eventPrefix(profile), cursor });

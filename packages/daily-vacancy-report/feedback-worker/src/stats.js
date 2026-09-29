@@ -425,10 +425,12 @@ const SENT_NOTES = {
   doc: ["ok", "HermitShell is making it. It shows here to download within a few minutes, and this page checks every 15 seconds while it waits."],
   docbad: ["bad", "That request could not be made. Reload the page and try again."],
   docgone: ["bad", "That document is no longer kept. Generate a new one below."],
+  mail: ["ok", "HermitShell will email this job within a few minutes. This page checks every 15 seconds until it has gone."],
 };
 
 // `opts`: range and answer (the filters), open (the job to show opened), done (a note), csrf, sent (the jobs with
-// their details), docs (the letters and CVs kept) and pending (those being made).
+// their details), docs (the letters and CVs kept), emailed (the jobs emailed from here) and pending (those being
+// made or sent).
 export async function sentPage(status, stats, pid, opts = {}) {
   const p = (status.profiles || []).find((x) => x.id === pid);
   const back = { wide: true, before: BACK_TO_PROFILES };
@@ -442,8 +444,9 @@ export async function sentPage(status, stats, pid, opts = {}) {
   const inRange = sentJobs(Array.isArray(opts.sent) ? { sent: opts.sent } : stats).filter((j) => j.day >= first);
   const shown = inRange.filter((j) => !answer || (answer === "none" ? !ANSWER_LABELS[j.answer] : j.answer === answer));
   const open = /^[0-9a-f]{16}$/.test(opts.open || "") ? opts.open : "";
-  const ctx = { profile: pid, csrf: opts.csrf || "", docs: opts.docs || [], pending: opts.pending || new Set(), today, open,
-    back: `r=${range}${answer ? `&a=${answer}` : ""}` };
+  const recipient = p.owner ? "you" : cut(String(p.name || "").trim().split(/\s+/)[0], 40) || "this profile";
+  const ctx = { profile: pid, csrf: opts.csrf || "", docs: opts.docs || [], emailed: opts.emailed || [], recipient,
+    pending: opts.pending || new Set(), today, open, back: `r=${range}${answer ? `&a=${answer}` : ""}` };
   const rows = await Promise.all(shown.map((j, i) => sentRow(j, i, ctx)));
   const byDay = [];
   shown.forEach((j, i) => {
@@ -462,7 +465,8 @@ export async function sentPage(status, stats, pid, opts = {}) {
 <div class="statbar">${sentTabs(pid, range, answer)}<span class="muted">${updated}${links}</span></div>
 ${inRange.length ? answerFilter(pid, range, answer, inRange) : ""}${body}
 <p class="muted small">Press a job for everything its email showed, the advert, and its cover letter and tailored CV. Letters and CVs made from
-here are kept to download for a few days and are not emailed. Notes typed on the buttons are never shown here.</p>`, { ...back, refresh: waiting ? 15 : 0 });
+here are kept to download for a few days and are not emailed; &ldquo;Email&rdquo; sends the job itself to ${p.owner ? "you" : "the profile"}, as its report card.
+Notes typed on the buttons are never shown here.</p>`, { ...back, refresh: waiting ? 15 : 0 });
 }
 
 export function statsPage(status, stats, pid, rangeParam) {
