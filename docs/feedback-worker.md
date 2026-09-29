@@ -1,8 +1,9 @@
 # Feedback buttons (Cloudflare Worker)
 
-The Daily Vacancy Report can put buttons on every job, next to **View job**: **I applied**,
-round thumbs up (**Good match**) and thumbs down (**Not for me**) buttons, **Interested** and
-**Cover letter**, plus **Heard back** and **Rejected** on follow-up reminders. Your answers:
+The Daily Vacancy Report can put buttons on every job: round thumbs up (**Good match**) and
+thumbs down (**Not for me**) under the score, **I applied** and **Interested** next to **View job**,
+and **Cover letter** and **Tailored CV** in their own panel below. Follow-up reminders get **Heard
+back** and **Rejected**. Your answers:
 
 - calibrate the model: recent jobs you liked (thumbs up, Interested, I applied) and turned down
   (thumbs down, with your reason) are added to the rating prompt as examples;

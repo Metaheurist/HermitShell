@@ -51,8 +51,8 @@ From top to bottom:
 | About the company | Industry, size, website and a one-line description. For agency adverts it names the real employer and the agency separately |
 | Strongest matches | Your three strongest matching skills in bold, the rest on one line |
 | Missing from your CV | Skills the listing asks for that your CV lacks. Tap one you do have to add it ([how](feedback-worker.md#adding-missing-skills)) |
-| Buttons | **View job**, then **I applied**, thumbs up (**Good match**), thumbs down (**Not for me**), **Interested**, **Cover letter** and **Tailored CV** ([button pages](#button-pages)) |
-| Notes | "Checked twice" when a stricter second look lowered the score, "Rated from the search snippet only" when the page couldn't be read, and other agencies advertising the same job |
+| Buttons | Thumbs up (**Good match**) and thumbs down (**Not for me**) under the score; **View job**, **I applied** and **Interested** below a divider; **Cover letter** and **Tailored CV** side by side in a "Made for this job" panel ([button pages](#button-pages)) |
+| Notes | "Checked twice" when a stricter second look lowered the score, and other agencies advertising the same job |
 
 The buttons and tags only appear when the [feedback Worker](feedback-worker.md) is set up.
 

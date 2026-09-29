@@ -69,30 +69,55 @@ def action_buttons(links: dict[str, str]) -> str:
     return f'<div style="margin-top:12px">{"".join(out)}</div>'
 
 
-def card_action_bar(job_url: str, links: dict[str, str]) -> str:
-    """View job, then the feedback buttons with icons: pills for I applied / Interested / Cover letter,
-    circles for thumbs up and down. Icons are CID PNGs from ICON_DIR because Gmail strips SVG."""
-    out = [f'<a href="{esc(job_url)}" style="display:inline-block;background:{C_ACCENT};color:#ffffff;'
-           f'border:1px solid {C_ACCENT};border-radius:10px;padding:9px 18px;font-size:14px;line-height:20px;'
-           f'font-weight:600;text-decoration:none;margin:0 6px 8px 0;vertical-align:middle">View job &rarr;</a>']
-    for action in CARD_BUTTONS:
+def _pill(action: str, url: str, block: bool = False) -> str:
+    label, _, fg, bg, border, _round = CARD_BUTTONS[action]
+    layout = "display:block;text-align:center" if block else "display:inline-block;margin:0 6px 8px 0"
+    return (f'<a href="{esc(url)}" title="{esc(ACTIONS.get(action, label))}" style="{layout};background:{bg};'
+            f'color:{fg};border:1px solid {border};border-radius:10px;padding:9px 14px;font-size:14px;'
+            f'line-height:20px;font-weight:600;text-decoration:none;vertical-align:middle">'
+            f'<img src="cid:btn-{action}" width="16" height="16" alt="" style="display:inline-block;'
+            f'vertical-align:-3px;border:0;outline:none;margin-right:6px">{esc(label)}</a>')
+
+
+def rating_buttons(links: dict[str, str]) -> str:
+    """Thumbs up and down as two small circles under the fit score, where rating the match belongs."""
+    cells = []
+    for action in ("good_match", "not_for_me"):
         if not links.get(action):
             continue
-        label, _, fg, bg, border, round_ = CARD_BUTTONS[action]
-        title = esc(ACTIONS.get(action, label))
-        if round_:
-            out.append(f'<a href="{esc(links[action])}" title="{title}" style="display:inline-block;width:38px;'
-                       f'height:38px;line-height:38px;text-align:center;border-radius:20px;background:{bg};'
-                       f'border:1px solid {border};margin:0 6px 8px 0;vertical-align:middle;text-decoration:none">'
-                       f'<img src="cid:btn-{action}" width="18" height="18" alt="{esc(label)}" '
-                       f'style="display:inline-block;vertical-align:middle;border:0;outline:none"></a>')
-        else:
-            out.append(f'<a href="{esc(links[action])}" title="{title}" style="display:inline-block;background:{bg};'
-                       f'color:{fg};border:1px solid {border};border-radius:10px;padding:9px 14px;font-size:14px;'
-                       f'line-height:20px;font-weight:600;text-decoration:none;margin:0 6px 8px 0;vertical-align:middle">'
-                       f'<img src="cid:btn-{action}" width="16" height="16" alt="" style="display:inline-block;'
-                       f'vertical-align:-3px;border:0;outline:none;margin-right:6px">{esc(label)}</a>')
-    return f'<div style="margin-top:16px">{"".join(out)}</div>'
+        label, _, _fg, bg, border, _round = CARD_BUTTONS[action]
+        cells.append(f'<td align="center" width="34"><a href="{esc(links[action])}" title="{esc(ACTIONS.get(action, label))}" '
+                     f'style="display:inline-block;width:30px;height:30px;line-height:30px;text-align:center;'
+                     f'border-radius:16px;background:{bg};border:1px solid {border};text-decoration:none">'
+                     f'<img src="cid:btn-{action}" width="16" height="16" alt="{esc(label)}" '
+                     f'style="display:inline-block;vertical-align:middle;border:0;outline:none"></a></td>')
+    if not cells:
+        return ""
+    return (f'<table cellpadding="0" cellspacing="0" width="68" style="margin-top:10px"><tr>{"".join(cells)}</tr>'
+            f'</table>')
+
+
+def card_action_bar(job_url: str, links: dict[str, str]) -> str:
+    """Below a divider: View job with I applied and Interested, then Cover letter and Tailored CV side by side in
+    their own panel. Thumbs up and down sit by the score (rating_buttons). Icons are CID PNGs from ICON_DIR
+    because Gmail strips SVG."""
+    main = [f'<a href="{esc(job_url)}" style="display:inline-block;background:{C_ACCENT};color:#ffffff;'
+            f'border:1px solid {C_ACCENT};border-radius:10px;padding:9px 22px;font-size:14px;line-height:20px;'
+            f'font-weight:700;text-decoration:none;margin:0 6px 8px 0;vertical-align:middle">View job &rarr;</a>']
+    main += [_pill(a, links[a]) for a in ("applied", "interested") if links.get(a)]
+    docs = [a for a in ("cover_letter", "tailored_cv") if links.get(a)]
+    panel = ""
+    if docs:
+        cells = "".join(f'<td width="{100 // len(docs)}%" valign="top" style="padding:0 {4 if i == 0 else 0}px 0 '
+                        f'{4 if i else 0}px">{_pill(a, links[a], block=True)}</td>' for i, a in enumerate(docs))
+        panel = (f'<table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid '
+                 f'#e2e8f0;border-radius:12px;margin:4px 0 12px"><tr><td style="padding:10px 12px 12px">'
+                 f'<div style="font-size:11px;color:{C_MUTED};text-transform:uppercase;letter-spacing:.06em;'
+                 f'margin-bottom:8px">Made for this job<span style="text-transform:none;letter-spacing:0"> &middot; '
+                 f'emailed to you as a PDF</span></div><table width="100%" cellpadding="0" cellspacing="0"><tr>'
+                 f'{cells}</tr></table></td></tr></table>')
+    return (f'<div style="border-top:1px solid #e2e8f0;margin-top:18px;padding-top:16px">{"".join(main)}</div>'
+            f'{panel}')
 
 
 def closing_pill(days: int | None) -> str:

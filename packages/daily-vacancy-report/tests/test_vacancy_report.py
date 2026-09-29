@@ -418,13 +418,16 @@ def test_missing_skill_tags_open_the_add_skill_page_with_that_skill_ticked():
     assert job_scanner.gap_tags([], "https://x") == ""
 
 
-def test_card_buttons_sit_next_to_view_job_with_icons():
+def test_card_buttons_are_grouped_rating_by_the_score_then_actions_then_documents():
     import job_scanner
 
     page = job_scanner.build_html([report_job()], [], REPORT_STATS, "Summary.")
-    order = [page.index(s) for s in ("View job &rarr;", "a=applied", "a=good_match", "a=not_for_me",
-                                     "a=interested", "a=cover_letter", "a=tailored_cv")]
+    order = [page.index(s) for s in ("a=good_match", "a=not_for_me", "Hermes fit", "View job &rarr;", "a=applied",
+                                     "a=interested", "Made for this job", "a=cover_letter", "a=tailored_cv")]
     assert order == sorted(order)
+    bare = job_scanner.card_action_bar("https://jobs.example.com/1", {})
+    assert "View job &rarr;" in bare and "Made for this job" not in bare
+    assert job_scanner.rating_buttons({}) == ""
     for action in ("applied", "good_match", "not_for_me", "interested", "cover_letter", "tailored_cv"):
         assert f'src="cid:btn-{action}"' in page
         assert (job_scanner.ICON_DIR / f"btn-{action}.png").is_file()

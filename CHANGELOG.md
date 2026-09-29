@@ -8,6 +8,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Tidier job cards.** The buttons are no longer in one crowded row. Thumbs up and down sit under
+  the fit score. **View job**, **I applied** and **Interested** follow a divider. **Cover letter**
+  and **Tailored CV** share a "Made for this job" panel below them. The "Rated from the search
+  snippet only" note is gone.
 - **Settings on the dashboard.** The Worker's `/admin` page now has a setup checklist (Hermes
   connected, email server, test email, web search key, CV, job search), an **Email server** section
   (SMTP server, port, login, app password, sender, with a **Send a test email** button and the last

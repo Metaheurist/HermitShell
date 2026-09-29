@@ -39,8 +39,9 @@ light and dark modes.
    company (day and hourly rates also show a yearly estimate), the closing date (jobs closing within
    three days come first), your three strongest matching skills, the skills your CV is missing and a link to
    apply. A banner warns when a source failed (for example a search provider out of credits). With the
-   optional [feedback buttons](../../docs/feedback-worker.md), each card also has **I applied**,
-   thumbs up / thumbs down, **Interested** and **Cover letter** buttons next to **View job**,
+   optional [feedback buttons](../../docs/feedback-worker.md), each card also has thumbs up / thumbs
+   down by the score, **I applied** and **Interested** next to **View job**, and **Cover letter** and
+   **Tailored CV** buttons in a panel below,
    jobs you applied to come back in a follow-up section after 7 and 14 days, and tapping a
    missing-skill tag adds skills you have to your skills pool
    ([how it works](../../docs/feedback-worker.md#adding-missing-skills)).

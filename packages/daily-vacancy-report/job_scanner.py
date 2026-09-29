@@ -54,7 +54,7 @@ from job_extras import (below_min_salary, closing_date, combined_level, days_lef
 from job_tracker import (ACTIONS, FOLLOWUP_ACTIONS, Tracker, card_links, prompt_examples, skill_link, skills_text,
                          sync_feedback, unsubscribe_link)
 from job_weekly import (ICON_DIR, card_action_bar, build_weekly, closing_pill, followup_section, followup_text,
-                        source_banner, unsubscribe_footer, weekly_when)
+                        rating_buttons, source_banner, unsubscribe_footer, weekly_when)
 
 hc.LOG_TAG = "job_radar"
 SEEN_FILE = STATE_DIR / "job_scanner_seen.json"
@@ -825,8 +825,7 @@ def job_card(job: dict, rank: int) -> str:
     more_skills = (f'<div style="font-size:12px;color:{C_MUTED};margin-top:2px">Also on your CV: '
                    f'{esc(", ".join(job["matched"][3:]))}</div>') if len(job["matched"]) > 3 else ""
     gaps_block = gap_tags(job["gaps"], job.get("skill_link", ""))
-    note = ('<div style="font-size:11px;color:#b45309;margin-top:6px">Rated from the search snippet only '
-            '(page could not be scraped), so confidence is capped.</div>') if job["snippet_only"] else ""
+    note = ""
     if job.get("also_advertised_by"):
         note += (f'<div style="font-size:12px;color:{C_MUTED};margin-top:6px">Also advertised by '
                  f'{esc(", ".join(job["also_advertised_by"]))}.</div>')
@@ -850,6 +849,7 @@ def job_card(job: dict, rank: int) -> str:
       <table cellpadding="0" cellspacing="0"><tr><td align="center" valign="middle" width="68" height="68"
         style="width:68px;height:68px;border-radius:34px;background:{colour};color:#ffffff;font-size:24px;font-weight:800;text-align:center">
         {job['fit']}<span style="font-size:12px;font-weight:600;opacity:.85">/10</span></td></tr></table>
+      {rating_buttons(job.get("actions") or {})}
     </td>
   </tr></table>
   <table width="100%" cellpadding="0" cellspacing="0" style="margin:14px 0 16px"><tr>
