@@ -325,7 +325,7 @@ deleted ([data protection](configuration.md#data-protection)).
 | **Recruits** / **Users and roles** / **Global settings** tabs | Switch between the recruits, [who can sign in](#users-and-roles) and the [settings shared by the whole tool](#global-settings). Recruiters only have **Recruits** |
 | Invite someone + recruiter list + **Create invite link** | Makes a one-time `/join` link; the note is only for you. Admins pick whose recruit the person becomes; a recruiter's invites join their own pool |
 | **Revoke** | Cancels an unused invite |
-| Signed in as + **Sign out** | Who you are signed in as and your roles. Signing out ends that user's sessions |
+| Signed in as + **Change password** + **Sign out** | Who you are signed in as and your roles. **Change password** asks for your current password and the new one twice; you stay signed in here and are signed out everywhere else. For the main admin it shows the `wrangler secret put ADMIN_PASSWORD` command instead. Signing out ends that user's sessions |
 
 <img src="images/worker/admin-delete-modal.png" alt="Deleting a recruit: the confirm window with the CV and history tick box" width="380">
 
@@ -348,7 +348,8 @@ deleted ([data protection](configuration.md#data-protection)).
 | Role cards | **Admin**: everything. **Recruiter**: only their own pool, the people they invite and the recruits assigned to them |
 | Users table | Each user's name, username, roles, how many recruits they have, and **short password** when their password is under 12 characters. The main admin (`ADMIN_USER`) is always first |
 | **Add user** | Opens a window for a name, username, password and roles |
-| **Edit** | Changes the name, roles or password; a new password signs them out everywhere. On your own row it adds or removes your Recruiter role |
+| **Edit** | Changes the name and roles. On your own row it adds or removes your Recruiter role |
+| **Reset password** (key) | Opens a window for a new password, typed twice. The user is signed out everywhere at once; tell them the new password yourself. Not on your own row (that has **Change password**) or the main admin's |
 | Bin button (red) | Opens a window to confirm; tick the box and press **Delete** to sign the user out, delete their unused invites and leave their recruits unassigned |
 
 <table>
@@ -356,6 +357,11 @@ deleted ([data protection](configuration.md#data-protection)).
 <tr>
 <td><img src="images/worker/admin-user-modal.png" alt="The Add a user window: name, username, password and roles" width="380"></td>
 <td><img src="images/worker/admin-recruiter-view.png" alt="A recruiter signed in: only their own recruits and invites" width="380"></td>
+</tr>
+<tr><th>Reset password</th><th>Change password (a recruiter)</th></tr>
+<tr>
+<td><img src="images/worker/admin-user-reset-modal.png" alt="Resetting Casey Quinn's password: the new password twice" width="380"></td>
+<td><img src="images/worker/admin-password-modal.png" alt="A recruiter's Change password window: current password and the new one twice" width="380"></td>
 </tr>
 </table>
 

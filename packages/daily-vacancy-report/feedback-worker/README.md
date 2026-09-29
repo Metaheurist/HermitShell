@@ -20,6 +20,8 @@ missing-skill tags) without opening any port on your server.
   invite links, lists the recruits HermitShell reports and queues changes: details, pause, resume,
   delete, assignments and the global keys. `/admin/users` adds dashboard users with the Admin or
   Recruiter role (salted PBKDF2 hashes in KV); a recruiter sees and changes only their own pool.
+  Admins reset users' passwords there, and every user changes their own from `/admin`
+  (`POST /admin/password`).
 - `/join?i=<invite>` is the sign-up form with the CV upload; the CV is kept raw in KV until HermitShell
   collects it through `/api/queue`, `/api/file` and `/api/queue/ack`. HermitShell reports its profiles
   with `POST /api/status`.
@@ -66,7 +68,8 @@ npm test
 The tests run the Worker against an in-memory KV and check the signature format shared with
 `job_tracker.py`, that opening a link saves nothing, that changed links are refused, that the
 API needs the token, and the invite, sign-up, admin (lockout, CSRF, sessions) and unsubscribe flows.
-`test/users.test.js` covers dashboard users: hashed passwords, per-user sessions and sign-out, and
-that a recruiter can reach only their own recruits on every route.
+`test/users.test.js` covers dashboard users: hashed passwords, per-user sessions and sign-out,
+changing your own password and admin resets, and that a recruiter can reach only their own recruits
+on every route.
 `test/hub.test.js` runs the real `Hub` class on an in-memory Durable Object state: pushes, the
 WebSocket upgrade, presence on the dashboard and saves that still work without the binding.

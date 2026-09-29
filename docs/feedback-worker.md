@@ -427,7 +427,10 @@ secret, as before, and always has the Admin role. Everyone else gets an account 
 - **Add user** opens a window for a name, a username (2 to 32 lower-case letters, numbers, `-` or
   `_`) and a password, and the roles. Passwords shorter than 12 characters are allowed but marked
   **short password** on the list.
-- **Edit** changes a user's name, roles or password. A new password signs them out everywhere.
+- **Edit** changes a user's name and roles.
+- **Reset password** (the key button) opens a window for a new password, typed twice. The user is
+  signed out everywhere at once and signs in with the new password; it isn't emailed, so tell them
+  yourself. It isn't offered for your own account or the main admin's.
 - The red bin button opens a window to confirm; tick the box and press **Delete** to sign the user
   out, delete their unused invites and leave their recruits unassigned. You can't delete or demote
   the account you are signed in with.
@@ -439,6 +442,20 @@ Passwords are stored in the Worker's KV only as a salted PBKDF2-SHA256 hash of a
 signed in: a recruiter who opens another recruit's page, stats, jobs sent or documents gets
 "Recruit not found", and admin pages or actions answer "Admins only". Each user signs out on their
 own; the main admin's **Sign out** still signs out every main-admin session.
+
+#### Changing your own password
+
+Every dashboard user, recruiters included, has **Change password** next to **Sign out** at the
+bottom of the Recruits page (and on their own row under Users and roles). It asks for the current
+password and the new one twice. You stay signed in in that browser and are signed out everywhere
+else. Five wrong current passwords lock changing it for that account for 15 minutes; an admin's
+**Reset password** clears the lock.
+
+The main admin's password is the `ADMIN_PASSWORD` secret, so their window shows how to change it
+instead: `npx wrangler secret put ADMIN_PASSWORD` from the `feedback-worker` folder, which asks for
+the new password. That signs everyone out, every dashboard user included.
+
+<img src="images/worker/admin-password-modal.png" alt="A recruiter's Change password window: current password and the new one twice" width="380">
 
 <img src="images/worker/admin-recruiter-view.png" alt="A recruiter's view: only their own recruits and their invites" width="720">
 

@@ -8,6 +8,12 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Password changes and resets on the dashboard.** Every dashboard user, recruiters included, changes their
+  own password from **Change password** on the Recruits page with their current password; they stay signed in
+  there and are signed out everywhere else, and five wrong current passwords lock it for 15 minutes. Admins
+  reset anyone else's password from **Reset password** on Users and roles, which signs that user out at once.
+  The main admin's window shows how to change the `ADMIN_PASSWORD` secret with wrangler.
+
 - **HermitShell runs on its own, on any Linux server.** It no longer needs Hermes: it has its own scheduler
   and reads its model from its own settings, and can be deployed three ways
   ([installation](docs/installation.md)):
@@ -534,6 +540,8 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Edit on Users and roles no longer sets a password.** It changes only the name and roles; the new
+  **Reset password** window, which asks for the new password twice, replaces its password field.
 - **Deleting asks in a window.** On the Recruits list and on Users and roles, the tick box and
   **Delete** button are replaced by a red bin button. It opens a confirm window (CSS only) with the
   tick box inside (**Delete their CV and history** for a recruit), **Cancel** and a **Delete** button
@@ -646,6 +654,11 @@ using [Semantic Versioning](https://semver.org/).
 ### Security
 
 A review of the whole app; none of these were known to be exploited.
+
+- Changing your own password needs the current one, and five wrong ones lock it for that account for 15
+  minutes (a lock that can't be recorded refuses the change). The account is always the signed-in one,
+  whatever the form sends; the change signs out every other session, and an old cookie can't be replayed
+  to change it again. Only admins reset passwords, never their own or the main admin's.
 
 - Dashboard passwords are kept only as salted PBKDF2-SHA256 hashes (30,000 iterations, stored with
   each hash) of an HMAC under `JOB_FEEDBACK_SECRET`, and checked in constant time; an unknown
