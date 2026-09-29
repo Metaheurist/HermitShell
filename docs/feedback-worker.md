@@ -362,7 +362,8 @@ whole tool shares).
   **no CV** tag when there is none yet. **Send jobs now** runs that profile's report straight away
   (see [Send jobs now](#send-jobs-now)); while a report is running, daily or sent now, the row says
   **scanning now** instead. **Manage** opens that profile's page (details, job search, report time
-  and CV) and **Stats** its [stats page](#stats). Pause, resume or delete
+  and CV). The sent button has two halves: the little chart opens its [stats page](#stats) and
+  **24 sent** the [list of jobs sent](#jobs-sent). Pause, resume or delete
   (deleting removes their CV and history from your server, their answers still waiting in KV and
   their name and email from the logs; the owner can't be deleted).
 - **Pending sign-ups**: someone who has sent the invite form gets a **pending** row straight away
@@ -498,9 +499,10 @@ nothing running, every 20 seconds for 10 minutes. Reopen the window to start aga
 
 #### Stats
 
-Each dashboard row has a **Stats** button showing a small line of the jobs sent each day this week
-and how many; the profile page has one at the top. It opens `/admin/stats`, one page of KPIs and
-charts for that profile over the last **7 days**, **30 days**, **90 days** or **12 months**.
+Each dashboard row shows a small line of the jobs sent each day this week and how many. The line
+opens `/admin/stats` (the profile page has a **View stats** link too), one page of KPIs and charts
+for that profile over the last **7 days**, **30 days**, **90 days** or **12 months**. The number
+opens the [jobs sent](#jobs-sent).
 
 <img src="images/worker/admin-stats.png" alt="A profile's stats page: KPI tiles, activity chart, funnel, answers, match scores, applications and top lists" width="720">
 
@@ -526,11 +528,26 @@ charts for that profile over the last **7 days**, **30 days**, **90 days** or **
 The numbers come from the profile's tracker (`job_tracker.db`) on your server:
 `profile_stats.py` counts each day in `HERMES_TIMEZONE` and `profiles.py` sends the result to the
 Worker (`POST /api/stats`, kept in KV as `stats:<id>`) when it has changed, at most every 30
-minutes per profile, and straight after each report. Notes typed on the buttons' pages, job links
-and contact details are never sent; employer names, job titles and sources of the jobs sent are.
+minutes per profile, and straight after each report. Notes typed on the buttons' pages and contact
+details are never sent. The title, employer, place, work mode, salary, score, source, advert link
+and last answer of each job sent in the last 90 days are, for the [jobs sent](#jobs-sent) list.
 A deleted profile's stats are removed with it. The page is drawn on the Worker as plain SVG and CSS,
 without JavaScript, and its icons and charts animate in unless your system asks for reduced motion.
 `python3 profile_stats.py` prints the owner's numbers on the server.
+
+#### Jobs sent
+
+The **24 sent** half of a dashboard row's button, and **Jobs sent** on the stats page, open
+`/admin/sent`: the jobs in that profile's reports, newest first and grouped by day, for the last
+**7 days**, **30 days** or **90 days** (up to 150 jobs). Each shows its match score, title (a link to
+the advert, opened in a new tab), employer, place, work mode, salary, source and the last button
+pressed. Filters above the list show **All**, **No answer yet** or one answer (**Applied**,
+**Heard back**…), with a count for each.
+
+<img src="images/worker/admin-sent.png" alt="The jobs sent to a profile this week, grouped by day" width="720">
+
+Only `http` and `https` advert links are kept, both on your server and again on the Worker, and they
+open with `rel="noopener noreferrer"`.
 
 Every control is described in [screenshots.md](screenshots.md#profiles).
 

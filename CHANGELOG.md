@@ -8,6 +8,14 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **See the jobs sent to each person from the dashboard.** A row's sent button now has two halves:
+  the little chart opens the stats page as before, and **24 sent** opens `/admin/sent`, the jobs in
+  that profile's reports grouped by day. Each job shows its score, title (linking to the advert),
+  employer, place, work mode, salary, source and the last button pressed. It covers 7, 30 or 90 days,
+  with filters for **No answer yet** and each answer. The stats page links to it too. HermitShell sends
+  the last 90 days (up to 150 jobs) with the stats. Only web links are kept, and notes typed on the
+  buttons are never sent. [PRIVACY.md](PRIVACY.md) says so.
+
 - **Autofit: the model runs where it's fastest.** A new `autofit.py` sizes each model request to
   the machine. It uses the smallest context that holds the request (8k to 64k tokens). It learns
   from Ollama how much of the model fits on the GPU at each size, so a 4 GB card runs a 4B model

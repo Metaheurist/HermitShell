@@ -302,7 +302,8 @@ deleted ([data protection](configuration.md#data-protection)).
 | Profile, Status | Name, email and start date, **no CV** when there is none yet; owner, active or paused; **scanning now** while a report runs; time of the last report and the daily report time |
 | **Send jobs now** | Runs that profile's report straight away and emails it when the scan finishes, even if nothing new turned up. Shows **Scanning…** while a report runs; missing without a CV |
 | **Manage** | Opens [that profile's page](#a-profiles-page): details, job search, report time and CV |
-| **Stats** (line + number) | This week's jobs sent, day by day; opens [that profile's stats](#a-profiles-stats) |
+| Stats line (the little chart) | This week's jobs sent, day by day; opens [that profile's stats and charts](#a-profiles-stats) |
+| **24 sent** | How many jobs were sent this week; opens [the list of those jobs](#the-jobs-sent-to-a-profile) |
 | Crawler, with a key | The provider (Firecrawl or Tavily) and the start and end of the key, never the whole key. The owner's row shows the global key, tagged **global** |
 | Crawler: **Add key** | Only when the profile has no key: opens a window to pick Firecrawl or Tavily and paste the key. That profile then searches with only its own key. On the owner's row it sets the global key |
 | **Change** / **Remove** | Opens the same window to replace the key, or takes the profile back to the global keys. On the owner's row, **Change** opens [Global settings](#global-settings) |
@@ -420,6 +421,31 @@ the button waits until it has finished.*
 <tr><td><img src="images/worker/admin-stats-90-days.png" alt="The stats page for 90 days" width="250"></td>
 <td><img src="images/worker/admin-stats-new-profile.png" alt="The stats page of a profile that is a few days old" width="250"></td>
 <td><img src="images/worker/admin-stats-empty.png" alt="The stats page before any stats have arrived" width="250"></td></tr></table>
+
+The **Jobs sent** link at the top opens the list of the jobs behind these numbers.
+
+### The jobs sent to a profile
+
+`/admin/sent?u=<id>`: every job in that profile's reports, newest first, grouped by day. The
+dashboard's **24 sent** button opens it for this week.
+
+<img src="images/worker/admin-sent.png" alt="The jobs sent to a profile this week, grouped by day, with scores and answers" width="620">
+
+| Part | What it shows |
+| --- | --- |
+| **7 days** / **30 days** / **90 days** | The period listed. HermitShell sends the last 90 days, up to 150 jobs |
+| Answer filters | **All**, **No answer yet** and each button pressed (**Applied**, **Heard back**, **Interested**…), with how many jobs have it. The filter stays when you change the period |
+| Score ring | The job's match out of 10 (green 8+, lime 7, amber 5-6) |
+| Title | Opens the advert in a new tab, when the report had a link |
+| Employer, place, work mode, salary | As in the email |
+| Answer tag, source | The last button pressed on that job, and where it was found |
+| **Stats** / **Manage profile** | Back to the charts, or to the profile's settings |
+
+Notes typed on the buttons' confirmation pages are never shown.
+
+<img src="images/worker/admin-sent-applied.png" alt="The jobs sent in 30 days that were applied for" width="460">
+
+*Filtered to **Applied** over 30 days.*
 
 ## Regenerating these images
 

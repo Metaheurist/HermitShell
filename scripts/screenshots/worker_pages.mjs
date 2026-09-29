@@ -171,9 +171,24 @@ function fakeStats(daysBack, scale, seed) {
       { title: "Analytics Engineer (dbt, Snowflake)", employer: "Contoso", fit: 9, day: new Date(end - 5 * day).toISOString().slice(0, 10) },
       { title: "Data Platform Engineer", employer: "Fabrikam", fit: 8, day: new Date(end - 9 * day).toISOString().slice(0, 10) }],
   });
+  const JOBS = [
+    ["Senior Data Engineer (Python, Airflow)", "Northwind Traders", "York", "Hybrid", "£60,000 - £70,000", 9, "reed.co.uk", "applied"],
+    ["Analytics Engineer (dbt, Snowflake)", "Contoso", "Leeds", "Remote", "£55,000", 9, "uk.indeed.com", "heard_back"],
+    ["Data Platform Engineer", "Fabrikam", "Harrogate", "Hybrid", "", 8, "web search", "interested"],
+    ["Data Engineer", "Adventure Works", "York", "On-site", "£48,000 - £52,000", 8, "cv-library.co.uk", ""],
+    ["BI Developer (Power BI)", "Tailspin Toys", "Selby", "Hybrid", "£45,000", 7, "reed.co.uk", "good_match"],
+    ["Machine Learning Engineer", "Contoso", "Remote (UK)", "Remote", "", 7, "uk.indeed.com", ""],
+    ["Data Analyst", "Northwind Traders", "Wakefield", "Hybrid", "£38,000", 6, "jobs.ac.uk", "not_for_me"],
+    ["Cloud Data Engineer (Azure)", "Fabrikam", "Leeds", "Hybrid", "£58,000", 8, "web search", ""],
+    ["Lead Data Engineer", "Adventure Works", "York", "Hybrid", "£75,000", 7, "reed.co.uk", "rejected"],
+  ];
+  const sent = JOBS.map(([title, employer, location, mode, salary, fit, source, answer], i) => ({
+    title, employer, location, mode, salary, fit, source, answer,
+    day: new Date(end - [0, 0, 0, 1, 1, 2, 4, 5, 8][i] * day).toISOString().slice(0, 10),
+    url: i % 4 === 3 ? "" : `https://jobs.example.com/ad/${1000 + i}` }));
   return { v: 1, today: new Date(end).toISOString().slice(0, 10), since: new Date(end - (daysBack - 1) * day).toISOString().slice(0, 10), days,
     ranges: { 7: range(7), 30: range(30), 90: range(90), 365: range(365) },
-    pipeline: { interested: 9, good_match: 4, not_for_me: 12, applied: 6, heard_back: 3, rejected: 2 } };
+    pipeline: { interested: 9, good_match: 4, not_for_me: 12, applied: 6, heard_back: 3, rejected: 2 }, sent };
 }
 for (const [u, stats] of [["owner", fakeStats(75, 1, 7)], ["sam-lee", fakeStats(12, 0.6, 11)]]) {
   await call("/api/stats", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: { u, stats } });
@@ -223,6 +238,8 @@ await save("admin-stats", await admin("/admin/stats?u=owner"));
 await save("admin-stats-90-days", await admin("/admin/stats?u=owner&r=90"));
 await save("admin-stats-new-profile", await admin("/admin/stats?u=sam-lee&r=7"));
 await save("admin-stats-empty", await admin("/admin/stats?u=jordan-patel"));
+await save("admin-sent", await admin("/admin/sent?u=owner&r=7"));
+await save("admin-sent-applied", await admin("/admin/sent?u=owner&r=30&a=applied"));
 
 // A fresh install: HermitShell has connected, nothing else is set yet.
 const fresh = { ...STATUS, profiles: [{ ...STATUS.profiles[0], provider: "", key_hint: "", has_cv: false, job: { ...JOB, titles: [], region: "", places: [] } }],

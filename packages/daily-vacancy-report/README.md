@@ -61,8 +61,9 @@ light and dark modes.
 9. **Extra profiles.** Invite other people from the feedback Worker's `/admin` page; they upload a
    CV and get their own daily report (their own Hermes cron job, at a time you set on the
    dashboard), buttons, cover letters and roll-up. **Send jobs now** on the dashboard runs anyone's
-   report at once, and **Stats** shows each person's jobs, answers and applications as charts over
-   7 days to 12 months ([screenshot](../../docs/images/worker/admin-stats.png)). Every report has an
+   report at once. Each row's little chart opens that person's jobs, answers and applications as
+   charts over 7 days to 12 months ([screenshot](../../docs/images/worker/admin-stats.png)), and its
+   **sent** count lists the jobs they were sent ([screenshot](../../docs/images/worker/admin-sent.png)). Every report has an
    **Unsubscribe** link that deletes their profile (or pauses yours)
    ([how it works](../../docs/feedback-worker.md#extra-profiles-and-the-admin-page)).
 
@@ -82,7 +83,7 @@ definitely ruled out; ratings that fail are retried on the next runs, up to 4 at
 | `letter_pdf.py` | Dependency-free A4 PDF writer for the letters |
 | `profiles.py` | Extra profiles: sign-ups from the Worker become profiles built from the CV, unsubscribes, admin changes, each profile's Hermes report job, Send jobs now; entry point for the 5-minute cron job |
 | `profile_report.py` | One extra profile's daily report: the script of its `vacancy-report-<id>` Hermes job |
-| `profile_stats.py` | A profile's daily counts and top lists from its tracker, for the dashboard's stats page |
+| `profile_stats.py` | A profile's daily counts, top lists and recent jobs sent from its tracker, for the dashboard's stats and jobs sent pages |
 | `maintenance.py` | Nightly retention, encryption of older files, file permissions and encrypted backups; `--restore`, `--decrypt`, `--new-key` ([data protection](../../docs/configuration.md#data-protection)) |
 | `cv_text.py` | Dependency-free text extraction from PDF, Word .docx and text CVs |
 | `icons/` | Button icons: Lucide SVG sources in `icons/src`, PNGs built by `icons/build_icons.py` |
