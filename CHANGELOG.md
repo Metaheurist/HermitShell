@@ -21,6 +21,9 @@ using [Semantic Versioning](https://semver.org/).
   when no Ollama answers (reusing an existing one, with the GPU when there is one), sets
   `OLLAMA_HOST`, asks for the model and downloads it. It ends with a health check. `--no-prereqs`
   skips all of this.
+- **Second backup copy.** [docs/configuration.md](docs/configuration.md#a-second-copy-of-the-backups)
+  shows how to check whether the backups share a disk with Hermes and sets up a host timer that
+  copies the encrypted archives to another disk or share without changing the container.
 - **Screenshots** of the privacy page and the goodbye email in
   [docs/screenshots.md](docs/screenshots.md), and refreshed pictures of the pages and emails that
   now link to the privacy page.

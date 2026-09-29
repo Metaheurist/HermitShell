@@ -149,14 +149,54 @@ This is how it is carried out:
   overwritten and the file compacted. The skills you added are kept.
 - **Backups.** Every night `.env`, `config.yaml`, `SOUL.md`, memories, cron jobs and the scripts
   folder with its state go into one encrypted archive in `HERMES_BACKUP_DIR`, rotated to 14 daily
-  and 8 weekly copies. On a single disk, set `HERMES_BACKUP_DIR` to another disk or copy the folder
-  elsewhere. Restore with `python3 maintenance.py --restore FILE --to EMPTY_DIR`, then copy back
+  and 8 weekly copies. Keep [a second copy](#a-second-copy-of-the-backups) on another disk.
+  Restore with `python3 maintenance.py --restore FILE --to EMPTY_DIR`, then copy back
   what you need.
 - **Unsubscribe and deletion.** An extra profile's unsubscribe link, or Delete on `/admin`,
   removes its folder (profile, CV, tracker, letters, keys) within about 5 minutes, drops its
   answers still waiting on the Worker, replaces its name, email address and profile id with
   `[deleted]` in the logs, and emails the person a confirmation. Your own unsubscribe link only
   pauses your reports. `profiles.py --delete ID` does the same from the command line.
+
+### A second copy of the backups
+
+Backups on the same disk as Hermes don't survive that disk failing. Check with
+`df -h /path/to/hermes/data` and compare it with your other disks: on many NAS systems the apps
+live on the small system SSD while the RAID or data disks are mounted elsewhere.
+
+In Docker, `HERMES_BACKUP_DIR` is a path inside the container, so pointing it at another disk means
+adding a volume to the Hermes container. A host timer that copies the finished archives needs no
+change to the container, and the container can't touch the copies. As root on the host (adjust the
+two paths):
+
+```sh
+cat > /usr/local/sbin/hermes-backup-mirror <<'EOF'
+#!/bin/sh
+set -eu
+SRC=/path/to/hermes/data/backups/nightly
+DST=/mnt/second-disk/hermes-backups
+mkdir -p "$DST" && chmod 700 "$DST"
+rsync -rt --ignore-existing --include='*.enc' --exclude='*' "$SRC/" "$DST/"
+# Prune copies older than 120 days, but only while 14 newer ones exist.
+if [ "$(find "$DST" -name '*.enc' -mtime -120 | wc -l)" -ge 14 ]; then find "$DST" -name '*.enc' -mtime +120 -delete; fi
+EOF
+chmod 700 /usr/local/sbin/hermes-backup-mirror
+printf '[Service]\nType=oneshot\nExecStart=/usr/local/sbin/hermes-backup-mirror\n' \
+  > /etc/systemd/system/hermes-backup-mirror.service
+printf '[Timer]\nOnCalendar=*-*-* 04:15:00\nPersistent=true\n[Install]\nWantedBy=timers.target\n' \
+  > /etc/systemd/system/hermes-backup-mirror.timer
+systemctl daemon-reload && systemctl enable --now hermes-backup-mirror.timer
+```
+
+It runs after the 03:30 maintenance job, never deletes a copy because the source lost it, and
+copies only the encrypted archives. On an immutable system where `/usr` is read-only, keep the
+script next to the Hermes folder instead (outside the folder mounted into the container). For a
+copy off the machine, point `DST` at a mounted share or add an `rclone copy` to the script. Keep
+the data key somewhere else, such as a password manager: a backup stored with its key protects
+nothing.
+
+If the host shares its disks over SMB (common on NAS systems), anyone with that login can read
+`.env` and the backups, so give the share a strong password or leave the Hermes folder out of it.
 
 ## Keeping secrets safe
 
