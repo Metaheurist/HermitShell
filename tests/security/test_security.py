@@ -67,6 +67,16 @@ def test_goodbye_email_escapes_the_name(monkeypatch):
     assert sent and "<script>" not in sent[0] and "<img" not in sent[0]
 
 
+def test_job_card_buttons_escape_their_links():
+    import job_weekly
+
+    links = dict.fromkeys(("good_match", "not_for_me", "applied", "interested", "cover_letter", "tailored_cv"),
+                          f"https://w.example/f?x={HOSTILE}")
+    html = job_weekly.card_action_bar(f"https://jobs.example.com/{HOSTILE}", links) + job_weekly.rating_buttons(links)
+    assert "<script>" not in html and "<img src=x" not in html and 'onerror=alert(2)>' not in html
+    assert html.count("&lt;script&gt;") == 7
+
+
 def test_log_scrubbing_treats_names_as_text_not_patterns(tmp_path, monkeypatch):
     monkeypatch.setattr(hc, "HERMES_HOME", tmp_path)
     monkeypatch.setattr(profiles, "STATE_DIR", tmp_path / "state")
