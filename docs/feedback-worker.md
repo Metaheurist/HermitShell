@@ -368,9 +368,10 @@ they are. `profiles.py` registers you on its first run.
 ### The admin page
 
 Once the wizard has deployed the Worker, everything else can be set here: the email server, the
-web search keys, your job search and your CV. Two tabs split it up: **Recruits** (everyone's
-details, job search and CV) and **Global settings** (the email server and web search keys the
-whole tool shares).
+web search keys, your job search and your CV. Three tabs split it up: **Recruits** (everyone's
+details, job search and CV), **Users and roles** (who else can sign in, and as what) and **Global
+settings** (the email server and web search keys the whole tool shares). Recruiters see only the
+**Recruits** tab, with only their own pool in it; see [Users and roles](#users-and-roles).
 
 <img src="images/worker/admin-dashboard-setup.png" alt="Admin page right after setup, with the checklist" width="720">
 
@@ -397,14 +398,54 @@ whole tool shares).
   up. HermitShell reports the new recruit before it takes the sign-up off the queue, so the row
   turns into the recruit without the person dropping off the dashboard in between.
 - **Search**: the magnifying glass above the table slides out a search box (CSS only). Press Enter
-  and the page lists only the recruits whose name, email, id, place, status or crawler contain every
-  word you typed (`/admin?q=`), with a count and **&times;** to show everyone again.
-- **Crawler**: a recruit with their own key shows the provider and the start and end of the key; the
-  owner's row shows the global key. Without a key, **Add key** opens a window (CSS only, no
-  JavaScript) to pick Firecrawl or Tavily and paste the key. A recruit with their own key searches with
-  only that key, so it never spends the global credits; **Remove** takes it back to the global keys.
-  Scrapfly isn't offered there because it can't search on its own.
-- **Invites**: create, see and revoke unused links.
+  and the page lists only the recruits whose name, email, id, place, status or recruiter contain
+  every word you typed (`/admin?q=`), with a count and **&times;** to show everyone again. Searching
+  a recruiter's name or username puts the recruiter at the top, followed by all of their recruits
+  and then anyone else who matches; a recruiter and a person together (`casey jordan`) finds that
+  person under their recruiter.
+- **Recruiter** (admins only): whose pool each recruit is in, with a list to change it and
+  **Assign**. The change is shown at once and HermitShell records it within seconds.
+- **Invites**: create, see and revoke unused links. An admin picks whose recruit the person
+  becomes (their own, when they have the Recruiter role); a recruiter's invites always join their
+  own pool.
+
+<img src="images/worker/admin-recruiter-search.png" alt="Searching a recruiter: the recruiter first, then their recruits" width="720">
+
+#### Users and roles
+
+`/admin/users`, admins only. The main admin signs in with `ADMIN_USER` and the `ADMIN_PASSWORD`
+secret, as before, and always has the Admin role. Everyone else gets an account here.
+
+<img src="images/worker/admin-users.png" alt="Users and roles: the two roles and the dashboard users" width="720">
+
+| Role | What they can do |
+|---|---|
+| **Admin** | Everything: every recruit, assigning recruits, users and roles, global settings and deleting recruits |
+| **Recruiter** | Their own pool only: the people they invite and the recruits assigned to them. They manage those recruits' details, CVs and daily reports, send jobs now, pause or resume them and see their stats and jobs sent, but never see anyone else, the tasks of other recruits or the settings |
+
+- **Add user** opens a window for a name, a username (2 to 32 lower-case letters, numbers, `-` or
+  `_`) and a password, and the roles. Passwords shorter than 12 characters are allowed but marked
+  **short password** on the list.
+- **Edit** changes a user's name, roles or password. A new password signs them out everywhere.
+- **Delete** (tick the box first) signs the user out, deletes their unused invites and leaves their
+  recruits unassigned. You can't delete or demote the account you are signed in with.
+- The main admin's own **Edit** window adds or removes the Recruiter role for you, so people you
+  invite can join your own pool.
+
+Passwords are stored in the Worker's KV only as a salted PBKDF2-SHA256 hash of an HMAC under
+`JOB_FEEDBACK_SECRET`, so the KV value alone can't be guessed against. Every route checks who is
+signed in: a recruiter who opens another recruit's page, stats, jobs sent or documents gets
+"Recruit not found", and admin pages or actions answer "Admins only". Each user signs out on their
+own; the main admin's **Sign out** still signs out every main-admin session.
+
+<img src="images/worker/admin-recruiter-view.png" alt="A recruiter's view: only their own recruits and their invites" width="720">
+
+HermitShell keeps each recruit's recruiter in their `profile.json`. From the server:
+
+```bash
+python3 profiles.py --list                       # the recruiter is the third column
+python3 profiles.py --assign sam-lee-456789 casey   # "" puts them in nobody's pool
+```
 
 #### Global settings
 
@@ -419,12 +460,15 @@ whole tool shares).
   different server. **Send a test email** reports the result on the page after HermitShell's next check.
   **Go back to the .env email settings** undoes the dashboard values. Where each person's reports
   go is set on their own page under **Recruits**.
-- **Web search API keys**: Firecrawl (several keys, comma separated, are used in turn), Tavily and
-  Scrapfly for everyone without their own key. Empty boxes leave a key alone; **Use the .env key**
-  undoes a dashboard key. [Where to get each key](api-keys.md).
+- **Web search API keys**: one row each for Firecrawl, Tavily and Scrapfly, showing whether the key
+  was set here or comes from `.env` and its start and end. **Add key** or **Change** opens a window
+  (CSS only, no JavaScript) to pick the provider and paste the key; Firecrawl takes several keys,
+  comma separated, used in turn. **Use the .env key** undoes a dashboard key. These keys are used for
+  everyone: recruits no longer have keys of their own. [Where to get each key](api-keys.md).
 
-Keys and passwords are stored on the HermitShell server (`state/dashboard.json` and
-`state/profiles/`, mode 600) and shown only as their last four characters. Changes wait in KV and
+<img src="images/worker/admin-global-key-modal.png" alt="The Add key window on Global settings: Firecrawl, Tavily or Scrapfly" width="380">
+
+Keys and passwords are stored on the HermitShell server (`state/dashboard.json`, mode 600) and shown only as their last four characters. Changes wait in KV and
 are applied by `profiles.py`, within seconds over the live link ("Waiting for HermitShell" shows
 what is pending). Until then the email server form shows what you saved rather than the old values.
 Passwords and keys typed into the page are deleted from KV after 2 days if HermitShell hasn't collected

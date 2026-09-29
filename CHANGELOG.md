@@ -8,6 +8,24 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Dashboard users and roles.** A new **Users and roles** tab (`/admin/users`, admins only) adds
+  people who can sign in to `/admin`, each with a name, username, password and the **Admin** or
+  **Recruiter** role (or both). **Add user**, **Edit** and **Delete** use CSS-only windows; passwords
+  under 12 characters are allowed but marked **short password**. The main admin still signs in with
+  `ADMIN_USER` and `ADMIN_PASSWORD`, always has the Admin role and can take the Recruiter role too.
+  Accounts live in one KV key, `accounts`. Each page footer says who is signed in, with their roles.
+- **Recruiter pools.** A recruiter sees only their own recruits: the people they invite and the
+  recruits an admin assigns to them. They can manage those recruits' details, CVs and daily
+  reports, send jobs now, pause and resume them and see their stats and jobs sent, and nothing
+  else: no other recruits, settings, users, deleting or other people's tasks. Invites record whose
+  pool the person joins; admins pick it from a list (their own when they have the Recruiter role).
+  A new **Recruiter** column with **Assign** moves a recruit between pools. HermitShell keeps the
+  recruiter in `profile.json`, reports it to the dashboard and gains `profiles.py --assign ID
+  RECRUITER`; `--list` shows it.
+- **Searching a recruiter lists them first, followed by all of their recruits.** Recruit search also
+  matches the recruiter's name and username, so a recruiter and a person together finds that person
+  under their recruiter.
+
 - **Email a job to its profile from the jobs sent list.** An opened card on `/admin/sent` has a third
   tile, **Email to Sam** (**Email to you** on your own list): **Send** asks HermitShell to email that
   job to the profile within 5 minutes, as the card it had in the daily report with its buttons signed
@@ -436,6 +454,10 @@ using [Semantic Versioning](https://semver.org/).
     longer assumes an AI / ML role.
 ### Removed
 
+- **Recruits' own crawler keys.** Web search keys are global: the dashboard's **Crawler** column and
+  its key window are gone, and `set_key` and `use_global` are refused by both the Worker and
+  `profiles.py`. The `secrets.json` files earlier versions kept in recruits' folders are deleted on
+  the next run, and every recruit's report uses the global keys.
 - **Noon Tech Digest.** HermitShell is now solely a job-finder platform: the digest package, its
   setup wizard steps, tests and CI job are gone. Existing installs keep their copy of
   `tech_digest.py`, its settings and its cron job; nothing is deleted from the server.
@@ -458,6 +480,15 @@ using [Semantic Versioning](https://semver.org/).
   `JOB_FEEDBACK_*` and `JOB_PROFILE_ID` can only be set in `.env`.
 
 ### Changed
+
+- **Global settings adds keys through a window.** Each web search provider has a row showing
+  **set here** or **from .env** and the start and end of its key, with **Add key** or **Change**
+  opening the same style of window the recruits' keys used, now offering Firecrawl, Tavily and
+  Scrapfly (several Firecrawl keys, comma separated). It replaces the plain three-box form.
+- **Admin sessions are per user.** The session cookie names who is signed in, and each user's
+  sessions are signed with their own version, so a new password, deleting the user or their
+  **Sign out** ends only their sessions. The main admin's **Sign out** still ends every main-admin
+  session. Existing sessions end once, when the update is deployed.
 
 - **Profiles are called recruits on the admin page.** The dashboard tab, page title, table column,
   search box and count, **Back to recruits**, **Manage recruit**, the not-found pages and the Tasks
@@ -559,6 +590,15 @@ using [Semantic Versioning](https://semver.org/).
 
 A review of the whole app; none of these were known to be exploited.
 
+- Dashboard passwords are kept only as salted PBKDF2-SHA256 hashes (30,000 iterations, stored with
+  each hash) of an HMAC under `JOB_FEEDBACK_SECRET`, and checked in constant time; an unknown
+  username takes as long as a wrong password. Sign-in keeps the existing lockout.
+- Every recruit route checks the signed-in user's pool on the server, not just the links shown:
+  others' pages, stats, jobs sent, documents, save status, CV uploads and actions answer "Recruit
+  not found", and admin pages and actions answer "Admins only". Recruiters' invites always join
+  their own pool, whatever the form says.
+- Web search provider names from the dashboard are checked as own properties, so `__proto__` can't
+  pass as a provider.
 - The feedback Worker's build tools are updated to wrangler 4.144.0, which brings undici 7.29.1 and
   clears a new high-severity undici advisory in `npm audit`. These are development tools only; the
   deployed Worker does not include them.

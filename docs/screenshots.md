@@ -312,30 +312,54 @@ deleted ([data protection](configuration.md#data-protection)).
 | --- | --- |
 | Status line | **HermitShell is connected** (green dot) while its live link is up, so changes reach it within seconds, then when it last reported its profiles. Without the link: when HermitShell last checked in, with the time in your timezone (`HERMES_TIMEZONE`). Also says how many changes are still **Waiting for HermitShell**, which opens **Tasks**. A warning appears above it if HermitShell hasn't checked in for 45 minutes |
 | **Tasks** (loading circle + number) | Opens the [task list](#tasks): everything HermitShell is doing or has waiting. The ring turns while something runs and the number in the corner says how many tasks there are |
-| Search (magnifying glass) | Slides out a search box. Type part of a name, email, place, status (**paused**, **scanning**, **no cv**) or crawler and press Enter: only the profiles with every word are listed, with **1 of 3 profiles** above the table. **&times;** shows everyone again |
+| Search (magnifying glass) | Slides out a search box. Type part of a name, email, place, status (**paused**, **scanning**, **no cv**) or recruiter and press Enter: only the recruits with every word are listed, with **1 of 3 recruits** above the table. Searching a recruiter lists them first, followed by all their recruits. **&times;** shows everyone again |
 | **pending** (orange) | Someone who has sent the invite form. They stay in the table, with when they signed up and what they're looking for, while HermitShell reads their CV, then the row becomes their profile |
 | Profile, Status | Name, email and start date, **no CV** when there is none yet; owner, active or paused; **scanning now** while a report runs; time of the last report and the daily report time |
 | **Send jobs now** | Runs that profile's report straight away and emails it when the scan finishes, even if nothing new turned up. Shows **Scanning…** while a report runs; missing without a CV |
 | **Manage** | Opens [that profile's page](#a-recruits-page): details, job search, report time and CV |
 | Stats line (the little chart) | This week's jobs sent, day by day; opens [that profile's stats and charts](#a-recruits-stats) |
 | **24 sent** | How many jobs were sent this week; opens [the list of those jobs](#the-jobs-sent-to-a-recruit) |
-| Crawler, with a key | The provider (Firecrawl or Tavily) and the start and end of the key, never the whole key. The owner's row shows the global key, tagged **global** |
-| Crawler: **Add key** | Only when the profile has no key: opens a window to pick Firecrawl or Tavily and paste the key. That profile then searches with only its own key. On the owner's row it sets the global key |
-| **Change** / **Remove** | Opens the same window to replace the key, or takes the profile back to the global keys. On the owner's row, **Change** opens [Global settings](#global-settings) |
-| **Pause** / **Resume** | Stops or restarts that profile's reports |
-| **Delete** (with the tick box) | Deletes an extra profile's CV and history from your server. The owner can't be deleted |
-| **Recruits** / **Global settings** tabs | Switch between the recruits and the [settings shared by the whole tool](#global-settings) |
-| Invite someone + **Create invite link** | Makes a one-time `/join` link; the note is only for you |
+| Recruiter + **Assign** (admins only) | Whose pool the recruit is in: the recruiter's initials, name and username, or **Unassigned**. Pick another recruiter and press **Assign**; the owner's row says **The main admin** |
+| **Pause** / **Resume** | Stops or restarts that recruit's reports |
+| **Delete** (with the tick box, admins only) | Deletes an extra recruit's CV and history from your server. The owner can't be deleted |
+| **Recruits** / **Users and roles** / **Global settings** tabs | Switch between the recruits, [who can sign in](#users-and-roles) and the [settings shared by the whole tool](#global-settings). Recruiters only have **Recruits** |
+| Invite someone + recruiter list + **Create invite link** | Makes a one-time `/join` link; the note is only for you. Admins pick whose recruit the person becomes; a recruiter's invites join their own pool |
 | **Revoke** | Cancels an unused invite |
-| **Sign out** | Ends every admin session |
+| Signed in as + **Sign out** | Who you are signed in as and your roles. Signing out ends that user's sessions |
 
 <table>
-<tr><th>Add key</th><th>Searching for a profile</th></tr>
+<tr><th>Searching for a recruit</th><th>Searching for a recruiter</th></tr>
 <tr>
-<td><img src="images/worker/admin-key-modal.png" alt="The Add key window: Firecrawl or Tavily, and the API key" width="380"></td>
 <td><img src="images/worker/admin-dashboard-search.png" alt="The recruits table searched for York" width="380"></td>
+<td><img src="images/worker/admin-recruiter-search.png" alt="Searching a recruiter: the recruiter first, then their recruits" width="380"></td>
 </tr>
 </table>
+
+### Users and roles
+
+`/admin/users`, admins only: the two roles and everyone who can sign in to the dashboard.
+
+<img src="images/worker/admin-users.png" alt="Users and roles: the Admin and Recruiter roles and the dashboard users" width="760">
+
+| Control | What it does |
+| --- | --- |
+| Role cards | **Admin**: everything. **Recruiter**: only their own pool, the people they invite and the recruits assigned to them |
+| Users table | Each user's name, username, roles, how many recruits they have, and **short password** when their password is under 12 characters. The main admin (`ADMIN_USER`) is always first |
+| **Add user** | Opens a window for a name, username, password and roles |
+| **Edit** | Changes the name, roles or password; a new password signs them out everywhere. On your own row it adds or removes your Recruiter role |
+| **Delete** (with the tick box) | Signs the user out, deletes their unused invites and leaves their recruits unassigned |
+
+<table>
+<tr><th>Add user</th><th>A recruiter's view</th></tr>
+<tr>
+<td><img src="images/worker/admin-user-modal.png" alt="The Add a user window: name, username, password and roles" width="380"></td>
+<td><img src="images/worker/admin-recruiter-view.png" alt="A recruiter signed in: only their own recruits and invites" width="380"></td>
+</tr>
+</table>
+
+A recruiter sees only the **Recruits** tab, only their own recruits and invites, and no Recruiter
+column, delete buttons, checklist or settings. Opening anyone else's page answers **Recruit not
+found**; admin pages answer **Admins only**.
 
 <table>
 <tr><th>Right after setup: the checklist</th><th>Before HermitShell has reported</th><th>New invite link</th></tr>
@@ -376,8 +400,11 @@ Applied…) are never listed and can't be cancelled here.
 | Email server + **Save email server** | SMTP server, port, username, password and sender for everyone's emails. The password box stays empty; leave it empty to keep the saved password |
 | **Send a test email** | Sends a test to the address typed (default: yours); the result shows under Email server after HermitShell's next check |
 | **Go back to the .env email settings** | Shown when the email server was set here; undoes it |
-| Web search API keys + **Save keys** | Firecrawl (several, comma separated), Tavily and Scrapfly keys for everyone without their own; empty boxes leave a key as it is |
+| Web search API keys | One row per provider (Firecrawl, Tavily, Scrapfly): **set here** or **from .env**, the start and end of the key, and Firecrawl's backup keys. These keys are used for every recruit |
+| **Add key** / **Change** | Opens a window to pick the provider and paste the key. Firecrawl takes several keys, comma separated |
 | **Use the .env key** | Shown next to a key set here; goes back to the one in `.env` |
+
+<img src="images/worker/admin-global-key-modal.png" alt="The Add key window: Firecrawl, Tavily or Scrapfly, and the API key" width="380">
 
 Keys are shown only as `fc-...1234`. Keys typed here are removed from the Worker after 2 days if
 HermitShell hasn't collected them.

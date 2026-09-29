@@ -113,17 +113,17 @@ const JOB = { titles: ["Data Engineer", "Analytics Engineer", "Python Developer"
   level: "mid", types: ["Permanent", "Contract"], modes: ["Hybrid", "Remote"], min_salary: "45000", currency: "£", hide_agency: true };
 const STATUS = {
   profiles: [
-    { id: "owner", name: "Alex Morgan", email: "alex.morgan@example.com", status: "active", owner: true, crawler: "global",
-      provider: "firecrawl", key_hint: "fc-...41b7", has_cv: true, created: now - 60 * day, last_run: now - 3 * 3600000, cv_updated: now - 20 * day,
+    { id: "owner", name: "Alex Morgan", email: "alex.morgan@example.com", status: "active", owner: true,
+      has_cv: true, created: now - 60 * day, last_run: now - 3 * 3600000, cv_updated: now - 20 * day,
       details: { name: "Alex Morgan", email: "alex.morgan@example.com", phone: "07700 900123", location: "Salford" }, job: JOB,
       report: { time: "08:00", days: "daily", schedule: "0 8 * * *", hermes_job: true, pending: false } },
-    { id: "sam-lee", name: "Sam Lee", email: "sam.lee@example.com", status: "active", crawler: "own", provider: "tavily", key_hint: "tvl...9d2a",
+    { id: "sam-lee", name: "Sam Lee", email: "sam.lee@example.com", status: "active", recruiter: "casey",
       has_cv: true, created: now - 12 * day, last_run: now - 3 * 3600000, scanning: now - 4 * 60000,
       details: { name: "Sam Lee", email: "sam.lee@example.com", phone: "", location: "York" },
       job: { ...JOB, titles: ["Data Analyst", "BI Developer"], region: "North Yorkshire", places: ["York", "Harrogate"] },
       report: { time: "08:15", days: "weekdays", schedule: "15 8 * * 1-5", hermes_job: true, pending: false } },
-    { id: "jordan-patel", name: "Jordan Patel", email: "jordan.patel@example.net", status: "paused", crawler: "global",
-      provider: "", key_hint: "", has_cv: true, created: now - 30 * day, last_run: now - 9 * day,
+    { id: "jordan-patel", name: "Jordan Patel", email: "jordan.patel@example.net", status: "paused", recruiter: "admin",
+      has_cv: true, created: now - 30 * day, last_run: now - 9 * day,
       details: { name: "Jordan Patel", email: "jordan.patel@example.net", phone: "", location: "Leeds" }, job: JOB,
       report: { time: "08:30", days: "daily", schedule: "30 8 * * *", hermes_job: true, pending: false } },
   ],
@@ -234,8 +234,18 @@ const cookie = (login.headers.get("Set-Cookie") || "").split(";")[0];
 const admin = (path, options = {}) => call(path, { ...options, headers: { Cookie: cookie, ...(options.headers || {}) } });
 const dashboard = await (await admin("/admin")).text();
 const csrf = dashboard.match(/name="csrf" value="([^"]+)"/)[1];
+// Dashboard users: Casey Quinn recruits Sam Lee, Drew Harper is a second admin, and the main admin
+// (Alex Morgan) also has the Recruiter role, with Jordan Patel in their pool.
+await admin("/admin/users", { method: "POST", form: { csrf, op: "admin_roles", roles: "recruiter" } });
+await admin("/admin/users", { method: "POST", form: { csrf, op: "add", name: "Casey Quinn", username: "casey", password: "docs-recruiter-password", roles: "recruiter" } });
+await admin("/admin/users", { method: "POST", form: { csrf, op: "add", name: "Drew Harper", username: "drew", password: "docs-pw", roles: "admin" } });
+const caseyLogin = await call("/admin/login", { method: "POST", form: { username: "casey", password: "docs-recruiter-password" } });
+const caseyCookie = (caseyLogin.headers.get("Set-Cookie") || "").split(";")[0];
+const casey = (path, options = {}) => call(path, { ...options, headers: { Cookie: caseyCookie, ...(options.headers || {}) } });
+const caseyCsrf = (await (await casey("/admin")).text()).match(/name="csrf" value="([^"]+)"/)[1];
+await casey("/admin/action", { method: "POST", form: { csrf: caseyCsrf, action: "invite", note: "Morgan, met at the careers fair" } });
 await call("/api/invite", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: { note: "Taylor, former colleague" } });
-await save("admin-invite-link", await admin("/admin/action", { method: "POST", form: { csrf, action: "invite", note: "Casey from the course" } }));
+await save("admin-invite-link", await admin("/admin/action", { method: "POST", form: { csrf, action: "invite", note: "Jamie from the course" } }));
 await admin("/admin/action", { method: "POST", form: { csrf, action: "resume", u: "jordan-patel" } });
 await call("/f", { method: "POST", form: { ...(await link("tailored_cv", "BI Developer at Fabrikam", { profile: "sam-lee" })), r: "" } });
 await save("admin-dashboard", await admin("/admin?done=queued"));
@@ -245,9 +255,13 @@ const withTasks = (await (await admin("/admin")).text()).replace("</head>", "<st
   .replace('src="/admin/tasks" loading="lazy"', `srcdoc="${tasksList.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"`);
 await save("admin-tasks", new Response(withTasks));
 await save("admin-dashboard-search", await admin("/admin?q=york"));
-// Opened as a file, the page cannot be given the #key-jordan-patel fragment that opens its key modal.
-const withModal = (await (await admin("/admin")).text()).replace("</head>", "<style>#key-jordan-patel{display:grid}</style></head>");
-await save("admin-key-modal", new Response(withModal));
+await save("admin-recruiter-search", await admin("/admin?q=casey"));
+await save("admin-recruiter-view", await casey("/admin"));
+await save("admin-users", await admin("/admin/users"));
+// Opened as files, pages cannot be given the fragment that opens a modal, so it is opened with a style.
+const withOpenModal = async (path, id) => new Response((await (await admin(path)).text()).replace("</head>", `<style>#${id}{display:grid}</style></head>`));
+await save("admin-user-modal", await withOpenModal("/admin/users", "user-new"));
+await save("admin-global-key-modal", await withOpenModal("/admin/settings", "gkey-scrapfly"));
 await save("admin-profile", await framed(await admin("/admin/profile?u=owner"), admin));
 await save("admin-profile-scanning", await framed(await admin("/admin/profile?u=sam-lee"), admin));
 await save("admin-settings", await admin("/admin/settings"));
@@ -272,7 +286,7 @@ await save("admin-sent-open", new Response(opened));
 await save("confirm-cover-letter-ready", await call(`/f?${new URLSearchParams(await link("cover_letter", FIRST_TITLE, { job: FIRST }))}`));
 
 // A fresh install: HermitShell has connected, nothing else is set yet.
-const fresh = { ...STATUS, profiles: [{ ...STATUS.profiles[0], provider: "", key_hint: "", has_cv: false, job: { ...JOB, titles: [], region: "", places: [] } }],
+const fresh = { ...STATUS, profiles: [{ ...STATUS.profiles[0], has_cv: false, job: { ...JOB, titles: [], region: "", places: [] } }],
   email: { host: "smtp.gmail.com", port: "587", user: "", from: "", password_set: false, source: "none", last_test: null },
   keys: { firecrawl: { source: "none", hint: "" }, tavily: { source: "none", hint: "" }, scrapfly: { source: "none", hint: "" } },
   problems: [{ at: now - 600000, what: "email", error: "invalid email server settings" }] };

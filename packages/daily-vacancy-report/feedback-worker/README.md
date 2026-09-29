@@ -15,9 +15,11 @@ missing-skill tags) without opening any port on your server.
 - Links for extra profiles carry the profile id in `u` (covered by the signature); `/events?u=<id>`
   returns only that profile's answers. `a=unsubscribe` asks for confirmation, then queues the removal.
 - Links are signed over every field plus the send day (`d`) and expire after 90 days.
-- `/admin` (password in the `ADMIN_PASSWORD` secret, optional `ADMIN_USER`; optionally behind
-  Cloudflare Access with `ACCESS_AUD` and `ACCESS_TEAM_DOMAIN`) creates single-use invite
-  links, lists the profiles HermitShell reports and queues changes: crawler keys, pause, resume, delete.
+- `/admin` (the main admin's password in the `ADMIN_PASSWORD` secret, optional `ADMIN_USER`;
+  optionally behind Cloudflare Access with `ACCESS_AUD` and `ACCESS_TEAM_DOMAIN`) creates single-use
+  invite links, lists the recruits HermitShell reports and queues changes: details, pause, resume,
+  delete, assignments and the global keys. `/admin/users` adds dashboard users with the Admin or
+  Recruiter role (salted PBKDF2 hashes in KV); a recruiter sees and changes only their own pool.
 - `/join?i=<invite>` is the sign-up form with the CV upload; the CV is kept raw in KV until HermitShell
   collects it through `/api/queue`, `/api/file` and `/api/queue/ack`. HermitShell reports its profiles
   with `POST /api/status`.
@@ -26,7 +28,8 @@ missing-skill tags) without opening any port on your server.
   **HermitShell is connected** while it is up. Without it HermitShell polls `/api/queue/flag`.
 
 Source: `src/index.js` (buttons, routing), `src/join.js` (invites, sign-up), `src/admin.js` (admin
-page, HermitShell API), `src/hub.js` (the live link), `src/lib.js` (signing, pages). It fits in the
+page, HermitShell API), `src/users.js` (dashboard users and roles), `src/keys.js` (global web search
+keys), `src/hub.js` (the live link), `src/lib.js` (signing, pages). It fits in the
 Cloudflare free plan (Workers, KV and SQLite-backed Durable Objects, whose hibernating WebSocket
 isn't billed while idle); polling reads flag keys instead of listing KV, which the free plan limits
 to 1,000 lists a day.
@@ -63,5 +66,7 @@ npm test
 The tests run the Worker against an in-memory KV and check the signature format shared with
 `job_tracker.py`, that opening a link saves nothing, that changed links are refused, that the
 API needs the token, and the invite, sign-up, admin (lockout, CSRF, sessions) and unsubscribe flows.
+`test/users.test.js` covers dashboard users: hashed passwords, per-user sessions and sign-out, and
+that a recruiter can reach only their own recruits on every route.
 `test/hub.test.js` runs the real `Hub` class on an in-memory Durable Object state: pushes, the
 WebSocket upgrade, presence on the dashboard and saves that still work without the binding.
