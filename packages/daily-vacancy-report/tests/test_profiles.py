@@ -258,6 +258,19 @@ def test_admin_actions_set_keys_pause_and_delete(home, monkeypatch):
     assert profiles.os.environ["FIRECRAWL_BACKUP_KEYS"] == "fc-global-longer0002"
 
 
+def test_rejected_dashboard_changes_are_reported_for_a_day(home, monkeypatch):
+    api = FakeApi([{"id": "queue:2:a", "type": "admin", "action": "email", "host": "bad host!", "user": "x"},
+                   {"id": "queue:3:b", "type": "admin", "action": "pause", "u": "casey-quinn"}])
+    profiles.sync(api)
+    problems = api.statuses[-1]["problems"]
+    assert [(p["what"], p["error"]) for p in problems] == [("email", "invalid email server settings"),
+                                                          ("pause for casey-quinn", "no profile casey-quinn")]
+    assert all(p["at"] > 1e12 for p in problems)
+    later = profiles.time.time() + 2 * 86400
+    monkeypatch.setattr(profiles.time, "time", lambda: later)
+    assert profiles.status_payload()["problems"] == []
+
+
 def test_admin_can_go_back_to_the_env_keys_and_delete(home):
     profiles.sync(FakeApi([signup()]))
     pid = "sam-lee-456789"

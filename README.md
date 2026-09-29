@@ -111,8 +111,8 @@ tests/security/            security tests: hostile input, encryption, backups, f
 requirements.txt           run-time Python packages (requirements-dev.txt adds the test tools)
 .github/workflows/         CI (lint, tests, Worker build) and Security (secrets, security tests,
                            Bandit, CVEs, CodeQL)
-docs/                      installation, configuration, Cloudflare, feedback Worker, email rendering,
-                           web providers, screenshots
+docs/                      installation, configuration, accounts and API keys, Cloudflare, feedback
+                           Worker, email rendering, web providers, screenshots
 ```
 
 The scripts are installed flat next to `hermes_common.py`, because Hermes cron jobs run a single
@@ -154,6 +154,9 @@ script from `$HERMES_HOME/scripts`.
   [Tavily](https://tavily.com) or [Scrapfly](https://scrapfly.io). All three have free tiers.
 - For the buttons, `/admin` and extra profiles: a free [Cloudflare](https://dash.cloudflare.com/sign-up)
   account.
+
+[docs/api-keys.md](docs/api-keys.md) walks through creating each account and key, with the free
+limits and how far they go.
 
 ## Tests and CI
 

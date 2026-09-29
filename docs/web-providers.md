@@ -39,5 +39,6 @@ used.
 | --- | --- |
 | Daily Vacancy Report | about 20-40: 4 searches plus up to `JOB_SCANNER_MAX_SCRAPE` scrapes |
 
-That fits comfortably inside Firecrawl's free monthly allowance when run once a day. Tavily's
-free tier covers occasional failover.
+That fits inside Firecrawl's free monthly allowance when run once a day for one person. Tavily's
+free tier covers occasional failover. How to get each key and the free limits:
+[Accounts and API keys](api-keys.md).

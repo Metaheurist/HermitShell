@@ -311,20 +311,52 @@ they are. `profiles.py` registers you on its first run.
 
 ### The admin page
 
-<img src="images/worker/admin-dashboard.png" alt="Admin page" width="720">
+Once the wizard has deployed the Worker, everything else can be set here: the email server, the
+web search keys, your job search and your CV.
 
-- **Profiles**: everyone Hermes reports, with status and last report. Pause, resume or delete
+<img src="images/worker/admin-dashboard-setup.png" alt="Admin page right after setup, with the checklist" width="720">
+
+- **Finish setting up**: a checklist until Hermes has connected, the email server is set and a
+  test email worked, there is a web search key, and your CV and job search are in. Each item links
+  to its form.
+- **Hermes could not apply**: changes Hermes rejected in the last day (a mistyped SMTP server,
+  for example), with the reason.
+- **Profiles**: everyone Hermes reports, with status, last report and a **no CV** tag when there
+  is none yet. **Settings, job search and CV** opens that profile's page. Pause, resume or delete
   (deleting removes their CV and history from your server, their answers still waiting in KV and
   their name and email from the logs; the owner can't be deleted).
-- **Crawler keys**: give a profile its own Firecrawl key (it then uses only that key), or leave
-  it on the global key. **Global crawler key** replaces the keys in `.env` for everyone without
-  their own, you included; **Go back to the .env keys** undoes it. Keys are stored on the Hermes
-  server (`state/profiles/`, mode 600) and shown only as `fc-...1234`.
+- **Crawler**: give a profile its own Firecrawl key (it then uses only that key), or leave it on
+  the global keys.
+- **Email server**: SMTP server, port, username, password (for Gmail an
+  [app password](api-keys.md#gmail-app-password)) and an optional sender address, used for
+  everyone's reports. The password box stays empty; leave it empty to keep the saved one. Changing
+  the server or username without a new password clears the old password, so it is never sent to a
+  different server. **Send a test email** reports the result on the page after Hermes' next check.
+  **Go back to the .env email settings** undoes the dashboard values.
+- **Web search API keys**: Firecrawl (several keys, comma separated, are used in turn), Tavily and
+  Scrapfly for everyone without their own key. Empty boxes leave a key alone; **Use the .env key**
+  undoes a dashboard key. [Where to get each key](api-keys.md).
 - **Invites**: create, see and revoke unused links.
 
-Changes wait in KV and are applied by `profiles.py` within 5 minutes ("Waiting for Hermes" shows
-what is pending). Keys typed into the page are deleted from KV after 2 days if Hermes hasn't
-collected them.
+Keys and passwords are stored on the Hermes server (`state/dashboard.json` and
+`state/profiles/`, mode 600) and shown only as their last four characters. Changes wait in KV and
+are applied by `profiles.py` within 5 minutes ("Waiting for Hermes" shows what is pending).
+Passwords and keys typed into the page are deleted from KV after 2 days if Hermes hasn't collected
+them.
+
+#### A profile's page
+
+<img src="images/worker/admin-profile.png" alt="A profile's settings page" width="720">
+
+- **Details**: name, the email address their reports go to, phone and town (shown on cover
+  letters). For you, the address is `ALERT_EMAIL`.
+- **Job search**: up to 8 job titles, region and the towns inside it, country, whether fully
+  remote jobs elsewhere count, level, minimum salary and currency, employment types, work modes
+  and whether to hide agency adverts that don't name the employer. Saving rebuilds the web search
+  queries and the title filter when the titles or location change.
+- **CV**: upload a PDF, Word or text file, or paste it. Hermes reads it, rebuilds the profile and
+  skills the jobs are rated against, and emails a summary. Your previous `job_profile.md` and
+  `cv_keywords.json` are kept as `.bak` copies.
 
 Every control is described in [screenshots.md](screenshots.md#profiles).
 

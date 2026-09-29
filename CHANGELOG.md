@@ -8,6 +8,18 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Settings on the dashboard.** The Worker's `/admin` page now has a setup checklist (Hermes
+  connected, email server, test email, web search key, CV, job search), an **Email server** section
+  (SMTP server, port, login, app password, sender, with a **Send a test email** button and the last
+  result), and **Web search API keys** for Firecrawl (several allowed), Tavily and Scrapfly. Each
+  profile has its own page, linked from the profiles table, for the person's details, the whole job
+  search (titles, region and towns, country, remote, level, employment types, work modes, minimum
+  salary, agency adverts) and uploading a new CV, which rebuilds their profile and keywords. Changes
+  are applied by Hermes within about 5 minutes. A change Hermes rejects is shown at the top of the
+  page for a day. Passwords and keys are never shown again, only their last four characters.
+- **Accounts and API keys guide.** [docs/api-keys.md](docs/api-keys.md) covers creating a Gmail app
+  password and Firecrawl, Tavily and Scrapfly accounts, where each key goes, their free limits and
+  how far one report's usage goes within them.
 - **Prerequisite doctor.** `doctor.py` (installed next to the scripts) checks Python, the
   packages in the new [requirements.txt](requirements.txt), Hermes' config, Ollama with the model
   the scripts will use, `.env` permissions, the data key, email and web search settings, the

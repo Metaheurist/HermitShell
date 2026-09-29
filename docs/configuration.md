@@ -44,7 +44,7 @@ Full template: [`.env.example`](../.env.example).
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `SMTP_HOST` / `SMTP_PORT` | `smtp.gmail.com` / `587` | STARTTLS SMTP server |
-| `SMTP_USER` / `SMTP_PASSWORD` | none | SMTP login. For Gmail, use an App Password |
+| `SMTP_USER` / `SMTP_PASSWORD` | none | SMTP login. For Gmail, use an [app password](api-keys.md#gmail-app-password) |
 | `SMTP_FROM` | `SMTP_USER` | Sender address |
 | `ALERT_EMAIL` | `SMTP_USER` | Recipient |
 | `FIRECRAWL_API_KEY` | none | Primary search and scrape provider |

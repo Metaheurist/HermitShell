@@ -373,7 +373,8 @@ def main() -> int:
                 760, 1100)
         for html in sorted((html_dir / "worker").glob("*.html")):
             capture(chrome, profile, html, args.out / "worker" / f"{html.stem}.png",
-                    1000 if html.stem.startswith("admin-dashboard") else 760 if html.stem == "privacy" else 600)
+                    1000 if html.stem.startswith(("admin-dashboard", "admin-profile")) else
+                    760 if html.stem == "privacy" else 600)
             print(f"worker/{html.stem}.png")
     return 0
 

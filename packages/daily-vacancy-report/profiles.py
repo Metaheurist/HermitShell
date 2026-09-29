@@ -842,8 +842,22 @@ def handle(item: dict, api: Api) -> None:
         raise ProfileError(f"unknown queue item type {kind!r}")
 
 
+def recent_problems(max_age: float = 86400) -> list[dict]:
+    return [p for p in read_json(PROFILES_DIR / ".problems.json", []) if time.time() - p.get("at", 0) < max_age]
+
+
+def record_problem(item: dict, error: Exception) -> None:
+    """A dashboard change that could not be applied, shown on /admin for a day."""
+    what = str(item.get("action") or item.get("type") or "change").replace("_", " ") \
+        + (f" for {item['u']}" if item.get("u") else "")
+    write_json(PROFILES_DIR / ".problems.json",
+               recent_problems()[-4:] + [{"at": time.time(), "what": what, "error": str(error)[:200]}])
+
+
 def give_up(item: dict, error: Exception) -> None:
     log(f"Giving up on {item.get('type')} {item.get('id')}: {error}")
+    if item.get("type") == "admin":
+        record_problem(item, error)
     if item.get("type") == "signup":
         pid = profile_id(item)
         if (PROFILES_DIR / pid).is_dir() and not (PROFILES_DIR / pid / "profile.json").is_file():
@@ -895,7 +909,8 @@ def status_payload() -> dict:
                            "to": test.get("to", "")} if test else None}
     keys = {name: _key_info(API_KEYS[name]) for name in ("firecrawl", "tavily", "scrapfly")}
     keys["firecrawl"]["backups"] = len([k for k in (env("FIRECRAWL_BACKUP_KEYS") or "").split(",") if k.strip()])
-    return {"profiles": profiles, "email": email, "keys": keys}
+    problems = [{"at": _ms(p["at"]), "what": p.get("what", ""), "error": p.get("error", "")} for p in recent_problems()]
+    return {"profiles": profiles, "email": email, "keys": keys, "problems": problems}
 
 
 def push_status(api: Api, force: bool = False) -> None:

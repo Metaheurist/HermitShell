@@ -292,13 +292,17 @@ deleted ([data protection](configuration.md#data-protection)).
 | Control | What it does |
 | --- | --- |
 | Status line | When Hermes last reported, and changes still **Waiting for Hermes** (applied by `profiles.py` within about 5 minutes) |
-| Profile, Status | Name, email and start date; owner, active or paused; time of the last report |
+| Profile, Status | Name, email and start date, **no CV** when there is none yet; owner, active or paused; time of the last report |
+| **Settings, job search and CV** | Opens [that profile's page](#a-profiles-page) |
 | Crawler: **Their Firecrawl key** + **Save** | Gives that profile its own Firecrawl key, used instead of the global one |
 | **Use global key** | Takes a profile back to the global key |
 | **Pause** / **Resume** | Stops or restarts that profile's reports |
 | **Delete** (with the tick box) | Deletes an extra profile's CV and history from your server. The owner can't be deleted |
-| Global crawler key + **Save** | Replaces the Firecrawl keys in `.env` (`FIRECRAWL_API_KEY`, `FIRECRAWL_BACKUP_KEYS`) for everyone without their own key; several keys can be comma separated |
-| **Go back to the .env keys** | Shown after a global key is set here; undoes it |
+| Email server + **Save email server** | SMTP server, port, username, password and sender for everyone's emails. The password box stays empty; leave it empty to keep the saved password |
+| **Send a test email** | Sends a test to the address typed (default: yours); the result shows under Email server after Hermes' next check |
+| **Go back to the .env email settings** | Shown when the email server was set here; undoes it |
+| Web search API keys + **Save keys** | Firecrawl (several, comma separated), Tavily and Scrapfly keys for everyone without their own; empty boxes leave a key as it is |
+| **Use the .env key** | Shown next to a key set here; goes back to the one in `.env` |
 | Invite someone + **Create invite link** | Makes a one-time `/join` link; the note is only for you |
 | **Revoke** | Cancels an unused invite |
 | **Sign out** | Ends every admin session |
@@ -307,12 +311,27 @@ Keys are shown only as `fc-...1234`. Keys typed here are removed from the Worker
 Hermes hasn't collected them.
 
 <table>
-<tr><th>Before Hermes has reported</th><th>New invite link</th></tr>
+<tr><th>Right after setup: the checklist</th><th>Before Hermes has reported</th><th>New invite link</th></tr>
 <tr>
-<td><img src="images/worker/admin-dashboard-empty.png" alt="Admin page before the first report" width="420"></td>
-<td><img src="images/worker/admin-invite-link.png" alt="New invite link" width="300"></td>
+<td><img src="images/worker/admin-dashboard-setup.png" alt="Admin page with the setup checklist and a rejected change" width="300"></td>
+<td><img src="images/worker/admin-dashboard-empty.png" alt="Admin page before the first report" width="300"></td>
+<td><img src="images/worker/admin-invite-link.png" alt="New invite link" width="260"></td>
 </tr>
 </table>
+
+The checklist stays until Hermes has connected, the email server is set and a test worked, a web
+search key is in, and your CV and job search are set. **Hermes could not apply** lists changes
+Hermes rejected in the last day, with the reason.
+
+### A profile's page
+
+<img src="images/worker/admin-profile.png" alt="A profile's settings page" width="620">
+
+| Section | What it sets |
+| --- | --- |
+| Details | Name, the email address reports go to, phone and town (for cover letters) |
+| Job search | Job titles (up to 8), region and towns, country, remote elsewhere, level, minimum salary and currency, employment types, work modes, hiding unnamed agency adverts |
+| CV | A new CV file or pasted text; Hermes rebuilds the profile and skills from it and emails a summary |
 
 ## Regenerating these images
 

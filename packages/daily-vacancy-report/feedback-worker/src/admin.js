@@ -3,8 +3,9 @@
 // /admin: when ACCESS_AUD is set, Cloudflare Access (email one-time code) must let the request through
 // first. Then sign in with ADMIN_USER (default "admin") and the ADMIN_PASSWORD secret; five wrong attempts
 // lock that address, and 30 from anywhere lock sign-in, for 15 minutes. Signed-in pages create invite
-// links, show the profiles Hermes reports, and queue changes that Hermes applies on its next check.
-// Nothing here can reach the Hermes server; it only reads /api/queue with its API token.
+// links, show the profiles Hermes reports, and queue changes that Hermes applies on its next check
+// (settings pages: settings.js). Nothing here can reach the Hermes server; it only reads /api/queue with its
+// API token.
 
 import { SECRET_TTL_SECONDS, createInvite, queueItem } from "./join.js";
 import {
@@ -12,6 +13,9 @@ import {
   purgeProfileEvents,
   page, redirect, safeEqual, secretEqual, text, when,
 } from "./lib.js";
+import {
+  SETTINGS_DONE, button, checklist, cvUpload, emailSection, keysSection, problems, profilePage, settingsItem,
+} from "./settings.js";
 
 const SESSION_SECONDS = 12 * 3600;
 const LOCK_SECONDS = 15 * 60;
@@ -26,6 +30,7 @@ const DONE = {
   revoked: "Invite revoked.",
   confirm: "Tick the confirmation box to delete a profile.",
   badkey: "That does not look like an API key.",
+  ...SETTINGS_DONE,
 };
 
 // Signing out bumps the epoch, which is part of every session signature, so old cookies stop working.
@@ -101,10 +106,9 @@ async function login(request, env) {
   return redirect("/admin", { "Set-Cookie": cookieHeader(`${exp}.${sig}`, SESSION_SECONDS) });
 }
 
-function button(csrf, action, label, fields = {}, cls = "small quiet") {
-  const hidden = Object.entries({ csrf, action, ...fields })
-    .map(([k, v]) => `<input type="hidden" name="${k}" value="${esc(v)}">`).join("");
-  return `<form method="post" action="/admin/action" style="display:inline">${hidden}<button class="${cls}">${esc(label)}</button></form>`;
+async function status(env) {
+  const stored = await env.FEEDBACK.get("status:profiles", "json");
+  return stored && Array.isArray(stored.profiles) ? stored : { profiles: [] };
 }
 
 async function pending(env) {
@@ -122,7 +126,9 @@ function profileRow(p, csrf) {
 <input type="hidden" name="csrf" value="${esc(csrf)}"><input type="hidden" name="action" value="delete"><input type="hidden" name="u" value="${esc(p.id)}">
 <label class="check" style="margin:0"><input type="checkbox" name="confirm" value="yes"> <span class="muted">delete CV and history</span></label>
 <button class="small danger">Delete</button></form>`;
-  return `<tr><td><b>${esc(p.name)}</b><div class="muted">${esc(p.email || "")}</div><div class="muted">since ${esc(when(p.created))}</div></td>
+  const cv = p.has_cv === false ? ' <span class="pill paused">no CV</span>' : "";
+  return `<tr><td><b>${esc(p.name)}</b>${cv}<div class="muted">${esc(p.email || "")}</div><div class="muted">since ${esc(when(p.created))}</div>
+<a class="small" href="/admin/profile?u=${esc(p.id)}">Settings, job search and CV</a></td>
 <td>${status}<div class="muted">last report ${esc(when(p.last_run))}</div></td>
 <td><div class="muted">${crawler}</div>
 <form method="post" action="/admin/action" class="inline" style="margin-top:6px">
@@ -134,24 +140,19 @@ ${p.crawler === "own" ? button(csrf, "use_global", "Use global key", { u: p.id }
 
 async function dashboard(request, env, s) {
   const url = new URL(request.url);
-  const [stored, invites, queued] = await Promise.all([
-    env.FEEDBACK.get("status:profiles", "json"), env.FEEDBACK.list({ prefix: "invite:", limit: 100 }), pending(env)]);
-  const status = stored && Array.isArray(stored.profiles) ? stored : { profiles: [] };
+  const [current, invites, queued] = await Promise.all([
+    status(env), env.FEEDBACK.list({ prefix: "invite:", limit: 100 }), pending(env)]);
   const inviteRows = (await Promise.all(invites.keys.map((k) => env.FEEDBACK.get(k.name, "json")))).filter(Boolean)
     .map((i) => `<tr><td>${esc(i.note || "No note")}</td><td class="muted">expires ${esc(when(i.expires))}</td>
 <td>${button(s.csrf, "revoke", "Revoke", { invite: i.id })}</td></tr>`).join("");
   const done = DONE[url.searchParams.get("done")];
-  const firecrawl = status.keys?.firecrawl || {};
   return page("Profiles", `${done ? `<p style="color:#047857">${esc(done)}</p>` : ""}
-<p class="muted">Last update from Hermes: ${esc(when(status.updated))}.${queued.length ? ` Waiting for Hermes: ${esc(queued.join("; "))}.` : ""}</p>
+<p class="muted">Last update from Hermes: ${esc(when(current.updated))}.${queued.length ? ` Waiting for Hermes: ${esc(queued.join("; "))}.` : ""}</p>
+${problems(current)}${checklist(current)}
 <table class="list"><tr><th>Profile</th><th>Status</th><th>Crawler</th><th></th></tr>
-${(status.profiles || []).map((p) => profileRow(p, s.csrf)).join("") || '<tr><td colspan="4" class="muted">Hermes has not reported any profiles yet.</td></tr>'}</table>
-<h2>Global crawler key</h2>
-<p class="muted">Used by every profile without its own key. Now: ${esc(firecrawl.source === "dashboard" ? `set here ${firecrawl.hint || ""}`
-    : firecrawl.source === "env" ? `the key in Hermes' .env ${firecrawl.hint || ""}` : "none")}.</p>
-<form method="post" action="/admin/action" class="inline"><input type="hidden" name="csrf" value="${esc(s.csrf)}"><input type="hidden" name="action" value="api_keys">
-<input name="keys" type="password" placeholder="Firecrawl key (several: comma separated)" autocomplete="off"><button class="small">Save</button></form>
-${firecrawl.source === "dashboard" ? button(s.csrf, "api_keys_clear", "Go back to the .env keys") : ""}
+${(current.profiles || []).map((p) => profileRow(p, s.csrf)).join("") || '<tr><td colspan="4" class="muted">Hermes has not reported any profiles yet.</td></tr>'}</table>
+${emailSection(current, s.csrf)}
+${keysSection(current, s.csrf)}
 <h2>Invite someone</h2>
 <form method="post" action="/admin/action" class="inline"><input type="hidden" name="csrf" value="${esc(s.csrf)}"><input type="hidden" name="action" value="invite">
 <input name="note" maxlength="80" placeholder="Who it is for (only you see this)"><button class="small">Create invite link</button></form>
@@ -179,16 +180,19 @@ async function action(request, env, s) {
     await env.FEEDBACK.delete(`invite:${String(form.get("invite") || "").replace(/[^0-9a-f]/g, "")}`);
     return redirect("/admin?done=revoked");
   }
+  const setting = settingsItem(act, form);
+  if (setting) {
+    const back = act === "profile" && PROFILE_RE.test(u) ? `/admin/profile?u=${u}&done=` : "/admin?done=";
+    const anchor = act === "profile" ? `#${form.get("section") === "details" ? "details" : "job"}`
+      : act.startsWith("api_keys") ? "#keys" : "#email";
+    if (setting.error) return redirect(`${back}${setting.error}${anchor}`);
+    await queueItem(env, setting.item, setting.ttl);
+    return redirect(`${back}queued${anchor}`);
+  }
   if (act === "set_key") {
     const key = String(form.get("key") || "").trim();
     if (!KEY_RE.test(key)) return redirect("/admin?done=badkey");
     await queueItem(env, { type: "admin", action: act, u, key }, SECRET_TTL_SECONDS);
-  } else if (act === "api_keys") {
-    const keys = String(form.get("keys") || "").split(/[\s,]+/).filter(Boolean);
-    if (!keys.length || keys.some((k) => !KEY_RE.test(k))) return redirect("/admin?done=badkey");
-    await queueItem(env, { type: "admin", action: act, firecrawl: keys.slice(0, 5) }, SECRET_TTL_SECONDS);
-  } else if (act === "api_keys_clear") {
-    await queueItem(env, { type: "admin", action: "api_keys", clear: ["firecrawl"] });
   } else if (act === "delete") {
     if (form.get("confirm") !== "yes") return redirect("/admin?done=confirm");
     await queueItem(env, { type: "admin", action: act, u });
@@ -216,6 +220,13 @@ export async function handleAdmin(request, env, ctx) {
   if (!s) return loginPage();
   if (path === "/admin" && request.method === "GET") return dashboard(request, env, s);
   if (path === "/admin/action" && request.method === "POST") return action(request, env, s);
+  if (path === "/admin/cv" && request.method === "POST") return cvUpload(request, env, s);
+  if (path === "/admin/profile" && request.method === "GET") {
+    const url = new URL(request.url);
+    const [current, queued] = await Promise.all([status(env), pending(env)]);
+    return profilePage(current, url.searchParams.get("u") || "", s.csrf,
+      { done: DONE[url.searchParams.get("done")] || "", queued });
+  }
   return text("Not found", 404);
 }
 

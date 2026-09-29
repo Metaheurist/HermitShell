@@ -88,6 +88,26 @@ describe("authentication", () => {
     expect(valuesWith(env, "queue:")).toEqual([]);
   });
 
+  it("keeps the settings pages, including email and key forms, behind a session", async () => {
+    const env = testEnv(ADMIN);
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "owner", owner: true, name: "Alex Morgan" }],
+      email: { user: "alex@example.com", password_set: true } }));
+    for (const path of ["/admin/profile?u=owner"]) {
+      const body = await (await worker.fetch(new Request(`${BASE}${path}`), env)).text();
+      expect(body, path).toContain("Admin sign-in");
+      expect(body, path).not.toContain("alex@example.com");
+    }
+    const cv = new FormData();
+    cv.append("u", "owner");
+    cv.append("cv_text", "x".repeat(300));
+    expect(await (await worker.fetch(new Request(`${BASE}/admin/cv`, { method: "POST", body: cv }), env)).text()).toContain("Admin sign-in");
+    for (const fields of [{ action: "email", host: "smtp.example.com", port: "587", user: "x@example.com", password: "p" },
+      { action: "api_keys", firecrawl: "fc-attacker1" }, { action: "test_email", to: "x@example.com" }]) {
+      await worker.fetch(new Request(`${BASE}/admin/action`, { method: "POST", body: new URLSearchParams(fields) }), env);
+    }
+    expect(valuesWith(env, "queue:")).toEqual([]);
+  });
+
   it("does not accept a link signed for another profile, action or job", async () => {
     const env = testEnv();
     const sam = await signed("interested", "nijobs:9", "Analyst", "sam-lee");

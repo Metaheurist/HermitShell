@@ -90,19 +90,29 @@ env = freshEnv();
 // Hermes reports its profiles (what profiles.py sends every few minutes).
 const now = Date.now();
 const day = 86400000;
-await call("/api/status", {
-  method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: {
-    profiles: [
-      { id: "owner", name: "Alex Morgan", email: "alex.morgan@example.com", status: "active", owner: true, crawler: "global",
-        created: now - 60 * day, last_run: now - 3 * 3600000 },
-      { id: "sam-lee", name: "Sam Lee", email: "sam.lee@example.com", status: "active", crawler: "own", key_hint: "fc-...9d2a",
-        created: now - 12 * day, last_run: now - 3 * 3600000 },
-      { id: "jordan-patel", name: "Jordan Patel", email: "jordan.patel@example.net", status: "paused", crawler: "global",
-        created: now - 30 * day, last_run: now - 9 * day },
-    ],
-    keys: { firecrawl: { source: "env", hint: "fc-...41b7" } },
-  },
-});
+const JOB = { titles: ["Data Engineer", "Analytics Engineer", "Python Developer"], region: "Greater Manchester",
+  places: ["Manchester", "Salford", "Stockport", "Trafford"], search_location: "", country: "gb", remote_anywhere: true,
+  level: "mid", types: ["Permanent", "Contract"], modes: ["Hybrid", "Remote"], min_salary: "45000", currency: "£", hide_agency: true };
+const STATUS = {
+  profiles: [
+    { id: "owner", name: "Alex Morgan", email: "alex.morgan@example.com", status: "active", owner: true, crawler: "global",
+      has_cv: true, created: now - 60 * day, last_run: now - 3 * 3600000, cv_updated: now - 20 * day,
+      details: { name: "Alex Morgan", email: "alex.morgan@example.com", phone: "07700 900123", location: "Salford" }, job: JOB },
+    { id: "sam-lee", name: "Sam Lee", email: "sam.lee@example.com", status: "active", crawler: "own", key_hint: "fc-...9d2a",
+      has_cv: true, created: now - 12 * day, last_run: now - 3 * 3600000,
+      details: { name: "Sam Lee", email: "sam.lee@example.com", phone: "", location: "York" },
+      job: { ...JOB, titles: ["Data Analyst", "BI Developer"], region: "North Yorkshire", places: ["York", "Harrogate"] } },
+    { id: "jordan-patel", name: "Jordan Patel", email: "jordan.patel@example.net", status: "paused", crawler: "global",
+      has_cv: true, created: now - 30 * day, last_run: now - 9 * day,
+      details: { name: "Jordan Patel", email: "jordan.patel@example.net", phone: "", location: "Leeds" }, job: JOB },
+  ],
+  email: { host: "smtp.gmail.com", port: "587", user: "alex.morgan@example.com", from: "", password_set: true,
+    source: "dashboard", last_test: { at: now - 2 * day, ok: true, to: "alex.morgan@example.com", error: "" } },
+  keys: { firecrawl: { source: "env", hint: "fc-...41b7", backups: 1 }, tavily: { source: "dashboard", hint: "tvly...8c1e" },
+    scrapfly: { source: "none", hint: "" } },
+  problems: [],
+};
+await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: STATUS });
 await save("link-profile-removed", await call(`/f?${new URLSearchParams(await link("interested", TITLE, { profile: "casey-quinn" }))}`));
 
 // Invite sign-up.
@@ -131,6 +141,16 @@ await call("/api/invite", { method: "POST", headers: { Authorization: `Bearer ${
 await save("admin-invite-link", await admin("/admin/action", { method: "POST", form: { csrf, action: "invite", note: "Casey from the course" } }));
 await admin("/admin/action", { method: "POST", form: { csrf, action: "resume", u: "jordan-patel" } });
 await save("admin-dashboard", await admin("/admin?done=queued"));
+await save("admin-profile", await admin("/admin/profile?u=owner"));
+
+// A fresh install: Hermes has connected, nothing else is set yet.
+const fresh = { ...STATUS, profiles: [{ ...STATUS.profiles[0], has_cv: false, job: { ...JOB, titles: [], region: "", places: [] } }],
+  email: { host: "smtp.gmail.com", port: "587", user: "", from: "", password_set: false, source: "none", last_test: null },
+  keys: { firecrawl: { source: "none", hint: "" }, tavily: { source: "none", hint: "" }, scrapfly: { source: "none", hint: "" } },
+  problems: [{ at: now - 600000, what: "email", error: "invalid email server settings" }] };
+await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: fresh });
+await save("admin-dashboard-setup", await admin("/admin"));
+await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: STATUS });
 
 for (let i = 0; i < 5; i++) await call("/admin/login", { method: "POST", form: { username: "admin", password: `wrong-${i}` } });
 await save("admin-locked", await call("/admin/login", { method: "POST", form: { username: "admin", password: "wrong" } }));

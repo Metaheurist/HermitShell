@@ -32,7 +32,8 @@ It asks, in order:
    `hermes-net` network if it's only on Docker's default bridge) and sets `OLLAMA_HOST`. Then it
    asks which model to use and downloads it, showing progress. `--no-prereqs` skips this step.
 3. **Shared settings.** SMTP server, login and recipient, then Firecrawl (plus backup keys),
-   Tavily and Scrapfly API keys, and your timezone. Leave empty any key you don't have. Secrets
+   Tavily and Scrapfly API keys, and your timezone. Leave empty any key you don't have
+   ([how to get each one, and the free limits](api-keys.md)). Secrets
    are read without echo and are only ever shown masked, as their last four characters
    (`****9z8y`).
 4. **Package settings.** Every setting tagged `# @basic` in the package's `.env.example`. With
