@@ -35,9 +35,11 @@ using [Semantic Versioning](https://semver.org/).
   the browser. New `POST /api/doc` (API token, PDF only, 2 MB), `GET`/`POST /admin/doc` and
   `GET /f/doc`. Removing a profile deletes its kept documents. [PRIVACY.md](PRIVACY.md) says so.
 
-- **A tab icon for the dashboard and every Worker page**: the purple square next to "HermitShell" with
-  a white shell spiral, served by the Worker at `/favicon.svg` (and `/favicon.ico`). The pages'
-  security policy now allows images from the Worker itself only, for this icon.
+- **A HermitShell mark, as the tab icon and on every Worker page**: a white spiral shell on the
+  brand's indigo-to-violet rounded tile, lit from the top left like the buttons. It replaces the plain
+  gradient square next to "HermitShell" at the top of each page (drawn inline, so pages load nothing
+  more) and is served by the Worker as the tab icon at `/favicon.svg` (and `/favicon.ico`). The
+  pages' security policy now allows images from the Worker itself only, for this icon.
 
 - **See the jobs sent to each person from the dashboard.** A row's sent button now has two halves:
   the little chart opens the stats page as before, and **24 sent** opens `/admin/sent`, the jobs in

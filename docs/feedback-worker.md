@@ -51,7 +51,8 @@ email button ──> Worker /f (confirm page) ──> KV ──> HermitShell GET
   download are encrypted and deleted after `COVER_LETTER_KEEP_DAYS` (7 by default). Jobs emailed
   from the dashboard (`POST /api/emailed`) are kept as a hash of the job key and a time, for 90 days.
 - **No scripts or outside content.** Every page's Content-Security-Policy blocks JavaScript and
-  anything loaded from elsewhere. The only file a page loads is the tab icon, `/favicon.svg`, from
+  anything loaded from elsewhere. The HermitShell mark at the top of each page is drawn inline. The
+  only file a page loads is the tab icon, `/favicon.svg` (the same mark), from
   the Worker itself (a plain SVG with no scripts or links).
 - **No secrets in git.** The two secrets live only in HermitShell's `.env` and in the Worker's
   encrypted secrets. Your KV namespace ID goes in an untracked `wrangler.local.jsonc`.
