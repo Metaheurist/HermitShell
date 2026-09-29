@@ -1,3 +1,6 @@
+# HermitShell - CI
+# Every push and pull request: lint, compile check, unit tests for each part of the repo on the
+# oldest and newest supported Python, the feedback Worker's tests and a Worker build check.
 name: CI
 
 on:
@@ -13,30 +16,78 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  python:
-    name: Python tests (${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.12"]
+  lint:
+    name: "1 · Lint (Ruff)"
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: .github/workflows/ci.yml
-      - name: Install test dependencies
-        run: python -m pip install --upgrade pip pytest requests
-      - name: Check every script compiles
-        run: python -m compileall -q common packages scripts
-      - name: Vacancy report tests
-        run: python -m pytest packages/daily-vacancy-report/tests -v
+          python-version: "3.12"
+      - name: Install Ruff
+        run: python -m pip install ruff
+      - name: Ruff
+        run: ruff check --output-format github .
 
-  worker:
-    name: Feedback Worker tests
-    runs-on: ubuntu-latest
+  compile:
+    name: "1 · Compile check (Python 3.10)"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+      - name: Compile every script
+        run: python -m compileall -q common packages scripts
+
+  python-tests:
+    name: "1 · Unit tests · ${{ matrix.suite.name }} (Python ${{ matrix.python }})"
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12"]
+        suite:
+          - { name: Shared library, path: common/tests }
+          - { name: Vacancy report, path: packages/daily-vacancy-report/tests }
+          - { name: News digest, path: packages/news-digest/tests }
+          - { name: Setup wizard, path: scripts/tests }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: pytest
+        run: python -m pytest ${{ matrix.suite.path }} -v --junitxml=junit.xml
+      - name: Test summary
+        if: always()
+        shell: python
+        env:
+          TITLE: "${{ matrix.suite.name }} (Python ${{ matrix.python }})"
+        run: |
+          import os
+          import xml.etree.ElementTree as ET
+
+          lines = [f"### {os.environ['TITLE']}", ""]
+          if os.path.exists("junit.xml"):
+              root = ET.parse("junit.xml").getroot()
+              suite = root if root.tag == "testsuite" else root.find("testsuite")
+              total, failed = int(suite.get("tests")), int(suite.get("failures")) + int(suite.get("errors"))
+              skipped = int(suite.get("skipped"))
+              lines += ["| Passed | Failed | Skipped | Time |", "| --- | --- | --- | --- |",
+                        f"| {total - failed - skipped} | {failed} | {skipped} | {float(suite.get('time')):.2f}s |"]
+          else:
+              lines.append("pytest did not produce a report.")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write("\n".join(lines) + "\n")
+
+  worker-tests:
+    name: "1 · Unit tests · Feedback Worker (Node 22)"
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: packages/daily-vacancy-report/feedback-worker
@@ -44,10 +95,44 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: "22"
           cache: npm
           cache-dependency-path: packages/daily-vacancy-report/feedback-worker/package-lock.json
-      - name: Install
+      - name: Install dependencies
         run: npm ci
       - name: Vitest
         run: npm test
+
+  worker-build:
+    name: "2 · Build check · Feedback Worker (wrangler dry run)"
+    needs: worker-tests
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: packages/daily-vacancy-report/feedback-worker
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: packages/daily-vacancy-report/feedback-worker/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Bundle without deploying
+        run: npx wrangler deploy --dry-run --outdir dist
+
+  all-checks:
+    name: "3 · All CI checks passed"
+    if: always()
+    needs: [lint, compile, python-tests, worker-tests, worker-build]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for result in $RESULTS; do
+            [ "$result" = "success" ] || exit 1
+          done
