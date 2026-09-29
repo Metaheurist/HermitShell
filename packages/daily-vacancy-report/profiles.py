@@ -69,9 +69,9 @@ PROFILE_KEYS = frozenset(PERSONAL_KEYS) | frozenset(job_settings.KEYS)
 SMTP_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM")
 API_KEYS = {"firecrawl": "FIRECRAWL_API_KEY", "firecrawl_backup": "FIRECRAWL_BACKUP_KEYS",
             "tavily": "TAVILY_API_KEY", "scrapfly": "SCRAPFLY_API_KEY"}
-# The providers a profile's own key can be for: each can search as well as read pages (Scrapfly cannot search).
-CRAWLERS = ("firecrawl", "tavily")
 ID_RE = re.compile(r"^[a-z0-9-]{1,40}$")
+# A dashboard user's username (feedback-worker/src/users.js): whose pool a recruit is in.
+RECRUITER_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 KEY_RE = re.compile(r"^[A-Za-z0-9_-]{8,120}$")
 EMAIL_RE = re.compile(r"[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+")
 HOST_RE = re.compile(r"^[A-Za-z0-9.-]{3,120}$")
@@ -252,27 +252,16 @@ def update_dashboard_env(updates: dict[str, str | None]) -> None:
     load_env_file()
 
 
-def own_crawler(pid: str) -> tuple[str, str]:
-    """(provider, key) of a profile's own crawler key, or ("", "") when it uses the global keys."""
-    saved = read_json(profile_dir(pid) / "secrets.json", {})
-    provider = str(saved.get("provider") or "firecrawl")
-    key = str(saved.get("key") or saved.get("firecrawl_key") or "")
-    return (provider, key) if provider in CRAWLERS and KEY_RE.match(key) else ("", "")
-
-
-def global_crawler() -> tuple[str, str]:
-    """The global key the owner's searches start with: (provider, key), or ("", "") when none is set."""
-    provider = next((name for name in CRAWLERS if env(API_KEYS[name])), "")
-    return (provider, env(API_KEYS[provider]) or "") if provider else ("", "")
-
-
-def apply_keys(environ, pid: str) -> None:
-    """A profile with its own key uses only that, so it never spends the owner's credits; the others keep the
-    global keys (dashboard, else .env). An empty value stops .env filling the key back in."""
-    provider, key = own_crawler(pid)
-    if key:
-        environ.update({name: "" for name in API_KEYS.values()})
-        environ[API_KEYS[provider]] = key
+def retire_own_keys() -> int:
+    """Web search keys are global now (Global settings, else .env): removes the per-recruit key files earlier
+    versions kept, so no key is left on disk that nothing uses. Returns how many were removed."""
+    removed = 0
+    for path in PROFILES_DIR.glob("*/secrets.json") if PROFILES_DIR.is_dir() else ():
+        path.unlink(missing_ok=True)
+        removed += 1
+    if removed:
+        log(f"Removed {removed} recruit crawler key file(s); every recruit now uses the global web search keys")
+    return removed
 
 
 def child_env(profile: dict) -> dict[str, str]:
@@ -293,7 +282,6 @@ def child_env(profile: dict) -> dict[str, str]:
         "COVER_LETTER_CONTACT": contact,
         "COVER_LETTER_CV_FILE": str(d / "cv.txt"),
     })
-    apply_keys(environ, profile["id"])
     return environ
 
 
@@ -465,8 +453,10 @@ def create_profile(item: dict, api, model_info_factory=lambda: connect_model("JO
     write_json(d / "settings.json", {**kept, **search_settings(built, lambda k: kept[k] if k in kept else env(k))},
                private=True)
     now = time.time()
+    recruiter = str(item.get("recruiter") or "")
     profile = {**(existing or {}), "id": pid, "name": name, "email": email,
                **({} if existing else {"invite": str(item.get("invite") or "")[:40]}),
+               **({"recruiter": recruiter} if not existing and RECRUITER_RE.match(recruiter) else {}),
                "phone": str(item.get("phone", ""))[:40], "location": str(item.get("location", ""))[:80],
                "roles": str(item.get("roles", ""))[:300], "titles": built["titles"],
                "title_keywords": built["title_keywords"],
@@ -881,6 +871,21 @@ def apply_profile_settings(profile: dict, item: dict) -> None:
     log(f"Profile {profile['id']} settings saved from the dashboard")
 
 
+def assign(profile: dict, recruiter: str) -> None:
+    """Puts a recruit in a dashboard recruiter's pool, or in nobody's for ""; the Worker checks who may see it."""
+    if profile.get("owner") or profile["id"] == OWNER:
+        raise ProfileError("the owner profile is not anyone's recruit")
+    if recruiter and not RECRUITER_RE.match(recruiter):
+        raise ProfileError("invalid recruiter")
+    if recruiter:
+        profile["recruiter"] = recruiter
+    else:
+        profile.pop("recruiter", None)
+    profile["updated"] = time.time()
+    save(profile)
+    log(f"Profile {profile['id']} {'assigned to ' + recruiter if recruiter else 'unassigned'}")
+
+
 def admin_action(item: dict, api=None) -> None:
     action, pid = item.get("action"), str(item.get("u") or "")
     if action == "api_keys":
@@ -901,18 +906,10 @@ def admin_action(item: dict, api=None) -> None:
         else:
             create_profile({**item, **{k: profile.get(k, "") for k in ("name", "email", "phone", "location", "roles")}},
                            api, existing=profile)
-    elif action == "set_key":
-        key, provider = str(item.get("key") or ""), str(item.get("provider") or "firecrawl")
-        if provider not in CRAWLERS or not KEY_RE.match(key):
-            raise ProfileError("invalid crawler key")
-        if pid == OWNER:
-            apply_api_keys({"firecrawl": [key]} if provider == "firecrawl" else {provider: key})
-        else:
-            write_json(profile_dir(pid) / "secrets.json", {"provider": provider, "key": key}, private=True)
-            log(f"Profile {pid} now uses its own {provider} key ({mask(key)})")
-    elif action == "use_global":
-        (profile_dir(pid) / "secrets.json").unlink(missing_ok=True)
-        log(f"Profile {pid} now uses the global crawler key")
+    elif action == "assign":
+        assign(profile, str(item.get("recruiter") or ""))
+    elif action in ("set_key", "use_global"):
+        raise ProfileError("recruits no longer have their own crawler keys; set web search keys under Global settings")
     elif action in ("pause", "resume"):
         set_status(pid, "paused" if action == "pause" else "active")
     elif action == "send_now":
@@ -992,14 +989,12 @@ def status_payload() -> dict:
         else:
             has_cv = (profile_dir(p["id"]) / "job_profile.md").is_file()
             name, email = p.get("name", ""), p.get("email", "")
-        provider, key = global_crawler() if owner else own_crawler(p["id"])
         job = daily_job(p, jobs or [])
         schedule = p.get("schedule") or (_expr(job) if job else "")
         report_time, report_days = schedule_parts(schedule)
         profiles.append({
             "id": p["id"], "name": name, "email": email, "status": p.get("status", "active"), "owner": owner,
-            "crawler": "own" if key and not owner else "global", "provider": provider, "key_hint": mask(key),
-            "has_cv": has_cv,
+            "recruiter": "" if owner else str(p.get("recruiter") or ""), "has_cv": has_cv,
             "created": _ms(p.get("created")), "last_run": _ms(last), "cv_updated": _ms(p.get("cv_updated")),
             "details": current_details(p),
             "job": job_settings.form_values(profile_getter(p)),
@@ -1796,6 +1791,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pause", metavar="ID")
     parser.add_argument("--resume", metavar="ID")
     parser.add_argument("--delete", metavar="ID", help="delete a profile, its CV and its history")
+    parser.add_argument("--assign", nargs=2, metavar=("ID", "RECRUITER"),
+                        help="put a recruit in a dashboard recruiter's pool (their username, or \"\" for nobody's)")
     parser.add_argument("--full", action="store_true", help="make the Worker list its whole queue")
     parser.add_argument("--once", action="store_true", help="sync once and exit, without starting the live link or polling")
     args = parser.parse_args(argv)
@@ -1803,9 +1800,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.list:
             for p in all_profiles():
-                provider, key = own_crawler(p["id"])
-                crawler = f"{provider} {mask(key)}" if key else "global key"
-                print(f"{p['id']:<24} {p.get('status', ''):<7} {crawler:<20} {p.get('name', '')} <{p.get('email', '')}>")
+                recruiter = "owner" if p.get("owner") else p.get("recruiter") or "-"
+                print(f"{p['id']:<24} {p.get('status', ''):<7} {recruiter:<16} {p.get('name', '')} <{p.get('email', '')}>")
+            return 0
+        if args.assign:
+            pid, recruiter = args.assign[0], args.assign[1].strip().lower()
+            profile = load(pid)
+            if not profile:
+                raise ProfileError(f"no profile {pid}")
+            assign(profile, recruiter)
+            print(f"{pid}: recruit of {recruiter}." if recruiter else f"{pid}: nobody's recruit.")
             return 0
         if args.pause or args.resume:
             set_status(args.pause or args.resume, "paused" if args.pause else "active")
@@ -1830,6 +1834,7 @@ def main(argv: list[str] | None = None) -> int:
               f"{invite['link']}")
         return 0
     started = time.monotonic()
+    retire_own_keys()
     for line in sync(api, args.full):
         print(line)
     if not args.once and not ensure_listener():

@@ -264,7 +264,7 @@ def test_deleting_a_profile_removes_the_person_from_the_logs(home, monkeypatch):
         assert "Other person" in text and "sam" not in text.lower()
 
 
-def test_admin_actions_set_keys_pause_and_delete(home, monkeypatch):
+def test_admin_actions_set_global_keys_pause_and_delete(home, monkeypatch):
     profiles.sync(FakeApi([signup()]))
     pid = "sam-lee-456789"
     api = FakeApi([
@@ -274,16 +274,16 @@ def test_admin_actions_set_keys_pause_and_delete(home, monkeypatch):
         {"id": "queue:5:d", "type": "admin", "action": "delete", "u": "owner"},
     ])
     report = profiles.sync(api)
+    assert report[0] == "admin: rejected (recruits no longer have their own crawler keys; set web search keys under Global settings)"
     assert report[-1] == "admin: rejected (the owner profile cannot be deleted)"
+    assert not (profiles.profile_dir(pid) / "secrets.json").exists()
     sam = profiles.load(pid)
     assert sam["status"] == "paused"
     environ = profiles.child_env(sam)
-    assert (environ["FIRECRAWL_API_KEY"], environ["FIRECRAWL_BACKUP_KEYS"]) == ("fc-test-own-long-key", "")
+    assert (environ["FIRECRAWL_API_KEY"], environ["FIRECRAWL_BACKUP_KEYS"]) == ("fc-global-longer0001", "fc-global-longer0002")
     payload = api.statuses[-1]
-    row = next(p for p in payload["profiles"] if p["id"] == pid)
-    assert (row["crawler"], row["provider"], row["key_hint"]) == ("own", "firecrawl", "fc-...-key")
-    owner = next(p for p in payload["profiles"] if p["owner"])
-    assert (owner["crawler"], owner["provider"], owner["key_hint"]) == ("global", "firecrawl", "fc-...0001")
+    for row in payload["profiles"]:
+        assert not {"crawler", "provider", "key_hint"} & set(row)
     assert "fc-test-own-long-key" not in json.dumps(payload) and "fc-global-longer0001" not in json.dumps(payload)
     assert payload["keys"]["firecrawl"] == {"source": "dashboard", "hint": "fc-...0001", "backups": 1}
     assert profiles.dashboard_env()["FIRECRAWL_API_KEY"] == "fc-global-longer0001"
@@ -291,49 +291,60 @@ def test_admin_actions_set_keys_pause_and_delete(home, monkeypatch):
     assert profiles.os.environ["FIRECRAWL_BACKUP_KEYS"] == "fc-global-longer0002"
 
 
-def test_an_own_tavily_key_is_the_only_crawler_key_a_profile_uses(home, monkeypatch):
-    monkeypatch.setenv("TAVILY_API_KEY", "tvly-global-longer0003")
-    monkeypatch.setenv("SCRAPFLY_API_KEY", "scp-global-longer0004")
+def test_a_global_key_from_the_dashboard_reaches_the_owner_and_every_recruit(home, monkeypatch):
+    profiles.sync(FakeApi([signup()]))
+    api = FakeApi([{"id": "queue:2:a", "type": "admin", "action": "api_keys", "tavily": "tvly-global-longer-key9"}])
+    profiles.sync(api)
+    assert profiles.dashboard_env()["TAVILY_API_KEY"] == "tvly-global-longer-key9"
+    assert profiles.os.environ["TAVILY_API_KEY"] == "tvly-global-longer-key9"
+    assert profiles.child_env(profiles.load("sam-lee-456789"))["TAVILY_API_KEY"] == "tvly-global-longer-key9"
+    assert api.statuses[-1]["keys"]["tavily"] == {"source": "dashboard", "hint": "tvl...key9"}
+
+
+def test_a_leftover_recruit_crawler_key_is_never_used_and_is_removed(home, monkeypatch):
     profiles.sync(FakeApi([signup()]))
     pid = "sam-lee-456789"
-    api = FakeApi([
-        {"id": "queue:2:a", "type": "admin", "action": "set_key", "u": pid, "key": "tvly-own-longer-key-01",
-         "provider": "tavily"},
-        {"id": "queue:3:b", "type": "admin", "action": "set_key", "u": pid, "key": "scp-own-longer-key-02",
-         "provider": "scrapfly"},
-    ])
-    report = profiles.sync(api)
-    assert report[-1] == "admin: rejected (invalid crawler key)"
+    profiles.write_json(profiles.profile_dir(pid) / "secrets.json", {"provider": "tavily", "key": "tvly-own-longer-key-01"},
+                        private=True)
     environ = profiles.child_env(profiles.load(pid))
-    assert {k: environ[k] for k in profiles.API_KEYS.values()} == {
-        "FIRECRAWL_API_KEY": "", "FIRECRAWL_BACKUP_KEYS": "", "TAVILY_API_KEY": "tvly-own-longer-key-01",
-        "SCRAPFLY_API_KEY": ""}
-    row = next(p for p in api.statuses[-1]["profiles"] if p["id"] == pid)
-    assert (row["crawler"], row["provider"], row["key_hint"]) == ("own", "tavily", "tvl...y-01")
-    assert "tvly-own-longer-key-01" not in json.dumps(api.statuses)
-
-    (profiles.profile_dir(pid) / "secrets.json").write_text(json.dumps({"firecrawl_key": "fc-older-longer-key-3"}))
-    assert profiles.own_crawler(pid) == ("firecrawl", "fc-older-longer-key-3")
-
-    profiles.sync(FakeApi([{"id": "queue:4:c", "type": "admin", "action": "use_global", "u": pid}]))
-    assert profiles.own_crawler(pid) == ("", "")
-    assert profiles.child_env(profiles.load(pid))["TAVILY_API_KEY"] == "tvly-global-longer0003"
+    assert "tvly-own-longer-key-01" not in environ.values()
+    assert environ["FIRECRAWL_API_KEY"] == "fc-envkey-longer0001"
+    assert profiles.retire_own_keys() == 1
+    assert not (profiles.profile_dir(pid) / "secrets.json").exists()
+    assert profiles.retire_own_keys() == 0
+    assert profiles.load(pid)["name"] == "Sam Lee"
 
 
-def test_the_owners_key_from_the_dashboard_becomes_the_global_key(home, monkeypatch):
-    for key in ("FIRECRAWL_API_KEY", "FIRECRAWL_BACKUP_KEYS"):
-        monkeypatch.delenv(key)
-    api = FakeApi([])
+def test_a_recruit_joins_the_pool_of_the_recruiter_who_invited_them(home):
+    api = FakeApi([signup(recruiter="casey")])
     profiles.sync(api)
-    owner = next(p for p in api.statuses[-1]["profiles"] if p["owner"])
-    assert (owner["provider"], owner["key_hint"]) == ("", "")
-    api = FakeApi([{"id": "queue:2:a", "type": "admin", "action": "set_key", "u": "owner",
-                    "key": "tvly-owner-longer-key9", "provider": "tavily"}])
-    profiles.sync(api)
-    assert profiles.dashboard_env()["TAVILY_API_KEY"] == "tvly-owner-longer-key9"
-    owner = next(p for p in api.statuses[-1]["profiles"] if p["owner"])
-    assert (owner["crawler"], owner["provider"], owner["key_hint"]) == ("global", "tavily", "tvl...key9")
+    pid = "sam-lee-456789"
+    assert profiles.load(pid)["recruiter"] == "casey"
+    rows = {p["id"]: p for p in api.statuses[-1]["profiles"]}
+    assert rows[pid]["recruiter"] == "casey" and rows["owner"]["recruiter"] == ""
+    profiles.sync(FakeApi([{"id": "queue:2:a", "type": "admin", "action": "cv", "u": pid, "cv_text": CV}]))
+    assert profiles.load(pid)["recruiter"] == "casey"
 
+
+@pytest.mark.parametrize("recruiter", ["../x", "Casey Quinn", "a", "x" * 40, "<b>", 7])
+def test_a_sign_up_with_an_odd_recruiter_joins_nobodys_pool(home, recruiter):
+    profiles.sync(FakeApi([signup(recruiter=recruiter)]))
+    assert "recruiter" not in profiles.load("sam-lee-456789")
+
+
+def test_the_dashboard_assigns_and_unassigns_recruits_but_never_the_owner(home):
+    profiles.sync(FakeApi([signup()]))
+    pid = "sam-lee-456789"
+    api = FakeApi([{"id": "queue:2:a", "type": "admin", "action": "assign", "u": pid, "recruiter": "riley"},
+                   {"id": "queue:3:b", "type": "admin", "action": "assign", "u": "owner", "recruiter": "riley"},
+                   {"id": "queue:4:c", "type": "admin", "action": "assign", "u": pid, "recruiter": "../etc"}])
+    report = profiles.sync(api)
+    assert report[-2:] == ["admin: rejected (the owner profile is not anyone's recruit)", "admin: rejected (invalid recruiter)"]
+    assert profiles.load(pid)["recruiter"] == "riley"
+    assert "recruiter" not in profiles.load("owner")
+    assert next(p for p in api.statuses[-1]["profiles"] if p["id"] == pid)["recruiter"] == "riley"
+    profiles.sync(FakeApi([{"id": "queue:5:d", "type": "admin", "action": "assign", "u": pid, "recruiter": ""}]))
+    assert "recruiter" not in profiles.load(pid)
 
 def test_rejected_dashboard_changes_are_reported_for_a_day(home, monkeypatch):
     api = FakeApi([{"id": "queue:2:a", "type": "admin", "action": "email", "host": "bad host!", "user": "x"},
@@ -607,13 +618,12 @@ def test_the_live_link_log_and_rotated_logs_are_scrubbed_too(home, monkeypatch):
 def test_admin_can_go_back_to_the_env_keys_and_delete(home):
     profiles.sync(FakeApi([signup()]))
     pid = "sam-lee-456789"
-    profiles.sync(FakeApi([{"id": "queue:2:a", "type": "admin", "action": "set_key", "u": pid, "key": "fc-test-own-long-key"},
-                           {"id": "queue:3:b", "type": "admin", "action": "api_keys", "firecrawl": ["fc-global-longer0001"]}]))
-    profiles.sync(FakeApi([{"id": "queue:6:e", "type": "admin", "action": "use_global", "u": pid},
-                           {"id": "queue:7:f", "type": "admin", "action": "api_keys", "clear": ["firecrawl"]}]))
+    profiles.sync(FakeApi([{"id": "queue:3:b", "type": "admin", "action": "api_keys", "firecrawl": ["fc-global-longer0001"]}]))
+    assert profiles.child_env(profiles.load(pid))["FIRECRAWL_API_KEY"] == "fc-global-longer0001"
+    profiles.sync(FakeApi([{"id": "queue:7:f", "type": "admin", "action": "api_keys", "clear": ["firecrawl"]}]))
     environ = profiles.child_env(profiles.load(pid))
     assert "FIRECRAWL_API_KEY" not in profiles.dashboard_env()
-    assert environ.get("FIRECRAWL_API_KEY") not in ("fc-global-longer0001", "fc-test-own-long-key")
+    assert environ.get("FIRECRAWL_API_KEY") != "fc-global-longer0001"
     profiles.sync(FakeApi([{"id": "queue:8:g", "type": "admin", "action": "delete", "u": pid}]))
     assert profiles.load(pid) is None
 
@@ -968,6 +978,15 @@ def test_cli_list_and_delete(home, capsys):
     assert profiles.main(["--list"]) == 0
     out = capsys.readouterr().out
     assert "sam-lee-456789" in out and "owner" in out
+    assert profiles.main(["--assign", "sam-lee-456789", " Admin "]) == 0
+    assert capsys.readouterr().out == "sam-lee-456789: recruit of admin.\n"
+    assert profiles.load("sam-lee-456789")["recruiter"] == "admin"
+    assert profiles.main(["--list"]) == 0
+    assert next(line for line in capsys.readouterr().out.splitlines() if line.startswith("sam-lee-456789")).split()[2] == "admin"
+    assert profiles.main(["--assign", "owner", "admin"]) == 1
+    assert profiles.main(["--assign", "nobody", "admin"]) == 1
+    assert profiles.main(["--assign", "sam-lee-456789", ""]) == 0
+    assert "recruiter" not in profiles.load("sam-lee-456789")
     assert profiles.main(["--delete", "owner"]) == 1
     assert profiles.main(["--delete", "sam-lee-456789"]) == 0
     assert profiles.load("sam-lee-456789") is None

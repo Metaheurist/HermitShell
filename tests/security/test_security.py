@@ -178,8 +178,8 @@ def test_a_report_job_only_runs_for_a_folder_inside_the_profiles_folder(tmp_path
     assert profiles.profile_from_cwd() == ""
 
 
-@pytest.mark.parametrize("provider", ["scrapfly", "PATH", "LD_PRELOAD", "../x", HOSTILE, "firecrawl_backup"])
-def test_a_crawler_key_only_ever_sets_a_search_providers_key(tmp_path, monkeypatch, provider):
+@pytest.mark.parametrize("provider", ["tavily", "scrapfly", "PATH", "LD_PRELOAD", "../x", HOSTILE, "firecrawl_backup"])
+def test_a_recruit_can_never_be_given_its_own_crawler_key(tmp_path, monkeypatch, provider):
     monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
     profiles.write_json(profiles.PROFILES_DIR / "sam-lee" / "profile.json", {"id": "sam-lee"})
     with pytest.raises(profiles.ProfileError):
@@ -187,19 +187,23 @@ def test_a_crawler_key_only_ever_sets_a_search_providers_key(tmp_path, monkeypat
                                "provider": provider})
     assert not (profiles.PROFILES_DIR / "sam-lee" / "secrets.json").exists()
     profiles.write_json(profiles.PROFILES_DIR / "sam-lee" / "secrets.json", {"provider": provider, "key": "longer-key-0123"})
-    environ = {"PATH": "/usr/bin", "FIRECRAWL_API_KEY": "fc-global-longer0001"}
-    profiles.apply_keys(environ, "sam-lee")
-    assert environ == {"PATH": "/usr/bin", "FIRECRAWL_API_KEY": "fc-global-longer0001"}
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-global-longer0001")
+    environ = profiles.child_env({"id": "sam-lee"})
+    assert environ["FIRECRAWL_API_KEY"] == "fc-global-longer0001" and "longer-key-0123" not in environ.values()
+    assert profiles.retire_own_keys() == 1
 
 
-@POSIX
-def test_a_profiles_own_crawler_key_is_owner_only(tmp_path, monkeypatch):
+@pytest.mark.parametrize("recruiter", ["../x", HOSTILE, "Admin", "a", "x" * 40, "casey quinn", "casey\nadmin", "casey.quinn"])
+def test_an_assignment_only_ever_stores_a_dashboard_username(tmp_path, monkeypatch, recruiter):
     monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
-    profiles.write_json(profiles.PROFILES_DIR / "sam-lee" / "profile.json", {"id": "sam-lee"})
-    profiles.admin_action({"type": "admin", "action": "set_key", "u": "sam-lee", "key": "tvly-own-longer-key-01",
-                           "provider": "tavily"})
-    assert (profiles.PROFILES_DIR / "sam-lee" / "secrets.json").stat().st_mode & 0o777 == 0o600
-
+    profiles.write_json(profiles.PROFILES_DIR / "sam-lee" / "profile.json", {"id": "sam-lee", "recruiter": "casey"})
+    with pytest.raises(profiles.ProfileError):
+        profiles.admin_action({"type": "admin", "action": "assign", "u": "sam-lee", "recruiter": recruiter})
+    assert profiles.load("sam-lee")["recruiter"] == "casey"
+    profiles.write_json(profiles.PROFILES_DIR / "owner" / "profile.json", {"id": "owner", "owner": True})
+    with pytest.raises(profiles.ProfileError):
+        profiles.admin_action({"type": "admin", "action": "assign", "u": "owner", "recruiter": "casey"})
+    assert "recruiter" not in profiles.load("owner")
 
 def test_letters_are_kept_on_the_worker_only_over_https_with_the_api_token(tmp_path, monkeypatch):
     import cover_letter
