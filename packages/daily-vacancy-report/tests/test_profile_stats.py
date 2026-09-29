@@ -81,15 +81,46 @@ def test_a_profile_without_a_tracker_has_empty_stats(tmp_path):
     assert not (tmp_path / "missing.db").exists()
 
 
-def test_stats_leave_out_notes_links_and_contact_details(tmp_path):
+def test_stats_leave_out_notes_and_contact_details(tmp_path):
     with tracker(tmp_path) as t:
         t.upsert_job("a", job("Engineer\x00\n<b>", 8, employer="Northwind\tTraders " + "x" * 200), True, NOW)
+        t.upsert_job("b", job("Unsent", 3), False, NOW)
         t.add_event("e1", "a", "not_for_me", "ring me: sam@example.com 07700 900123", NOW)
-    text = json.dumps(profile_stats.collect(tmp_path / "job_tracker.db", LONDON, NOW))
-    for secret in ("sam@example.com", "07700", "secret-link", "ring me", "\\u0000"):
+    stats = profile_stats.collect(tmp_path / "job_tracker.db", LONDON, NOW)
+    text = json.dumps(stats)
+    for secret in ("sam@example.com", "07700", "ring me", "\\u0000", "Unsent"):
         assert secret not in text
-    best = json.loads(text)["ranges"]["7"]["best"][0]
+    assert text.count("secret-link") == 1 and stats["sent"][0]["url"] == "https://jobs.example.com/secret-link"
+    best = stats["ranges"]["7"]["best"][0]
     assert best["title"] == "Engineer <b>" and len(best["employer"]) == profile_stats.MAX_NAME
+
+
+def test_the_jobs_sent_are_listed_newest_first_with_their_answer(tmp_path):
+    with tracker(tmp_path) as t:
+        t.upsert_job("new", {**job("Data Engineer", 9, employer="Northwind", mode="Hybrid"), "location": "York",
+                             "salary": "£55,000"}, True, NOW)
+        t.upsert_job("old", job("Analyst", 6, company="Contoso"), True, NOW - 3 * DAY)
+        t.upsert_job("gone", job("Too old", 7), True, NOW - (profile_stats.SENT_DAYS + 5) * DAY)
+        t.upsert_job("skip", job("Not sent", 2), False, NOW)
+        t.add_event("e1", "new", "interested", "", NOW)
+        t.add_event("e2", "new", "applied", "", NOW + 60)
+        t.add_event("e3", "new", "cover_letter", "", NOW + 120)
+    sent = profile_stats.collect(tmp_path / "job_tracker.db", LONDON, NOW)["sent"]
+    assert [j["title"] for j in sent] == ["Data Engineer", "Analyst"]
+    assert sent[0] == {"title": "Data Engineer", "employer": "Northwind", "day": "2026-09-29", "fit": 9, "location": "York",
+                       "mode": "Hybrid", "salary": "£55,000", "source": "reed.co.uk",
+                       "url": "https://jobs.example.com/secret-link", "answer": "applied"}
+    assert sent[1]["answer"] == "" and sent[1]["employer"] == "Contoso" and sent[1]["day"] == "2026-09-26"
+
+
+def test_the_jobs_sent_are_capped_and_only_keep_web_links(tmp_path, monkeypatch):
+    monkeypatch.setattr(profile_stats, "SENT_MAX", 3)
+    urls = ["javascript:alert(1)", "data:text/html,x", "https://ok.example/job?id=1", 'https://x.example/"><img', "ftp://x"]
+    with tracker(tmp_path) as t:
+        for i, url in enumerate(urls):
+            t.upsert_job(f"k{i}", {**job(f"Job {i}", 7), "url": url}, True, NOW - i * 60)
+    sent = profile_stats.collect(tmp_path / "job_tracker.db", LONDON, NOW)["sent"]
+    assert [j["url"] for j in sent] == ["", "", "https://ok.example/job?id=1"]
 
 
 def test_collect_only_reads_the_tracker(tmp_path):

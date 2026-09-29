@@ -3,8 +3,10 @@
 
 collect() returns one row of counts per day (in HERMES_TIMEZONE) for the last STATS_DAYS days, in the order of
 FIELDS, and for each of the dashboard's time ranges the employers, sources, match scores, work modes and best
-matches of the jobs sent. profiles.py sends it to the feedback Worker, which draws the charts. Notes typed on
-the buttons' confirmation pages, job links and contact details are not included.
+matches of the jobs sent. `sent` lists the jobs sent in the last SENT_DAYS days, newest first, with the advert's
+link and the last button pressed on each. profiles.py sends it to the feedback Worker, which draws the charts and
+the dashboard's list of jobs sent. Notes typed on the buttons' confirmation pages and contact details are not
+included.
 
     python3 profile_stats.py [DB]     # print the stats of a tracker (default: the owner's)
 """
@@ -33,7 +35,11 @@ TOP = 5
 BEST = 3
 MAX_NAME = 60
 MAX_TITLE = 90
+SENT_DAYS = 90
+SENT_MAX = 150
+MAX_URL = 500
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]+")
+_URL = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 
 
 def _clean(text, limit: int) -> str:
@@ -46,9 +52,14 @@ def _found(value) -> int:
     return found if isinstance(found, int) and found > 0 else 0
 
 
+def _url(url) -> str:
+    url = str(url or "").strip()
+    return url if len(url) <= MAX_URL and _URL.fullmatch(url) else ""
+
+
 def _empty(today: date) -> dict:
     return {"v": VERSION, "today": today.isoformat(), "since": None, "days": {},
-            "ranges": {str(r): _range([], []) for r in RANGES}, "pipeline": {s: 0 for s in STATUSES}}
+            "ranges": {str(r): _range([], []) for r in RANGES}, "pipeline": {s: 0 for s in STATUSES}, "sent": []}
 
 
 def _range(sent: list[dict], rated: list[dict]) -> dict:
@@ -68,13 +79,17 @@ def _range(sent: list[dict], rated: list[dict]) -> dict:
     }
 
 
-def _mode(details: str | None) -> str:
+def _detail(details: str | None, name: str, limit: int) -> str:
     try:
-        mode = json.loads(details or "{}").get("work_mode", "")
+        value = json.loads(details or "{}").get(name, "")
     except (ValueError, AttributeError):
         return ""
-    mode = _clean(mode, 20)
-    return "" if mode.lower() in ("", "unknown", "not stated") else mode
+    value = _clean(value if isinstance(value, str) else "", limit)
+    return "" if value.lower() in ("", "unknown", "not stated") else value
+
+
+def _mode(details: str | None) -> str:
+    return _detail(details, "work_mode", 20)
 
 
 def collect(db: Path, tz: ZoneInfo, now: float | None = None) -> dict:
@@ -95,14 +110,14 @@ def collect(db: Path, tz: ZoneInfo, now: float | None = None) -> dict:
     con.row_factory = sqlite3.Row
     try:
         con.execute("PRAGMA query_only = ON")
-        jobs = con.execute("SELECT first_seen, fit, emailed, company, employer, source, title, year_low, details "
-                           "FROM jobs WHERE first_seen >= ?", (start,)).fetchall()
+        jobs = con.execute("SELECT key, first_seen, fit, emailed, company, employer, source, title, year_low, salary, "
+                           "url, details FROM jobs WHERE first_seen >= ?", (start,)).fetchall()
         events = con.execute("SELECT action, at FROM events WHERE at >= ?", (start,)).fetchall()
         runs = con.execute("SELECT at, sources FROM runs WHERE at >= ?", (start,)).fetchall()
         marks = ",".join("?" * len(STATUSES))
-        latest = con.execute(
-            f"SELECT action, count(*) AS n FROM (SELECT key, action, max(at) FROM events WHERE action IN ({marks}) "
-            "GROUP BY key) GROUP BY action", STATUSES).fetchall()
+        answers = dict(con.execute(
+            f"SELECT key, action FROM (SELECT key, action, max(at) FROM events WHERE action IN ({marks}) "
+            "GROUP BY key)", STATUSES).fetchall())
         since = con.execute("SELECT min(t) FROM (SELECT min(first_seen) AS t FROM jobs UNION ALL "
                             "SELECT min(at) FROM runs UNION ALL SELECT min(at) FROM events)").fetchone()[0]
     finally:
@@ -121,7 +136,7 @@ def collect(db: Path, tz: ZoneInfo, now: float | None = None) -> dict:
             continue
         job = {"fit": r["fit"], "first_seen": r["first_seen"], "day": d.isoformat(), "year_low": r["year_low"],
                "employer": _clean(r["employer"] or r["company"], MAX_NAME), "source": _clean(r["source"], MAX_NAME),
-               "title": _clean(r["title"], MAX_TITLE), "mode": _mode(r["details"]), "d": d}
+               "title": _clean(r["title"], MAX_TITLE), "mode": _mode(r["details"]), "d": d, "row": r}
         rated.append(job)
         add(d, "rated")
         if r["emailed"]:
@@ -150,8 +165,22 @@ def collect(db: Path, tz: ZoneInfo, now: float | None = None) -> dict:
     for r in RANGES:
         cutoff = today - timedelta(days=r - 1)
         stats["ranges"][str(r)] = _range([j for j in sent if j["d"] >= cutoff], [j for j in rated if j["d"] >= cutoff])
-    stats["pipeline"].update({row["action"]: row["n"] for row in latest})
+    stats["pipeline"].update(Counter(answers.values()))
+    stats["sent"] = _sent_list(sent, answers, today - timedelta(days=SENT_DAYS - 1))
     return stats
+
+
+def _sent_list(sent: list[dict], answers: dict, cutoff: date) -> list[dict]:
+    recent = sorted((j for j in sent if j["d"] >= cutoff), key=lambda j: -j["first_seen"])[:SENT_MAX]
+    out = []
+    for j in recent:
+        r = j["row"]
+        out.append({"title": j["title"], "employer": j["employer"], "day": j["day"],
+                    "fit": j["fit"] if isinstance(j["fit"], int) and 0 <= j["fit"] <= 10 else None,
+                    "location": _detail(r["details"], "location", MAX_NAME), "mode": j["mode"],
+                    "salary": _clean(r["salary"], 40) or _detail(r["details"], "salary", 40),
+                    "source": j["source"], "url": _url(r["url"]), "answer": answers.get(r["key"], "")})
+    return out
 
 
 if __name__ == "__main__":

@@ -170,7 +170,7 @@ def test_a_profiles_own_crawler_key_is_owner_only(tmp_path, monkeypatch):
     assert (profiles.PROFILES_DIR / "sam-lee" / "secrets.json").stat().st_mode & 0o777 == 0o600
 
 
-def test_stats_sent_to_the_worker_hold_no_notes_links_or_contact_details(tmp_path, monkeypatch):
+def test_stats_sent_to_the_worker_hold_no_notes_or_contact_details(tmp_path, monkeypatch):
     monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
     monkeypatch.setattr(profiles, "STATE_DIR", tmp_path / "state")
     profiles.write_json(profiles.PROFILES_DIR / "owner" / "profile.json", {"id": "owner", "owner": True})
@@ -182,8 +182,9 @@ def test_stats_sent_to_the_worker_hold_no_notes_links_or_contact_details(tmp_pat
     profiles.push_stats(type("Api", (), {"stats": lambda self, pid, data: sent.append((pid, data))})())
     text = str(sent)
     assert sent and sent[0][0] == "owner"
-    for private in ("jobs.example.com", "sam@example.com", "Sam Lee", "07700", "manager"):
+    for private in ("sam@example.com", "Sam Lee", "07700", "manager"):
         assert private not in text
+    assert text.count("jobs.example.com") == 1 and sent[0][1]["sent"][0]["url"] == "https://jobs.example.com/private"
 
 
 def test_log_scrubbing_treats_names_as_text_not_patterns(tmp_path, monkeypatch):
@@ -340,6 +341,21 @@ def test_a_tampered_scan_marker_reaches_the_dashboard_only_as_plain_bounded_valu
     profiles.write_json(profiles.scan_marker("sam-lee"), {"pid": "77", "child": 1.5, "at": time.time()})
     assert profiles.cancel_task("report:sam-lee", "sam-lee") == "The report for sam-lee could not be stopped"
     assert signals == []
+
+
+def test_the_jobs_sent_list_for_the_dashboard_has_no_notes_contacts_or_script_links(tmp_path):
+    import profile_stats
+    from zoneinfo import ZoneInfo
+    with Tracker(tmp_path / "job_tracker.db") as t:
+        for i, url in enumerate(["javascript:alert(1)", "data:text/html,<script>", "vbscript:x", "https://ok.example/j"]):
+            t.upsert_job(f"k{i}", {"title": HOSTILE, "employer": HOSTILE, "url": url, "fit": 7, "location": "\x00York\x1b",
+                                   "salary": "£1\n\r"}, True, time.time() - i)
+            t.add_event(f"e{i}", f"k{i}", "applied", "call sam@example.com on 07700 900123", time.time())
+    stats = profile_stats.collect(tmp_path / "job_tracker.db", ZoneInfo("UTC"))
+    text = __import__("json").dumps(stats)
+    assert "sam@example.com" not in text and "07700" not in text
+    assert [j["url"] for j in stats["sent"]] == ["", "", "", "https://ok.example/j"]
+    assert all(j["location"] == "York" and j["salary"] == "£1" and j["answer"] == "applied" for j in stats["sent"])
 
 
 # --------------------------------------------------------------------------- autofit and the host watchdog
