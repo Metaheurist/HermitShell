@@ -34,6 +34,12 @@ function freshEnv(extra = {}) {
   return { FEEDBACK: memoryKV(), JOB_FEEDBACK_SECRET: SECRET, JOB_FEEDBACK_API_TOKEN: TOKEN, ADMIN_PASSWORD: PASSWORD, ...extra };
 }
 
+// The live link's Durable Object, as it answers while HermitShell is connected.
+const LIVE_HUB = {
+  idFromName: (name) => name,
+  get: () => ({ fetch: async (url) => Response.json(String(url).endsWith("/presence") ? { live: true, seen: Date.now() } : { sent: 1 }) }),
+};
+
 let env = freshEnv();
 
 async function call(path, { method = "GET", form, json, headers = {} } = {}) {
@@ -95,7 +101,7 @@ await save("privacy", await call("/privacy"));
 // Link problems.
 await save("link-invalid", await call(`/f?${new URLSearchParams({ ...(await link("interested", TITLE)), n: "Changed title" })}`));
 await save("link-expired", await call(`/f?${new URLSearchParams(await link("interested", TITLE, { day: today() - LINK_DAYS - 1 }))}`));
-env = freshEnv();
+env = freshEnv({ HUB: LIVE_HUB });
 
 // HermitShell reports its profiles (what profiles.py sends every few minutes).
 const now = Date.now();

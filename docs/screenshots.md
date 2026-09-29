@@ -291,7 +291,7 @@ deleted ([data protection](configuration.md#data-protection)).
 
 | Control | What it does |
 | --- | --- |
-| Status line | How long ago HermitShell last reported, with the time in your timezone (`HERMES_TIMEZONE`), and changes still **Waiting for HermitShell** (applied by `profiles.py`, usually within a minute). A warning appears above it if HermitShell hasn't reported for 45 minutes |
+| Status line | **HermitShell is connected** (green dot) while its live link is up, so changes reach it within seconds, then when it last reported its profiles. Without the link: when HermitShell last checked in, with the time in your timezone (`HERMES_TIMEZONE`). Also lists changes still **Waiting for HermitShell**. A warning appears above it if HermitShell hasn't checked in for 45 minutes |
 | Profile, Status | Name, email and start date, **no CV** when there is none yet; owner, active or paused; time of the last report |
 | **Manage** | Opens [that profile's page](#a-profiles-page): details, job search and CV |
 | Crawler: **Their Firecrawl key** + **Save** | Gives that profile its own Firecrawl key, used instead of the global one |

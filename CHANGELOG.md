@@ -8,6 +8,25 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A live link between HermitShell and the Worker, free.** The dashboard said "Last update: 8
+  minutes ago" even though HermitShell was checking every 15 seconds, and a save could still take
+  a while to arrive. Now:
+  - The cron job keeps one background `profiles.py listen` process holding a WebSocket out to the
+    Worker's new `/api/live`. The moment anything is saved, the Worker pushes it down the link,
+    and HermitShell applies it within a second or two.
+  - The link runs on a free SQLite-backed Durable Object (`Hub`), which `cloudflare_worker.py`
+    creates with the Worker. The socket hibernates and its pings are answered without waking it,
+    so holding it all day costs a few hundred requests and almost no time on the free plan. Your
+    server still accepts no incoming connections.
+  - The dashboard shows **HermitShell is connected** with a green dot while the link is up.
+    Otherwise it says when HermitShell last checked in, where every poll counts, rather than when
+    it last sent a full report.
+  - It reconnects after a drop (every Worker deploy closes the link) and restarts itself when
+    `profiles.py` changes. A push whose item isn't listed yet is retried.
+  - Without the link (an older Worker, `JOB_PROFILES_LIVE=off`, or no `websockets` package), each
+    run polls `/api/queue/flag` as before, and tries the link again hourly.
+  - Deleting a profile now also scrubs the listener's log, rotated `.log.1` logs and the
+    per-profile runs log.
 - **A cleaner, more modern look for the Worker's pages.** The dashboard, sign-in, sign-up and button
   pages have a softer background with a slow-moving glow and a lighter card that eases in.
   - Tabs are now a segmented switch. Buttons use a gradient and lift on hover. Boxes glow when
@@ -39,7 +58,7 @@ using [Semantic Versioning](https://semver.org/).
   syncs as soon as something new is queued. Sign-ups, deletions, CV uploads and settings all
   benefit. `profiles.py --once` syncs once and exits. `JOB_PROFILES_WATCH_SECONDS` (`0` turns
   watching off) and `JOB_PROFILES_POLL_SECONDS` tune it. Admin pages also skip listing the queue
-  when it is empty.
+  when it is empty. (The live link above now does this in about a second; polling is its fallback.)
 - **Dashboard times in your timezone.** The admin pages showed every time in UTC, so during
   British Summer Time the last update looked an hour old. Times now use `HERMES_TIMEZONE` (sent by
   HermitShell with its status), and the status line says how long ago it was ("4 minutes ago").

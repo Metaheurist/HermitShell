@@ -21,10 +21,15 @@ missing-skill tags) without opening any port on your server.
 - `/join?i=<invite>` is the sign-up form with the CV upload; the CV is kept raw in KV until HermitShell
   collects it through `/api/queue`, `/api/file` and `/api/queue/ack`. HermitShell reports its profiles
   with `POST /api/status`.
+- `/api/live` is HermitShell's live link: a WebSocket, opened from the HermitShell server, that a
+  Durable Object (`Hub`, binding `HUB`) tells the moment anything is queued. The dashboard shows
+  **HermitShell is connected** while it is up. Without it HermitShell polls `/api/queue/flag`.
 
 Source: `src/index.js` (buttons, routing), `src/join.js` (invites, sign-up), `src/admin.js` (admin
-page, HermitShell API), `src/lib.js` (signing, pages). It fits in the Cloudflare free plan (Workers and KV);
-polling reads flag keys instead of listing KV, which the free plan limits to 1,000 lists a day.
+page, HermitShell API), `src/hub.js` (the live link), `src/lib.js` (signing, pages). It fits in the
+Cloudflare free plan (Workers, KV and SQLite-backed Durable Objects, whose hibernating WebSocket
+isn't billed while idle); polling reads flag keys instead of listing KV, which the free plan limits
+to 1,000 lists a day.
 
 ## Setup
 
@@ -58,3 +63,5 @@ npm test
 The tests run the Worker against an in-memory KV and check the signature format shared with
 `job_tracker.py`, that opening a link saves nothing, that changed links are refused, that the
 API needs the token, and the invite, sign-up, admin (lockout, CSRF, sessions) and unsubscribe flows.
+`test/hub.test.js` runs the real `Hub` class on an in-memory Durable Object state: pushes, the
+WebSocket upgrade, presence on the dashboard and saves that still work without the binding.

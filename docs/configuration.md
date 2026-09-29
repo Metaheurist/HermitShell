@@ -110,8 +110,9 @@ when its best case is below the minimum.
 | `CLOUDFLARE_API_TOKEN` | none | API token for that deployment (Workers Scripts Edit, Workers KV Storage Edit; Access: Apps and Policies Edit for Access). Not changeable from the dashboard |
 | `CLOUDFLARE_WORKER_NAME` | `vacancy-feedback` | Worker name, the first part of its `workers.dev` address |
 | `CLOUDFLARE_ACCESS_EMAILS` | none | Emails Cloudflare Access lets through to `/admin`; empty = password only |
-| `JOB_PROFILES_WATCH_SECONDS` | `250` | How long each 5-minute `profiles.py` run lasts (counted from its start), watching the Worker for dashboard changes and sign-ups after its sync; keep it under 300 so the next run isn't skipped. `0` = only sync at each run |
-| `JOB_PROFILES_POLL_SECONDS` | `15` | How often it checks while watching (one KV read each time; at least 5) |
+| `JOB_PROFILES_LIVE` | `on` | Keep the live link to the Worker up (a background `profiles.py listen` holding a WebSocket, told the moment anything is saved). `off` = poll instead, as below |
+| `JOB_PROFILES_WATCH_SECONDS` | `250` | Without the live link: how long each 5-minute `profiles.py` run lasts (counted from its start), watching the Worker for dashboard changes and sign-ups after its sync; keep it under 300 so the next run isn't skipped. `0` = only sync at each run |
+| `JOB_PROFILES_POLL_SECONDS` | `15` | Without the live link: how often it checks while watching (one KV read each time; at least 5) |
 
 The wizard generates both secrets and, with a Cloudflare token, deploys the Worker itself
 ([cloudflare-setup.md](cloudflare-setup.md)). Deploying by hand (with the Cloudflare MCP in an AI

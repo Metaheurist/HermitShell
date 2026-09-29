@@ -41,7 +41,7 @@ Create a token that can only do what the wizard needs:
 
    | Scope   | Permission                  | Access | Needed for                            |
    | ------- | --------------------------- | ------ | ------------------------------------- |
-   | Account | Workers Scripts             | Edit   | uploading the Worker, its secrets     |
+   | Account | Workers Scripts             | Edit   | uploading the Worker, its secrets and its live-link Durable Object |
    | Account | Workers KV Storage          | Edit   | the Worker's storage                  |
    | Account | Access: Apps and Policies   | Edit   | only to protect `/admin` with Access  |
 
@@ -133,10 +133,13 @@ Everything above fits in Cloudflare's free plans:
 | --------------------- | --------------------------------------------------------------- | ------------------------------------------------------- |
 | Workers               | 100,000 requests a day, 10 ms CPU per request                   | about 600 polls a day plus your button presses          |
 | Workers KV            | 100,000 reads, 1,000 writes, 1,000 deletes, 1,000 lists a day; 1 GB | small flag reads; lists only when something is waiting |
+| Durable Objects (SQLite) | 100,000 requests and 13,000 GB-seconds a day; 5 GB           | the live link: a few hundred requests a day, almost no time |
 | Zero Trust (Access)   | up to 50 users                                                  | you (and anyone you add)                                |
 
 Polling reads a flag key instead of listing KV, so the 1,000 lists a day aren't reached. Each button
-press, sign-up or admin change is one or two writes.
+press, sign-up or admin change is one or two writes. The live link's WebSocket hibernates between
+messages, so holding it all day isn't billed as time; see
+[feedback-worker.md](feedback-worker.md#free-plan-limits).
 
 ## Keeping the token safe
 

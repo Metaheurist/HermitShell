@@ -278,19 +278,33 @@ from the Worker's admin page; HermitShell applies the changes, since the Worker 
        --name vacancy-profiles --script profiles.py --no-agent --deliver local
    ```
 
-   Each run syncs, then keeps watching until just before the next run: every 15 seconds it reads
-   `/api/queue/flag` (one KV read, no list) and syncs as soon as something new is queued, so
-   dashboard changes and sign-ups are picked up within seconds. `python3 profiles.py --once` syncs
-   once and exits. `JOB_PROFILES_WATCH_SECONDS` (default 250, counted from the start of the run so
-   it ends before the next one; `0` turns watching off) and
-   `JOB_PROFILES_POLL_SECONDS` (default 15, at least 5) change this.
+   Each run syncs, then makes sure the **live link** is up: a background `profiles.py listen`
+   process that keeps a WebSocket open from your server to the Worker's `/api/live`. The Worker
+   pushes a message down it the moment anything is queued, so dashboard changes and sign-ups are
+   applied within a second or two, and the dashboard shows **HermitShell is connected**. The link
+   pings every 30 seconds, reconnects by itself after a drop (every Worker deploy closes it) and
+   restarts when `profiles.py` changes; if the process dies, the next run starts another.
+   `python3 profiles.py --once` syncs once and exits.
+
+   The link runs on a [Durable Object](https://developers.cloudflare.com/durable-objects/) (`Hub`,
+   binding `HUB`) that `cloudflare_worker.py` creates with the Worker. It is on the free plan: the
+   socket is hibernatable and the pings are answered without waking it, so an idle link costs
+   nothing. Your server still accepts no incoming connections; the WebSocket is outgoing, like
+   the polling it replaces.
+
+   Without the link (a Worker deployed before it existed, `JOB_PROFILES_LIVE=off`, or no
+   `websockets` Python package) each run instead keeps watching until just before the next one:
+   every 15 seconds it reads `/api/queue/flag` (one KV read, no list) and syncs as soon as
+   something new is queued. It tries the link again every hour. `JOB_PROFILES_WATCH_SECONDS`
+   (default 250, counted from the start of the run so it ends before the next one; `0` turns
+   watching off) and `JOB_PROFILES_POLL_SECONDS` (default 15, at least 5) tune that fallback.
 
 3. Open `https://vacancy-feedback.<subdomain>.workers.dev/admin`, sign in and press
    **Create invite link**. Each link works once and expires after 7 days; send it to the person.
    (`python3 profiles.py --invite "note"` makes one from the server too.)
 4. They fill in their name, email, optional phone and town, the roles they want, and upload a CV
    (PDF, Word .docx or text, up to 5 MB) or paste it. The CV waits in KV, deleted once HermitShell has it.
-5. Within a minute `profiles.py` downloads it, reads the text (`cv_text.py`, no extra packages;
+5. Within seconds `profiles.py` downloads it, reads the text (`cv_text.py`, no extra packages;
    scanned image-only PDFs can't be read, so the pasted text is used instead), and asks HermitShell's
    model for a summary, job titles, skills and gaps. From those it writes the person's
    `job_profile.md`, `cv_keywords.json` and search settings under `state/profiles/<id>/`, emails
@@ -326,9 +340,11 @@ whole tool shares).
 
 <img src="images/worker/admin-dashboard-setup.png" alt="Admin page right after setup, with the checklist" width="720">
 
-- **Last update from HermitShell**: how long ago it reported (it does so at least every 15
-  minutes), with times on every admin page shown in your timezone (`HERMES_TIMEZONE`). If it
-  hasn't reported for 45 minutes, a warning asks you to check its `vacancy-profiles` job.
+- **HermitShell is connected**, with a green dot, while the live link is up (changes reach it
+  within seconds), followed by when it last reported its profiles. Without the link the line says
+  when HermitShell last checked in instead (each poll counts). Times on every admin page are in
+  your timezone (`HERMES_TIMEZONE`). If it hasn't checked in for 45 minutes, a warning asks you to
+  check its `vacancy-profiles` job.
 - **Finish setting up**: a progress bar and checklist until HermitShell has connected, the email server is set and a
   test email worked, there is a web search key, and your CV and job search are in. Each item links
   to its form.
@@ -361,8 +377,8 @@ whole tool shares).
 
 Keys and passwords are stored on the HermitShell server (`state/dashboard.json` and
 `state/profiles/`, mode 600) and shown only as their last four characters. Changes wait in KV and
-are applied by `profiles.py`, usually within a minute ("Waiting for HermitShell" shows what is
-pending). Until then the email server form shows what you saved rather than the old values.
+are applied by `profiles.py`, within seconds over the live link ("Waiting for HermitShell" shows
+what is pending). Until then the email server form shows what you saved rather than the old values.
 Passwords and keys typed into the page are deleted from KV after 2 days if HermitShell hasn't collected
 them.
 
@@ -387,7 +403,8 @@ under it. Details and job search are one form with one **Save changes** button; 
   `cv_keywords.json` are kept as `.bak` copies.
 
 **Saving without losing anything.** The Worker can't reach your server, so a save waits in KV until
-`profiles.py` collects it (usually within a minute). Meanwhile:
+`profiles.py` collects it: a second or two after the live link tells it, or at its next poll
+without the link. Meanwhile:
 
 - The page shows what HermitShell last reported with every save still waiting laid over it, so the
   form keeps what you saved instead of jumping back to the old values.
@@ -465,11 +482,16 @@ you run HermitShell (for example turn encryption off or change the retention day
 Workers KV's free plan allows 1,000 list operations, 1,000 writes and 100,000 reads a day, and
 Workers 100,000 requests. Polling (`/events` every 5 minutes for cover letters, `/api/queue` for
 profiles) reads a small flag key instead of listing, and only lists when something is waiting, plus
-an hourly and a daily full check. Between runs `profiles.py` reads `/api/queue/flag` every 15
-seconds (about 5,200 reads and requests a day) and only syncs when its value changes, so an item
-that keeps failing is retried by the next run rather than listed every 15 seconds. Admin pages
-also skip the listing when the flag says the queue is empty. Status reports from HermitShell are
-only written when something changed or every 15 minutes (at most 96 of the 1,000 writes a day).
+an hourly and a daily full check. With the live link, `profiles.py` only lists after a push (and
+up to three short retries if the new item isn't listed yet); its pings cost a few hundred Durable
+Object requests a day, well inside that plan's 100,000 requests and 13,000 GB-seconds, because
+a hibernating socket isn't billed for time. Without the link it reads `/api/queue/flag` every 15
+seconds between runs (about 5,200 reads and requests a day) and only syncs when its value
+changes, so an item that keeps failing is retried by the next run rather than listed every 15
+seconds. Admin pages also skip the listing when the flag says the queue is empty. Status reports
+from HermitShell are only written when something changed or every 15 minutes (at most 96 of the
+1,000 writes a day). If the Durable Object allowance ever ran out, saves still work and
+HermitShell falls back to polling.
 
 ## Removing it
 
