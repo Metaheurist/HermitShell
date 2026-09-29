@@ -20,6 +20,7 @@ import {
 import { privacyPage } from "./privacy.js";
 
 export { sign } from "./lib.js";
+export { Hub } from "./hub.js";
 
 export const ACTIONS = {
   interested: "Interested",

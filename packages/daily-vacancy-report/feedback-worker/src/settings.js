@@ -1,7 +1,7 @@
 // Settings pages of the admin dashboard: the setup checklist, the global settings page (email server and web
 // search API keys, shared by every profile) and each profile's page (details and job search in one form, and
 // the CV). Forms open prefilled from the last status HermitShell reported plus the changes still waiting for
-// it; saving only queues the change, which profiles.py validates again and applies, usually within a minute.
+// it; saving only queues the change, which profiles.py validates again and applies, within seconds over the live link.
 
 import { COUNTRIES, countryCode } from "./countries.js";
 import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem } from "./join.js";
@@ -352,7 +352,7 @@ export function saveStatus(status, pid, queue, n) {
     const cv = mine.some((i) => i.action === "cv");
     body = !refresh ? `Still waiting for HermitShell. <a href="/admin/profile?u=${esc(pid)}" target="_top">Reload</a> to check again; <a href="/admin" target="_top">Profiles</a> shows when it last reported.`
       : cv ? "Saved. HermitShell is reading the new CV; this takes a few minutes."
-        : "Saved. Waiting for HermitShell to apply it (usually within a minute)&hellip;";
+        : "Saved. Waiting for HermitShell to apply it (a few seconds while it is connected)&hellip;";
   } else if (failed.length) {
     body = `<b>HermitShell could not apply a change:</b> ${esc(failed.at(-1).error)}`;
   } else if (n > 0) {

@@ -184,6 +184,8 @@ background:linear-gradient(135deg,var(--brand),var(--brand2));box-shadow:0 6px 1
 background:var(--soft);color:var(--brand-ink)}
 .pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
 .pill.paused{background:#fef3c7;color:#92400e}.pill.owner{background:var(--ok-bg);color:#047857}
+.live{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:8px;vertical-align:1px;
+animation:beat 2s ease-out infinite}
 .inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.inline input:not([type=checkbox]){width:auto;flex:1;min-width:170px}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:0 16px}
 .checks{display:flex;gap:8px;flex-wrap:wrap}
@@ -235,6 +237,7 @@ font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--i
 @keyframes drop{from{opacity:0;transform:translateY(-6px)}}
 @keyframes fill{from{width:0}}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(245,158,11,.45)}70%,100%{box-shadow:0 0 0 8px rgba(245,158,11,0)}}
+@keyframes beat{0%{box-shadow:0 0 0 0 rgba(5,150,105,.5)}70%,100%{box-shadow:0 0 0 7px rgba(5,150,105,0)}}
 @keyframes drift{to{transform:translate(120px,80px) scale(1.12)}}
 @media (max-width:560px){main{margin:16px;padding:24px 20px;border-radius:18px}h1{font-size:23px}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}

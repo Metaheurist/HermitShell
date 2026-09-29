@@ -3,10 +3,11 @@
 // /admin: when ACCESS_AUD is set, Cloudflare Access (email one-time code) must let the request through
 // first. Then sign in with ADMIN_USER (default "admin") and the ADMIN_PASSWORD secret; five wrong attempts
 // lock that address, and 30 from anywhere lock sign-in, for 15 minutes. Signed-in pages create invite
-// links, show the profiles HermitShell reports, and queue changes that HermitShell applies on its next check
-// (settings pages: settings.js). Nothing here can reach the HermitShell server; it only reads /api/queue with its
-// API token.
+// links, show the profiles HermitShell reports, and queue changes that HermitShell applies as soon as the live
+// link tells it (settings pages: settings.js; the live link: hub.js). Nothing here can reach the HermitShell
+// server: HermitShell connects out to /api/live and reads /api/queue with its API token.
 
+import { hubConnect, hubPresence, hubSeen } from "./hub.js";
 import { SECRET_TTL_SECONDS, createInvite, queueItem } from "./join.js";
 import {
   SECURITY_HEADERS, accessUser, ago, authorised, deleteAndUnflag, esc, hmacHex, json, limitedForm, limitedJson, listFlagged,
@@ -27,8 +28,8 @@ const COOKIE = "__Host-hv_admin";
 const KEY_RE = /^[A-Za-z0-9_-]{8,120}$/;
 const PROFILE_RE = /^[a-z0-9-]{1,40}$/;
 const DONE = {
-  queued: "Saved. HermitShell usually applies it within a minute.",
-  saved: "Saved. The box above shows when HermitShell has applied it, usually within a minute.",
+  queued: "Saved. HermitShell applies it within seconds while it is connected.",
+  saved: "Saved. The box above shows when HermitShell has applied it, within seconds while it is connected.",
   nochange: "Nothing had changed, so nothing was saved.",
   revoked: "Invite revoked.",
   confirm: "Tick the confirmation box to delete a profile.",
@@ -148,15 +149,20 @@ async function saveProfile(env, s, form, u) {
   return redirect(`/admin/profile?u=${u}&done=saved`);
 }
 
-// HermitShell reports at least every 15 minutes, so a much older report means its profiles job has stopped.
+// HermitShell checks in at least every 15 minutes, so a much older check-in means its profiles job has stopped.
 const STALE_MS = 45 * 60 * 1000;
 
-function lastUpdate(current, queued) {
+function lastUpdate(current, queued, presence) {
   const waiting = queued.length ? ` Waiting for HermitShell: ${esc(queued.join("; "))}.` : "";
-  if (!current.updated) return `<p class="muted">HermitShell hasn't reported yet.${waiting}</p>`;
-  const stale = Date.now() - current.updated > STALE_MS
-    ? `<div class="warn">HermitShell last reported ${esc(ago(current.updated))}. Check that its <b>vacancy-profiles</b> job is running (<code>hermes cron list</code>).</div>` : "";
-  return `${stale}<p class="muted">Last update from HermitShell: ${esc(ago(current.updated))} (${esc(when(current.updated, current.timezone))}).${waiting}</p>`;
+  const report = current.updated ? ` Profiles last reported ${esc(ago(current.updated))}.` : "";
+  if (presence.live) {
+    return `<p class="muted"><span class="live" aria-hidden="true"></span><b>HermitShell is connected</b>: changes reach it within seconds.${report}${waiting}</p>`;
+  }
+  const seen = Math.max(presence.seen, current.updated || 0);
+  if (!seen) return `<p class="muted">HermitShell hasn't reported yet.${waiting}</p>`;
+  const stale = Date.now() - seen > STALE_MS
+    ? `<div class="warn">HermitShell last checked in ${esc(ago(seen))}. Check that its <b>vacancy-profiles</b> job is running (<code>hermes cron list</code>).</div>` : "";
+  return `${stale}<p class="muted">HermitShell last checked in ${esc(ago(seen))} (${esc(when(seen, current.timezone))}).${waiting}</p>`;
 }
 
 function initials(name) {
@@ -187,14 +193,14 @@ ${p.crawler === "own" ? button(csrf, "use_global", "Use global key", { u: p.id }
 
 async function dashboard(request, env, s) {
   const url = new URL(request.url);
-  const [current, invites, queued] = await Promise.all([
-    status(env), env.FEEDBACK.list({ prefix: "invite:", limit: 100 }), pending(env)]);
+  const [current, invites, queued, presence] = await Promise.all([
+    status(env), env.FEEDBACK.list({ prefix: "invite:", limit: 100 }), pending(env), hubPresence(env)]);
   const inviteRows = (await Promise.all(invites.keys.map((k) => env.FEEDBACK.get(k.name, "json")))).filter(Boolean)
     .map((i) => `<tr><td>${esc(i.note || "No note")}</td><td class="muted">expires ${esc(when(i.expires, current.timezone))}</td>
 <td>${button(s.csrf, "revoke", "Revoke", { invite: i.id })}</td></tr>`).join("");
   const done = DONE[url.searchParams.get("done")];
   return page("Profiles", `${nav("profiles")}${done ? note(done) : ""}
-${lastUpdate(current, queued)}
+${lastUpdate(current, queued, presence)}
 ${problems(current)}${checklist(current)}
 <table class="list"><tr><th>Profile</th><th>Status</th><th>Crawler</th><th></th></tr>
 ${(current.profiles || []).map((p) => profileRow(p, s.csrf, current.timezone)).join("") || '<tr><td colspan="4" class="muted">HermitShell has not reported any profiles yet.</td></tr>'}</table>
@@ -295,9 +301,14 @@ export async function handleApi(request, env) {
   if (url.pathname === "/api/queue" && request.method === "GET") {
     return json({ items: await listFlagged(env, request, "queue:", "flag:queue", 100) });
   }
-  // Polled every few seconds by profiles.py between syncs: one KV read, and a new value whenever something is queued.
+  // HermitShell's live link (hub.js): a WebSocket that is told the moment anything is queued.
+  if (url.pathname === "/api/live" && request.method === "GET") {
+    return (await hubConnect(request, env)) || json({ error: "no live link" }, 404);
+  }
+  // Polled by profiles.py when it has no live link: one KV read, and a new value whenever something is queued.
   if (url.pathname === "/api/queue/flag" && request.method === "GET") {
-    return json({ flag: (await env.FEEDBACK.get("flag:queue")) || "" });
+    const [flag] = await Promise.all([env.FEEDBACK.get("flag:queue"), hubSeen(env)]);
+    return json({ flag: flag || "" });
   }
   if (url.pathname === "/api/file" && request.method === "GET") {
     const key = url.searchParams.get("k") || "";

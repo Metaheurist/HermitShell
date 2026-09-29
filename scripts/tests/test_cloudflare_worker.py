@@ -67,6 +67,7 @@ def client(routes):
 
 BASE_ROUTES = {
     ("GET", "/accounts/A/storage/kv/namespaces"): [{"title": "vacancy-feedback-FEEDBACK", "id": "kv1"}],
+    ("GET", "/accounts/A/workers/scripts"): [],
     ("PUT", "/accounts/A/workers/scripts/vacancy-feedback"): {},
     ("POST", "/accounts/A/workers/scripts/vacancy-feedback/subdomain"): {},
     ("PUT", "/accounts/A/workers/scripts/vacancy-feedback/secrets"): {},
@@ -127,9 +128,10 @@ def test_deploy_reuses_kv_uploads_modules_and_keeps_secrets():
     upload = api.sent("PUT", "/accounts/A/workers/scripts/vacancy-feedback")[0]
     body = upload["data"].decode()
     assert upload["headers"]["Content-type"].startswith("multipart/form-data; boundary=")
-    meta = json.loads(body.split('name="metadata"', 1)[1].split("\r\n\r\n", 1)[1].split("\r\n--", 1)[0])
+    meta = upload_metadata(upload)
     assert meta["main_module"] == "index.js"
-    assert meta["bindings"] == [{"type": "kv_namespace", "name": "FEEDBACK", "namespace_id": "kv1"}]
+    assert meta["bindings"] == [{"type": "kv_namespace", "name": "FEEDBACK", "namespace_id": "kv1"},
+                                {"type": "durable_object_namespace", "name": "HUB", "class_name": "Hub"}]
     assert meta["keep_bindings"] == ["secret_text", "secret_key"]
     for module in ("index.js", "admin.js", "join.js", "lib.js"):
         assert f'filename="{module}"' in body
@@ -138,6 +140,33 @@ def test_deploy_reuses_kv_uploads_modules_and_keeps_secrets():
     secrets_sent = [json.loads(c["data"]) for c in api.sent("PUT", "/accounts/A/workers/scripts/vacancy-feedback/secrets")]
     assert secrets_sent == [{"name": "JOB_FEEDBACK_SECRET", "text": "s1", "type": "secret_text"}]
     assert not any("s1" in line for line in logs)
+
+
+def upload_metadata(upload):
+    return json.loads(upload["data"].decode().split('name="metadata"', 1)[1].split("\r\n\r\n", 1)[1].split("\r\n--", 1)[0])
+
+
+@pytest.mark.parametrize("scripts, migrations", [
+    ([], {"new_tag": "v1", "steps": [{"new_sqlite_classes": ["Hub"]}]}),
+    ([{"id": "vacancy-feedback", "migration_tag": ""}, {"id": "other", "migration_tag": "v9"}],
+     {"new_tag": "v1", "steps": [{"new_sqlite_classes": ["Hub"]}]}),
+    ([{"id": "vacancy-feedback", "migration_tag": "v1"}], None),
+])
+def test_the_live_link_is_created_once(scripts, migrations):
+    routes = dict(BASE_ROUTES)
+    routes[("GET", "/accounts/A/workers/scripts")] = scripts
+    cf, api = client(routes)
+    logs = []
+    cw.deploy(cf, "vacancy-feedback", "demo", {}, log=logs.append)
+    meta = upload_metadata(api.sent("PUT", "/accounts/A/workers/scripts/vacancy-feedback")[0])
+    assert meta.get("migrations") == migrations
+    assert ("live link created" in logs[1]) is bool(migrations)
+
+
+def test_worker_source_ships_the_live_link():
+    _, _, modules = cw.worker_source()
+    assert b"export class Hub" in modules["hub.js"]
+    assert b'export { Hub } from "./hub.js"' in modules["index.js"]
 
 
 def test_deploy_creates_a_missing_kv_namespace():

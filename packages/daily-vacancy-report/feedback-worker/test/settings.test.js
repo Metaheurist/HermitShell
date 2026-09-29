@@ -102,7 +102,7 @@ describe("setup checklist", () => {
   it("shows progress and each step's state as styled items", async () => {
     const { get } = await setup();
     const { body } = await get("/admin?done=queued");
-    expect(body).toContain('<p class="note ok" role="status">Saved. HermitShell usually applies it within a minute.</p>');
+    expect(body).toContain('<p class="note ok" role="status">Saved. HermitShell applies it within seconds while it is connected.</p>');
     expect(body).toContain("1 of 6 done");
     expect(body).toMatch(/role="progressbar"[^>]*aria-valuenow="1"><span style="width:17%"><\/span>/);
     expect(body).toContain('<li class="done"><span class="tick" aria-hidden="true"></span><div><b>HermitShell is connected</b>');
@@ -131,15 +131,15 @@ describe("setup checklist", () => {
   it("shows the last update as time ago in the owner's timezone", async () => {
     const { get } = await setup({ ...STATUS, timezone: "Europe/London" });
     const { body } = await get("/admin");
-    expect(body).toMatch(/Last update from HermitShell: just now \(\d{4}-\d\d-\d\d \d\d:\d\d (BST|GMT)\)/);
-    expect(body).not.toContain("HermitShell last reported");
+    expect(body).toMatch(/HermitShell last checked in just now \(\d{4}-\d\d-\d\d \d\d:\d\d (BST|GMT)\)/);
+    expect(body).not.toContain('class="warn"');
   });
 
   it("warns when HermitShell has stopped reporting", async () => {
     const { env, get } = await setup();
     await env.FEEDBACK.put("status:profiles", JSON.stringify({ ...STATUS, updated: Date.now() - 3 * 3600 * 1000 }));
     const { body } = await get("/admin");
-    expect(body).toContain("HermitShell last reported 3 hours ago");
+    expect(body).toContain('<div class="warn">HermitShell last checked in 3 hours ago');
     expect(body).toContain("vacancy-profiles");
   });
 
@@ -179,7 +179,7 @@ describe("global settings page", () => {
     await act({ action: "test_email", to: "alex@example.com" });
     await act({ action: "pause", u: "sam-lee" });
     const { body } = await get("/admin/settings?done=queued");
-    expect(body).toContain("Saved. HermitShell usually applies it within a minute.");
+    expect(body).toContain("Saved. HermitShell applies it within seconds while it is connected.");
     expect(body).toContain("Waiting for HermitShell: test email.");
     expect(body).not.toContain("pause for sam-lee");
   });

@@ -1,4 +1,34 @@
+import { Hub } from "../src/hub.js";
+
 export const BASE = "https://vacancy-feedback.example.workers.dev";
+
+// A WebSocket as the hub sees it; readyState 1 is open.
+export class FakeSocket {
+  constructor() { this.readyState = 1; this.sent = []; this.attachment = null; this.pinged = 0; }
+  send(message) {
+    if (this.readyState !== 1) throw new Error("closed");
+    this.sent.push(message);
+  }
+  serializeAttachment(value) { this.attachment = value; }
+  deserializeAttachment() { return this.attachment; }
+  close() { this.readyState = 3; }
+}
+
+// The HUB binding: the real Hub class on an in-memory Durable Object state.
+export function memoryHub() {
+  const storage = new Map();
+  const sockets = [];
+  const state = {
+    storage: { async get(key) { return storage.get(key); }, async put(key, value) { storage.set(key, value); } },
+    sockets,
+    acceptWebSocket(ws) { sockets.push(ws); },
+    getWebSockets() { return sockets.filter((ws) => ws.readyState !== 3); },
+    setWebSocketAutoResponse() {},
+    getWebSocketAutoResponseTimestamp(ws) { return ws.pinged ? new Date(ws.pinged) : null; },
+  };
+  const hub = new Hub(state);
+  return { state, hub, storage, idFromName: (name) => name, get: () => ({ fetch: (url, init) => hub.fetch(new Request(url, init)) }) };
+}
 
 export function memoryKV() {
   const store = new Map();

@@ -9,6 +9,13 @@
   // Create the namespace (docs/feedback-worker.md) and paste its ID here.
   "kv_namespaces": [
     { "binding": "FEEDBACK", "id": "REPLACE_WITH_YOUR_KV_NAMESPACE_ID" }
+  ],
+  // The live link to HermitShell (src/hub.js); SQLite-backed, so it is on the free plan.
+  "durable_objects": {
+    "bindings": [{ "name": "HUB", "class_name": "Hub" }]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Hub"] }
   ]
   // Secrets, set with `npx wrangler secret put <NAME>` (never commit them):
   //   JOB_FEEDBACK_SECRET     signs the email links (same value as in HermitShell's .env)

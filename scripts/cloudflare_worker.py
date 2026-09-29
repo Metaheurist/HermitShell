@@ -7,8 +7,9 @@
     python3 scripts/cloudflare_worker.py --access you@example.com
 
 The setup wizard (setup.py) uses the same functions. From CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN it
-finds (or creates) the account's workers.dev subdomain and the KV namespace, uploads the Worker's modules,
-turns on its workers.dev address, stores the Worker secrets and can put /admin behind Cloudflare Access.
+finds (or creates) the account's workers.dev subdomain and the KV namespace, uploads the Worker's modules with
+its live-link Durable Object, turns on its workers.dev address, stores the Worker secrets and can put /admin
+behind Cloudflare Access.
 Secrets already on the Worker are kept; no secret value is ever printed.
 
 Token permissions (account scope): Workers Scripts Edit and Workers KV Storage Edit; Access: Apps and
@@ -34,6 +35,8 @@ REPO = Path(__file__).resolve().parent.parent
 WORKER_DIR = REPO / "packages" / "daily-vacancy-report" / "feedback-worker"
 DEFAULT_NAME = "vacancy-feedback"
 KV_BINDING = "FEEDBACK"
+# The live link's Durable Object (src/hub.js) and the migration that creates it; the same tag as wrangler.jsonc.
+HUB_BINDING, HUB_CLASS, HUB_TAG = "HUB", "Hub", "v1"
 ACCOUNT_RE = re.compile(r"^[0-9a-f]{32}$")
 NAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 EMAIL_RE = re.compile(r"^[^@\s,]+@[^@\s,]+\.[^@\s,]+$")
@@ -159,15 +162,26 @@ class Cloudflare:
             page += 1
         return self.call("POST", self._path("/storage/kv/namespaces"), {"title": title})["id"], True
 
+    def migration_tag(self, name: str) -> str:
+        """The Durable Object migration tag the deployed Worker is at; "" when it is new or has none."""
+        for script in self.call("GET", self._path("/workers/scripts")) or []:
+            if script.get("id") == name:
+                return script.get("migration_tag") or ""
+        return ""
+
     def upload_worker(self, name: str, main: str, compatibility_date: str, modules: dict[str, bytes],
-                      kv_id: str) -> None:
+                      kv_id: str, migration_tag: str = "") -> None:
         metadata = {
             "main_module": main,
             "compatibility_date": compatibility_date,
-            "bindings": [{"type": "kv_namespace", "name": KV_BINDING, "namespace_id": kv_id}],
+            "bindings": [{"type": "kv_namespace", "name": KV_BINDING, "namespace_id": kv_id},
+                         {"type": "durable_object_namespace", "name": HUB_BINDING, "class_name": HUB_CLASS}],
             "keep_bindings": ["secret_text", "secret_key"],
             "observability": {"enabled": True},
         }
+        if migration_tag != HUB_TAG:
+            metadata["migrations"] = {"new_tag": HUB_TAG, "steps": [{"new_sqlite_classes": [HUB_CLASS]}],
+                                      **({"old_tag": migration_tag} if migration_tag else {})}
         parts = [("metadata", "", "application/json", json.dumps(metadata).encode())]
         parts += [(n, n, "application/javascript+module", code) for n, code in modules.items()]
         data, ctype = multipart(parts)
@@ -230,8 +244,9 @@ def deploy(cf: Cloudflare, name: str, subdomain: str, worker_secrets: dict[str, 
     title = f"{name}-{KV_BINDING}"
     kv_id, created = cf.kv_namespace(title)
     log(f"  KV namespace {title}: {'created' if created else 'found'}")
-    cf.upload_worker(name, main, date, modules, kv_id)
-    log(f"  Worker {name}: uploaded ({len(modules)} modules)")
+    tag = cf.migration_tag(name)
+    cf.upload_worker(name, main, date, modules, kv_id, tag)
+    log(f"  Worker {name}: uploaded ({len(modules)} modules{'' if tag == HUB_TAG else ', live link created'})")
     cf.enable_workers_dev(name)
     for key, value in worker_secrets.items():
         if value:

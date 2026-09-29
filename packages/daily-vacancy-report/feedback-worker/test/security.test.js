@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import worker, { sign } from "../src/index.js";
 import { today } from "../src/lib.js";
-import { BASE, testEnv, valuesWith } from "./helpers.js";
+import { BASE, memoryHub, testEnv, valuesWith } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const HOSTILE = `<script>alert(1)</script>"'><img src=x onerror=alert(2)>`;
@@ -127,10 +127,27 @@ describe("queue flag", () => {
   });
 });
 
+describe("live link", () => {
+  it("never opens a socket or bumps the hub without the token, and its internal routes are not public", async () => {
+    const HUB = memoryHub();
+    const env = testEnv({ HUB });
+    for (const headers of [{ Upgrade: "websocket" }, { Upgrade: "websocket", Authorization: "Bearer wrong-token" }]) {
+      expect((await get("/api/live", env, headers)).status).toBe(401);
+    }
+    for (const path of ["/bump", "/seen", "/presence", "/connect", "/api/bump", "/api/presence"]) {
+      const res = await worker.fetch(new Request(`${BASE}${path}`, { method: "POST", body: JSON.stringify({ flag: HOSTILE }),
+        headers: { Upgrade: "websocket" } }), env);
+      expect([401, 404]).toContain(res.status);
+    }
+    expect(HUB.state.sockets).toEqual([]);
+    expect(HUB.storage.size).toBe(0);
+  });
+});
+
 describe("authentication", () => {
   it("keeps every HermitShell API route behind the token", async () => {
     const env = testEnv();
-    const routes = [["GET", "/events"], ["POST", "/ack"], ["GET", "/api/queue"], ["GET", "/api/queue/flag"], ["POST", "/api/queue/ack"],
+    const routes = [["GET", "/events"], ["POST", "/ack"], ["GET", "/api/queue"], ["GET", "/api/queue/flag"], ["GET", "/api/live"], ["POST", "/api/queue/ack"],
       ["GET", "/api/file?key=cvfile:1"], ["POST", "/api/status"], ["POST", "/api/invite"]];
     for (const [method, path] of routes) {
       for (const headers of [{}, { Authorization: "Bearer wrong-token" }, { Authorization: "api-token" }]) {
