@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import worker from "../../packages/daily-vacancy-report/feedback-worker/src/index.js";
 import { LINK_DAYS, sign, today } from "../../packages/daily-vacancy-report/feedback-worker/src/lib.js";
+import { zonedToday } from "../../packages/daily-vacancy-report/feedback-worker/src/stats.js";
 
 const BASE = "https://vacancy-feedback.example.workers.dev";
 const SECRET = "docs-secret";
@@ -134,6 +135,41 @@ const STATUS = {
   timezone: "Europe/London",
 };
 await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: STATUS });
+
+// Stats HermitShell sends for each profile (profile_stats.py): made-up daily counts, the same every time.
+function fakeStats(daysBack, scale, seed) {
+  let x = seed;
+  const rand = () => (x = (x * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const end = Date.parse(`${zonedToday("Europe/London")}T00:00:00Z`);
+  const days = {};
+  for (let i = daysBack - 1; i >= 0; i--) {
+    const iso = new Date(end - i * day).toISOString().slice(0, 10);
+    const weekend = [0, 6].includes(new Date(end - i * day).getUTCDay());
+    const growth = 0.7 + 0.5 * (1 - i / daysBack);
+    const rated = Math.round((weekend ? 5 : 13) * scale * growth * (0.6 + rand() * 0.8));
+    const sent = Math.round(rated * (0.35 + rand() * 0.25));
+    const pick = (p) => (rand() < p ? 1 + (rand() < p / 3 ? 1 : 0) : 0);
+    days[iso] = [Math.round(rated * (7 + rand() * 5)), rated, sent, Math.round(sent * (6.3 + rand() * 1.6)), sent,
+      Math.round(sent * rand() * 0.45), 1, pick(0.4), pick(0.25), pick(0.3), pick(0.16), pick(0.06), pick(0.05),
+      pick(0.1), pick(0.05), pick(0.06)];
+  }
+  const range = (n) => ({
+    employers: [["Northwind Traders", 9], ["Contoso", 7], ["Fabrikam", 6], ["Adventure Works", 4], ["Tailspin Toys", 3]].map(([e, c]) => [e, Math.ceil(c * n / 30)]),
+    sources: [["uk.indeed.com", 21], ["reed.co.uk", 14], ["web search", 11], ["cv-library.co.uk", 6], ["jobs.ac.uk", 3]].map(([s, c]) => [s, Math.ceil(c * n / 30)]),
+    modes: [["Hybrid", 18], ["Remote", 9], ["On-site", 5]].map(([m, c]) => [m, Math.ceil(c * n / 30)]),
+    fit: [0, 1, 3, 6, 11, 19, 27, 31, 18, 7, 2].map((c) => Math.ceil(c * n / 30)),
+    salary: 52000,
+    best: [{ title: "Senior Data Engineer (Python, Airflow)", employer: "Northwind Traders", fit: 9, day: new Date(end - 2 * day).toISOString().slice(0, 10) },
+      { title: "Analytics Engineer (dbt, Snowflake)", employer: "Contoso", fit: 9, day: new Date(end - 5 * day).toISOString().slice(0, 10) },
+      { title: "Data Platform Engineer", employer: "Fabrikam", fit: 8, day: new Date(end - 9 * day).toISOString().slice(0, 10) }],
+  });
+  return { v: 1, today: new Date(end).toISOString().slice(0, 10), since: new Date(end - (daysBack - 1) * day).toISOString().slice(0, 10), days,
+    ranges: { 7: range(7), 30: range(30), 90: range(90), 365: range(365) },
+    pipeline: { interested: 9, good_match: 4, not_for_me: 12, applied: 6, heard_back: 3, rejected: 2 } };
+}
+for (const [u, stats] of [["owner", fakeStats(75, 1, 7)], ["sam-lee", fakeStats(12, 0.6, 11)]]) {
+  await call("/api/stats", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: { u, stats } });
+}
 await save("link-profile-removed", await call(`/f?${new URLSearchParams(await link("interested", TITLE, { profile: "casey-quinn" }))}`));
 
 // Invite sign-up.
@@ -165,6 +201,10 @@ await save("admin-dashboard", await admin("/admin?done=queued"));
 await save("admin-profile", await framed(await admin("/admin/profile?u=owner"), admin));
 await save("admin-profile-scanning", await framed(await admin("/admin/profile?u=sam-lee"), admin));
 await save("admin-settings", await admin("/admin/settings"));
+await save("admin-stats", await admin("/admin/stats?u=owner"));
+await save("admin-stats-90-days", await admin("/admin/stats?u=owner&r=90"));
+await save("admin-stats-new-profile", await admin("/admin/stats?u=sam-lee&r=7"));
+await save("admin-stats-empty", await admin("/admin/stats?u=jordan-patel"));
 
 // A fresh install: HermitShell has connected, nothing else is set yet.
 const fresh = { ...STATUS, profiles: [{ ...STATUS.profiles[0], has_cv: false, job: { ...JOB, titles: [], region: "", places: [] } }],

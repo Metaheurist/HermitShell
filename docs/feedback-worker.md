@@ -362,7 +362,7 @@ whole tool shares).
   **no CV** tag when there is none yet. **Send jobs now** runs that profile's report straight away
   (see [Send jobs now](#send-jobs-now)); while a report is running, daily or sent now, the row says
   **scanning now** instead. **Manage** opens that profile's page (details, job search, report time
-  and CV). Pause, resume or delete
+  and CV) and **Stats** its [stats page](#stats). Pause, resume or delete
   (deleting removes their CV and history from your server, their answers still waiting in KV and
   their name and email from the logs; the owner can't be deleted).
 - **Crawler**: give a profile its own Firecrawl key (it then uses only that key), or leave it on
@@ -455,6 +455,42 @@ checking every 30 seconds (from HermitShell's status report only, with no KV lis
 minutes. A second press while a scan is running does nothing. A profile without a CV has no button;
 HermitShell refuses the request and says so under **HermitShell could not apply**.
 
+#### Stats
+
+Each dashboard row has a **Stats** button showing a small line of the jobs sent each day this week
+and how many; the profile page has one at the top. It opens `/admin/stats`, one page of KPIs and
+charts for that profile over the last **7 days**, **30 days**, **90 days** or **12 months**.
+
+<img src="images/worker/admin-stats.png" alt="A profile's stats page: KPI tiles, activity chart, funnel, answers, match scores, applications and top lists" width="720">
+
+- **Tiles**: postings scanned, jobs rated, jobs sent, average match of the jobs sent (out of 10),
+  liked (Interested or Good match), applied, heard back, and cover letters plus tailored CVs asked
+  for. Each has a line of the period and, when there is data for the period before, the change
+  against it (not for 12 months, since older data is pruned after a year).
+- **Chips**: strong matches (8 and over), scans, the best day, week or month, the median salary of the
+  jobs sent, and "not for me" presses.
+- **Activity**: jobs rated and sent per day (per week for 90 days, per month for 12 months), with a
+  green dot where applications were made. Hover a bar for its numbers.
+- **Funnel** from scanned to heard back, with the share kept at each step; **Answers**, a ring of
+  the buttons pressed; **Match scores**, how the jobs rated scored from 0 to 10.
+- **Where applications stand**: every job's latest answer, whatever the period: waiting (applied),
+  heard back, rejected and interested, with the reply rate.
+- **Top employers**, **Top sources** (with the split between hybrid, remote and on-site) and the
+  **best matches sent**.
+
+<table><tr><th>90 days</th><th>Someone who joined last week</th></tr>
+<tr><td><img src="images/worker/admin-stats-90-days.png" alt="The stats page for 90 days" width="360"></td>
+<td><img src="images/worker/admin-stats-new-profile.png" alt="The stats page of a profile that is a few days old" width="360"></td></tr></table>
+
+The numbers come from the profile's tracker (`job_tracker.db`) on your server:
+`profile_stats.py` counts each day in `HERMES_TIMEZONE` and `profiles.py` sends the result to the
+Worker (`POST /api/stats`, kept in KV as `stats:<id>`) when it has changed, at most every 30
+minutes per profile, and straight after each report. Notes typed on the buttons' pages, job links
+and contact details are never sent; employer names, job titles and sources of the jobs sent are.
+A deleted profile's stats are removed with it. The page is drawn on the Worker as plain SVG and CSS,
+without JavaScript, and its icons and charts animate in unless your system asks for reduced motion.
+`python3 profile_stats.py` prints the owner's numbers on the server.
+
 Every control is described in [screenshots.md](screenshots.md#profiles).
 
 Sign-in: five wrong passwords lock that address (an IPv6 /64 counts as one address) out for 15
@@ -525,7 +561,9 @@ seconds between runs (about 5,200 reads and requests a day) and only syncs when 
 changes, so an item that keeps failing is retried by the next run rather than listed every 15
 seconds. Admin pages also skip the listing when the flag says the queue is empty. Status reports
 from HermitShell are only written when something changed or every 15 minutes (at most 96 of the
-1,000 writes a day), plus two per report (when it starts and when it ends). If the Durable Object allowance ever ran out, saves still work and
+1,000 writes a day), plus two per report (when it starts and when it ends). Each profile's stats
+are written only when they changed, at most every 30 minutes, plus once after each report (in
+practice a few writes per profile a day). If the Durable Object allowance ever ran out, saves still work and
 HermitShell falls back to polling.
 
 ## Removing it

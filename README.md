@@ -23,8 +23,9 @@ this repo).
 <td><img src="docs/images/emails/weekly.png" alt="Weekly roll-up" width="250"></td>
 <td><img src="docs/images/emails/cover-letter.png" alt="Cover letter email" width="250"></td>
 <td><img src="docs/images/worker/admin-dashboard.png" alt="Admin page" width="300"></td>
+<td><img src="docs/images/worker/admin-stats.png" alt="A profile's stats page" width="200"></td>
 </tr>
-<tr><td align="center">Weekly roll-up</td><td align="center">Cover letter on request</td><td align="center">Profiles admin page</td></tr>
+<tr><td align="center">Weekly roll-up</td><td align="center">Cover letter on request</td><td align="center">Profiles admin page</td><td align="center">Stats per profile</td></tr>
 </table>
 
 Every email, PDF and page, with what each part does: [docs/screenshots.md](docs/screenshots.md).
@@ -41,7 +42,8 @@ Every email, PDF and page, with what each part does: [docs/screenshots.md](docs/
   within minutes, written only from facts in your real CV.
 - **Weekly roll-up** every Sunday: best jobs, applications and common gaps.
 - **Extra profiles**: invite people from the Worker's `/admin` page; their CV becomes their own
-  daily report.
+  daily report. Send anyone's jobs now, and open their stats: KPIs and charts over 7 days to 12
+  months.
 - **Automatic Cloudflare setup**: the wizard deploys the free Worker behind the buttons, `/admin`
   and sign-up links from a Cloudflare API token ([guide](docs/cloudflare-setup.md)).
 

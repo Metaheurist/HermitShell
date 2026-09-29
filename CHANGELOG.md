@@ -8,6 +8,21 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A stats page for every profile.**
+  - A **Stats** button on each dashboard row, showing this week's jobs sent as a small line and a number,
+    and on each profile's page, opens `/admin/stats`. It covers the last 7 days, 30 days, 90 days or 12
+    months.
+  - **Tiles** for postings scanned, jobs rated, jobs sent, average match, liked, applied, heard back, and
+    letters and CVs. Each tile has a line of the period and its change against the period before.
+  - **Chips** for strong matches, scans, the best day, week or month, and the median salary.
+  - **Charts:** an activity chart, a funnel, a ring of the buttons pressed, match scores from 0 to 10, where
+    applications stand (with the reply rate), top employers and sources, and the best matches sent.
+  - It is all inline SVG and CSS with animated icons, and there's no JavaScript. The motion is off for
+    people who ask for reduced motion.
+  - The new `profile_stats.py` counts each day from the profile's tracker. `profiles.py` sends the result
+    to the Worker's new `/api/stats` when it changes: at most every 30 minutes per profile, and straight
+    after each report. Notes, job links and contact details stay on the server. A deleted or
+    unsubscribed profile's stats are removed, and the privacy notice says what the stats page holds.
 - **Send jobs now, and a Hermes job for every profile's daily report.**
   - **Send jobs now**, on the dashboard and on each profile's page, runs that profile's report
     straight away. HermitShell starts it within seconds over the live link, in the background

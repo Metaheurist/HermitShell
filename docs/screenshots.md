@@ -295,6 +295,7 @@ deleted ([data protection](configuration.md#data-protection)).
 | Profile, Status | Name, email and start date, **no CV** when there is none yet; owner, active or paused; **scanning now** while a report runs; time of the last report and the daily report time |
 | **Send jobs now** | Runs that profile's report straight away and emails it when the scan finishes, even if nothing new turned up. Shows **Scanning…** while a report runs; missing without a CV |
 | **Manage** | Opens [that profile's page](#a-profiles-page): details, job search, report time and CV |
+| **Stats** (line + number) | This week's jobs sent, day by day; opens [that profile's stats](#a-profiles-stats) |
 | Crawler: **Their Firecrawl key** + **Save** | Gives that profile its own Firecrawl key, used instead of the global one |
 | **Use global key** | Takes a profile back to the global key |
 | **Pause** / **Resume** | Stops or restarts that profile's reports |
@@ -341,6 +342,7 @@ HermitShell hasn't collected them.
 | Section | What it sets |
 | --- | --- |
 | **Back to profiles** | Floats in the top-left corner while you scroll |
+| **View stats** | Opens [this profile's stats](#a-profiles-stats) |
 | Status box | Under the tabs: **Up to date**, **Waiting for HermitShell** while a save is queued (it checks again by itself), **Applied by HermitShell**, **Scanning for jobs since…** while a report runs, or why a change couldn't be applied |
 | Details | Name, the email address reports go to, phone and home town (for cover letters) |
 | Job search | Job titles (up to 8), region or city (used in web searches), country from a list, towns, remote elsewhere, seniority, minimum salary (empty = none) and currency, employment types, work location, hiding unnamed agency adverts |
@@ -363,6 +365,30 @@ yours. Changes to different fields are both kept.
 
 *While a report runs (here after **Send jobs now**), the status box says when the scan started and
 the button waits until it has finished.*
+
+### A profile's stats
+
+`/admin/stats?u=<id>`: one profile's numbers at a glance. Hover a bar or ring segment for its figures.
+
+<img src="images/worker/admin-stats.png" alt="A profile's stats page for 30 days" width="620">
+
+| Part | What it shows |
+| --- | --- |
+| **7 days** / **30 days** / **90 days** / **12 months** | The period every tile, chip and chart covers (except **Where applications stand**) |
+| Tiles | Scanned, Rated, Sent, Avg match (out of 10), Liked, Applied, Heard back, Letters & CVs; a line of the period and the change against the period before (green up, red down) |
+| Chips | Strong matches (8+), scans, the best day, week or month, median salary of the jobs sent, "not for me" presses |
+| Activity | Jobs rated (light) and sent (dark) per day, week or month; green dots for applications |
+| Funnel | Scanned, rated, sent, liked, applied, heard back, and the share kept at each step |
+| Answers | The buttons pressed in the period, as a ring |
+| Match scores | How many jobs rated scored each mark from 0 to 10 |
+| Where applications stand | Each job's latest answer, over all time: waiting, heard back, rejected, interested; the reply rate |
+| Top employers / Top sources | Where the jobs sent came from, and their hybrid, remote and on-site split |
+| Best matches sent | The three highest scores of the period |
+
+<table><tr><th>90 days, weekly bars</th><th>A new profile, 7 days</th><th>Before HermitShell sends stats</th></tr>
+<tr><td><img src="images/worker/admin-stats-90-days.png" alt="The stats page for 90 days" width="250"></td>
+<td><img src="images/worker/admin-stats-new-profile.png" alt="The stats page of a profile that is a few days old" width="250"></td>
+<td><img src="images/worker/admin-stats-empty.png" alt="The stats page before any stats have arrived" width="250"></td></tr></table>
 
 ## Regenerating these images
 
