@@ -327,6 +327,33 @@ class Tracker:
             (since - 53 * DAY,))]
         return {"jobs": jobs, "events": events, "runs": runs, "applications": applied}
 
+    # ------------------------------------------------------------------ retention
+
+    def prune(self, before: float) -> dict[str, int]:
+        """Delete jobs with no sighting, answer or letter since `before` (with their answers, reminders and
+        letter records) and runs older than that. The skills pool is kept. Deleted rows are overwritten on disk."""
+        self.db.execute("PRAGMA secure_delete=ON")
+        stale = """SELECT j.key FROM jobs j WHERE coalesce(j.last_seen, j.first_seen, 0) < :t
+                   AND NOT EXISTS (SELECT 1 FROM events e WHERE e.key = j.key AND e.at >= :t)
+                   AND NOT EXISTS (SELECT 1 FROM letters l WHERE l.key = j.key AND l.at >= :t)"""
+        keys = [r["key"] for r in self.db.execute(stale, {"t": before})]
+        counts = {"jobs": len(keys), "events": 0, "runs": 0}
+        for i in range(0, len(keys), 500):
+            chunk = keys[i:i + 500]
+            marks = ",".join("?" * len(chunk))
+            counts["events"] += self.db.execute(f"DELETE FROM events WHERE key IN ({marks})", chunk).rowcount
+            self.db.execute(f"DELETE FROM reminders WHERE key IN ({marks})", chunk)
+            self.db.execute(f"DELETE FROM letters WHERE key IN ({marks})", chunk)
+            self.db.execute(f"DELETE FROM jobs WHERE key IN ({marks})", chunk)
+        counts["events"] += self.db.execute("DELETE FROM events WHERE at < ? AND key NOT IN (SELECT key FROM jobs)",
+                                            (before,)).rowcount
+        counts["runs"] = self.db.execute("DELETE FROM runs WHERE at < ?", (before,)).rowcount
+        self.db.commit()
+        if any(counts.values()):
+            self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            self.db.execute("VACUUM")
+        return counts
+
 
 # --------------------------------------------------------------------------- feedback sync
 

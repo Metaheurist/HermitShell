@@ -75,7 +75,7 @@ def profile_text(tracker: Tracker | None = None) -> str:
     for name in (env("JOB_PROFILE_FILE") or "job_profile.md", env("COVER_LETTER_CV_FILE")):
         path = Path(name) if name and Path(name).is_absolute() else PACKAGE_DIR / (name or "")
         if name and path.is_file():
-            parts.append(path.read_text(encoding="utf-8").strip())
+            parts.append(hc.read_private_text(path).strip())
     if parts and skills_text(tracker):
         parts.append(skills_text(tracker))
     return "\n\n".join(parts)
@@ -272,7 +272,7 @@ def make_letter(tracker: Tracker, key: str, note: str, model_info: tuple[str, st
     pdf = build_pdf(job, name, paragraphs, when)
     LETTER_DIR.mkdir(parents=True, exist_ok=True)
     path = LETTER_DIR / f"{when:%Y-%m-%d}-{slug(employer(job))}-{slug(job_title(job))}.pdf"
-    path.write_bytes(pdf)
+    hc.write_private(path, pdf)
     if not dry_run:
         filename = re.sub(r'[\\/:*?"<>|]+', "", f"Cover letter - {name or 'Candidate'} - {job_title(job)}")[:120] + ".pdf"
         subject, body, text = email_bodies(job, paragraphs, filename, note)
@@ -294,7 +294,7 @@ def make_cv(tracker: Tracker, key: str, note: str, model_info: tuple[str, str, i
     when = datetime.now(ZoneInfo(env("HERMES_TIMEZONE", "UTC") or "UTC"))
     CV_DIR.mkdir(parents=True, exist_ok=True)
     path = CV_DIR / f"{when:%Y-%m-%d}-{slug(employer(job))}-{slug(job_title(job))}.pdf"
-    path.write_bytes(pdf)
+    hc.write_private(path, pdf)
     if not dry_run:
         filename = re.sub(r'[\\/:*?"<>|]+', "", f"CV - {name} - {job_title(job)}")[:120] + ".pdf"
         preview = [p for p in (cv["headline"], cv["summary"], "Skills: " + ", ".join(cv["skills"])) if p]

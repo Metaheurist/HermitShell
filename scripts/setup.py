@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import base64
 import getpass
 import json
 import os
@@ -63,7 +64,11 @@ PACKAGES = {
                         "cron": "vacancy-profiles", "schedule": "*/5 * * * *",
                         "intro": "Adds people you invite from the feedback Worker's /admin page (their CV becomes "
                                  "their own daily report), applies unsubscribes and admin changes. Needs the "
-                                 "feedback Worker; runs silently when idle."}],
+                                 "feedback Worker; runs silently when idle."},
+                       {"id": "maintenance", "title": "Nightly maintenance", "script": "maintenance.py",
+                        "cron": "vacancy-maintenance", "schedule": "30 3 * * *",
+                        "intro": "Deletes data past its retention period, encrypts older personal files, tightens "
+                                 "file permissions and writes an encrypted backup (14 daily and 8 weekly kept)."}],
     },
 }
 JOB_LEVELS = [("junior", "Junior / graduate / entry level"), ("mid", "Mid level"), ("senior", "Senior"),
@@ -533,6 +538,17 @@ class Wizard:
                      f"Firecrawl, Tavily or Scrapfly (all have free tiers).{RESET}")
         if not self.value("SMTP_USER") or not self.value("SMTP_PASSWORD"):
             self.say(f"{YELLOW}  SMTP login incomplete: reports can't be emailed until it is set.{RESET}")
+        self.data_key()
+
+    def data_key(self) -> None:
+        """HERMES_DATA_KEY encrypts CVs, profiles, letters and backups: made once and never replaced, since files
+        encrypted with it can't be read without it."""
+        if value := self.preset("HERMES_DATA_KEY"):
+            self.set("HERMES_DATA_KEY", value)
+            return
+        self.set("HERMES_DATA_KEY", base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("="))
+        self.say(f"  {DIM}generated HERMES_DATA_KEY: it encrypts CVs, profiles, letters and the nightly backups. "
+                 f"Copy it from .env into a password manager; without it those can't be read.{RESET}")
 
     # ------------------------------------------------------------------ package: daily-vacancy-report
 

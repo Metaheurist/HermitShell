@@ -115,13 +115,18 @@ class ProfileError(ValueError):
 
 def read_json(path: Path, default):
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(hc.read_private_text(path))
     except (OSError, ValueError):
         return default
 
 
 def write_json(path: Path, data, private: bool = False) -> None:
-    hc.write_atomic(path, json.dumps(data, indent=2, ensure_ascii=False), private)
+    """Private files (profiles, their settings and keys) are encrypted when HERMES_DATA_KEY is set."""
+    text = json.dumps(data, indent=2, ensure_ascii=False)
+    if private:
+        hc.write_private(path, text)
+    else:
+        hc.write_atomic(path, text)
 
 
 def profile_dir(pid: str) -> Path:
@@ -135,7 +140,7 @@ def load(pid: str) -> dict | None:
 
 
 def save(profile: dict) -> None:
-    write_json(profile_dir(profile["id"]) / "profile.json", profile)
+    write_json(profile_dir(profile["id"]) / "profile.json", profile, private=True)
 
 
 def all_profiles() -> list[dict]:
@@ -194,7 +199,8 @@ def update_dashboard_env(updates: dict[str, str | None]) -> None:
         else:
             values[key] = value
             os.environ[key] = value
-    write_json(DASHBOARD_FILE, {"env": values, "updated": time.time()}, private=True)
+    # Read by hermes_common before .env (and so before HERMES_DATA_KEY) is loaded: 0600, not encrypted.
+    hc.write_atomic(DASHBOARD_FILE, json.dumps({"env": values, "updated": time.time()}, indent=2), private=True)
     load_env_file()
 
 
@@ -338,25 +344,31 @@ def profile_id(item: dict) -> str:
 
 
 def read_cv(d: Path, item: dict, api) -> str:
-    """The CV text from the uploaded file (kept as cv.<kind>), else the pasted text; saved as cv.txt."""
+    """The CV text from the uploaded file, else the pasted text; saved as cv.txt (encrypted when HERMES_DATA_KEY
+    is set). The uploaded file itself is deleted once its text has been read."""
     d.mkdir(parents=True, exist_ok=True)
     os.chmod(d, 0o700)
     text = ""
     cv = item.get("cv") or {}
     if cv.get("key"):
         kind = cv.get("kind") if cv.get("kind") in cv_text.KINDS else "txt"
-        data = api.file(cv["key"])
-        (d / f"cv.{kind}").write_bytes(data)
+        upload = d / f".upload.{kind}"
+        hc.write_atomic(upload, api.file(cv["key"]), private=True)
         try:
-            text = cv_text.clean(cv_text.extract_file_isolated(d / f"cv.{kind}"))
+            text = cv_text.clean(cv_text.extract_file_isolated(upload))
         except Exception as exc:  # a malformed or hostile file must not block the pasted fallback
             log(f"Could not read the CV file in {d.name}: {exc.__class__.__name__}")
+        finally:
+            upload.unlink(missing_ok=True)
+        for old in d.glob("cv.*"):
+            if old.name != "cv.txt":
+                old.unlink(missing_ok=True)
     pasted = cv_text.clean(str(item.get("cv_text") or ""))
     if len(text) < MIN_CV_CHARS and len(pasted) > len(text):
         text = pasted
     if len(text) < MIN_CV_CHARS:
         raise ProfileError("no readable text in the CV (a scanned image?) and nothing pasted")
-    (d / "cv.txt").write_text(text, encoding="utf-8")
+    hc.write_private(d / "cv.txt", text)
     return text
 
 
@@ -388,10 +400,11 @@ def create_profile(item: dict, api, model_info_factory=lambda: connect_model("JO
     text = read_cv(d, item, api)
 
     built = ask_model(text, {**item, "name": name}, model_info_factory())
-    (d / "job_profile.md").write_text(profile_markdown({**item, "name": name}, built), encoding="utf-8")
-    write_json(d / "cv_keywords.json", keywords_json(built))
+    hc.write_private(d / "job_profile.md", profile_markdown({**item, "name": name}, built))
+    write_json(d / "cv_keywords.json", keywords_json(built), private=True)
     kept = read_json(d / "settings.json", {})
-    write_json(d / "settings.json", {**kept, **search_settings(built, lambda k: kept[k] if k in kept else env(k))})
+    write_json(d / "settings.json", {**kept, **search_settings(built, lambda k: kept[k] if k in kept else env(k))},
+               private=True)
     now = time.time()
     profile = {**(existing or {}), "id": pid, "name": name, "email": email,
                **({} if existing else {"invite": str(item.get("invite") or "")[:40]}),
@@ -526,12 +539,16 @@ def send_welcome(profile: dict, built: dict, updated: bool) -> None:
         f'{_chips([s["name"] for s in built["skills"]], "#065f46", "#ecfdf5")}</div>',
         f'<div style="font-size:15px;font-weight:700">How it works</div>{how}',
     ]
+    privacy = f"{hc.env('JOB_FEEDBACK_URL', '').rstrip('/')}/privacy" if unsub else ""
     footer = ("Your first report arrives with the next daily run. Something wrong in the lists above? "
               "Reply to this email." + (f' <a href="{html.escape(unsub)}" style="color:#64748b">Unsubscribe</a> '
-                                        "deletes your profile and CV." if unsub else ""))
+                                        "deletes your profile and CV. "
+                                        f'<a href="{html.escape(privacy)}" style="color:#64748b">How your data is '
+                                        "handled</a>." if unsub else ""))
     text = (f"{title}\n\nHermes will search for: {', '.join(built['titles'])}\n"
             f"Skills: {', '.join(s['name'] for s in built['skills'])}\n\n"
-            "Your first report arrives with the next daily run." + (f"\n\nUnsubscribe: {unsub}" if unsub else ""))
+            "Your first report arrives with the next daily run."
+            + (f"\n\nUnsubscribe: {unsub}\nHow your data is handled: {privacy}" if unsub else ""))
     send(profile["email"], f"{FROM_NAME}: {title.lower() if updated else 'your profile is ready'}",
          _email(header, blocks, footer), text)
 
@@ -603,6 +620,59 @@ def set_status(pid: str, status: str) -> None:
     log(f"Profile {pid} {status}")
 
 
+def log_files() -> list[Path]:
+    """Script output that may name a person: Hermes' logs, scheduled-job output and run logs in state/."""
+    roots = [hc.HERMES_HOME / "logs", hc.HERMES_HOME / "cron" / "output"]
+    found = [f for root in roots if root.is_dir() for f in root.rglob("*")]
+    return [f for f in found + sorted(STATE_DIR.glob("*.log")) if f.is_file() and not f.is_symlink()]
+
+
+def scrub_logs(terms: list[str], max_bytes: int = 50 * 1024 * 1024) -> int:
+    """Replace a deleted person's email, name and profile id with [deleted] in log files; returns files changed.
+    Files are rewritten in place so a process still appending to one keeps writing to the same file."""
+    words = sorted({" ".join(str(t).split()) for t in terms if len(" ".join(str(t).split())) >= 4}, key=len, reverse=True)
+    if not words:
+        return 0
+    rx = re.compile("|".join(r"\s+".join(map(re.escape, w.split())) for w in words), re.I)
+    changed = 0
+    for path in log_files():
+        try:
+            if path.stat().st_size > max_bytes:
+                continue
+            text = path.read_bytes().decode("utf-8", errors="surrogateescape")
+            new, n = rx.subn("[deleted]", text)
+            if n:
+                with open(path, "r+b") as fh:
+                    fh.write(new.encode("utf-8", errors="surrogateescape"))
+                    fh.truncate()
+                changed += 1
+        except OSError:
+            continue
+    return changed
+
+
+def forget(profile: dict) -> None:
+    """Delete an extra profile's folder (CV, profile, tracker, letters, keys) and its traces in the logs."""
+    remove_dir(profile["id"])
+    files = scrub_logs([profile.get("email", ""), profile.get("name", ""), profile["id"]])
+    log(f"Profile deleted; removed from {files} log file(s)")
+
+
+def send_goodbye(profile: dict) -> None:
+    first = profile["name"].split()[0]
+    header = email_header(FROM_NAME, _today(), f"Goodbye, {first}", "You are unsubscribed and your data is deleted",
+                          [("0", "More reports"), ("Deleted", "Profile, CV and history")])
+    body = ('<p style="margin:0 0 8px;font-size:14px;line-height:21px;color:#334155">Hermes has deleted your '
+            "profile, your CV, the jobs it found for you, your feedback, cover letters and tailored CVs, and has "
+            "removed your name and email address from its logs.</p>"
+            '<p style="margin:0;font-size:14px;line-height:21px;color:#334155">This is the last email you will get '
+            "from it. Copies in the nightly encrypted backups expire as those backups are rotated out.</p>")
+    text = (f"Goodbye, {first}\n\nHermes has deleted your profile, your CV, the jobs it found for you, your feedback, "
+            "cover letters and tailored CVs, and removed your name and email address from its logs. This is the "
+            "last email you will get from it.")
+    send(profile["email"], f"{FROM_NAME}: you are unsubscribed", _email(header, [body]), text)
+
+
 def unsubscribe(pid: str, reason: str = "") -> None:
     profile = load(pid)
     if not profile:
@@ -612,11 +682,12 @@ def unsubscribe(pid: str, reason: str = "") -> None:
         set_status(OWNER, "paused")
         note = "Your own reports are paused. Resume them from /admin or with profiles.py --resume owner."
     else:
-        remove_dir(pid)
-        log(f"Profile {pid} deleted (unsubscribed)")
-        note = "Their profile, CV and history have been deleted."
+        forget(profile)
+        notify(lambda: send_goodbye(profile))
+        note = "Their profile, CV and history have been deleted, their details removed from the logs, " \
+               "and they were emailed a confirmation."
     notify(lambda: send_owner(f"{profile['name']} unsubscribed",
-                              [f"{profile['name']} <{profile.get('email', '')}> used the unsubscribe link.", note]
+                              [f"{profile['name']} used the unsubscribe link.", note]
                               + ([f"Their feedback: {reason}"] if reason else [])))
 
 
@@ -710,7 +781,7 @@ def apply_profile_settings(profile: dict, item: dict) -> None:
             update_dashboard_env(updates)
         else:
             path = profile_dir(profile["id"]) / "settings.json"
-            write_json(path, {**read_json(path, {}), **updates})
+            write_json(path, {**read_json(path, {}), **updates}, private=True)
         profile["titles"] = form["titles"] or profile.get("titles", [])
     profile["updated"] = time.time()
     save(profile)
@@ -751,8 +822,10 @@ def admin_action(item: dict, api=None) -> None:
     elif action in ("pause", "resume"):
         set_status(pid, "paused" if action == "pause" else "active")
     elif action == "delete":
-        remove_dir(pid)
-        log(f"Profile {pid} deleted from /admin")
+        if pid == OWNER:
+            raise ProfileError("the owner profile cannot be deleted")
+        forget(profile)
+        log("A profile was deleted from /admin")
     else:
         raise ProfileError(f"unknown admin action {action!r}")
 
@@ -976,9 +1049,10 @@ def main(argv: list[str] | None = None) -> int:
             set_status(args.pause or args.resume, "paused" if args.pause else "active")
             return 0
         if args.delete:
-            if not load(args.delete):
+            profile = load(args.delete)
+            if not profile:
                 raise ProfileError(f"no profile {args.delete}")
-            remove_dir(args.delete)
+            forget(profile)
             print(f"Deleted {args.delete}.")
             return 0
     except ProfileError as exc:

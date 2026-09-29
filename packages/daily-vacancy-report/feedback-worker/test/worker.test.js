@@ -236,18 +236,30 @@ describe("feedback worker", () => {
     expect(sam.events).toMatchObject([{ a: "interested", u: "sam-lee" }]);
   });
 
-  it("asks before unsubscribing and queues the removal for Hermes", async () => {
+  it("asks before unsubscribing, queues the removal for Hermes and drops uncollected answers", async () => {
     const env = testEnv();
+    await worker.fetch(formRequest({ ...(await link("interested", "nijobs:9", "Analyst", "sam-lee")), r: "commute" }), env);
+    await worker.fetch(formRequest({ ...(await link("applied")), r: "" }), env);
     const params = await link("unsubscribe", "profile", "Sam Lee", "sam-lee");
     const confirm = await worker.fetch(new Request(`${BASE}/f?${new URLSearchParams(params)}`), env);
     const body = await confirm.text();
     expect(body).toContain("deletes this profile");
+    expect(body).toContain('href="/privacy"');
     expect(body).toContain("Confirm: unsubscribe");
-    expect(env.FEEDBACK.store.size).toBe(0);
     const res = await worker.fetch(formRequest({ ...params, r: "found a job" }), env);
-    expect(await res.text()).toContain("gets no more reports");
+    expect(await res.text()).toContain("emails you when it is done");
     expect(valuesWith(env, "queue:")).toMatchObject([{ type: "unsubscribe", u: "sam-lee", reason: "found a job" }]);
-    expect(valuesWith(env, "event:")).toEqual([]);
+    expect(valuesWith(env, "event:").map((e) => e.a)).toEqual(["applied"]);
+    expect([...env.FEEDBACK.store.keys()].filter((k) => k.includes("sam-lee"))).toEqual([]);
+  });
+
+  it("publishes a privacy notice", async () => {
+    const res = await worker.fetch(new Request(`${BASE}/privacy`), testEnv());
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    for (const heading of ["What is kept", "How long", "How it is protected", "Deleting your data"]) {
+      expect(body).toContain(heading);
+    }
   });
 
   it("only pauses when the owner unsubscribes", async () => {

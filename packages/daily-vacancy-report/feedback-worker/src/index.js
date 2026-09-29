@@ -15,8 +15,9 @@ import { handleAdmin, handleApi } from "./admin.js";
 import { handleJoin, queueItem } from "./join.js";
 import {
   CONTROL_RE, LINK_DAYS, authorised, deleteAndUnflag, esc, eventFlag, eventPrefix, json, limitedForm, limitedJson,
-  listFlagged, page, safeEqual, setFlag, sha256Hex, sign, text, today,
+  listFlagged, page, purgeProfileEvents, safeEqual, setFlag, sha256Hex, sign, text, today,
 } from "./lib.js";
+import { privacyPage } from "./privacy.js";
 
 export { sign } from "./lib.js";
 
@@ -100,7 +101,8 @@ function skillPage(p, hidden) {
 function unsubscribePage(p, hidden) {
   const effect = p.j === "profile-pause"
     ? "Hermes stops sending these reports. Your profile is kept on the server and can be switched back on there."
-    : "Hermes stops sending these reports and deletes this profile, its CV and its history from the server.";
+    : "Hermes stops sending these reports and deletes this profile, its CV and its history from the server, " +
+      'removes your name and email from its logs, and emails you a confirmation. <a href="/privacy">How your data is handled</a>.';
   return page("Unsubscribe", `<p>Stop the Daily Vacancy Report for <b>${esc(p.n || "this profile")}</b>?</p><p>${effect}</p>
 <form method="post" action="/f">${hidden}
 <label for="r">Feedback (optional)</label>
@@ -143,8 +145,11 @@ async function saveAnswer(form, env) {
   p.r = p.r.replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, " ").slice(0, MAX_REASON);
   if (p.a === "unsubscribe") {
     await queueItem(env, { type: "unsubscribe", u: p.u, reason: p.r });
-    return page("Unsubscribed", `<p>Done: ${esc(p.n || "this profile")} gets no more reports once Hermes applies it,
-within about 5 minutes.</p><p>You can close this tab.</p>`);
+    if (p.u) await purgeProfileEvents(env, p.u);
+    const after = p.u
+      ? "Hermes deletes your profile, CV and history within about 5 minutes and emails you when it is done."
+      : `${esc(p.n || "This profile")} gets no more reports once Hermes applies it, within about 5 minutes.`;
+    return page("Unsubscribed", `<p>Done. ${after}</p><p>You can close this tab.</p>`);
   }
   const at = Date.now();
   const event = { j: p.j, a: p.a, r: p.r, at, ...(p.u ? { u: p.u } : {}) };
@@ -204,6 +209,7 @@ async function route(request, env, ctx) {
     return json({ deleted: ids.length });
   }
 
+  if (url.pathname === "/privacy") return privacyPage();
   if (url.pathname === "/join") return handleJoin(request, env);
   if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return handleAdmin(request, env, ctx);
   if (url.pathname.startsWith("/api/")) return handleApi(request, env);

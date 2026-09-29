@@ -134,6 +134,18 @@ export async function deleteAndUnflag(env, ids, prefix, flag) {
   if (ids.length && !(await env.FEEDBACK.list({ prefix, limit: 1 })).keys.length) await env.FEEDBACK.delete(flag);
 }
 
+// An extra profile that unsubscribes or is deleted: its answers not yet collected by Hermes are dropped.
+export async function purgeProfileEvents(env, profile) {
+  if (!profile) return;
+  let cursor;
+  do {
+    const listed = await env.FEEDBACK.list({ prefix: eventPrefix(profile), cursor });
+    await Promise.all(listed.keys.map((k) => env.FEEDBACK.delete(k.name)));
+    cursor = listed.list_complete ? undefined : listed.cursor;
+  } while (cursor);
+  await env.FEEDBACK.delete(eventFlag(profile));
+}
+
 export function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,

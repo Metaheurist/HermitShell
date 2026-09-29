@@ -314,7 +314,8 @@ they are. `profiles.py` registers you on its first run.
 <img src="images/worker/admin-dashboard.png" alt="Admin page" width="720">
 
 - **Profiles**: everyone Hermes reports, with status and last report. Pause, resume or delete
-  (deleting removes their CV and history from your server; the owner can't be deleted).
+  (deleting removes their CV and history from your server, their answers still waiting in KV and
+  their name and email from the logs; the owner can't be deleted).
 - **Crawler keys**: give a profile its own Firecrawl key (it then uses only that key), or leave
   it on the global key. **Global crawler key** replaces the keys in `.env` for everyone without
   their own, you included; **Go back to the .env keys** undoes it. Keys are stored on the Hermes
@@ -366,9 +367,19 @@ python3 profiles.py --pause <id>     # or --resume, --delete
 ### Unsubscribe
 
 Every daily report and weekly roll-up ends with an **Unsubscribe** link (signed like the buttons,
-with a confirmation page). For an extra profile it deletes the profile, CV and history at the next
-`profiles.py` run and tells you; for the owner it only pauses your own reports (the others keep
+with a confirmation page). For an extra profile the Worker drops their answers still waiting in
+KV straight away, and the next `profiles.py` run deletes the profile, CV, tracker and letters,
+replaces their name and email address with `[deleted]` in the logs, emails them a confirmation and
+tells you (without their address). For the owner it only pauses your own reports (the others keep
 running) until you resume from `/admin` or with `profiles.py --resume owner`.
+
+### Privacy notice
+
+The Worker serves `/privacy`: what is kept about the people you invite, where, for how long, how
+it is protected and how to have it deleted. The sign-up form, the welcome email and the
+unsubscribe page link to it. It is the same text as [PRIVACY.md](../PRIVACY.md); if you change how
+you run Hermes (for example turn encryption off or change the retention days), edit both
+`src/privacy.js` and that file.
 
 <img src="images/worker/confirm-unsubscribe.png" alt="Unsubscribe confirmation" width="300">
 

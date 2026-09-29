@@ -59,6 +59,11 @@ Full template: [`.env.example`](../.env.example).
 | `HERMES_TIMEZONE` | `UTC` | IANA timezone for dates shown in emails |
 | `HERMES_STATE_DIR` | `<scripts>/state` | Seen-state, caches and last reports |
 | `HERMES_HOME` | parent of the scripts directory | Where `.env` and `config.yaml` are read from. Environment only |
+| `HERMES_DATA_KEY` | none (the wizard generates one) | Encrypts CVs, profiles, letters and backups. See [Data protection](#data-protection) |
+| `HERMES_RETENTION_DAYS` | `365` | Jobs, answers, letters and tailored CVs untouched this long are deleted. `0` = keep forever |
+| `HERMES_LOG_RETENTION_DAYS` | `90` | Logs and scheduled-job output older than this are deleted. `0` = keep forever |
+| `HERMES_BACKUP_DIR` | `$HERMES_HOME/backups/nightly` | Where the nightly backups go. Point it at a second disk or a mounted share for an off-machine copy |
+| `HERMES_BACKUP_KEEP_DAILY` / `HERMES_BACKUP_KEEP_WEEKLY` | `14` / `8` | Newest backups kept, plus the newest of each week for this many more weeks |
 
 ## Job finder settings
 
@@ -113,16 +118,51 @@ agent, or with wrangler) is covered in [feedback-worker.md](feedback-worker.md).
 
 Run times aren't `.env` settings: they are `hermes cron` jobs. The wizard asks for the report's run
 time (`07:30`, `weekdays 08:00`, `sunday 18:00` or a cron expression) and creates or updates
-the job. There are three more jobs: the weekly roll-up (`job_weekly.py`, default Sunday
+the job. There are four more jobs: the weekly roll-up (`job_weekly.py`, default Sunday
 18:00), the cover letter and tailored CV requests check (`cover_letter.py`) and the profiles
-check (`profiles.py`), both every 5 minutes and silent when idle. In an unattended `--answers` file, use `SCHEDULE_DAILY_VACANCY_REPORT`,
-`SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY`, `SCHEDULE_DAILY_VACANCY_REPORT_LETTERS` and
-`SCHEDULE_DAILY_VACANCY_REPORT_PROFILES`.
+check (`profiles.py`), both every 5 minutes and silent when idle, and nightly maintenance
+(`maintenance.py`, 03:30). In an unattended `--answers` file, use `SCHEDULE_DAILY_VACANCY_REPORT`,
+`SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY`, `SCHEDULE_DAILY_VACANCY_REPORT_LETTERS`,
+`SCHEDULE_DAILY_VACANCY_REPORT_PROFILES` and `SCHEDULE_DAILY_VACANCY_REPORT_MAINTENANCE`.
+
+## Data protection
+
+What the people you invite are told is in [PRIVACY.md](../PRIVACY.md) (the Worker serves the same
+text at `/privacy`, linked from the sign-up form, the welcome email and the unsubscribe page).
+This is how it is carried out:
+
+- **Encryption at rest.** With `HERMES_DATA_KEY` set, each profile's `profile.json`,
+  `settings.json`, `cv.txt`, `job_profile.md` and `cv_keywords.json`, the tailored-CV cache and
+  every cover letter and tailored CV are written encrypted (AES-256-GCM, via the `cryptography`
+  package that Hermes already bundles). Files written before the key was set are encrypted by the
+  next maintenance run. Your own `job_profile.md` and `cv_keywords.json` in the scripts folder stay
+  plain so you can edit them, as does the tracker database. The uploaded CV file is deleted once its
+  text is read.
+- **The key.** The wizard generates it (or run `python3 maintenance.py --new-key`) and writes it to
+  `.env`. Keep a copy in a password manager: without it the encrypted files and backups can't be
+  read. Don't change it once set; `maintenance.py --decrypt FILE` opens a single file.
+- **Permissions.** The scripts create files readable by Hermes' account only, and maintenance
+  resets everything under `state/`, the profiles folder and the backups to `0600`/`0700`.
+- **Retention.** Maintenance deletes tracker jobs with no sighting, answer or letter for
+  `HERMES_RETENTION_DAYS` (with their answers), older cover letters and tailored CVs, and logs and
+  scheduled-job output older than `HERMES_LOG_RETENTION_DAYS`. Deleted database rows are
+  overwritten and the file compacted. The skills you added are kept.
+- **Backups.** Every night `.env`, `config.yaml`, `SOUL.md`, memories, cron jobs and the scripts
+  folder with its state go into one encrypted archive in `HERMES_BACKUP_DIR`, rotated to 14 daily
+  and 8 weekly copies. On a single disk, set `HERMES_BACKUP_DIR` to another disk or copy the folder
+  elsewhere. Restore with `python3 maintenance.py --restore FILE --to EMPTY_DIR`, then copy back
+  what you need.
+- **Unsubscribe and deletion.** An extra profile's unsubscribe link, or Delete on `/admin`,
+  removes its folder (profile, CV, tracker, letters, keys) within about 5 minutes, drops its
+  answers still waiting on the Worker, replaces its name, email address and profile id with
+  `[deleted]` in the logs, and emails the person a confirmation. Your own unsubscribe link only
+  pauses your reports. `profiles.py --delete ID` does the same from the command line.
 
 ## Keeping secrets safe
 
 - Prefer container environment variables for keys and passwords, and keep `$HERMES_HOME/.env`
-  readable only by the Hermes user (`chmod 600`).
+  readable only by the Hermes user (`chmod 600`). The nightly backup includes `.env`, which is
+  one more reason to keep `HERMES_DATA_KEY` set.
 - Never commit a filled-in `.env`, `job_profile.md` or `cv_keywords.json`. The repo's
   `.gitignore` already excludes them.
 - Logs show only the index and a masked prefix and suffix of the Firecrawl key in use, never the

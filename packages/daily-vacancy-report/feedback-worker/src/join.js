@@ -78,7 +78,7 @@ function form(inviteId, values = {}, error = "") {
 <label for="roles">Roles you are looking for</label><textarea id="roles" name="roles" required maxlength="300" placeholder="For example: data analyst or BI developer, hybrid or remote">${v("roles")}</textarea>
 <label for="cv">Your CV (PDF, Word .docx or text, up to 5 MB)</label><input id="cv" name="cv" type="file" accept=".pdf,.docx,.txt,.md">
 <label for="cv_text">Or paste your CV (used if the file cannot be read)</label><textarea id="cv_text" name="cv_text" maxlength="${MAX_CV_TEXT}">${v("cv_text")}</textarea>
-<label class="check"><input type="checkbox" name="consent" value="yes" required> <span>I agree that Hermes keeps my CV and details on its server to match jobs for me. Every report has an unsubscribe link that deletes them.</span></label>
+<label class="check"><input type="checkbox" name="consent" value="yes" required> <span>I agree that Hermes keeps my CV and details on its server to match jobs for me, as described in <a href="/privacy" target="_blank" rel="noopener">how your data is handled</a>. Every report has an unsubscribe link that deletes them.</span></label>
 <button type="submit">Create my profile</button></form>`);
 }
 

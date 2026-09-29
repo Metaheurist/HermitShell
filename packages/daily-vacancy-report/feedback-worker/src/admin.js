@@ -9,6 +9,7 @@
 import { SECRET_TTL_SECONDS, createInvite, queueItem } from "./join.js";
 import {
   SECURITY_HEADERS, accessUser, authorised, deleteAndUnflag, esc, hmacHex, json, limitedForm, limitedJson, listFlagged,
+  purgeProfileEvents,
   page, redirect, safeEqual, secretEqual, text, when,
 } from "./lib.js";
 
@@ -191,6 +192,7 @@ async function action(request, env, s) {
   } else if (act === "delete") {
     if (form.get("confirm") !== "yes") return redirect("/admin?done=confirm");
     await queueItem(env, { type: "admin", action: act, u });
+    await purgeProfileEvents(env, u);
   } else if (["use_global", "pause", "resume"].includes(act)) {
     await queueItem(env, { type: "admin", action: act, u });
   } else {

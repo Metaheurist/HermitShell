@@ -50,8 +50,9 @@ describe("invite sign-up", () => {
     const env = testEnv();
     expect((await worker.fetch(new Request(`${BASE}/join?i=${"0".repeat(32)}`), env)).status).toBe(410);
     const id = await invite(env);
-    const form = await worker.fetch(new Request(`${BASE}/join?i=${id}`), env);
-    expect(await form.text()).toContain('enctype="multipart/form-data"');
+    const form = await (await worker.fetch(new Request(`${BASE}/join?i=${id}`), env)).text();
+    expect(form).toContain('enctype="multipart/form-data"');
+    expect(form).toContain('href="/privacy"');
     expect((await worker.fetch(joinForm(id, { cv_text: CV_TEXT }), env)).status).toBe(200);
     expect(keysWith(env, "invite:")).toEqual([]);
     expect((await worker.fetch(joinForm(id, { cv_text: CV_TEXT }), env)).status).toBe(410);
@@ -198,6 +199,9 @@ describe("admin gateway", () => {
       { id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active", crawler: "own", key_hint: "fc-...9f2" },
     ], keys: { firecrawl: { source: "env", hint: "fc-...0001" } } };
     await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: API, body: JSON.stringify(status) }), env);
+    await env.FEEDBACK.put("event:sam-lee:1:abc", JSON.stringify({ a: "interested" }));
+    await env.FEEDBACK.put("flag:events:sam-lee", "1");
+    await env.FEEDBACK.put("event:_:1:def", JSON.stringify({ a: "applied" }));
     const { cookie } = await signIn(env);
     const { body, csrf } = await dashboard(env, cookie);
     expect(body).toContain("Sam Lee");
@@ -207,7 +211,11 @@ describe("admin gateway", () => {
     await adminAction(env, cookie, csrf, { action: "set_key", u: "sam-lee", key: "fc-test-own-key" });
     await adminAction(env, cookie, csrf, { action: "pause", u: "sam-lee" });
     expect((await adminAction(env, cookie, csrf, { action: "delete", u: "sam-lee" })).headers.get("Location")).toBe("/admin?done=confirm");
+    expect(keysWith(env, "event:sam-lee:")).toHaveLength(1);
     await adminAction(env, cookie, csrf, { action: "delete", u: "sam-lee", confirm: "yes" });
+    expect(keysWith(env, "event:sam-lee:")).toEqual([]);
+    expect(keysWith(env, "flag:events:sam-lee")).toEqual([]);
+    expect(keysWith(env, "event:_:")).toHaveLength(1);
     expect(body).toContain("the key in Hermes&#39; .env fc-...0001");
     expect((await adminAction(env, cookie, csrf, { action: "api_keys", keys: "bad key!" })).headers.get("Location")).toBe("/admin?done=badkey");
     await adminAction(env, cookie, csrf, { action: "api_keys", keys: "fc-one11111, fc-two22222" });

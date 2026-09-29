@@ -125,14 +125,20 @@ script from `$HERMES_HOME/scripts`.
   and a dark-mode hack that keeps headers readable. See
   [docs/email-rendering.md](docs/email-rendering.md).
 - **Stateful.** It remembers what it already sent, so you never get the same job twice.
+- **Data protection.** CVs, profiles and letters are encrypted at rest (AES-256-GCM,
+  `HERMES_DATA_KEY`) and readable by Hermes' account only; a nightly job deletes data past its
+  retention period and writes rotated, encrypted backups; unsubscribing deletes a person's data,
+  scrubs them from the logs and confirms by email. What invited people are told is in
+  [PRIVACY.md](PRIVACY.md); how it works is in
+  [docs/configuration.md](docs/configuration.md#data-protection).
 - **Dry runs.** `--dry-run` runs the whole pipeline, writes the email HTML to `state/` and sends
   nothing.
 
 ## Requirements
 
 - Hermes Agent with `hermes cron`, and Python 3.10+ (the official image has both).
-- The `requests` package (bundled with Hermes). `pillow` is optional and gives round company
-  logos; `pyyaml` is optional.
+- The `requests` package (bundled with Hermes), and `cryptography` (also bundled) for encryption
+  at rest. `pillow` is optional and gives round company logos; `pyyaml` is optional.
 - An Ollama model. A 4B instruct model such as `qwen3:4b-instruct-2507` works well on a CPU.
 - An SMTP account, such as a Gmail App Password.
 - An API key for at least one of [Firecrawl](https://firecrawl.dev),

@@ -15,6 +15,7 @@ import json
 import re
 from pathlib import Path
 
+import hermes_common as hc
 import profiles
 from hermes_common import STATE_DIR, env, fit_ctx, log, ollama_chat
 from job_settings import term_regex
@@ -90,7 +91,7 @@ def cv_source() -> tuple[str, Path | None]:
     for name in (env("COVER_LETTER_CV_FILE"), env("JOB_PROFILE_FILE") or "job_profile.md"):
         path = Path(name) if name and Path(name).is_absolute() else PACKAGE_DIR / (name or "")
         if name and path.is_file():
-            return path.read_text(encoding="utf-8", errors="replace")[:MAX_SOURCE_CHARS], path
+            return hc.read_private_text(path, errors="replace")[:MAX_SOURCE_CHARS], path
     return "", None
 
 
@@ -162,7 +163,7 @@ def master_cv(model_info_factory, tracker: Tracker | None = None) -> dict:
         master = cached["cv"]
     else:
         master = build_master(source, model_info_factory())
-        profiles.write_json(MASTER_FILE, {"source": stamp, "cv": master})
+        profiles.write_json(MASTER_FILE, {"source": stamp, "cv": master}, private=True)
         log(f"Read the CV into {MASTER_FILE.name} ({len(master['experience'])} roles)")
     added = tracker.skills() if tracker else []
     master = {**master, "skills": list(dict.fromkeys([*master["skills"], *added]))}
@@ -298,7 +299,7 @@ def merge_new_skills(tracker: Tracker, profile_file: Path, model_info) -> list[s
     new = [s for s in tracker.skills() if s.lower() not in done]
     if not new or not profile_file.is_file():
         return []
-    before = profile_file.read_text(encoding="utf-8")
+    before = hc.read_private_text(profile_file)
     todo = [s for s in new if not _has(before, s)]
     if todo:
         after = ""
@@ -309,7 +310,7 @@ def merge_new_skills(tracker: Tracker, profile_file: Path, model_info) -> list[s
         if not after or not merged_ok(before, after, todo):
             after = append_skills(before, todo)
         profiles.backup(profile_file)
-        profile_file.write_text(after.rstrip("\n") + "\n", encoding="utf-8")
+        hc.rewrite_text(profile_file, after.rstrip("\n") + "\n")
         log(f"Added to {profile_file.name}: {', '.join(todo)}")
-    profiles.write_json(MERGED_FILE, sorted(done | {s.lower() for s in new}))
+    profiles.write_json(MERGED_FILE, sorted(done | {s.lower() for s in new}), private=True)
     return todo

@@ -8,6 +8,8 @@ variables or $HERMES_HOME/.env; see docs/configuration.md.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import contextlib
 import html
 import json
@@ -28,6 +30,8 @@ import requests
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", SCRIPT_DIR.parent))
+# Reports, trackers, CVs and letters hold personal data: files the scripts create are readable by their owner only.
+os.umask(0o077)
 
 FIRECRAWL = "https://api.firecrawl.dev/v1"
 TAVILY = "https://api.tavily.com"
@@ -145,6 +149,91 @@ def write_atomic(path: Path, data: str | bytes, private: bool = False) -> None:
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+# --------------------------------------------------------------------------- encryption at rest
+
+DATA_KEY_ENV = "HERMES_DATA_KEY"
+SEALED = b"HSEAL1"
+_NONCE = 12
+
+
+class DataKeyError(RuntimeError):
+    """An encrypted file that cannot be opened, or a HERMES_DATA_KEY that cannot be used."""
+
+
+def new_data_key() -> str:
+    return base64.urlsafe_b64encode(os.urandom(32)).decode().rstrip("=")
+
+
+def _cipher(required: bool = False):
+    raw = env(DATA_KEY_ENV) or ""
+    if not raw:
+        if required:
+            raise DataKeyError(f"this file is encrypted but {DATA_KEY_ENV} is not set")
+        return None
+    try:
+        key = base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
+    except (ValueError, binascii.Error):
+        key = b""
+    if len(key) != 32:
+        raise DataKeyError(f"{DATA_KEY_ENV} must be 32 random bytes in base64 (maintenance.py --new-key makes one)")
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    except ImportError as exc:
+        raise DataKeyError(f"{DATA_KEY_ENV} is set but the Python 'cryptography' package is missing") from exc
+    return AESGCM(key)
+
+
+def is_sealed(path: Path) -> bool:
+    try:
+        with open(path, "rb") as fh:
+            return fh.read(len(SEALED)) == SEALED
+    except OSError:
+        return False
+
+
+def seal(data: bytes) -> bytes:
+    """AES-256-GCM with HERMES_DATA_KEY; data is returned unchanged when no key is set."""
+    cipher = _cipher()
+    if cipher is None or data.startswith(SEALED):
+        return data
+    nonce = os.urandom(_NONCE)
+    return SEALED + nonce + cipher.encrypt(nonce, data, SEALED)
+
+
+def unseal(data: bytes) -> bytes:
+    """The plaintext of seal()'s output; files written before encryption was turned on pass through."""
+    if not data.startswith(SEALED):
+        return data
+    cipher = _cipher(required=True)
+    from cryptography.exceptions import InvalidTag
+    start = len(SEALED) + _NONCE
+    try:
+        return cipher.decrypt(data[len(SEALED):start], data[start:], SEALED)
+    except InvalidTag as exc:
+        raise DataKeyError(f"an encrypted file does not open with this {DATA_KEY_ENV} (wrong key?)") from exc
+
+
+def read_private(path: Path) -> bytes:
+    return unseal(path.read_bytes())
+
+
+def read_private_text(path: Path, errors: str = "strict") -> str:
+    return read_private(path).decode("utf-8", errors)
+
+
+def write_private(path: Path, data: str | bytes) -> None:
+    """A 0600 file, encrypted when HERMES_DATA_KEY is set (CVs, profiles, keys, letters)."""
+    write_atomic(path, seal(data.encode("utf-8") if isinstance(data, str) else data), private=True)
+
+
+def rewrite_text(path: Path, text: str) -> None:
+    """Replace a text file, keeping it encrypted if it was (the owner's hand-edited files stay plain)."""
+    if is_sealed(path):
+        write_private(path, text)
+    else:
+        write_atomic(path, text)
 
 
 @contextlib.contextmanager

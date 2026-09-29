@@ -77,6 +77,7 @@ definitely ruled out; ratings that fail are retried on the next runs, up to 4 at
 | `cover_letter.py` | Cover letter requests: writes each letter with the model and emails it as a PDF; entry point for the 5-minute cron job |
 | `letter_pdf.py` | Dependency-free A4 PDF writer for the letters |
 | `profiles.py` | Extra profiles: sign-ups from the Worker become profiles built from the CV, unsubscribes, admin changes, per-profile runs; entry point for the 5-minute cron job |
+| `maintenance.py` | Nightly retention, encryption of older files, file permissions and encrypted backups; `--restore`, `--decrypt`, `--new-key` ([data protection](../../docs/configuration.md#data-protection)) |
 | `cv_text.py` | Dependency-free text extraction from PDF, Word .docx and text CVs |
 | `icons/` | Button icons: Lucide SVG sources in `icons/src`, PNGs built by `icons/build_icons.py` |
 | `companies.py` | Employer website, logo and profile lookup with caching |
@@ -153,8 +154,24 @@ hermes cron create "*/5 * * * *" "Cover letter requests" \
     --name vacancy-cover-letters --script cover_letter.py --no-agent --deliver local
 hermes cron create "*/5 * * * *" "Vacancy profiles" \
     --name vacancy-profiles --script profiles.py --no-agent --deliver local
+hermes cron create "30 3 * * *" "Nightly maintenance" \
+    --name vacancy-maintenance --script maintenance.py --no-agent --deliver local
 hermes cron list
 ```
+
+### Backups and restores
+
+`maintenance.py` backs everything up each night into `$HERMES_HOME/backups/nightly` (or
+`HERMES_BACKUP_DIR`), encrypted with `HERMES_DATA_KEY`:
+
+```sh
+python3 maintenance.py --list-backups
+python3 maintenance.py --restore ../backups/nightly/hermes-20260501-033000.tar.gz.enc --to /tmp/restore
+python3 maintenance.py --decrypt state/profiles/<id>/cv.txt     # print one encrypted file
+```
+
+A restore unpacks into an empty folder; copy back what you need. Without the key the backups
+can't be opened, so keep a copy of it in a password manager.
 
 Cron times use Hermes' timezone (`timezone:` in `config.yaml`); without one that is usually UTC.
 Use `0 7 * * 1-5` for weekdays only. Cron jobs can't pass arguments to a script, which is why the

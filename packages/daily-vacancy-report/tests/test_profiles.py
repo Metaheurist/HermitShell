@@ -128,8 +128,8 @@ def test_signup_reads_an_uploaded_pdf(home):
                   {"cvfile:1": pdf})
     profiles.sync(api)
     d = home[0] / "profiles" / "sam-lee-456789"
-    assert (d / "cv.pdf").read_bytes() == pdf
     assert "Power BI dashboards" in " ".join((d / "cv.txt").read_text().split())
+    assert not list(d.glob("cv.pdf")) and not list(d.glob(".upload.*")), "the uploaded file is not kept"
 
 
 def test_unreadable_cv_is_rejected_and_the_owner_told(home):
@@ -187,11 +187,50 @@ def test_unsubscribe_deletes_a_profile_but_only_pauses_the_owner(home):
     sent.clear()
     profiles.sync(FakeApi([{"id": "queue:2:a", "type": "unsubscribe", "u": "sam-lee-456789", "reason": "found a job"}]))
     assert not (tmp / "profiles" / "sam-lee-456789").exists()
-    assert "Their feedback: found a job" in sent[0]["text"]
+    goodbye, note = sent
+    assert goodbye["to"] == "sam@example.com" and "unsubscribed" in goodbye["subject"]
+    assert "deleted your profile, your CV" in goodbye["text"]
+    assert note["to"] == "owner@example.com" and "Their feedback: found a job" in note["text"]
+    assert "sam@example.com" not in note["text"]
     assert not profiles.owner_paused()
     profiles.sync(FakeApi([{"id": "queue:3:b", "type": "unsubscribe", "u": ""}]))
     assert profiles.owner_paused()
     assert (tmp / "profiles" / "owner" / "profile.json").is_file()
+
+
+def test_with_a_data_key_profile_files_are_encrypted_but_still_used(home, monkeypatch):
+    pytest.importorskip("cryptography")
+    monkeypatch.setenv(profiles.hc.DATA_KEY_ENV, profiles.hc.new_data_key())
+    profiles.sync(FakeApi([signup()]))
+    d = home[0] / "profiles" / "sam-lee-456789"
+    for name in ("profile.json", "settings.json", "cv.txt", "job_profile.md", "cv_keywords.json"):
+        assert profiles.hc.is_sealed(d / name), name
+        assert b"Sam Lee" not in (d / name).read_bytes() and b"sam@example.com" not in (d / name).read_bytes()
+    sam = profiles.load("sam-lee-456789")
+    assert sam["email"] == "sam@example.com"
+    assert profiles.child_env(sam)["JOB_SCANNER_QUERIES"].startswith('("Data Analyst"')
+    assert "Name: Sam Lee" in profiles.hc.read_private_text(d / "job_profile.md")
+    assert not profiles.hc.is_sealed(profiles.DASHBOARD_FILE), "read before .env, so it cannot need the key"
+
+
+def test_deleting_a_profile_removes_the_person_from_the_logs(home, monkeypatch):
+    tmp, _ = home
+    logs = tmp / "hermes"
+    monkeypatch.setattr(profiles.hc, "HERMES_HOME", logs)
+    (logs / "logs").mkdir(parents=True)
+    (logs / "cron" / "output" / "job").mkdir(parents=True)
+    (tmp / "state").mkdir(exist_ok=True)
+    profiles.sync(FakeApi([signup()]))
+    lines = "Sent to SAM@example.com\nProfile sam-lee-456789 active for Sam  Lee\nOther person\n"
+    for path in (logs / "logs" / "agent.log", logs / "cron" / "output" / "job" / "run.md",
+                 tmp / "state" / "profiles.log"):
+        path.write_text(lines, encoding="utf-8")
+    profiles.sync(FakeApi([{"id": "queue:2:a", "type": "admin", "action": "delete", "u": "sam-lee-456789"}]))
+    for path in (logs / "logs" / "agent.log", logs / "cron" / "output" / "job" / "run.md",
+                 tmp / "state" / "profiles.log"):
+        text = path.read_text(encoding="utf-8")
+        assert text.startswith("Sent to [deleted]\nProfile [deleted] active for [deleted]"), text
+        assert "Other person" in text and "sam" not in text.lower()
 
 
 def test_admin_actions_set_keys_pause_and_delete(home, monkeypatch):

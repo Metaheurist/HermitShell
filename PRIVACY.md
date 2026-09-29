@@ -1,0 +1,53 @@
+# How your data is handled
+
+This is the notice shown to people invited to receive job reports from a HermitShell (Hermes)
+server. The feedback Worker serves the same text at `/privacy`, linked from the sign-up form, the
+welcome email and the unsubscribe page. Operators: it describes the defaults; if you change them
+(retention days, encryption, backups), update this file and
+`packages/daily-vacancy-report/feedback-worker/src/privacy.js` together. How each point is carried
+out is in [docs/configuration.md](docs/configuration.md#data-protection).
+
+## Who runs this
+
+These reports come from a Hermes server run by the person who invited you. They decide how it is
+set up and are the one to contact: reply to any report with a question or request.
+
+## What is kept
+
+Your name, email address, optional phone number and town, the roles you want and your CV. Then the
+jobs found for you, the buttons you press and notes you type, and the cover letters and tailored
+CVs you ask for.
+
+## Why
+
+To find and rate job adverts for you and write the letters and CVs you request. You agreed to this
+on the sign-up form and can withdraw at any time with the unsubscribe link.
+
+## Where
+
+Your CV and details are read on the Hermes server, by an AI model running on that server, not a
+cloud AI service. This page, the sign-up form and the email buttons run on Cloudflare Workers,
+where what you send waits only until Hermes collects it (at most 30 days); the operator's admin
+page there lists your name and email address until Hermes next reports that you have left. Job
+searches send job titles and a location to web search services, never your CV or contact details.
+Emails go through the operator's email provider.
+
+## How long
+
+Everything is kept while you are subscribed, except that by default jobs, answers, letters and CVs
+older than 12 months and logs older than 90 days are deleted. Encrypted nightly backups are kept
+for about two months (14 daily and 8 weekly copies), then deleted.
+
+## How it is protected
+
+Every connection uses HTTPS. On the server your files are readable only by Hermes' account and,
+when the operator has turned encryption on, your CV, profile, letters and CVs are encrypted
+(AES-256-GCM), as are the backups. Email buttons are signed and stop working after 90 days.
+
+## Deleting your data
+
+The unsubscribe link at the end of every report deletes your profile, CV, jobs, answers, letters
+and tailored CVs from the server, drops anything still waiting on Cloudflare, removes your name and
+email address from the logs and emails you a confirmation. Copies in the encrypted backups
+disappear as those backups are rotated out. For a copy of your data or a correction, reply to any
+report.

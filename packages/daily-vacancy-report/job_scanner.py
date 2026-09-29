@@ -184,7 +184,7 @@ SCORE_SCHEMA = {
 # --------------------------------------------------------------------------- config
 
 def load_keywords() -> tuple[dict[str, re.Pattern], dict[str, re.Pattern]]:
-    data = json.loads(CFG.keywords_file.read_text(encoding="utf-8"))
+    data = json.loads(hc.read_private_text(CFG.keywords_file))
     cv = {k: re.compile(v, re.I) for k, v in data["cv_keywords"].items()}
     other = {k: re.compile(v, re.I) for k, v in data.get("other_tech", {}).items()}
     return cv, other
@@ -1132,9 +1132,9 @@ def run(args: argparse.Namespace) -> int:
         return 0
     cv_added = [] if args.dry_run else tailored_cv.merge_new_skills(tracker, CFG.profile_file, (host, model, num_ctx))
     try:
-        profile = CFG.profile_file.read_text(encoding="utf-8").strip()
+        profile = hc.read_private_text(CFG.profile_file).strip()
         cv_kw, other_kw = load_keywords()
-    except OSError as exc:
+    except (OSError, hc.DataKeyError) as exc:
         log(f"Candidate profile unreadable ({exc}); upload your CV again on the dashboard's profile page")
         return 4
     cv_kw, other_kw = with_added_skills(cv_kw, other_kw, tracker.skills())

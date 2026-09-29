@@ -199,6 +199,8 @@ docker exec -u hermes -w /opt/data hermes-agent hermes cron create "*/5 * * * *"
     --name vacancy-cover-letters --script cover_letter.py --no-agent --deliver local
 docker exec -u hermes -w /opt/data hermes-agent hermes cron create "*/5 * * * *" "Vacancy profiles" \
     --name vacancy-profiles --script profiles.py --no-agent --deliver local
+docker exec -u hermes -w /opt/data hermes-agent hermes cron create "30 3 * * *" "Nightly maintenance" \
+    --name vacancy-maintenance --script maintenance.py --no-agent --deliver local
 docker exec -u hermes -w /opt/data hermes-agent hermes cron list
 ```
 
@@ -207,6 +209,9 @@ docker exec -u hermes -w /opt/data hermes-agent hermes cron list
 - `--script` takes a script name only, no arguments, so the weekly roll-up runs `job_weekly.py`
   (the same as `job_scanner.py --weekly`).
 - `--no-agent` runs the script directly without an LLM turn.
+- Nightly maintenance deletes old data, encrypts and backs up; set `HERMES_DATA_KEY` first
+  (`python3 scripts/maintenance.py --new-key`) so the backups are encrypted. See
+  [data protection](configuration.md#data-protection).
 - `--deliver local` keeps the script's one-line summary in Hermes' cron log. The email is the
   real delivery.
 - Schedules use Hermes' timezone (`timezone:` in `config.yaml`); without it, the container
