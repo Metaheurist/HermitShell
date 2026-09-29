@@ -334,3 +334,66 @@ describe("size limits", () => {
     expect(res.status).toBe(413);
   });
 });
+
+describe("task list", () => {
+  const reported = (tasks) => JSON.stringify({ profiles: [{ id: "owner", owner: true, name: "Alex Morgan", email: "alex@example.com" },
+    { id: "sam-lee-456789", name: "Sam Lee", email: "sam@example.com" }], tasks });
+
+  it("needs a signed-in session to see or cancel anything", async () => {
+    const env = testEnv(ADMIN);
+    await env.FEEDBACK.put("status:profiles", reported([{ id: "report:sam-lee-456789", kind: "report", u: "sam-lee-456789", state: "running" }]));
+    const page = await (await get("/admin/tasks", env)).text();
+    expect(page).toContain("Admin sign-in");
+    expect(page).not.toContain("Daily report");
+    const res = await worker.fetch(new Request(`${BASE}/admin/tasks`, { method: "POST",
+      body: new URLSearchParams({ csrf: "x", task: "report:sam-lee-456789" }) }), env);
+    expect(await res.text()).toContain("Admin sign-in");
+    expect(valuesWith(env, "queue:")).toEqual([]);
+  });
+
+  it("refuses a cancel without the form's CSRF token", async () => {
+    const env = testEnv(ADMIN);
+    await env.FEEDBACK.put("status:profiles", reported([{ id: "report:sam-lee-456789", kind: "report", u: "sam-lee-456789", state: "running" }]));
+    const cookie = await signIn(env, "203.0.113.20");
+    const res = await worker.fetch(new Request(`${BASE}/admin/tasks`, { method: "POST", headers: { Cookie: cookie },
+      body: new URLSearchParams({ csrf: "0".repeat(32), task: "report:sam-lee-456789" }) }), env);
+    expect(res.status).toBe(403);
+    expect(valuesWith(env, "queue:")).toEqual([]);
+  });
+
+  it("cannot delete a feedback answer, invent a task or send HermitShell a hostile one", async () => {
+    const env = testEnv(ADMIN);
+    await env.FEEDBACK.put("status:profiles", reported([]));
+    const answer = "event:_:0123456789abcdef0123456789abcdef:0a1b2c3d4e5f";
+    await env.FEEDBACK.put(answer, JSON.stringify({ id: answer, a: "applied" }));
+    const cookie = await signIn(env, "203.0.113.21");
+    const csrf = (await (await get("/admin/tasks", env, { Cookie: cookie })).text()).match(/name="csrf" value="([0-9a-f]+)"/)?.[1]
+      || (await (await get("/admin", env, { Cookie: cookie })).text()).match(/name="csrf" value="([0-9a-f]+)"/)[1];
+    for (const task of [answer, "report:sam-lee-456789", "report:../../etc", `letter:owner:${HOSTILE}`, "status:profiles",
+      "invite:abc", "queue:1:../x", "x".repeat(500)]) {
+      const res = await worker.fetch(new Request(`${BASE}/admin/tasks`, { method: "POST", headers: { Cookie: cookie },
+        body: new URLSearchParams({ csrf, task }) }), env);
+      expect(res.headers.get("Location")).toBe("/admin/tasks?done=gone");
+    }
+    expect(env.FEEDBACK.store.has(answer)).toBe(true);
+    expect(env.FEEDBACK.store.has("status:profiles")).toBe(true);
+    expect(valuesWith(env, "queue:")).toEqual([]);
+  });
+
+  it("escapes everything a task shows and never offers to cancel a malformed one", async () => {
+    const env = testEnv(ADMIN);
+    await env.FEEDBACK.put("status:profiles", reported([
+      { id: "report:sam-lee-456789", kind: "report", u: "sam-lee-456789", state: "running", stage: HOSTILE, trigger: HOSTILE },
+      { id: `letter:owner:event:_:${HOSTILE}`, kind: "cover_letter", u: "owner", state: "waiting", title: HOSTILE },
+      { id: "letter:owner:event:_:abc:0a1b2c", kind: HOSTILE, u: "owner", state: HOSTILE, title: HOSTILE, employer: HOSTILE },
+    ]));
+    await env.FEEDBACK.put("tasks:requests", JSON.stringify([{ id: "event:_:abc:ffffff", a: "cover_letter", n: HOSTILE, u: "", at: 1 }]));
+    const cookie = await signIn(env, "203.0.113.22");
+    const body = await (await get("/admin/tasks", env, { Cookie: cookie })).text();
+    expect(body).not.toContain("<script>");
+    expect(body).not.toContain("<img");
+    expect(body).toContain("&lt;script&gt;");
+    expect(body.split('<li class="task')).toHaveLength(4);
+    expect(body).not.toContain(`value="letter:owner:event:_:&lt;`);
+  });
+});

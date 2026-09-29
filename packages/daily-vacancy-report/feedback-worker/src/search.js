@@ -21,14 +21,14 @@ export function matchesProfile(p, q) {
 const LENS = `<svg class="lens" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
 <circle class="glass" cx="10.5" cy="10.5" r="6.5"/><path class="shine" d="M7.4 9.2a3.4 3.4 0 0 1 2.4-2.3" pathLength="1"/><path d="m15.4 15.4 4.6 4.6"/></svg>`;
 
-export function searchBar(q, shown, total) {
+export function searchBar(q, shown, total, tools = "") {
   const count = q ? `${shown} of ${total} profile${total === 1 ? "" : "s"}` : `${total} profile${total === 1 ? "" : "s"}`;
-  return `<div class="tabletools"><span class="count">${count}</span>
+  return `<div class="tabletools"><span class="count">${count}</span><div class="tools">${tools}
 <form class="search${q ? " open" : ""}" method="get" action="/admin" role="search">
 <input id="profile-search" type="search" name="q" value="${esc(q)}" maxlength="${MAX_QUERY}" autocomplete="off"
 placeholder="Name, email, place or status, then Enter" aria-label="Search profiles">
 ${q ? '<a class="clear" href="/admin" aria-label="Clear the search">&times;</a>' : ""}
-<label for="profile-search" class="searchbtn" title="Search profiles">${LENS}</label></form></div>`;
+<label for="profile-search" class="searchbtn" title="Search profiles">${LENS}</label></form></div></div>`;
 }
 
 export function noMatch(q) {

@@ -4,13 +4,13 @@
 // first. Then sign in with ADMIN_USER (default "admin") and the ADMIN_PASSWORD secret; five wrong attempts
 // lock that address, and 30 from anywhere lock sign-in, for 15 minutes. Signed-in pages create invite
 // links, show the profiles HermitShell reports, and queue changes that HermitShell applies as soon as the live
-// link tells it (settings pages: settings.js; each profile's stats page: stats.js; crawler keys: keys.js; profile search: search.js; the live link: hub.js). Nothing here can reach the HermitShell
+// link tells it (settings pages: settings.js; each profile's stats page: stats.js; crawler keys: keys.js; profile search: search.js; the task list: tasks.js; the live link: hub.js). Nothing here can reach the HermitShell
 // server: HermitShell connects out to /api/live and reads /api/queue with its API token.
 
 import { hubConnect, hubPresence, hubSeen } from "./hub.js";
 import { SECRET_TTL_SECONDS, createInvite, queueItem } from "./join.js";
 import {
-  SECURITY_HEADERS, accessUser, ago, authorised, deleteAndUnflag, esc, hmacHex, json, limitedForm, limitedJson, listFlagged,
+  CSP, SECURITY_HEADERS, accessUser, ago, authorised, deleteAndUnflag, esc, hmacHex, json, limitedForm, limitedJson, listFlagged,
   purgeProfileEvents,
   note, page, redirect, safeEqual, secretEqual, text, when,
 } from "./lib.js";
@@ -21,6 +21,7 @@ import {
 import { CRAWLERS, KEY_STYLE, crawlerCell, keyModal } from "./keys.js";
 import { SEARCH_STYLE, matchesProfile, noMatch, searchBar, searchQuery } from "./search.js";
 import { LINK_STYLE, MAX_STATS_BYTES, STATS_URL, statsLink, statsPage, validStats } from "./stats.js";
+import { TASKS_STYLE, TASKS_URL, cancelTask, requests, taskRows, tasksButton, tasksModal, tasksPage } from "./tasks.js";
 
 const SESSION_SECONDS = 12 * 3600;
 const LOCK_SECONDS = 15 * 60;
@@ -162,7 +163,8 @@ async function saveProfile(env, s, form, u) {
 const STALE_MS = 45 * 60 * 1000;
 
 function lastUpdate(current, queued, presence) {
-  const waiting = queued.length ? ` Waiting for HermitShell: ${esc(queued.join("; "))}.` : "";
+  const waiting = queued.length
+    ? ` <a href="#tasks">Waiting for HermitShell: ${queued.length} change${queued.length === 1 ? "" : "s"}</a>.` : "";
   const report = current.updated ? ` Profiles last reported ${esc(ago(current.updated))}.` : "";
   if (presence.live) {
     return `<p class="muted"><span class="live" aria-hidden="true"></span><b>HermitShell is connected</b>: changes reach it within seconds.${report}${waiting}</p>`;
@@ -221,8 +223,9 @@ function profileRow(p, csrf, tz, stats) {
 
 async function dashboard(request, env, s) {
   const url = new URL(request.url);
-  const [current, invites, queue, presence] = await Promise.all([
-    status(env), env.FEEDBACK.list({ prefix: "invite:", limit: 100 }), queued(env), hubPresence(env)]);
+  const [current, invites, queue, presence, held] = await Promise.all([
+    status(env), env.FEEDBACK.list({ prefix: "invite:", limit: 100 }), queued(env), hubPresence(env), requests(env)]);
+  const tasks = tasksButton(taskRows(current, queue, held).length);
   const signups = pendingSignups(queue, current.profiles || []);
   const waiting = describe(queue.filter((i) => !signups.some((p) => i.type === "signup" && p.email === String(i.email || ""))));
   const stats = await Promise.all((current.profiles || []).map((p) =>
@@ -238,10 +241,10 @@ async function dashboard(request, env, s) {
   const rows = shown.map(({ p, stats: st }) => p.pending ? pendingRow(p, current.timezone, presence.live)
     : profileRow(p, s.csrf, current.timezone, st)).join("")
     || (all.length ? noMatch(q) : '<tr><td colspan="4" class="muted">HermitShell has not reported any profiles yet.</td></tr>');
-  return page("Profiles", `<style>${LINK_STYLE}${KEY_STYLE}${SEARCH_STYLE}${PENDING_STYLE}</style>${nav("profiles")}${done ? note(done) : ""}
+  return page("Profiles", `<style>${LINK_STYLE}${KEY_STYLE}${SEARCH_STYLE}${PENDING_STYLE}${TASKS_STYLE}</style>${nav("profiles")}${done ? note(done) : ""}
 ${lastUpdate(current, waiting, presence)}
 ${problems(current)}${checklist(current)}
-${all.length ? searchBar(q, shown.length, all.length) : ""}
+${all.length ? searchBar(q, shown.length, all.length, tasks) : `<div class="tabletools"><span></span><div class="tools">${tasks}</div></div>`}
 <table class="list"><tr><th>Profile</th><th>Status</th><th>Crawler</th><th></th></tr>
 ${rows}</table>
 <p class="muted">The email server and web search keys everyone shares are under <a href="${SETTINGS_URL}">Global settings</a>.</p>
@@ -250,7 +253,18 @@ ${rows}</table>
 <input name="note" maxlength="80" placeholder="Who it is for (only you see this)"><button class="small">Create invite link</button></form>
 <p class="muted">Each link works once and expires after 7 days.</p>
 ${inviteRows ? `<table class="list">${inviteRows}</table>` : ""}
-<form method="post" action="/admin/logout" class="signout"><button class="small quiet">Sign out</button></form>`, { wide: true, before: modals });
+<form method="post" action="/admin/logout" class="signout"><button class="small quiet">Sign out</button></form>`,
+  { wide: true, before: modals + tasksModal(), headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` } });
+}
+
+async function tasksAction(request, env, s) {
+  const form = await limitedForm(request, 4096);
+  if (!form || !safeEqual(String(form.get("csrf") || ""), s.csrf)) {
+    return page("Expired form", "<p>Reload the admin page and try again.</p>", { status: 403 });
+  }
+  const [current, queue] = await Promise.all([status(env), queued(env)]);
+  const done = await cancelTask(env, String(form.get("task") || "").slice(0, 200), current, queue);
+  return redirect(`${TASKS_URL}?done=${done}`);
 }
 
 async function action(request, env, s) {
@@ -318,6 +332,13 @@ export async function handleAdmin(request, env, ctx) {
   if (path === "/admin" && request.method === "GET") return dashboard(request, env, s);
   if (path === "/admin/action" && request.method === "POST") return action(request, env, s);
   if (path === "/admin/cv" && request.method === "POST") return cvUpload(request, env, s);
+  if (path === TASKS_URL && request.method === "POST") return tasksAction(request, env, s);
+  if (path === TASKS_URL && request.method === "GET") {
+    const url = new URL(request.url);
+    const [current, queue, held] = await Promise.all([status(env), queued(env), requests(env)]);
+    return tasksPage(taskRows(current, queue, held), s.csrf, current.timezone,
+      Math.min(Math.max(Math.trunc(Number(url.searchParams.get("n"))) || 0, 0), 99), url.searchParams.get("done") || "");
+  }
   if (path === SETTINGS_URL && request.method === "GET") {
     const url = new URL(request.url);
     const [current, queue] = await Promise.all([status(env), queued(env)]);

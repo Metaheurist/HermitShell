@@ -18,6 +18,7 @@ import {
   listFlagged, page, purgeProfileEvents, safeEqual, setFlag, sha256Hex, sign, text, today,
 } from "./lib.js";
 import { privacyPage } from "./privacy.js";
+import { forgetRequests, rememberRequest } from "./tasks.js";
 
 export { sign } from "./lib.js";
 export { Hub } from "./hub.js";
@@ -170,6 +171,7 @@ async function saveAnswer(form, env) {
   event.id = `${eventPrefix(p.u)}${p.t}:${answer.slice(0, 12)}`;
   await env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });
   await setFlag(env, eventFlag(p.u), EVENT_TTL_SECONDS);
+  await rememberRequest(env, event, p.n, EVENT_TTL_SECONDS);
   const next = SAVED_MESSAGES[p.a] || "HermitShell picks this up on its next run.";
   return page("Saved", `<p>${saved}</p>
 <p>${esc(next)} You can close this tab.</p>`);
@@ -207,6 +209,7 @@ async function route(request, env, ctx) {
     for (const id of ids) (byProfile[id.split(":")[1]] ||= []).push(id);
     await Promise.all(Object.entries(byProfile).map(([u, group]) =>
       deleteAndUnflag(env, group, eventPrefix(u === "_" ? "" : u), eventFlag(u === "_" ? "" : u))));
+    if (ids.length) await forgetRequests(env, ids);
     return json({ deleted: ids.length });
   }
 
