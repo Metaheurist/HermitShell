@@ -294,11 +294,14 @@ describe("recruiters' pools", () => {
 });
 
 describe("signing users out", () => {
-  it("signs a user out on a new password, and each user's sign-out leaves the others signed in", async () => {
+  it("signs a user out when an admin resets their password, and each user's sign-out leaves the others signed in", async () => {
     const { env, admin, casey } = await setup();
     expect(await casey.text("/admin")).toContain("Casey Quinn");
-    expect(await admin.where("/admin/users", { op: "edit", id: "casey", name: "Casey Q", roles: "recruiter", password: "a new passphrase here" }))
+    expect(await admin.where("/admin/users", { op: "edit", id: "casey", name: "Casey Q", roles: "recruiter" }))
       .toBe("/admin/users?done=updated");
+    expect(await casey.text("/admin")).toContain("Casey Q (recruiter)");
+    expect(await admin.where("/admin/users", { op: "reset", id: "casey", password: "a new passphrase here", again: "a new passphrase here" }))
+      .toBe("/admin/users?done=reset");
     expect(await casey.text("/admin")).toContain("Admin sign-in");
     expect((await signIn(env, "casey", CASEY_PASSWORD, "203.0.113.13")).res.status).toBe(401);
     const again = client(env, (await signIn(env, "casey", "a new passphrase here", "203.0.113.14")).cookie);
@@ -318,7 +321,7 @@ describe("signing users out", () => {
     const riley = client(env, (await signIn(env, "riley", "another good one", "203.0.113.15")).cookie);
     expect(await riley.where("/admin/users", { op: "edit", id: "riley", name: "Riley Chen", roles: "recruiter" })).toBe("/admin/users?done=self");
     expect(await riley.where("/admin/users", { op: "delete", id: "riley", confirm: "yes" })).toBe("/admin/users?done=self");
-    expect(await riley.where("/admin/users", { op: "edit", id: "casey", name: "Casey Quinn", roles: "recruiter", password: "ab" })).toBe("/admin/users?done=badpass");
+    expect(await riley.where("/admin/users", { op: "reset", id: "casey", password: "ab", again: "ab" })).toBe("/admin/users?done=badpass");
   });
 
   it("deletes a user only when confirmed, signs them out, unassigns their recruits and drops their invites", async () => {
@@ -333,5 +336,113 @@ describe("signing users out", () => {
     expect(valuesWith(env, "queue:").map(({ action, u, recruiter }) => ({ action, u, recruiter })))
       .toEqual([{ action: "assign", u: "sam-lee", recruiter: "" }]);
     expect(valuesWith(env, "invite:").map((i) => i.note)).toEqual(["Admin's"]);
+  });
+});
+
+describe("passwords", () => {
+  const changeTo = (password, current = CASEY_PASSWORD, again = password) => ({ current, password, again });
+
+  it("lets a recruiter change their own password from the Recruits page, keeping this session and ending the others", async () => {
+    const { env, casey } = await setup();
+    const other = client(env, (await signIn(env, "casey", CASEY_PASSWORD, "203.0.113.20")).cookie);
+    const page = await casey.text("/admin");
+    expect(page).toContain('<a class="small quiet mine" href="#password">Change password</a>');
+    expect(page).toContain('<div class="modal" id="password"');
+    expect(page).toContain('<form method="post" action="/admin/password">');
+    expect(page).toContain('autocomplete="current-password"');
+    expect(page).toContain('<input type="text" name="username" value="casey" autocomplete="username" hidden readonly>');
+    const res = await casey.send("/admin/password", changeTo("my brand new passphrase"));
+    expect(res.headers.get("Location")).toBe("/admin?done=password");
+    const cookie = res.headers.get("Set-Cookie");
+    expect(cookie).toMatch(/^__Host-hv_admin=\d+\.casey\.[0-9a-f]{40}; Path=\/; Max-Age=\d+; HttpOnly; Secure; SameSite=Strict$/);
+    expect(cookie.split(";")[0].split(".")[0]).toBe(casey.cookie.split(".")[0]);
+    const kept = client(env, cookie.split(";")[0]);
+    expect(await kept.text("/admin?done=password")).toContain("Password changed. You are still signed in here");
+    expect(await casey.text("/admin")).toContain("Admin sign-in");
+    expect(await other.text("/admin")).toContain("Admin sign-in");
+    expect((await signIn(env, "casey", CASEY_PASSWORD, "203.0.113.21")).res.status).toBe(401);
+    expect((await signIn(env, "casey", "my brand new passphrase", "203.0.113.22")).res.status).toBe(303);
+    expect(env.FEEDBACK.store.get("accounts")).not.toContain("my brand new passphrase");
+  });
+
+  it("changes nothing on a wrong current password, a mismatch or a password that is too short", async () => {
+    const { env, casey } = await setup();
+    const before = env.FEEDBACK.store.get("accounts");
+    expect(await casey.where("/admin/password", changeTo("my brand new passphrase", "not my password"))).toBe("/admin?done=badcurrent#password");
+    expect(await casey.where("/admin/password", changeTo("my brand new passphrase", CASEY_PASSWORD, "something else"))).toBe("/admin?done=mismatch#password");
+    expect(await casey.where("/admin/password", changeTo("ab"))).toBe("/admin?done=badpass#password");
+    expect(await casey.where("/admin/password", changeTo("x".repeat(201)))).toBe("/admin?done=badpass#password");
+    expect(env.FEEDBACK.store.get("accounts")).toBe(before);
+    expect(await casey.text("/admin?done=badcurrent")).toContain("Your current password was wrong");
+    expect(await casey.text("/admin?done=mismatch")).toContain("The two new passwords were different");
+  });
+
+  it("locks changing a password after five wrong current passwords, even with the right one", async () => {
+    const { env, admin, casey } = await setup();
+    for (let i = 0; i < 5; i++) {
+      expect(await casey.where("/admin/password", changeTo("my brand new passphrase", `wrong ${i}`))).toBe("/admin?done=badcurrent#password");
+    }
+    expect(await casey.where("/admin/password", changeTo("my brand new passphrase"))).toBe("/admin?done=pwlocked#password");
+    expect((await signIn(env, "casey", CASEY_PASSWORD, "203.0.113.23")).res.status).toBe(303);
+    expect(await admin.where("/admin/users", { op: "reset", id: "casey", password: "reset by an admin", again: "reset by an admin" }))
+      .toBe("/admin/users?done=reset");
+    expect(env.FEEDBACK.store.has("pwlock:casey")).toBe(false);
+  });
+
+  it("refuses a forged or missing CSRF token and a signed-out request", async () => {
+    const { env, casey } = await setup();
+    const forged = await worker.fetch(post("/admin/password", { csrf: "0".repeat(32), ...changeTo("my brand new passphrase") },
+      { Cookie: casey.cookie }), env);
+    expect(forged.status).toBe(403);
+    const missing = await worker.fetch(post("/admin/password", changeTo("my brand new passphrase"), { Cookie: casey.cookie }), env);
+    expect(missing.status).toBe(403);
+    const anon = await worker.fetch(post("/admin/password", changeTo("my brand new passphrase")), env);
+    expect(await anon.text()).toContain("Admin sign-in");
+    expect((await signIn(env, "casey", CASEY_PASSWORD, "203.0.113.24")).res.status).toBe(303);
+  });
+
+  it("shows the main admin how to change the ADMIN_PASSWORD secret instead of a form", async () => {
+    const { admin } = await setup();
+    const page = await admin.text("/admin");
+    expect(page).toContain('<div class="modal" id="password"');
+    expect(page).toContain("npx wrangler secret put ADMIN_PASSWORD");
+    expect(page).not.toContain('action="/admin/password"');
+    expect(await admin.where("/admin/password", changeTo("my brand new passphrase", ADMIN.ADMIN_PASSWORD))).toBe("/admin?done=mainpass#password");
+    expect(await admin.text("/admin")).toContain("Signed in as");
+  });
+
+  it("lets an admin reset another user's password from Users and roles, but not their own or the main admin's", async () => {
+    const { env, admin, casey } = await setup();
+    const page = await admin.text("/admin/users");
+    expect(page).toContain('href="#reset-casey"');
+    expect(page).toContain('<div class="modal" id="reset-casey"');
+    expect(page).toContain("Reset Casey Quinn&#39;s password");
+    expect(page).not.toContain('href="#reset-admin"');
+    expect(page).not.toContain('value="casey" autocomplete="username"');
+    expect(page).not.toContain('placeholder="Leave empty to keep it"');
+    expect(await admin.where("/admin/users", { op: "reset", id: "casey", password: "reset by an admin", again: "not the same" }))
+      .toBe("/admin/users?done=mismatch");
+    expect(await casey.text("/admin")).toContain("Signed in as");
+    expect(await admin.where("/admin/users", { op: "reset", id: "admin", password: "reset by an admin", again: "reset by an admin" }))
+      .toBe("/admin/users?done=baduser");
+    await admin.where("/admin/users", { op: "add", name: "Riley Chen", username: "riley", password: "another good one", roles: "admin" });
+    const riley = client(env, (await signIn(env, "riley", "another good one", "203.0.113.25")).cookie);
+    expect(await riley.text("/admin/users")).not.toContain('href="#reset-riley"');
+    expect(await riley.text("/admin/users")).toContain('<a class="small quiet" href="/admin#password">Change password</a>');
+    expect(await riley.where("/admin/users", { op: "reset", id: "riley", password: "reset by an admin", again: "reset by an admin" }))
+      .toBe("/admin/users?done=ownpass");
+    expect(await riley.where("/admin/users", { op: "reset", id: "casey", password: "reset by riley", again: "reset by riley" }))
+      .toBe("/admin/users?done=reset");
+    expect(await casey.text("/admin")).toContain("Admin sign-in");
+  });
+
+  it("never lets a recruiter reset anyone's password", async () => {
+    const { env, admin, casey } = await setup();
+    await admin.where("/admin/users", { op: "add", name: "Drew Harper", username: "drew", password: "drew's passphrase", roles: "recruiter" });
+    const before = env.FEEDBACK.store.get("accounts");
+    const res = await casey.send("/admin/users", { op: "reset", id: "drew", password: "taken over", again: "taken over" });
+    expect(res.status).toBe(403);
+    expect(env.FEEDBACK.store.get("accounts")).toBe(before);
+    expect(await casey.text("/admin")).not.toContain("#reset-");
   });
 });

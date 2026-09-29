@@ -7,7 +7,9 @@
 // Roles: an admin sees and changes everything; a recruiter sees only their own pool, the recruits they invited or
 // were assigned (profiles.py keeps the assignment, as "recruiter" on the profile). The main admin can be a
 // recruiter too. Changing a user's password or deleting them changes or drops the version their sessions are
-// signed with, which signs them out at once.
+// signed with, which signs them out at once. An admin resets anyone else's password from Users and roles; every
+// user changes their own from the Recruits page with their current password (five wrong ones lock that for 15
+// minutes). The main admin's password is the ADMIN_PASSWORD secret, so it is changed with wrangler.
 
 import { CONFIRM_STYLE, binButton, deleteModal } from "./confirm.js";
 import { queueItem } from "./join.js";
@@ -32,6 +34,10 @@ const MAX_USERS = 50;
 const ITERATIONS = 30000;
 const MIN_PASSWORD = 3;
 const STRONG_PASSWORD = 12;
+const MAX_PASSWORD = 200;
+const MAX_WRONG_PASSWORDS = 5;
+const WRONG_PASSWORD_SECONDS = 15 * 60;
+export const PASSWORD_URL = "/admin/password";
 const RESERVED = new Set([ADMIN_ID, "owner", "root", "system"]);
 const encoder = new TextEncoder();
 
@@ -127,6 +133,8 @@ const ROLE_ICONS = {
   recruiter: '<circle cx="10" cy="8" r="3.5"/><path d="M3.5 20c.8-3.8 3.3-5.5 6.5-5.5 1.3 0 2.5.3 3.5.8M19 14v6M16 17h6"/>',
 };
 
+const KEY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.8-9.8M16.5 6.5l3 3M14 9l2.5 2.5"/></svg>';
+
 function roleIcon(role) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ROLE_ICONS[role]}</svg>`;
 }
@@ -146,14 +154,72 @@ function roleBoxes(prefix, roles, { lockAdmin = false } = {}) {
   }).join("")}</div>`;
 }
 
-function modal(id, title, intro, body) {
+function modal(id, title, intro, body, icon = USER_ICON) {
   return `<div class="modal" id="${id}" role="dialog" aria-modal="true" aria-labelledby="${id}-h">
 <a class="scrim" href="#_" aria-label="Close" tabindex="-1"></a>
-<div class="sheet"><a class="x" href="#_" aria-label="Close">&times;</a><div class="sheeticon">${USER_ICON}</div>
+<div class="sheet"><a class="x" href="#_" aria-label="Close">&times;</a><div class="sheeticon">${icon}</div>
 <h2 id="${id}-h">${esc(title)}</h2><p class="muted">${esc(intro)}</p>${body}</div></div>`;
 }
 
-function userModals(acc, csrf, adminLabel) {
+// A new password typed twice. A hidden username lets password managers save the new one under the right account.
+function newPasswordFields(prefix, username = "") {
+  return `${username ? `<input type="text" name="username" value="${esc(username)}" autocomplete="username" hidden readonly>` : ""}
+<label for="${prefix}-pass">New password</label><input id="${prefix}-pass" name="password" type="password" required minlength="${MIN_PASSWORD}" maxlength="${MAX_PASSWORD}" autocomplete="new-password">
+<label for="${prefix}-again">New password again</label><input id="${prefix}-again" name="again" type="password" required minlength="${MIN_PASSWORD}" maxlength="${MAX_PASSWORD}" autocomplete="new-password">
+<span class="hint">At least ${STRONG_PASSWORD} characters is best.</span>`;
+}
+
+// The Change password window on the Recruits page, for whoever is signed in.
+export function passwordModal(me, csrf, env) {
+  if (me.main) {
+    return modal("password", "Change password", "Your password is the Worker's ADMIN_PASSWORD secret, so it can't be changed here.",
+      `<p>From the <code>feedback-worker</code> folder, run this and type the new password when it asks:</p>
+<code class="link">npx wrangler secret put ADMIN_PASSWORD</code>
+<p class="muted">That signs everyone out, you and every dashboard user. Your username, ${esc(env.ADMIN_USER || "admin")}, is the ADMIN_USER secret.</p>`, KEY_ICON);
+  }
+  return modal("password", "Change password", "You stay signed in here; everywhere else you are signed out.",
+    `<form method="post" action="${PASSWORD_URL}">${hidden({ csrf })}
+<label for="pw-now">Current password</label><input id="pw-now" name="current" type="password" required maxlength="${MAX_PASSWORD}" autocomplete="current-password">
+${newPasswordFields("pw", me.id)}<button>Change password</button></form>`, KEY_ICON);
+}
+
+// Why a new password (typed twice) can't be used, or "".
+function passwordProblem(password, again) {
+  if (password.length < MIN_PASSWORD || password.length > MAX_PASSWORD) return "badpass";
+  return password === again ? "" : "mismatch";
+}
+
+async function newPassword(env, password) {
+  return { ...(await hashPassword(env, password)), v: newId().slice(0, 16), weak: password.length < STRONG_PASSWORD };
+}
+
+// POST /admin/password (CSRF already checked by the caller): the signed-in user changes their own password.
+// Returns { done } for the Recruits page and, when it changed, the user's new session version.
+export async function changeOwnPassword(env, form, me) {
+  if (me.main) return { done: "mainpass" };
+  const lockKey = `pwlock:${me.id}`;
+  const wrong = Number(await env.FEEDBACK.get(lockKey)) || 0;
+  if (wrong >= MAX_WRONG_PASSWORDS) return { done: "pwlocked" };
+  const acc = await accounts(env);
+  const user = await checkUser(env, acc, me.id, String(form.get("current") || "").slice(0, MAX_PASSWORD));
+  if (!user) {
+    try {
+      await env.FEEDBACK.put(lockKey, String(wrong + 1), { expirationTtl: WRONG_PASSWORD_SECONDS });
+    } catch {
+      return { done: "pwlocked" };
+    }
+    return { done: "badcurrent" };
+  }
+  const password = String(form.get("password") || "");
+  const problem = passwordProblem(password, String(form.get("again") || ""));
+  if (problem) return { done: problem };
+  Object.assign(user, await newPassword(env, password));
+  await saveAccounts(env, acc);
+  await env.FEEDBACK.delete(lockKey);
+  return { done: "password", v: user.v };
+}
+
+function userModals(acc, csrf, adminLabel, me) {
   const add = modal("user-new", "Add a user", "They sign in at /admin with this username and password.",
     `<form method="post" action="${USERS_URL}">${hidden({ csrf, op: "add" })}
 <label for="un-name">Name</label><input id="un-name" name="name" required maxlength="80" autocomplete="off" placeholder="Riley Chen">
@@ -165,25 +231,30 @@ function userModals(acc, csrf, adminLabel) {
   const main = modal(`user-${ADMIN_ID}`, adminLabel, "The main admin signs in with the ADMIN_USER and ADMIN_PASSWORD secrets and always has the Admin role.",
     `<form method="post" action="${USERS_URL}">${hidden({ csrf, op: "admin_roles" })}
 <label>Roles</label>${roleBoxes("ua", acc.admin.roles, { lockAdmin: true })}<button>Save roles</button></form>`);
-  const edits = acc.users.map((u) => modal(`user-${u.id}`, u.name, `Username ${u.id}. A new password signs them out everywhere.`,
+  const edits = acc.users.map((u) => modal(`user-${u.id}`, u.name, `Username ${u.id}.`,
     `<form method="post" action="${USERS_URL}">${hidden({ csrf, op: "edit", id: u.id })}
 <label for="ue-${u.id}-name">Name</label><input id="ue-${u.id}-name" name="name" required maxlength="80" value="${esc(u.name)}" autocomplete="off">
 <label>Roles</label>${roleBoxes(`ue-${u.id}`, u.roles)}
-<label for="ue-${u.id}-pass">New password</label><input id="ue-${u.id}-pass" name="password" type="password" minlength="${MIN_PASSWORD}" maxlength="200" autocomplete="new-password" placeholder="Leave empty to keep it">
 <button>Save changes</button></form>`)).join("");
-  return add + main + edits;
+  const resets = acc.users.filter((u) => u.id !== me.id).map((u) => modal(`reset-${u.id}`, `Reset ${u.name}'s password`,
+    "They are signed out everywhere at once and sign in with the new password. It isn't sent to them, so tell them yourself.",
+    `<form method="post" action="${USERS_URL}">${hidden({ csrf, op: "reset", id: u.id })}
+${newPasswordFields(`ur-${u.id}`)}<button>Reset password</button></form>`, KEY_ICON)).join("");
+  return add + main + edits + resets;
 }
 
 function userRow(u, count, me, csrf, tz) {
   const self = u.id === me.id;
   const remove = self || u.main ? "" : binButton(`deluser-${u.id}`, `Delete ${u.name}`);
+  const password = self ? `<a class="small quiet" href="/admin#password">Change password</a>`
+    : u.main ? "" : `<a class="small quiet keybtn" href="#reset-${esc(u.id)}">${KEY_ICON}Reset password</a>`;
   const weak = u.weak ? ' <span class="role weak" title="Shorter than the recommended length">short password</span>' : "";
   return `<tr><td><div class="who"><span class="avatar${u.roles.includes("recruiter") ? " rec" : ""}" aria-hidden="true">${esc(initials(u.name))}</span><div>
 <b>${esc(u.name)}</b>${self ? ' <span class="muted">(you)</span>' : ""}<div class="muted"><code>${esc(u.username)}</code></div>
 <div class="muted">${u.main ? "main admin, from the Worker's secrets" : `since ${esc(when(u.created, tz))}`}</div></div></div></td>
 <td>${pills(u.roles)}${weak}</td>
 <td>${u.roles.includes("recruiter") ? `<b>${count}</b> <span class="muted">recruit${count === 1 ? "" : "s"}</span>` : '<span class="muted">not a recruiter</span>'}</td>
-<td><div class="actions"><a class="small" href="#user-${esc(u.id)}">Edit</a>${remove}</div></td></tr>`;
+<td><div class="actions"><a class="small" href="#user-${esc(u.id)}">Edit</a>${password}${remove}</div></td></tr>`;
 }
 
 function deleteUserModal(u, csrf) {
@@ -195,12 +266,15 @@ function deleteUserModal(u, csrf) {
 export const USERS_DONE = {
   added: "User added. They can sign in now.",
   updated: "Saved.",
+  reset: "Password reset. They have been signed out everywhere; give them the new password.",
   deleted: "User deleted and signed out. Their recruits are now unassigned.",
   baduser: "Give the user a name and a username of 2 to 32 lower-case letters, numbers, - or _.",
   taken: "That username is already used.",
   badpass: `Passwords need at least ${MIN_PASSWORD} characters.`,
+  mismatch: "The two new passwords were different, so nothing changed.",
   badroles: "Pick at least one role.",
   self: "You can't delete or demote the account you are signed in with.",
+  ownpass: "Change your own password from Change password on the Recruits page.",
   confirmuser: "Tick the box to delete the user.",
   full: `There can be at most ${MAX_USERS} users.`,
 };
@@ -218,8 +292,8 @@ export function usersPage(acc, status, csrf, me, env, done = "") {
 <h2>Roles</h2><div class="rolecards">${roles}</div>
 <div class="tabletools"><h2 style="margin:0">Dashboard users</h2><a class="addkey" href="#user-new">${USER_ICON}Add user</a></div>
 <table class="list"><tr><th>User</th><th>Roles</th><th>Recruits</th><th></th></tr>${rows}</table>
-<p class="muted">Passwords are kept only as salted hashes. A new password or deleting a user signs them out at once. Assign recruits to a recruiter from the <a href="/admin">Recruits</a> list; the people a recruiter invites join their pool.</p>`,
-  { wide: true, before: userModals(acc, csrf, `${main.name} (main admin)`) + deletes });
+<p class="muted">Passwords are kept only as salted hashes. Resetting a password or deleting a user signs them out at once; everyone changes their own password from <b>Change password</b> on the <a href="/admin">Recruits</a> page. Assign recruits to a recruiter from the <a href="/admin">Recruits</a> list; the people a recruiter invites join their pool.</p>`,
+  { wide: true, before: userModals(acc, csrf, `${main.name} (main admin)`, me) + deletes });
 }
 
 // POST /admin/users (admins only, CSRF already checked by the caller).
@@ -239,11 +313,10 @@ export async function userAction(env, form, me, status, queue) {
     const id = String(form.get("username") || "").trim().toLowerCase();
     if (!name || !USER_RE.test(id)) return back("baduser");
     if (RESERVED.has(id) || id === String(env.ADMIN_USER || "admin").toLowerCase() || acc.users.some((u) => u.id === id)) return back("taken");
-    if (password.length < MIN_PASSWORD || password.length > 200) return back("badpass");
+    if (password.length < MIN_PASSWORD || password.length > MAX_PASSWORD) return back("badpass");
     if (!roles.length) return back("badroles");
     if (acc.users.length >= MAX_USERS) return back("full");
-    acc.users.push({ id, name, roles, ...(await hashPassword(env, password)), v: newId().slice(0, 16),
-      weak: password.length < STRONG_PASSWORD, created: Date.now() });
+    acc.users.push({ id, name, roles, ...(await newPassword(env, password)), created: Date.now() });
     await saveAccounts(env, acc);
     return back("added");
   }
@@ -253,11 +326,18 @@ export async function userAction(env, form, me, status, queue) {
     if (!name) return back("baduser");
     if (!roles.length) return back("badroles");
     if (user.id === me.id && !roles.includes("admin")) return back("self");
-    if (password && (password.length < MIN_PASSWORD || password.length > 200)) return back("badpass");
-    Object.assign(user, { name, roles }, password
-      ? { ...(await hashPassword(env, password)), v: newId().slice(0, 16), weak: password.length < STRONG_PASSWORD } : {});
+    Object.assign(user, { name, roles });
     await saveAccounts(env, acc);
     return back("updated");
+  }
+  if (op === "reset") {
+    if (user.id === me.id) return back("ownpass");
+    const problem = passwordProblem(password, String(form.get("again") || ""));
+    if (problem) return back(problem);
+    Object.assign(user, await newPassword(env, password));
+    await saveAccounts(env, acc);
+    await env.FEEDBACK.delete(`pwlock:${user.id}`);
+    return back("reset");
   }
   if (op === "delete") {
     if (user.id === me.id) return back("self");
@@ -298,5 +378,6 @@ export const USERS_STYLE = `
 .role.weak{color:#b45309;background:#fffbeb}
 .avatar.rec{background:linear-gradient(135deg,#2dd4bf,#0891b2);box-shadow:0 6px 14px -8px rgba(8,145,178,.9)}
 .addkey svg{width:16px;height:16px}
+.keybtn{display:inline-flex;align-items:center;gap:5px}.keybtn svg{width:14px;height:14px}
 @media (max-width:640px){.rolecards{grid-template-columns:1fr}}
 `;

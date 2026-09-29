@@ -667,3 +667,60 @@ describe("jobs emailed from the list of jobs sent", () => {
     expect(body).not.toContain("sam@example.com");
   });
 });
+
+describe("changing and resetting passwords", () => {
+  const form = (path, fields, cookie) => new Request(`${BASE}${path}`, { method: "POST", body: new URLSearchParams(fields),
+    headers: cookie ? { Cookie: cookie } : {} });
+  const csrfOf = async (env, cookie) => (await (await get("/admin", env, { Cookie: cookie })).text()).match(/name="csrf" value="([0-9a-f]+)"/)?.[1];
+  const userCookie = async (env, username, password, ip) => (await worker.fetch(new Request(`${BASE}/admin/login`, {
+    method: "POST", body: new URLSearchParams({ username, password }), headers: { "CF-Connecting-IP": ip } }), env))
+    .headers.get("Set-Cookie")?.split(";")[0];
+
+  async function twoRecruiters() {
+    const env = testEnv(ADMIN);
+    const admin = await signIn(env, "203.0.113.60");
+    for (const [name, username, password] of [["Casey Quinn", "casey", "casey's passphrase"], ["Drew Harper", "drew", "drew's passphrase"]]) {
+      await worker.fetch(form("/admin/users", { csrf: await csrfOf(env, admin), op: "add", name, username, password, roles: "recruiter" }, admin), env);
+    }
+    const casey = await userCookie(env, "casey", "casey's passphrase", "203.0.113.61");
+    return { env, admin, casey };
+  }
+
+  it("only ever changes the signed-in user's own password, whatever the form names", async () => {
+    const { env, casey } = await twoRecruiters();
+    const drewBefore = JSON.parse(env.FEEDBACK.store.get("accounts")).users.find((u) => u.id === "drew");
+    const res = await worker.fetch(form("/admin/password", { csrf: await csrfOf(env, casey), username: "drew", id: "drew", u: "admin",
+      current: "casey's passphrase", password: "chosen by casey", again: "chosen by casey" }, casey), env);
+    expect(res.headers.get("Location")).toBe("/admin?done=password");
+    const users = JSON.parse(env.FEEDBACK.store.get("accounts")).users;
+    expect(users.find((u) => u.id === "drew")).toEqual(drewBefore);
+    expect(await userCookie(env, "drew", "chosen by casey", "203.0.113.62")).toBeUndefined();
+    expect(await userCookie(env, "casey", "chosen by casey", "203.0.113.63")).toMatch(/\.casey\./);
+    expect(await userCookie(env, "admin", "chosen by casey", "203.0.113.64")).toBeUndefined();
+  });
+
+  it("stops an old cookie from changing the password back once it has changed", async () => {
+    const { env, casey } = await twoRecruiters();
+    const csrf = await csrfOf(env, casey);
+    await worker.fetch(form("/admin/password", { csrf, current: "casey's passphrase", password: "first new one", again: "first new one" }, casey), env);
+    const replay = await worker.fetch(form("/admin/password",
+      { csrf, current: "first new one", password: "attacker's choice", again: "attacker's choice" }, casey), env);
+    expect(await replay.text()).toContain("Admin sign-in");
+    expect(await userCookie(env, "casey", "first new one", "203.0.113.65")).toMatch(/\.casey\./);
+  });
+
+  it("keeps no password in storage, in the lock or in any page, and a recruiter's reset is refused", async () => {
+    const { env, casey } = await twoRecruiters();
+    const csrf = await csrfOf(env, casey);
+    await worker.fetch(form("/admin/password", { csrf, current: "a wrong guess here", password: "not stored", again: "not stored" }, casey), env);
+    expect(env.FEEDBACK.store.get("pwlock:casey")).toBe("1");
+    const reset = await worker.fetch(form("/admin/users", { csrf, op: "reset", id: "drew", password: "casey took over", again: "casey took over" }, casey), env);
+    expect(reset.status).toBe(403);
+    for (const value of env.FEEDBACK.store.values()) {
+      for (const secret of ["casey's passphrase", "drew's passphrase", "a wrong guess here", "not stored", "casey took over"]) {
+        expect(String(value)).not.toContain(secret);
+      }
+    }
+    expect(await (await get("/admin", env, { Cookie: casey })).text()).not.toContain("passphrase");
+  });
+});

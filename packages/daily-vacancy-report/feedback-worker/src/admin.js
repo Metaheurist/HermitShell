@@ -3,7 +3,8 @@
 // /admin: when ACCESS_AUD is set, Cloudflare Access (email one-time code) must let the request through
 // first. Then sign in as the main admin (ADMIN_USER, default "admin", and the ADMIN_PASSWORD secret) or as a
 // dashboard user made on the Users and roles page (users.js). Five wrong attempts lock that address, and 30 from
-// anywhere lock sign-in, for 15 minutes. Admins see every recruit; a recruiter sees only their own pool, and every
+// anywhere lock sign-in, for 15 minutes. Everyone changes their own password from the Recruits page (the main
+// admin's is the ADMIN_PASSWORD secret, so they are shown how to change that). Admins see every recruit; a recruiter sees only their own pool, and every
 // route below checks that, not just the links on the page. Signed-in pages create invite links, show the recruits
 // HermitShell reports, and queue changes that HermitShell applies as soon as the live link tells it (settings pages:
 // settings.js; each recruit's stats page: stats.js; web search keys: keys.js; recruit search: search.js; the task
@@ -30,8 +31,8 @@ import {
 import { LINK_STYLE, MAX_STATS_BYTES, SENT_RANGES, SENT_URL, STATS_URL, sentPage, splitStats, statsLink, statsPage, validStats } from "./stats.js";
 import { TASKS_STYLE, TASKS_URL, cancelTask, requests, taskRows, tasksButton, tasksModal, tasksPage } from "./tasks.js";
 import {
-  ADMIN_ID, ROLES, USERS_DONE, USERS_STYLE, USER_RE, accounts, canSee, checkUser, displayName, initials, recruiterOf, recruiters,
-  signOutUser, signedIn, userAction, usersPage,
+  ADMIN_ID, PASSWORD_URL, ROLES, USERS_DONE, USERS_STYLE, USER_RE, accounts, canSee, changeOwnPassword, checkUser, displayName, initials,
+  passwordModal, recruiterOf, recruiters, signOutUser, signedIn, userAction, usersPage,
 } from "./users.js";
 
 const SESSION_SECONDS = 12 * 3600;
@@ -52,7 +53,13 @@ const DONE = {
   badkey: "That does not look like an API key.",
   assigned: "Assigned. HermitShell records it within seconds while it is connected.",
   badrecruiter: "Pick a recruiter from the list.",
+  password: "Password changed. You are still signed in here, and signed out everywhere else.",
+  badcurrent: "Your current password was wrong, so nothing changed.",
+  pwlocked: "Too many wrong current passwords. Try again in 15 minutes.",
+  mainpass: "The main admin's password is the ADMIN_PASSWORD secret; change it with wrangler.",
   ...SETTINGS_DONE,
+  badpass: USERS_DONE.badpass,
+  mismatch: USERS_DONE.mismatch,
 };
 const NOT_FOUND = ["Recruit not found", '<p>HermitShell has not reported this recruit. <a href="/admin">Back to recruits</a></p>', { status: 404 }];
 const ADMINS_ONLY = ["Admins only", '<p>Only an admin can open this page. <a href="/admin">Back to recruits</a></p>', { status: 403 }];
@@ -252,7 +259,7 @@ const RECRUITER_STYLE = `
 .reccell .who{align-items:center;gap:9px}.reccell b{font-size:13.5px}
 form.assign{display:flex;gap:6px;align-items:center;margin-top:8px}
 form.assign select{width:auto;min-width:0;max-width:150px;padding:6px 30px 6px 10px;font-size:13px;height:auto}
-.whoami{display:flex;align-items:center;gap:10px;margin-top:32px}.whoami .signout{margin:0 0 0 auto}
+.whoami{display:flex;align-items:center;gap:10px;margin-top:32px}.whoami .signout{margin:0}.whoami .mine{margin-left:auto}
 `;
 
 function recruiterCell(p, rec, recs, csrf) {
@@ -357,8 +364,8 @@ ${rows}</table>
 ${admin ? `<p class="muted">The email server and web search keys everyone shares are under <a href="${SETTINGS_URL}">Global settings</a>; dashboard users and recruiters under <a href="${USERS_URL}">Users and roles</a>.</p>` : ""}
 ${inviteForm(s, recs)}
 ${inviteRows ? `<table class="list">${inviteRows}</table>` : ""}
-<div class="whoami"><span class="muted">Signed in as <b>${who}</b></span><form method="post" action="/admin/logout" class="signout"><button class="small quiet">Sign out</button></form></div>`,
-  { wide: true, before: tasksModal() + deletes, headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` } });
+<div class="whoami"><span class="muted">Signed in as <b>${who}</b></span><a class="small quiet mine" href="#password">Change password</a><form method="post" action="/admin/logout" class="signout"><button class="small quiet">Sign out</button></form></div>`,
+  { wide: true, before: tasksModal() + passwordModal(s.me, s.csrf, env) + deletes, headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` } });
 }
 
 async function tasksAction(request, env, s) {
@@ -469,6 +476,20 @@ async function action(request, env, s) {
   return redirect("/admin?done=queued");
 }
 
+// A new password changes the user's session version, which signs out their other sessions; this one gets a
+// cookie signed with the new version and the same expiry.
+async function passwordRequest(request, env, s) {
+  const form = await limitedForm(request, 4096);
+  if (!form || !safeEqual(String(form.get("csrf") || ""), s.csrf)) {
+    return page("Expired form", "<p>Reload the admin page and try again.</p>", { status: 403 });
+  }
+  const { done, v } = await changeOwnPassword(env, form, s.me);
+  if (!v) return redirect(`/admin?done=${done}#password`);
+  const sig = await sessionFor(env, s.exp, s.me.id, v);
+  const left = Math.max(1, Math.floor((Number(s.exp) - Date.now()) / 1000));
+  return redirect(`/admin?done=${done}`, { "Set-Cookie": cookieHeader(`${s.exp}.${s.me.id}.${sig}`, left) });
+}
+
 async function usersRequest(request, env, s) {
   if (!s.me.admin) return page(...ADMINS_ONLY);
   if (request.method === "POST") {
@@ -503,6 +524,7 @@ export async function handleAdmin(request, env, ctx) {
     return cvUpload(request, env, s, async (u) => allowed(s, await status(env), u));
   }
   if (path === USERS_URL && ["GET", "POST"].includes(request.method)) return usersRequest(request, env, s);
+  if (path === PASSWORD_URL && request.method === "POST") return passwordRequest(request, env, s);
   if (path === TASKS_URL && request.method === "POST") return tasksAction(request, env, s);
   if (path === TASKS_URL && request.method === "GET") {
     const url = new URL(request.url);
