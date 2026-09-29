@@ -376,6 +376,17 @@ def test_main_watches_between_cron_runs_unless_once(home, monkeypatch, argv, wat
     assert profiles.WATCH_SECONDS + 2 * profiles.POLL_SECONDS <= 300, "a run must end before the next one starts"
 
 
+def test_a_slow_sync_shortens_the_watch_so_the_next_run_is_not_skipped(home, monkeypatch):
+    clock, calls = Clock(), []
+    monkeypatch.setenv("JOB_FEEDBACK_API_TOKEN", "api-token")
+    monkeypatch.setattr(profiles, "load_env_file", lambda *a, **k: None)
+    monkeypatch.setattr(profiles.time, "monotonic", clock)
+    monkeypatch.setattr(profiles, "sync", lambda api, full=False: clock.sleep(200) or [])
+    monkeypatch.setattr(profiles, "watch", lambda api, seconds, poll: calls.append(seconds) or [])
+    profiles.main([])
+    assert calls == [profiles.WATCH_SECONDS - 200]
+
+
 def test_admin_can_go_back_to_the_env_keys_and_delete(home):
     profiles.sync(FakeApi([signup()]))
     pid = "sam-lee-456789"

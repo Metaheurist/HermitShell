@@ -66,8 +66,9 @@ HOST_RE = re.compile(r"^[A-Za-z0-9.-]{3,120}$")
 QUEUE_ATTEMPTS = 5
 FULL_LIST_EVERY = 3600
 STATUS_EVERY = 900
-# The cron job runs every 5 minutes; each run watches for dashboard changes until just before the next.
-WATCH_SECONDS = 270
+# The cron job runs every 5 minutes and Hermes skips a run while the last one is still going, so each run
+# watches for dashboard changes until comfortably before the next (counted from when the run started).
+WATCH_SECONDS = 250
 POLL_SECONDS = 15
 RUN_TIMEOUT = 4 * 3600
 MAX_CV_CHARS = 12_000
@@ -1146,11 +1147,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Invite link (single use, expires {datetime.fromtimestamp(invite['expires'] / 1000):%d %b %Y}):\n"
               f"{invite['link']}")
         return 0
+    started = time.monotonic()
     for line in sync(api, args.full):
         print(line)
     if not args.once:
-        for line in watch(api, _seconds("JOB_PROFILES_WATCH_SECONDS", WATCH_SECONDS, 0),
-                          _seconds("JOB_PROFILES_POLL_SECONDS", POLL_SECONDS, 5)):
+        left = _seconds("JOB_PROFILES_WATCH_SECONDS", WATCH_SECONDS, 0) - int(time.monotonic() - started)
+        for line in watch(api, left, _seconds("JOB_PROFILES_POLL_SECONDS", POLL_SECONDS, 5)):
             print(line)
     return 0
 

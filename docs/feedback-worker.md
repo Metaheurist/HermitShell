@@ -281,7 +281,8 @@ from the Worker's admin page; HermitShell applies the changes, since the Worker 
    Each run syncs, then keeps watching until just before the next run: every 15 seconds it reads
    `/api/queue/flag` (one KV read, no list) and syncs as soon as something new is queued, so
    dashboard changes and sign-ups are picked up within seconds. `python3 profiles.py --once` syncs
-   once and exits. `JOB_PROFILES_WATCH_SECONDS` (default 270, `0` turns watching off) and
+   once and exits. `JOB_PROFILES_WATCH_SECONDS` (default 250, counted from the start of the run so
+   it ends before the next one; `0` turns watching off) and
    `JOB_PROFILES_POLL_SECONDS` (default 15, at least 5) change this.
 
 3. Open `https://vacancy-feedback.<subdomain>.workers.dev/admin`, sign in and press
