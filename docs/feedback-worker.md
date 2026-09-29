@@ -365,6 +365,10 @@ whole tool shares).
   and CV) and **Stats** its [stats page](#stats). Pause, resume or delete
   (deleting removes their CV and history from your server, their answers still waiting in KV and
   their name and email from the logs; the owner can't be deleted).
+- **Pending sign-ups**: someone who has sent the invite form gets a **pending** row straight away
+  (name, email, when and what they're looking for), while HermitShell reads their CV and builds the
+  profile. HermitShell reports the new profile before it takes the sign-up off the queue, so the row
+  turns into the profile without the person dropping off the dashboard in between.
 - **Search**: the magnifying glass above the table slides out a search box (CSS only). Press Enter
   and the page lists only the profiles whose name, email, id, place, status or crawler contain every
   word you typed (`/admin?q=`), with a count and **&times;** to show everyone again.

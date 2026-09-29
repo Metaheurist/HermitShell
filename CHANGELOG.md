@@ -400,6 +400,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A new sign-up dropped off the dashboard until its profile was built. It now has a **pending** row
+  from the moment the invite form is sent. HermitShell also reports the new profile before it takes the
+  sign-up off the queue: before, it took it off first and reported the profile only after updating the
+  Hermes jobs.
 - Two dashboard changes saved in the same millisecond could reach HermitShell in the wrong order,
   because the queue sorted them by a random id. The Worker now gives each change a later time than the
   one before.
