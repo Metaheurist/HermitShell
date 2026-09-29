@@ -10,11 +10,28 @@ export const SECURITY_HEADERS = {
 };
 export const CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; form-action 'self'; frame-ancestors 'none'";
 
-// The tab icon: the brand's gradient square (as next to "HermitShell" on every page) with a white shell spiral.
-export const FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-<stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
-<rect width="64" height="64" rx="18" fill="url(#g)"/><path d="M33 48c-9 0-15-7-15-15s6-14 14-14 13 6 13 12-4.5 10-10 10-8.5-3.5-8.5-7.5 3-6.5 6.5-6.5 4.5 2.2 4.5 4.5"
-fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+// The HermitShell mark: a spiral shell on the brand's indigo-to-violet tile, lit from the top left like the buttons.
+// It is the tab icon and sits next to "HermitShell" on every page (inline there, so pages load nothing more).
+const SHELL = "M25.7 32.8C25.5 32.1 24.5 29.9 24.5 28.3C24.4 26.8 24.7 25 25.4 23.5C26.1 22 27.2 20.4 28.5 19.2C29.9 18.1 31.7 17.1 33.5 16.6"
+  + "C35.3 16.2 37.5 16 39.4 16.4C41.4 16.8 43.5 17.7 45.2 19C46.9 20.2 48.6 22.1 49.6 24.1C50.7 26.1 51.4 28.6 51.5 31"
+  + "C51.5 33.4 51.1 36.2 50 38.5C49 40.9 47.3 43.3 45.2 45.1C43.1 46.8 40.4 48.4 37.5 49.1C34.7 49.8 31.4 50.1 28.3 49.5"
+  + "C25.3 48.9 22 47.5 19.3 45.5C16.7 43.5 13.6 38.9 12.5 37.6Z";
+const WHORL = "M32 25.5C32.4 25.2 33.4 24.4 34.2 24.1C35 23.9 36.1 23.8 37 24C37.9 24.2 38.9 24.7 39.6 25.3C40.4 26 41.1 26.9 41.5 27.9"
+  + "C41.8 28.9 42 30.2 41.8 31.3C41.7 32.4 41.2 33.7 40.4 34.7C39.7 35.7 38.6 36.6 37.4 37.2C36.1 37.7 34.6 38 33.2 37.9"
+  + "C31.8 37.7 30.2 37.2 28.9 36.4C27.7 35.5 26.2 33.4 25.7 32.8";
+
+function brandMark(id, attrs) {
+  return `<svg ${attrs} viewBox="0 0 64 64"><defs><linearGradient id="${id}t" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient>`
+    + `<radialGradient id="${id}l" cx=".28" cy=".18" r=".85"><stop offset="0" stop-color="#fff" stop-opacity=".32"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/></radialGradient>`
+    + `<linearGradient id="${id}s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#e0e7ff"/></linearGradient></defs>`
+    + `<rect width="64" height="64" rx="18" fill="url(#${id}t)"/><rect width="64" height="64" rx="18" fill="url(#${id}l)"/>`
+    + `<rect x=".75" y=".75" width="62.5" height="62.5" rx="17.25" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="1.5"/>`
+    + `<path d="${SHELL}" fill="#312e81" fill-opacity=".28" transform="translate(0 1.6)"/><path d="${SHELL}" fill="url(#${id}s)"/>`
+    + `<path d="${WHORL}" fill="none" stroke="#6366f1" stroke-width="3" stroke-linecap="round"/></svg>`;
+}
+
+export const FAVICON = brandMark("", 'xmlns="http://www.w3.org/2000/svg"');
+export const BRAND_MARK = brandMark("hs-", 'class="mark" aria-hidden="true" focusable="false"');
 
 const LINE_ICON = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
 export const EXTERNAL_ICON = `<svg class="ext" ${LINE_ICON}><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg>`;
@@ -158,8 +175,7 @@ box-shadow:0 1px 2px rgba(15,23,42,.04),0 18px 50px -18px rgba(30,27,75,.18);ani
 main.wide{max-width:900px}
 .eyebrow{display:flex;align-items:center;gap:9px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:750;
 color:var(--brand-ink)}
-.eyebrow::before{content:"";width:20px;height:20px;border-radius:7px;background:linear-gradient(135deg,var(--brand),var(--brand2));
-box-shadow:0 4px 12px -3px rgba(99,102,241,.7),inset 0 1px 0 rgba(255,255,255,.35)}
+.eyebrow svg.mark{flex:none;width:24px;height:24px;border-radius:7px;box-shadow:0 3px 8px -4px rgba(79,70,229,.6)}
 h1{font-size:27px;line-height:1.2;letter-spacing:-.025em;margin:14px 0 6px;font-weight:750}
 h2{font-size:16px;letter-spacing:-.01em;margin:32px 0 10px;font-weight:700}
 p{color:var(--text);margin:10px 0}
@@ -280,7 +296,7 @@ export function page(heading, body, { status = 200, wide = false, headers = {}, 
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">${
   refresh > 0 ? `<meta http-equiv="refresh" content="${Math.trunc(refresh)}">` : ""}
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"><title>${esc(heading)}</title><style>${STYLE}</style></head><body>${before}<main${wide ? ' class="wide"' : ""}>
-<div class="eyebrow">HermitShell</div><h1>${esc(heading)}</h1>${body}</main></body></html>`;
+<div class="eyebrow">${BRAND_MARK}HermitShell</div><h1>${esc(heading)}</h1>${body}</main></body></html>`;
   return new Response(html, {
     status,
     headers: {

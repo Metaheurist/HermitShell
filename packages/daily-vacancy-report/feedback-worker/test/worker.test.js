@@ -293,7 +293,7 @@ describe("feedback worker", () => {
     const env = testEnv({ ADMIN_PASSWORD: "correct horse battery" });
     for (const path of ["/privacy", "/admin", "/join?i=bad"]) {
       const body = await (await worker.fetch(new Request(`${BASE}${path}`), env)).text();
-      expect(body, path).toContain('<div class="eyebrow">HermitShell</div>');
+      expect(body, path).toMatch(/<div class="eyebrow"><svg class="mark" aria-hidden="true" focusable="false" viewBox="0 0 64 64">[\s\S]*?<\/svg>HermitShell<\/div>/);
       expect(body, path).not.toContain("Daily Vacancy Report");
     }
     expect(await (await worker.fetch(new Request(`${BASE}/`), env)).text()).toBe("HermitShell feedback endpoint.");
@@ -305,7 +305,7 @@ describe("feedback worker", () => {
     const body = await res.text();
     expect(body).toContain("@keyframes rise");
     expect(body).toMatch(/@media \(prefers-reduced-motion:reduce\)\{\*,\*::before,\*::after\{animation:none!important/);
-    expect(body.replace('<link rel="icon" href="/favicon.svg" type="image/svg+xml">', "")).not.toMatch(/<script|<link|@import|url\(/);
+    expect(body.replace('<link rel="icon" href="/favicon.svg" type="image/svg+xml">', "")).not.toMatch(/<script|<link|@import|url\((?!#hs-[tls]\))/);
     expect(res.headers.get("Content-Security-Policy")).not.toContain("script-src");
   });
 

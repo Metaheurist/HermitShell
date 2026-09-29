@@ -48,11 +48,24 @@ describe("security headers", () => {
       expect(res.headers.get("Cache-Control")).toBe("public, max-age=86400");
       const svg = await res.text();
       expect(svg).toMatch(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
-      expect(svg).not.toMatch(/<script|on\w+=|href=|<foreignObject/i);
+      expect(svg).not.toMatch(/<script|on\w+=|href=|<foreignObject|<image|<style|@import/i);
+      expect(svg.match(/url\([^)]*\)/g).every((u) => /^url\(#[a-z]\)$/.test(u))).toBe(true);
     }
     expect((await worker.fetch(new Request(`${BASE}/favicon.svg`, { method: "POST" }), env)).status).toBe(404);
     for (const path of ["/admin", "/privacy", "/join?i=bad"]) {
       expect(await (await get(path, env)).text(), path).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml">');
+    }
+  });
+
+  it("draws the brand mark in every page inline, with nothing that runs or loads from elsewhere", async () => {
+    const env = testEnv(ADMIN);
+    for (const path of ["/admin", "/privacy", "/join?i=bad"]) {
+      const body = await (await get(path, env)).text();
+      const mark = body.match(/<svg class="mark"[\s\S]*?<\/svg>/)[0];
+      expect(mark, path).toContain('aria-hidden="true"');
+      expect(mark, path).not.toMatch(/<script|on\w+=|href=|<foreignObject|<image|<style/i);
+      expect(mark.match(/url\([^)]*\)/g).every((u) => /^url\(#hs-[tls]\)$/.test(u)), path).toBe(true);
+      expect(body.match(/id="hs-t"/g), path).toHaveLength(1);
     }
   });
 });
