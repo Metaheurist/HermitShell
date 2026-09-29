@@ -67,8 +67,11 @@ The buttons and tags only appear when the [feedback Worker](feedback-worker.md) 
 - **More matches**: when the email would be clipped by Gmail (over about 100 KB), the
   lowest-ranked jobs become one-line entries instead of full cards. They keep the card buttons, with
   the same icons, at a smaller size.
-- **Footer**: the filters in force, how many jobs each filter excluded, the model, the sources, the
-  web credits used, how fit penalties work, and the **Unsubscribe** link.
+- **Footer**: three short lines. **Filters** shows the area, job types, minimum fit and salary floor.
+  **Skipped** shows how many jobs each filter removed, listing only the filters that removed some.
+  **Run** shows the model, the sources and the web credits used. Below them is the
+  **Unsubscribe** link. How scores and buttons work is explained once, in the welcome email and
+  these docs, instead of in every report.
 
 ### No new matches
 

@@ -380,6 +380,14 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Shorter email footers.**
+  - The vacancy report footer is now three short lines. **Filters** shows the area, job types, minimum
+    fit and salary floor. **Skipped** shows only the filters that removed jobs, with their counts.
+    **Run** shows the model, the sources and the web credits used.
+  - The explanations of keyword match, level penalties, second checks and the buttons are no longer in
+    every report; the welcome email and the docs cover them.
+  - The unsubscribe line is just **Unsubscribe** and what it does. The cover letter, tailored CV and
+    welcome email footers are one or two short lines.
 - The one-line entries under **More matches** in the vacancy report use smaller versions of the card
   buttons, with the same icons, instead of underlined text links. Cover letter and Tailored CV sit on a
   line of their own, as on the full cards.
