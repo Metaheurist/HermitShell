@@ -37,14 +37,14 @@ export function noMatch(q) {
 }
 
 export const SEARCH_STYLE = `
-.tabletools{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0 4px}
-.tabletools .count{font-size:12px;font-weight:650;color:var(--muted);background:#f0f2f8;border-radius:99px;padding:3px 10px}
-form.search{display:flex;align-items:center;gap:6px;margin:0;position:relative}
-#profile-search{width:0;min-width:0;padding:9px 0;border-color:transparent;background:transparent;opacity:0;
-border-radius:12px;transition:width .35s var(--ease),padding .35s var(--ease),opacity .25s,border-color .2s,background .2s}
+.tabletools{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:22px 0 10px}
+.tabletools .count{font-size:12px;font-weight:650;color:var(--muted);background:#f0f2f8;border-radius:99px;padding:4px 12px}
+form.search{display:flex;align-items:center;gap:10px;margin:0;position:relative}
+#profile-search{width:0;min-width:0;height:40px;box-sizing:border-box;padding:0;border-color:transparent;background:transparent;opacity:0;
+border-radius:13px;transition:width .35s var(--ease),padding .35s var(--ease),opacity .25s,border-color .2s,background .2s}
 form.search:focus-within #profile-search,form.search.open #profile-search,form.search:has(#profile-search:not(:placeholder-shown)) #profile-search{
-width:300px;max-width:62vw;padding:9px 13px;opacity:1;border-color:var(--line);background:var(--field)}
-form.search.open #profile-search{padding-right:36px}
+width:360px;max-width:62vw;padding:0 18px;opacity:1;border-color:var(--line);background:var(--field)}
+form.search.open #profile-search{padding-right:42px}
 form.search:focus-within #profile-search{border-color:var(--brand);background:#fff;box-shadow:0 0 0 4px rgba(99,102,241,.15)}
 #profile-search::-webkit-search-cancel-button{display:none}
 .searchbtn{flex:none;margin:0;width:40px;height:40px;border-radius:13px;display:grid;place-items:center;cursor:pointer;
@@ -55,7 +55,7 @@ box-shadow:0 8px 18px -8px rgba(99,102,241,.9)}
 .lens{width:20px;height:20px;animation:peek 3.2s var(--ease) infinite;transform-origin:45% 45%}
 .lens .shine{stroke-dasharray:1;animation:glint 3.2s ease-in-out infinite}
 .searchbtn:hover .lens{animation-duration:1.2s}
-form.search .clear{position:absolute;right:52px;width:26px;height:26px;display:grid;place-items:center;border-radius:8px;
+form.search .clear{position:absolute;right:58px;width:26px;height:26px;display:grid;place-items:center;border-radius:8px;
 font-size:18px;line-height:1;color:var(--muted);text-decoration:none}.clear:hover{background:#eef0f6;color:var(--ink)}
 .nomatch{display:flex;gap:14px;align-items:center;padding:10px 0;color:var(--brand-ink)}
 .nomatch .lens{width:34px;height:34px;padding:8px;box-sizing:content-box;border-radius:14px;background:var(--soft)}

@@ -418,6 +418,8 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **A roomier dashboard search box**: wider, with more padding, the same height as the buttons next to
+  it, and more space around the profile table's toolbar.
 - **Job ratings no longer use Hermes' full chat context.** A rating gets the context it needs, so
   Ollama keeps more of the model on the GPU. Hermes' own context is still used when it fits as well.
 - **`HERMES_MODEL_CONCURRENCY` defaults to `auto`**: one request at a time per working Ollama
