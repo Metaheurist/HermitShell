@@ -218,8 +218,9 @@ describe("admin gateway", () => {
     expect(keysWith(env, "event:sam-lee:")).toEqual([]);
     expect(keysWith(env, "flag:events:sam-lee")).toEqual([]);
     expect(keysWith(env, "event:_:")).toHaveLength(1);
-    expect(body).toContain("HermitShell&#39;s .env fc-...0001");
-    expect((await adminAction(env, cookie, csrf, { action: "api_keys", keys: "bad key!" })).headers.get("Location")).toBe("/admin?done=badkey#keys");
+    const settings = await (await worker.fetch(new Request(`${BASE}/admin/settings`, { headers: { Cookie: cookie } }), env)).text();
+    expect(settings).toContain("HermitShell&#39;s .env fc-...0001");
+    expect((await adminAction(env, cookie, csrf, { action: "api_keys", keys: "bad key!" })).headers.get("Location")).toBe("/admin/settings?done=badkey#keys");
     await adminAction(env, cookie, csrf, { action: "api_keys", keys: "fc-one11111, fc-two22222" });
     await adminAction(env, cookie, csrf, { action: "api_keys_clear" });
     expect((await adminAction(env, cookie, csrf, { action: "pause", u: "../etc" })).status).toBe(400);

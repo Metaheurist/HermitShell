@@ -109,6 +109,9 @@ ul.steps{list-style:none;padding:0;margin:0 0 18px}ul.steps li{padding:8px 12px;
 ul.steps li.done{background:#ecfdf5;color:#047857}ul.steps li.todo{background:#fffbeb;color:#92400e}
 .warn{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:10px 14px;font-size:14px;margin-bottom:14px}
 .warn ul{margin:6px 0 0;padding-left:18px}a.small{font-size:13px;color:#4f46e5}
+nav.tabs{display:flex;gap:4px;margin:6px 0 18px;border-bottom:1px solid #e2e8f0}
+nav.tabs a{padding:8px 12px;font-size:14px;font-weight:600;color:#475569;text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px}
+nav.tabs a.on{color:#4f46e5;border-bottom-color:#4f46e5}
 code.link{display:block;word-break:break-all;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px;font-size:13px}
 `;
 

@@ -92,7 +92,7 @@ describe("authentication", () => {
     const env = testEnv(ADMIN);
     await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "owner", owner: true, name: "Alex Morgan" }],
       email: { user: "alex@example.com", password_set: true } }));
-    for (const path of ["/admin/profile?u=owner"]) {
+    for (const path of ["/admin/profile?u=owner", "/admin/settings", "/admin/settings?done=queued"]) {
       const body = await (await worker.fetch(new Request(`${BASE}${path}`), env)).text();
       expect(body, path).toContain("Admin sign-in");
       expect(body, path).not.toContain("alex@example.com");

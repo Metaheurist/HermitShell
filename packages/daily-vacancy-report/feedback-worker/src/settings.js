@@ -1,6 +1,7 @@
-// Settings on the admin dashboard: the setup checklist, the email server, the web search API keys and each
-// profile's page (details, job search, CV). Forms open prefilled from the last status HermitShell reported; saving
-// only queues the change, which profiles.py validates again and applies within about 5 minutes.
+// Settings pages of the admin dashboard: the setup checklist, the global settings page (email server and web
+// search API keys, shared by every profile) and each profile's page (details, job search, CV). Forms open
+// prefilled from the last status HermitShell reported; saving only queues the change, which profiles.py
+// validates again and applies within about 5 minutes.
 
 import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem } from "./join.js";
 import { esc, limitedForm, newId, page, redirect, safeEqual, when } from "./lib.js";
@@ -41,6 +42,14 @@ function checked(on) {
 
 // ------------------------------------------------------------------------- dashboard sections
 
+export const SETTINGS_URL = "/admin/settings";
+
+export function nav(active) {
+  const tabs = [["profiles", "/admin", "Profiles"], ["settings", SETTINGS_URL, "Global settings"]];
+  return `<nav class="tabs">${tabs.map(([id, href, label]) =>
+    `<a href="${href}"${id === active ? ' class="on" aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
+}
+
 export function ownerOf(status) {
   return (status.profiles || []).find((p) => p.owner) || null;
 }
@@ -53,11 +62,11 @@ export function checklist(status) {
     [Boolean(status.updated), "HermitShell is connected",
       "HermitShell has not reported yet. It checks in every few minutes once the vacancy-profiles job runs."],
     [email.source && email.source !== "none" && email.password_set, "Email server set",
-      '<a href="#email">Set the email server</a> so reports can be sent.'],
+      `<a href="${SETTINGS_URL}#email">Set the email server</a> in Global settings so reports can be sent.`],
     [email.last_test?.ok === true, "Test email received",
-      '<a href="#email">Send a test email</a> to check the settings.'],
+      `<a href="${SETTINGS_URL}#email">Send a test email</a> to check the settings.`],
     [Object.values(keys).some((k) => k && k.source && k.source !== "none"), "Web search key set",
-      '<a href="#keys">Add a web search key</a> (Firecrawl, Tavily or Scrapfly; all have free plans).'],
+      `<a href="${SETTINGS_URL}#keys">Add a web search key</a> in Global settings (Firecrawl, Tavily or Scrapfly; all have free plans).`],
     [owner?.has_cv, "Your CV uploaded",
       owner ? `<a href="/admin/profile?u=owner#cv">Upload your CV</a> so jobs can be rated against it.` : "Upload your CV once HermitShell has connected."],
     [(owner?.job?.titles || []).length > 0, "Job search set",
@@ -119,6 +128,16 @@ export function keysSection(status, csrf) {
 <button>Save keys</button></form><p class="muted">Empty boxes leave that key as it is. Keys are only shown as their last four characters.</p>`;
 }
 
+export function settingsPage(status, csrf, { done = "", queued = [] } = {}) {
+  const waiting = queued.filter((q) => /^(email|test email|api keys)$/.test(q));
+  return page("Global settings", `${nav("settings")}
+${done ? `<p style="color:#047857">${esc(done)}</p>` : ""}${waiting.length ? `<p class="muted">Waiting for HermitShell: ${esc(waiting.join("; "))}.</p>` : ""}
+<p class="muted">These apply to the whole of HermitShell and every profile. Where each person's reports go, their job search
+and CV are on their own page under <a href="/admin">Profiles</a>.</p>
+${emailSection(status, csrf)}
+${keysSection(status, csrf)}`, { wide: true });
+}
+
 // ------------------------------------------------------------------------- one profile's page
 
 function select(name, options, current) {
@@ -137,7 +156,7 @@ export function profilePage(status, pid, csrf, { done = "", queued = [] } = {}) 
   const d = p.details || { name: p.name, email: p.email };
   const j = p.job || {};
   const waiting = queued.filter((q) => q.endsWith(` for ${pid}`));
-  return page(p.owner ? "Your profile" : p.name, `<p><a href="/admin">&larr; All profiles</a></p>
+  return page(p.owner ? "Your profile" : p.name, `${nav("profiles")}<p><a href="/admin">&larr; All profiles</a></p>
 ${done ? `<p style="color:#047857">${esc(done)}</p>` : ""}${waiting.length ? `<p class="muted">Waiting for HermitShell: ${esc(waiting.join("; "))}.</p>` : ""}
 <h2 id="details">Details</h2>
 <form method="post" action="/admin/action">${hidden({ csrf, action: "profile", section: "details", u: pid })}

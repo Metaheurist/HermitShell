@@ -72,8 +72,8 @@ describe("setup checklist", () => {
     const { get } = await setup();
     const { body } = await get("/admin");
     expect(body).toContain("Finish setting up");
-    expect(body).toContain('href="#email"');
-    expect(body).toContain('href="#keys"');
+    expect(body).toContain('href="/admin/settings#email"');
+    expect(body).toContain('href="/admin/settings#keys"');
     expect(body).toContain('href="/admin/profile?u=owner#cv"');
     expect(body).toContain('href="/admin/profile?u=owner#job"');
     expect(body).toContain("no CV");
@@ -104,13 +104,47 @@ describe("setup checklist", () => {
   });
 });
 
+describe("global settings page", () => {
+  it("holds the email server and web search keys, not the profiles page", async () => {
+    const { get, csrf } = await setup();
+    const profiles = (await get("/admin")).body;
+    expect(profiles).not.toContain('id="email"');
+    expect(profiles).not.toContain('id="keys"');
+    expect(profiles).toContain('<a href="/admin/settings">Global settings</a>');
+    const { res, body } = await get("/admin/settings");
+    expect(res.status).toBe(200);
+    expect(body).toContain("<h1>Global settings</h1>");
+    expect(body).toContain('<h2 id="email">Email server</h2>');
+    expect(body).toContain('<h2 id="keys">Web search API keys</h2>');
+    expect(body).toContain('href="/admin/settings" class="on" aria-current="page"');
+    expect(body.match(/name="csrf" value="([0-9a-f]+)"/)[1]).toBe(csrf);
+  });
+
+  it("shows the result of a save and what is still waiting for HermitShell", async () => {
+    const { get, act } = await setup();
+    await act({ action: "test_email", to: "alex@example.com" });
+    await act({ action: "pause", u: "sam-lee" });
+    const { body } = await get("/admin/settings?done=queued");
+    expect(body).toContain("Saved. HermitShell applies it within about 5 minutes.");
+    expect(body).toContain("Waiting for HermitShell: test email.");
+    expect(body).not.toContain("pause for sam-lee");
+  });
+
+  it("links every profile page back to it", async () => {
+    const { get } = await setup();
+    const { body } = await get("/admin/profile?u=sam-lee");
+    expect(body).toContain('<a href="/admin/settings">Global settings</a>');
+    expect(body).toContain('href="/admin" class="on" aria-current="page"');
+  });
+});
+
 describe("email server", () => {
   it("queues the settings, with the password expiring early", async () => {
     const { env, act } = await setup();
     withTtls(env);
     const res = await act({ action: "email", host: "smtp.gmail.com", port: "587", user: "alex@example.com",
       password: "abcd efgh ijkl mnop", from: "" });
-    expect(res.headers.get("Location")).toBe("/admin?done=queued#email");
+    expect(res.headers.get("Location")).toBe("/admin/settings?done=queued#email");
     expect(valuesWith(env, "queue:")).toMatchObject([{ type: "admin", action: "email", host: "smtp.gmail.com", port: "587",
       user: "alex@example.com", password: "abcd efgh ijkl mnop" }]);
     expect(ttlOf(env, "queue:")).toBe(SECRET_TTL_SECONDS);
@@ -127,7 +161,7 @@ describe("email server", () => {
     const { env, act } = await setup();
     for (const bad of [{ host: "smtp gmail com" }, { port: "70000" }, { port: "25a" }, { user: "" }, { from: "not-an-email" }]) {
       const res = await act({ action: "email", host: "smtp.gmail.com", port: "587", user: "a@example.com", ...bad });
-      expect(res.headers.get("Location")).toBe("/admin?done=bademail#email");
+      expect(res.headers.get("Location")).toBe("/admin/settings?done=bademail#email");
     }
     expect(valuesWith(env, "queue:")).toEqual([]);
   });
@@ -136,7 +170,7 @@ describe("email server", () => {
     const { env, act } = await setup();
     await act({ action: "test_email", to: "alex@example.com" });
     await act({ action: "email_clear" });
-    expect((await act({ action: "test_email", to: "nope" })).headers.get("Location")).toBe("/admin?done=bademail#email");
+    expect((await act({ action: "test_email", to: "nope" })).headers.get("Location")).toBe("/admin/settings?done=bademail#email");
     expect(valuesWith(env, "queue:").map(({ action, to, clear }) => ({ action, to, clear }))).toEqual([
       { action: "test_email", to: "alex@example.com", clear: undefined },
       { action: "email", to: undefined, clear: true },
@@ -146,7 +180,7 @@ describe("email server", () => {
   it("never shows the password, only whether one is set", async () => {
     const { get } = await setup({ ...STATUS, email: { ...STATUS.email, user: "alex@example.com", password_set: true, source: "env",
       last_test: { ok: false, at: 1, error: "SMTPAuthenticationError: 535 <bad>" } } });
-    const { body } = await get("/admin");
+    const { body } = await get("/admin/settings");
     expect(body).toContain("unchanged (leave empty to keep it)");
     expect(body).toContain("535 &lt;bad&gt;");
     expect(body).not.toMatch(/name="password"[^>]*value=/);
@@ -158,7 +192,7 @@ describe("web search keys", () => {
     const { env, act } = await setup();
     withTtls(env);
     const res = await act({ action: "api_keys", firecrawl: "fc-aaaa1111, fc-bbbb2222", tavily: "tvly-cccc3333", scrapfly: "" });
-    expect(res.headers.get("Location")).toBe("/admin?done=queued#keys");
+    expect(res.headers.get("Location")).toBe("/admin/settings?done=queued#keys");
     expect(valuesWith(env, "queue:")).toMatchObject([{ action: "api_keys", firecrawl: ["fc-aaaa1111", "fc-bbbb2222"], tavily: "tvly-cccc3333" }]);
     expect(valuesWith(env, "queue:")[0]).not.toHaveProperty("scrapfly");
     expect(ttlOf(env, "queue:")).toBe(SECRET_TTL_SECONDS);
@@ -166,9 +200,9 @@ describe("web search keys", () => {
 
   it("refuses nothing or anything that isn't a key, and clears one provider at a time", async () => {
     const { env, act } = await setup();
-    expect((await act({ action: "api_keys" })).headers.get("Location")).toBe("/admin?done=badkey#keys");
-    expect((await act({ action: "api_keys", scrapfly: "key with spaces" })).headers.get("Location")).toBe("/admin?done=badkey#keys");
-    expect((await act({ action: "api_keys_clear", provider: "github" })).headers.get("Location")).toBe("/admin?done=badkey#keys");
+    expect((await act({ action: "api_keys" })).headers.get("Location")).toBe("/admin/settings?done=badkey#keys");
+    expect((await act({ action: "api_keys", scrapfly: "key with spaces" })).headers.get("Location")).toBe("/admin/settings?done=badkey#keys");
+    expect((await act({ action: "api_keys_clear", provider: "github" })).headers.get("Location")).toBe("/admin/settings?done=badkey#keys");
     await act({ action: "api_keys_clear", provider: "tavily" });
     expect(valuesWith(env, "queue:")).toMatchObject([{ action: "api_keys", clear: ["tavily"] }]);
   });

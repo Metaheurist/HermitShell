@@ -14,7 +14,7 @@ import {
   page, redirect, safeEqual, secretEqual, text, when,
 } from "./lib.js";
 import {
-  SETTINGS_DONE, button, checklist, cvUpload, emailSection, keysSection, problems, profilePage, settingsItem,
+  SETTINGS_DONE, SETTINGS_URL, button, checklist, cvUpload, nav, problems, profilePage, settingsItem, settingsPage,
 } from "./settings.js";
 
 const SESSION_SECONDS = 12 * 3600;
@@ -146,13 +146,12 @@ async function dashboard(request, env, s) {
     .map((i) => `<tr><td>${esc(i.note || "No note")}</td><td class="muted">expires ${esc(when(i.expires))}</td>
 <td>${button(s.csrf, "revoke", "Revoke", { invite: i.id })}</td></tr>`).join("");
   const done = DONE[url.searchParams.get("done")];
-  return page("Profiles", `${done ? `<p style="color:#047857">${esc(done)}</p>` : ""}
+  return page("Profiles", `${nav("profiles")}${done ? `<p style="color:#047857">${esc(done)}</p>` : ""}
 <p class="muted">Last update from HermitShell: ${esc(when(current.updated))}.${queued.length ? ` Waiting for HermitShell: ${esc(queued.join("; "))}.` : ""}</p>
 ${problems(current)}${checklist(current)}
 <table class="list"><tr><th>Profile</th><th>Status</th><th>Crawler</th><th></th></tr>
 ${(current.profiles || []).map((p) => profileRow(p, s.csrf)).join("") || '<tr><td colspan="4" class="muted">HermitShell has not reported any profiles yet.</td></tr>'}</table>
-${emailSection(current, s.csrf)}
-${keysSection(current, s.csrf)}
+<p class="muted">The email server and web search keys everyone shares are under <a href="${SETTINGS_URL}">Global settings</a>.</p>
 <h2>Invite someone</h2>
 <form method="post" action="/admin/action" class="inline"><input type="hidden" name="csrf" value="${esc(s.csrf)}"><input type="hidden" name="action" value="invite">
 <input name="note" maxlength="80" placeholder="Who it is for (only you see this)"><button class="small">Create invite link</button></form>
@@ -182,7 +181,8 @@ async function action(request, env, s) {
   }
   const setting = settingsItem(act, form);
   if (setting) {
-    const back = act === "profile" && PROFILE_RE.test(u) ? `/admin/profile?u=${u}&done=` : "/admin?done=";
+    const back = act !== "profile" ? `${SETTINGS_URL}?done=`
+      : PROFILE_RE.test(u) ? `/admin/profile?u=${u}&done=` : "/admin?done=";
     const anchor = act === "profile" ? `#${form.get("section") === "details" ? "details" : "job"}`
       : act.startsWith("api_keys") ? "#keys" : "#email";
     if (setting.error) return redirect(`${back}${setting.error}${anchor}`);
@@ -221,6 +221,11 @@ export async function handleAdmin(request, env, ctx) {
   if (path === "/admin" && request.method === "GET") return dashboard(request, env, s);
   if (path === "/admin/action" && request.method === "POST") return action(request, env, s);
   if (path === "/admin/cv" && request.method === "POST") return cvUpload(request, env, s);
+  if (path === SETTINGS_URL && request.method === "GET") {
+    const url = new URL(request.url);
+    const [current, queued] = await Promise.all([status(env), pending(env)]);
+    return settingsPage(current, s.csrf, { done: DONE[url.searchParams.get("done")] || "", queued });
+  }
   if (path === "/admin/profile" && request.method === "GET") {
     const url = new URL(request.url);
     const [current, queued] = await Promise.all([status(env), pending(env)]);
