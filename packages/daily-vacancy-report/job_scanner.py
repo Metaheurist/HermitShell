@@ -915,6 +915,25 @@ def fitted_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, p
     return html_body
 
 
+def report_footer(stats: dict) -> str:
+    """Three short lines under the report: the filters, what was skipped and what the run used. How scores and
+    buttons work is in the welcome email and the docs rather than in every report."""
+    filters = [esc(CFG.region) if CFG.region_re else "", "permanent or contract", f"fit {stats['min_score']}+",
+               f"{esc(stats.get('salary_currency', ''))}{stats['min_salary']:,}+" if stats.get("min_salary") else ""]
+    skipped = [(stats["excluded_location"] if CFG.region_re else 0, "outside the area"),
+               (stats["excluded_type"], "wrong type or work mode"), (stats["below_min"], "low fit"),
+               (stats.get("excluded_salary"), "low salary"), (stats.get("excluded_closed"), "closed"),
+               (stats.get("reposts"), "reposts"), (stats.get("grouped"), "duplicates")]
+    run = [esc(stats["model"]), esc(stats["sources"]), esc(stats["web_usage"])]
+
+    def line(label: str, parts: list[str]) -> str:
+        return (f'<b style="color:#475569;font-weight:700">{label}</b>&nbsp; '
+                + (" &middot; ".join(p for p in parts if p and p != "n/a") or "none"))
+    return (f'<div style="font-size:11px;color:{C_MUTED};line-height:18px;padding:18px 6px 0;text-align:center">'
+            f'{line("Filters", filters)}<br>{line("Skipped", [f"{n} {label}" for n, label in skipped if n])}<br>'
+            f'{line("Run", run)}</div>')
+
+
 def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, problems: list[str] | None = None,
                followups: str = "", more: list[dict] | None = None) -> str:
     summary_block = (
@@ -932,27 +951,6 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, pr
     empty = "" if top or maybe else (
         f'<div style="background:#fff;border-radius:16px;padding:28px;text-align:center;color:{C_MUTED};margin-top:22px">'
         f'No new matching roles{where} this run. HermitShell will keep looking.</div>')
-    location_filter = f"located in {esc(CFG.region)} &middot; " if CFG.region_re else ""
-    outside = f"{stats['excluded_location']} outside {esc(CFG.region or 'the region')}, " if CFG.region_re else ""
-    penalties = [f"{n} for {label}" for n, label in ((CFG.junior_penalty, "Junior/Graduate"),
-                                                      (CFG.senior_penalty, "Senior"),
-                                                      (CFG.lead_penalty, "Lead/Principal")) if n]
-    penalty_note = (f"HermitShell fit is reduced by {', '.join(penalties)} titles to match your target level, "
-                    "and by up to 1 when the listing reads at one of those levels even though the title does not say so."
-                    if penalties else "")
-    salary_filter = (f" &middot; salary at least {esc(stats.get('salary_currency', ''))}{stats['min_salary']:,}"
-                     if stats.get("min_salary") else "")
-    extra_excluded = "".join(f", {stats[k]} {label}" for k, label in (
-        ("excluded_salary", "below your salary floor"), ("excluded_closed", "already closed"),
-        ("reposts", "reposts of jobs seen before"), ("grouped", "duplicate or hidden agency adverts"))
-        if stats.get(k))
-    verify_note = (f"Scores of {stats['verify_from']} or more are checked a second time and the two scores are averaged."
-                   if stats.get("verify_from") else "")
-    feedback_note = ("<br>Buttons on each job record your answer after you confirm it. Thumbs up and down "
-                     "teach HermitShell what a good match looks like, Interested shortlists a job, I applied starts "
-                     "follow-up reminders, and Cover letter and Tailored CV email you a PDF made for that job "
-                     "within minutes."
-                     if stats.get("feedback") else "")
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{EMAIL_HEAD}<title>{esc(CFG.title)}</title></head>
 <body class="body" style="margin:0;padding:0;background:{C_BG};font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
@@ -970,14 +968,7 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, pr
   {more_section(more or [], len(top) + len(maybe) + 1)}
   {empty}
   {followups}
-  <div style="font-size:12px;color:{C_MUTED};line-height:1.6;padding:18px 6px 6px;text-align:center">
-    Filters: {location_filter}full-time/permanent or contract &middot; fit &ge; {stats['min_score']}/10{salary_filter}.<br>
-    Excluded this run: {outside}{stats['excluded_type']} unwanted job type or work mode, {stats['below_min']} below threshold{extra_excluded}.<br>
-    Rated by {esc(stats['model'])} (HermitShell&rsquo;s model) on your HermitShell server &middot; sources: {esc(stats['sources'])} &middot;
-    Web data: {stats['web_usage']}.<br>
-    CV keyword match = share of the technologies named in the listing that appear on your CV.
-    {penalty_note} {verify_note}{feedback_note}
-  </div>
+  {report_footer(stats)}
   {unsubscribe_footer(stats.get("unsubscribe", ""), not env("JOB_PROFILE_ID"))}
 </td></tr>
 </table></td></tr></table></body></html>"""

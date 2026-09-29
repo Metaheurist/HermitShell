@@ -3,6 +3,7 @@
 Run from the repository root:  python -m pytest packages/daily-vacancy-report/tests
 """
 
+import re
 import sys
 import time
 from datetime import date
@@ -369,11 +370,36 @@ def test_report_renders_new_card_parts():
     page = job_scanner.build_html([job], [], REPORT_STATS, "Summary.", ["nijobs.com failed: HTTP 503."], "")
     for text in ("Closes in 2 days", "Salary not listed", "Missing from your CV", "Also on your CV: Docker",
                  "Also advertised by Agency Ltd", "Checked twice", "nijobs.com failed: HTTP 503.",
-                 "salary at least £40,000", "1 already closed", "/f?j=k1&amp;a=applied"):
+                 "£40,000+", "1 closed", "/f?j=k1&amp;a=applied"):
         assert text in page, text
     plain = job_scanner.build_text([job], "Summary.")
     assert "closes in 2 days" in plain and "I applied: https://fb.example.workers.dev/f?" in plain
     assert "Generate cover letter: https://fb.example.workers.dev/f?" in plain
+
+
+def test_report_footer_is_three_short_lines():
+    import job_scanner
+
+    stats = dict(REPORT_STATS, below_min=9, reposts=2, excluded_type=0, web_usage="Firecrawl 12 credits")
+    footer = job_scanner.report_footer(stats)
+    assert footer.count("<br>") == 2 and len(re.sub(r"<[^>]+>", "", footer)) < 260
+    assert "fit 5+" in footer and "£40,000+" in footer
+    assert "9 low fit &middot; 1 closed &middot; 2 reposts" in footer and "wrong type" not in footer
+    assert "m &middot; web search 3 &middot; Firecrawl 12 credits" in footer
+    quiet = job_scanner.report_footer(dict(REPORT_STATS, excluded_closed=0, min_salary=0))
+    assert "Skipped</b>&nbsp; none" in quiet and "n/a" not in quiet and "£" not in quiet
+    page = job_scanner.build_html([report_job()], [], REPORT_STATS, "", [], "")
+    for gone in ("CV keyword match =", "checked a second time", "Buttons on each job", "Not useful any more"):
+        assert gone not in page, gone
+
+
+def test_report_footer_escapes_run_details():
+    import job_scanner
+
+    footer = job_scanner.report_footer(dict(REPORT_STATS, model="<script>x</script>", sources="<b>s</b>",
+                                            web_usage="<img src=x>"))
+    assert "<script>" not in footer and "<img" not in footer and "<b>s</b>" not in footer
+    assert "&lt;script&gt;" in footer
 
 
 @pytest.mark.parametrize("text, expected", [

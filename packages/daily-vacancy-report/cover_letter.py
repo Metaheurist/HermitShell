@@ -196,13 +196,11 @@ def esc(text) -> str:
 EMAIL_TEXT = {
     "cover_letter": ("Cover letter ready", "Your tailored letter is attached as <b>{file}</b>. Read it through and "
                      "adjust anything before you send it.", "Letter preview",
-                     "Written by HermitShell&rsquo;s model on your HermitShell server from your CV profile and the job listing. "
-                     "Check every claim before sending."),
+                     "Written by HermitShell&rsquo;s model from your CV and the listing. Check it before sending."),
     "tailored_cv": ("Tailored CV ready", "Your CV, tailored to this job, is attached as <b>{file}</b>. Job titles, "
                     "employers and dates are copied from your CV; read it through before you send it.",
                     "Profile and skills",
-                    "Tailored by HermitShell&rsquo;s model on your HermitShell server: it only reorders and rephrases your own "
-                    "CV. Check every line before sending."),
+                    "Only reorders and rephrases your own CV. Check it before sending."),
 }
 
 
@@ -248,7 +246,7 @@ def email_bodies(job: dict, paragraphs: list[str], filename: str, note: str,
   <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:{C_ACCENT};font-weight:700;margin-bottom:10px">{preview_label}</div>
   {preview}
 </td></tr></table>
-<div style="font-size:12px;color:{C_MUTED};line-height:1.6;padding:16px 6px;text-align:center">
+<div style="font-size:11px;color:{C_MUTED};line-height:18px;padding:14px 6px;text-align:center">
   {footer}</div>
 </td></tr></table></td></tr></table></body></html>"""
     text = "\n".join([f"{subject}", "", f"Attached: {filename}", *(f"{k}: {v}" for k, v in rows),

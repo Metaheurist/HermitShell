@@ -240,9 +240,8 @@ def unsubscribe_footer(link: str, paused_only: bool = False) -> str:
     if not link:
         return ""
     effect = "pauses your reports" if paused_only else "deletes your profile, CV and history"
-    return (f'<div style="font-size:12px;color:{C_MUTED};line-height:1.6;padding:10px 6px 0;text-align:center">'
-            f'Not useful any more? <a href="{esc(link)}" style="color:{C_MUTED};text-decoration:underline">Unsubscribe</a>'
-            f' ({effect}; you confirm first).</div>')
+    return (f'<div style="font-size:11px;color:{C_MUTED};line-height:18px;padding:8px 6px 0;text-align:center">'
+            f'<a href="{esc(link)}" style="color:{C_MUTED};text-decoration:underline">Unsubscribe</a> ({effect})</div>')
 
 
 def build_weekly(data: dict, when: str, title: str, eyebrow: str, now: float,

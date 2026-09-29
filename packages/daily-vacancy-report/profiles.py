@@ -550,7 +550,8 @@ def _email(header: str, blocks: list[str], footer: str = "") -> str:
             f'<body class="body" style="margin:0;background:#eef1f7;font-family:-apple-system,Segoe UI,Roboto,Helvetica,'
             f'Arial,sans-serif;color:#0f172a"><table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" '
             f'style="padding:24px 12px"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px">'
-            f'{header}{cards}<tr><td style="padding:18px 6px;font-size:12px;line-height:18px;color:#64748b">{footer}'
+            f'{header}{cards}<tr><td style="padding:14px 6px;font-size:11px;line-height:18px;color:#64748b;'
+            f'text-align:center">{footer}'
             f'</td></tr></table></td></tr></table></body></html>')
 
 
@@ -588,11 +589,9 @@ def send_welcome(profile: dict, built: dict, updated: bool) -> None:
         f'<div style="font-size:15px;font-weight:700">How it works</div>{how}',
     ]
     privacy = f"{hc.env('JOB_FEEDBACK_URL', '').rstrip('/')}/privacy" if unsub else ""
-    footer = ("Your first report arrives with the next daily run. Something wrong in the lists above? "
-              "Reply to this email." + (f' <a href="{html.escape(unsub)}" style="color:#64748b">Unsubscribe</a> '
-                                        "deletes your profile and CV. "
-                                        f'<a href="{html.escape(privacy)}" style="color:#64748b">How your data is '
-                                        "handled</a>." if unsub else ""))
+    footer = ("First report with the next daily run. Something wrong above? Reply to this email."
+              + (f'<br><a href="{html.escape(unsub)}" style="color:#64748b">Unsubscribe</a> (deletes your profile and CV)'
+                 f' &middot; <a href="{html.escape(privacy)}" style="color:#64748b">Your data</a>' if unsub else ""))
     text = (f"{title}\n\nHermitShell will search for: {', '.join(built['titles'])}\n"
             f"Skills: {', '.join(s['name'] for s in built['skills'])}\n\n"
             "Your first report arrives with the next daily run."
