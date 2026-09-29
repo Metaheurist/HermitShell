@@ -188,12 +188,14 @@ class FakeDocker:
 
     def __init__(self, networks="hermes-net", state="", fail_run=False, network_exists=True):
         self.calls, self.networks, self.state = [], networks, state
-        self.fail_run, self.network_exists = fail_run, network_exists
+        self.fail_run, self.network_exists, self.info = fail_run, network_exists, ""
 
     def __call__(self, argv, timeout=120):
         self.calls.append(argv)
         out, code = "", 0
-        if argv[0] == "inspect":
+        if argv[0] == "info":
+            out = self.info
+        elif argv[0] == "inspect":
             out = self.networks + " "
         elif argv[:2] == ["network", "inspect"]:
             code = 0 if self.network_exists else 1
@@ -290,10 +292,76 @@ def test_no_ollama_starts_a_container_and_downloads_the_model(prereq):
 
 def test_ollama_container_uses_the_gpu_when_there_is_one(prereq, monkeypatch):
     w, runner, _ = prereq()
-    monkeypatch.setattr(setup.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(setup, "detect_gpus", lambda docker: {"vendor": "nvidia", "gpus": [(0, "GeForce", 4096)]})
+    monkeypatch.setattr(setup, "gpu_run_args", lambda vendor, index=None: [
+        "--gpus", "all" if index is None else f"device={index}", "--device", "/dev/nvidiactl"])
     assert w.start_ollama(runner) == "http://ollama:11434"
     run = runner.docker.ran("run")[0]
-    assert run[run.index("--gpus") + 1] == "all"
+    assert run[run.index("--gpus") + 1] == "all" and "/dev/nvidiactl" in run
+    assert "OLLAMA_KV_CACHE_TYPE=q8_0" in run and run[-1] == "ollama/ollama"
+
+
+def test_several_gpus_get_one_ollama_each_and_the_scripts_use_them_all(prereq, monkeypatch):
+    w, runner, _ = prereq()
+    monkeypatch.setattr(setup, "detect_gpus", lambda docker: {"vendor": "nvidia", "gpus": [(0, "A", 8192), (1, "B", 8192)]})
+    monkeypatch.setattr(setup, "gpu_run_args", lambda vendor, index=None: ["--gpus", f"device={index}"])
+    assert w.start_ollama(runner) == "http://ollama:11434"
+    main, second = runner.docker.ran("run")
+    assert main[main.index("--gpus") + 1] == "device=0" and main[main.index("--name") + 1] == "ollama"
+    assert second[second.index("--name") + 1] == "ollama-gpu1" and "OLLAMA_HOST=0.0.0.0:11435" in second
+    assert second[second.index("--gpus") + 1] == "device=1" and "ollama:/root/.ollama" in second
+    assert w.changes == {"OLLAMA_HOSTS": "http://ollama-gpu1:11435"}
+
+
+def test_an_amd_gpu_gets_the_rocm_image_and_its_devices(prereq, monkeypatch):
+    w, runner, _ = prereq()
+    monkeypatch.setattr(setup, "detect_gpus", lambda docker: {"vendor": "amd", "gpus": [(0, "AMD GPU", 0)]})
+    w.start_ollama(runner)
+    run = runner.docker.ran("run")[0]
+    assert run[-1] == "ollama/ollama:rocm" and "/dev/kfd" in run and "/dev/dri" in run
+
+
+def test_an_existing_ollama_without_the_gpu_gets_a_warning(prereq, monkeypatch, capsys):
+    w, runner, _ = prereq(docker=FakeDocker(state="running"))
+    monkeypatch.setattr(setup, "detect_gpus", lambda docker: {"vendor": "nvidia", "gpus": [(0, "GeForce", 4096)]})
+    w.start_ollama(runner)
+    assert "doesn't use this machine's NVIDIA GPU" in capsys.readouterr().out
+    assert runner.docker.ran("run") == []
+
+
+def test_gpu_run_args_list_nvidia_device_nodes_so_a_systemd_reload_keeps_the_gpu(monkeypatch):
+    present = {"/dev/nvidia0", "/dev/nvidia1", "/dev/nvidiactl", "/dev/nvidia-uvm"}
+    monkeypatch.setattr(setup.Path, "exists", lambda self: self.as_posix() in present)
+    monkeypatch.setattr(setup.Path, "glob", lambda self, pattern: [setup.Path("/dev/nvidia0"), setup.Path("/dev/nvidia1")])
+    assert setup.gpu_run_args("nvidia") == ["--gpus", "all", "--device", "/dev/nvidia0", "--device", "/dev/nvidia1",
+                                            "--device", "/dev/nvidiactl", "--device", "/dev/nvidia-uvm"]
+    assert setup.gpu_run_args("nvidia", 1) == ["--gpus", "device=1", "--device", "/dev/nvidia1",
+                                               "--device", "/dev/nvidiactl", "--device", "/dev/nvidia-uvm"]
+    assert setup.gpu_run_args("") == []
+
+
+def test_detect_gpus_reads_nvidia_smi_then_docker_then_amd(monkeypatch):
+    monkeypatch.setattr(setup.shutil, "which", lambda name: "/usr/bin/nvidia-smi" if name == "nvidia-smi" else None)
+    monkeypatch.setattr(setup.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(
+        a, 0, "0, NVIDIA GeForce GTX 970, 4096\n1, NVIDIA RTX, 12288\n", ""))
+    assert setup.detect_gpus(FakeDocker()) == {"vendor": "nvidia", "gpus": [(0, "NVIDIA GeForce GTX 970", 4096),
+                                                                           (1, "NVIDIA RTX", 12288)]}
+    monkeypatch.setattr(setup.shutil, "which", lambda name: None)
+    monkeypatch.setattr(setup.Path, "exists", lambda self: False)
+    docker = FakeDocker()
+    docker.info = '{"nvidia":{"path":"nvidia-container-runtime"},"runc":{}}'
+    assert setup.detect_gpus(docker)["vendor"] == "nvidia"
+    assert setup.detect_gpus(FakeDocker()) == {"vendor": "", "gpus": []}
+
+
+def test_calibration_runs_autofit_once_the_model_is_there(prereq):
+    ok = {"status": "ok", "host": "http://ollama:11434", "model": "qwen3:8b", "wanted": "qwen3:8b"}
+    w, runner, scripts = prereq(replies=[ok])
+    (scripts / "autofit.py").write_text("", encoding="utf-8")
+    calls = []
+    runner.run = lambda argv, **kw: calls.append((argv, kw))
+    w.ollama(runner, scripts)
+    assert calls == [(["python3", "autofit.py", "--calibrate"], {"in_scripts": True, "env": None})]
 
 
 def test_hermes_on_the_default_bridge_gets_a_named_network(prereq):

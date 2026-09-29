@@ -236,6 +236,7 @@ def check_ollama(report: Report, fix: bool, model: str | None = None, pull: bool
     for host, names in reachable.items():
         if found := next((m for m in models if m in names), None):
             report.add("ollama", "ok", f"Ollama at {host} has {found}", host=host, model=found, wanted=wanted)
+            check_placement(report, host, found)
             return
     host = next(iter(reachable))
     if not (fix and pull):
@@ -249,6 +250,30 @@ def check_ollama(report: Report, fix: bool, model: str | None = None, pull: bool
     else:
         report.add("ollama", "fail", f"could not download {wanted}", f"on the Ollama machine run: ollama pull {wanted}",
                    host=host, model="", wanted=wanted)
+
+
+def check_placement(report: Report, host: str, model: str) -> None:
+    """Where the model runs, and a warning when the machine has a GPU that Ollama isn't using."""
+    try:
+        import autofit
+    except ImportError:
+        return
+    if not autofit.enabled():
+        return
+    hw = autofit.hardware()
+    placed = autofit.placement(host, model)
+    loaded = {"ctx": placed[0], "size_mb": placed[1], "gpu_mb": placed[2]} if placed else None
+    gpus = ", ".join(f"{g['name'] or 'GPU'} ({g['vram_mb']} MB)" for g in hw["gpus"])
+    cpu = hw["cpu"]
+    fix = "restart Ollama (docker restart ollama), then keep it on the GPU: docs/installation.md#use-the-gpu"
+    if hw["ollama_gpu"] == "lost" or (gpus and loaded and loaded["size_mb"] and not loaded["gpu_mb"]):
+        report.add("ollama", "warn", f"this machine has {gpus}, but Ollama is running {model} on the CPU", fix)
+    elif hw["ollama_gpu"] == "none":
+        report.add("ollama", "warn", f"this machine has {gpus}, but the Ollama container has no GPU access",
+                   "recreate it with the GPU: docs/installation.md#use-the-gpu")
+    else:
+        report.add("ollama", "ok", f"{model}: {autofit.where(loaded)}; "
+                   + (f"GPU: {gpus}" if gpus else f"no GPU found, CPU: {cpu['physical']} cores / {cpu['logical']} threads"))
 
 
 # --------------------------------------------------------------------------- settings, worker, disk

@@ -50,7 +50,8 @@ def test_profile_ids_cannot_leave_the_profiles_folder(pid):
 
 
 @pytest.mark.parametrize("key", ["PATH", "LD_PRELOAD", "PYTHONPATH", "HERMES_HOME", "HERMES_DATA_KEY",
-                                 "JOB_PROFILE_FILE", "HERMES_STATE_DIR"])
+                                 "JOB_PROFILE_FILE", "HERMES_STATE_DIR", "OLLAMA_HOST", "OLLAMA_HOSTS",
+                                 "HERMES_AUTOFIT", "HERMES_AUTOFIT_THREADS", "HERMES_MODEL_CONCURRENCY"])
 def test_the_dashboard_cannot_set_process_or_path_settings(key):
     assert not hc.dashboard_key_allowed(key)
 
@@ -339,3 +340,58 @@ def test_a_tampered_scan_marker_reaches_the_dashboard_only_as_plain_bounded_valu
     profiles.write_json(profiles.scan_marker("sam-lee"), {"pid": "77", "child": 1.5, "at": time.time()})
     assert profiles.cancel_task("report:sam-lee", "sam-lee") == "The report for sam-lee could not be stopped"
     assert signals == []
+
+
+# --------------------------------------------------------------------------- autofit and the host watchdog
+
+@pytest.fixture
+def autofit_files(tmp_path, monkeypatch):
+    import autofit
+    monkeypatch.setenv("HERMES_AUTOFIT", "auto")
+    monkeypatch.setattr(autofit, "HARDWARE_FILE", tmp_path / "hardware.json")
+    monkeypatch.setattr(autofit, "STATE_FILE", tmp_path / "autofit.json")
+    monkeypatch.setattr(autofit, "local_gpus", lambda: [])
+    return autofit
+
+
+def test_a_tampered_hardware_report_only_gives_plain_bounded_values(autofit_files):
+    autofit = autofit_files
+    autofit.HARDWARE_FILE.write_text(__import__("json").dumps({
+        "at": time.time(), "cpu": {"model": HOSTILE, "logical": 10**9, "physical": "18; rm -rf /", "avx2": "yes"},
+        "ram_mb": {"total": -5, "available": float("nan")}, "ollama_gpu": "<script>",
+        "gpus": [{"index": 999, "name": HOSTILE * 5, "vram_mb": 10**12, "free_mb": "4000", "compute": "5.2$(id)"}] * 40,
+    }), encoding="utf-8")
+    hw = autofit.hardware()
+    gpu = hw["gpus"][0]
+    assert len(hw["gpus"]) == 16 and hw["ollama_gpu"] == ""
+    assert not set(gpu["name"] + hw["cpu"]["model"]) & set("<>\"'&;$`\\") and len(gpu["name"]) <= 80
+    assert gpu["index"] == 0 and gpu["vram_mb"] == 0 and gpu["free_mb"] == 4000 and "$" not in gpu["compute"]
+    assert hw["cpu"]["logical"] == 1 and hw["cpu"]["physical"] == 1 and hw["cpu"]["avx2"] is False
+
+
+def test_a_tampered_autofit_state_is_bounded_and_cannot_add_instances(autofit_files, monkeypatch):
+    autofit = autofit_files
+    autofit.STATE_FILE.write_text(__import__("json").dumps({
+        "hosts": {"http://evil.example:1/x?y": {"level": 99}, "file:///etc/passwd": {},
+                  "http://ollama:11434": {"level": -1, "cost": "fast", "budget_mb": 10**15, "down_until": 10**20,
+                                          "threads": {"; rm": [1, 2, 3], "8": [1, "x", None]}}},
+        "models": {"m": {"points": [[10**9, 5, 5], "junk", [8192, 3000, 2900]], "layers": -3}},
+    }), encoding="utf-8")
+    state = autofit._load()
+    assert list(state["hosts"]) == ["http://ollama:11434"]
+    host = state["hosts"]["http://ollama:11434"]
+    assert host["level"] == 0 and host["cost"] == 0.0 and host["budget_mb"] == 0 and host["down_until"] == 0
+    assert list(host["threads"]) == ["8"] and host["threads"]["8"][1] == 0
+    assert state["models"]["m"]["points"] == [[8192, 3000, 2900]] and state["models"]["m"]["layers"] == 0
+    monkeypatch.setenv("OLLAMA_HOSTS", "http://user:pass@evil.example,https://ok.example:8443/path,"
+                                       "javascript:alert(1),ftp://x,http://good-box:11434")
+    assert autofit.instances("http://ollama:11434") == ["http://ollama:11434", "http://good-box:11434"]
+
+
+def test_the_root_watchdog_never_writes_into_folders_the_container_can_change():
+    script = (REPO / "scripts" / "host" / "ollama-watchdog.sh").read_text(encoding="utf-8")
+    code = "\n".join(line.split("#")[0] for line in script.splitlines())
+    assert "$HERMES_STATE/" not in code and "> $HERMES_STATE" not in code
+    assert 'exec -i -u "$HERMES_USER"' in code and 'chmod 700 "$RUN_DIR"' in code
+    installer = (REPO / "scripts" / "host" / "install-watchdog.sh").read_text(encoding="utf-8")
+    assert 'stat -c %u "$DEST"' in installer and "-o root -g root" in installer

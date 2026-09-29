@@ -3,7 +3,7 @@
 #
 #   HERMES_HOME=/opt/data ./scripts/install.sh daily-vacancy-report
 #
-# Copies the shared hermes_common.py and doctor.py plus each package's files flat into $HERMES_HOME/scripts,
+# Copies the shared hermes_common.py, autofit.py and doctor.py plus each package's files flat into $HERMES_HOME/scripts,
 # the directory Hermes cron jobs run scripts from. Existing personal files (job_profile.md,
 # cv_keywords.json, .env) are never overwritten. Set HERMES_OWNER=uid:gid to chown the result
 # (the official Hermes container runs as 10000:10000).
@@ -21,8 +21,8 @@ if [ "$#" -eq 0 ]; then
 fi
 
 mkdir -p "$DEST"
-cp "$REPO/common/hermes_common.py" "$REPO/common/doctor.py" "$DEST/"
-echo "installed common/hermes_common.py and common/doctor.py -> $DEST"
+cp "$REPO/common/hermes_common.py" "$REPO/common/autofit.py" "$REPO/common/doctor.py" "$DEST/"
+echo "installed common/hermes_common.py, common/autofit.py and common/doctor.py -> $DEST"
 
 for pkg in "$@"; do
     src="$REPO/packages/$pkg"

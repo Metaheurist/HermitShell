@@ -149,6 +149,51 @@ def test_ollama_uses_hermes_model_when_hermes_talks_to_ollama(home, monkeypatch)
                              "wanted": hc.DEFAULT_MODEL}]
 
 
+@pytest.fixture
+def placed(monkeypatch):
+    """autofit switched on, with a GTX 970 host and whatever placement Ollama reports."""
+    import autofit
+    monkeypatch.setenv("HERMES_AUTOFIT", "auto")
+    gtx = {"index": 0, "name": "NVIDIA GeForce GTX 970", "vram_mb": 4096, "free_mb": 4000, "compute": "5.2"}
+
+    def machine(placement, seen="ok", gpus=(gtx,)):
+        monkeypatch.setattr(autofit, "hardware", lambda: {
+            "source": "host report", "age": 0, "gpus": list(gpus), "ollama_gpu": seen,
+            "cpu": {"model": "Xeon", "logical": 36, "physical": 18, "avx2": True},
+            "ram_mb": {"total": 24000, "available": 14000}})
+        monkeypatch.setattr(autofit, "placement", lambda host, model: placement)
+    return machine
+
+
+def test_doctor_says_where_the_model_runs(home, monkeypatch, placed):
+    fake_ollama(monkeypatch, {"http://ollama:11434": [hc.DEFAULT_MODEL]})
+    placed((8192, 3114, 2934))
+    report = doctor.Report(as_json=True)
+    doctor.check_ollama(report, fix=False)
+    assert statuses(report) == [("ollama", "ok"), ("ollama", "ok")]
+    assert report.items[1]["message"].endswith("loaded at 8192 context, 94% on the GPU, the rest on the CPU; "
+                                               "GPU: NVIDIA GeForce GTX 970 (4096 MB)")
+
+
+@pytest.mark.parametrize("placement, seen, words", [
+    ((65536, 9098, 0), "ok", "running"), (None, "lost", "running"), (None, "none", "no GPU access")])
+def test_doctor_warns_when_a_gpu_sits_unused(home, monkeypatch, placed, placement, seen, words):
+    fake_ollama(monkeypatch, {"http://ollama:11434": [hc.DEFAULT_MODEL]})
+    placed(placement, seen)
+    report = doctor.Report(as_json=True)
+    doctor.check_ollama(report, fix=False)
+    assert statuses(report)[1] == ("ollama", "warn")
+    assert words in report.items[1]["message"] and "use-the-gpu" in report.items[1]["fix"]
+
+
+def test_doctor_on_a_cpu_only_machine_names_the_cores(home, monkeypatch, placed):
+    fake_ollama(monkeypatch, {"http://ollama:11434": [hc.DEFAULT_MODEL]})
+    placed(None, "", gpus=())
+    report = doctor.Report(as_json=True)
+    doctor.check_ollama(report, fix=False)
+    assert report.items[1]["message"].endswith("not loaded right now; no GPU found, CPU: 18 cores / 36 threads")
+
+
 def test_a_cloud_model_in_hermes_config_is_not_looked_for_on_ollama(home, monkeypatch):
     (home / "config.yaml").write_text("model:\n  default: anthropic/claude-sonnet\n  provider: openrouter\n")
     hosts, models, wanted = doctor.ollama_plan(hc)

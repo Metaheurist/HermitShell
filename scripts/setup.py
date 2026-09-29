@@ -47,6 +47,42 @@ TIME_RE = re.compile(r"^(?:(weekdays|daily|sun(?:day)?|mon(?:day)?|tue(?:s(?:day
                      r"thu(?:rs(?:day)?)?|fri(?:day)?|sat(?:urday)?)\s+)?([01]?\d|2[0-3]):([0-5]\d)$", re.I)
 CRON_RE = re.compile(r"^\S+(\s+\S+){4}$")
 OLLAMA_CONTAINER, OLLAMA_IMAGE, OLLAMA_WAIT_TRIES = "ollama", "ollama/ollama", 12
+# Flash attention and an 8-bit KV cache halve the memory a long context takes, so more of the model fits on a GPU.
+OLLAMA_ENV = ("OLLAMA_FLASH_ATTENTION=1", "OLLAMA_KV_CACHE_TYPE=q8_0")
+NVIDIA_NODES = ("/dev/nvidiactl", "/dev/nvidia-uvm", "/dev/nvidia-uvm-tools", "/dev/nvidia-modeset")
+
+
+def detect_gpus(docker) -> dict:
+    """The GPUs Ollama could use on this host: {"vendor": "nvidia" | "amd" | "", "gpus": [(index, name, MB)]}."""
+    if smi := shutil.which("nvidia-smi"):
+        try:
+            out = subprocess.run([smi, "--query-gpu=index,name,memory.total", "--format=csv,noheader,nounits"],
+                                 capture_output=True, text=True, timeout=10, check=False).stdout
+        except (OSError, subprocess.SubprocessError):
+            out = ""
+        gpus = [(int(p[0]), p[1], int(p[2]) if p[2].isdigit() else 0)
+                for p in ([x.strip() for x in line.split(",")] for line in out.splitlines())
+                if len(p) == 3 and p[0].isdigit()]
+        if gpus:
+            return {"vendor": "nvidia", "gpus": gpus}
+    if "nvidia" in (docker(["info", "--format", "{{json .Runtimes}}"]).stdout or ""):
+        return {"vendor": "nvidia", "gpus": [(0, "NVIDIA GPU", 0)]}
+    if Path("/dev/kfd").exists():
+        return {"vendor": "amd", "gpus": [(0, "AMD GPU", 0)]}
+    return {"vendor": "", "gpus": []}
+
+
+def gpu_run_args(vendor: str, index: int | None = None) -> list[str]:
+    """`docker run` flags giving a container the GPUs (only GPU `index` when set). NVIDIA's device nodes are
+    listed as well as --gpus: without them a systemd reload takes the GPU from the running container."""
+    if vendor == "amd":
+        return ["--device", "/dev/kfd", "--device", "/dev/dri"]
+    if vendor != "nvidia":
+        return []
+    cards = ([f"/dev/nvidia{index}"] if index is not None
+             else sorted(p.as_posix() for p in Path("/dev").glob("nvidia[0-9]*")))
+    nodes = [n for n in (*cards, *NVIDIA_NODES) if Path(n).exists()]
+    return ["--gpus", "all" if index is None else f"device={index}", *[a for n in nodes for a in ("--device", n)]]
 DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
 SALARY_SYMBOLS = {"gb": "£", "us": "$", "ca": "$", "au": "$", "nz": "$", "in": "₹", "jp": "¥", "ch": "CHF"}
 EURO_COUNTRIES = {"at", "be", "cy", "de", "ee", "es", "fi", "fr", "gr", "hr", "ie", "it", "lt", "lu", "lv", "mt",
@@ -628,6 +664,7 @@ class Wizard:
         host = item["host"]
         if item.get("status") == "ok":
             self.say(f"  {GREEN}Ollama at {host} has {item.get('model')}{RESET}")
+            self.calibrate(runner, scripts, env)
             return
         wanted = item.get("wanted") or ""
         key = "JOB_SCANNER_MODEL" if self.value("JOB_SCANNER_MODEL") else "OLLAMA_MODEL"
@@ -640,6 +677,14 @@ class Wizard:
             self.say(f"  {DIM}later: python3 doctor.py --fix --only ollama --model {model}{RESET}")
             return
         self.doctor(runner, scripts, ["--fix", "--only", "ollama", "--model", model], env=env)
+        self.calibrate(runner, scripts, env)
+
+    def calibrate(self, runner: Runner, scripts: Path, env: dict[str, str]) -> None:
+        """Let autofit load the model at a few sizes, so it knows what fits on the GPU, and show where it runs."""
+        if not (scripts / "autofit.py").is_file():
+            return
+        self.say("  Checking where the model runs fastest (GPU or CPU) and how much of it fits on the GPU...")
+        runner.run([self.args.python, "autofit.py", "--calibrate"], in_scripts=True, env=env or None)
 
     def wait_for_ollama(self, runner: Runner, scripts: Path, env: dict[str, str]) -> dict | None:
         for _ in range(OLLAMA_WAIT_TRIES):
@@ -670,6 +715,8 @@ class Wizard:
                     runner.docker(["network", "create", net])
                 runner.docker(["network", "connect", net, container])
             host = f"http://{OLLAMA_CONTAINER}:11434"
+        found = detect_gpus(runner.docker)
+        vendor, cards = found["vendor"], found["gpus"]
         state = runner.docker(["ps", "-a", "--filter", f"name=^/{OLLAMA_CONTAINER}$", "--format", "{{.State}}"])
         if state.stdout.strip():
             if state.stdout.strip() != "running":
@@ -677,14 +724,41 @@ class Wizard:
             if net != "host":
                 runner.docker(["network", "connect", net, OLLAMA_CONTAINER])
             self.say(f"  {GREEN}using the existing '{OLLAMA_CONTAINER}' container{RESET}")
+            wants = runner.docker(["inspect", OLLAMA_CONTAINER, "--format",
+                                   "{{json .HostConfig.DeviceRequests}} {{json .HostConfig.Devices}}"]).stdout
+            if vendor and not re.search(r"gpu|nvidia|/dev/kfd", wants or ""):
+                self.say(f"{YELLOW}  It doesn't use this machine's {vendor.upper()} GPU, so the model runs on the CPU. "
+                         f"Recreate it with the GPU: see docs/installation.md#use-the-gpu{RESET}")
             return host
-        gpu = ["--gpus", "all"] if shutil.which("nvidia-smi") else []
+        image = f"{OLLAMA_IMAGE}:rocm" if vendor == "amd" else OLLAMA_IMAGE
+        env = [a for e in OLLAMA_ENV for a in ("-e", e)]
+        split = vendor == "nvidia" and len(cards) > 1 and self.confirm(
+            f"Found {len(cards)} GPUs. Run one Ollama per GPU, so {len(cards)} requests run at once? (a model bigger "
+            "than one GPU's memory then runs partly on the CPU)", True)
         res = runner.docker(["run", "-d", "--name", OLLAMA_CONTAINER, "--restart", "unless-stopped", "--network", net,
-                             "-v", f"{OLLAMA_CONTAINER}:/root/.ollama", *gpu, OLLAMA_IMAGE], timeout=900)
+                             "-v", f"{OLLAMA_CONTAINER}:/root/.ollama", *env,
+                             *gpu_run_args(vendor, cards[0][0] if split else None), image], timeout=900)
         if res.returncode:
             self.say(f"{YELLOW}  could not start Ollama: {(res.stderr or res.stdout).strip()[-300:]}{RESET}")
             return None
-        self.say(f"  {GREEN}started '{OLLAMA_CONTAINER}' on network {net}{' with the GPU' if gpu else ''}{RESET}")
+        where = f" with the {vendor.upper()} GPU" + ("s" if len(cards) > 1 and not split else "") if vendor else ""
+        self.say(f"  {GREEN}started '{OLLAMA_CONTAINER}' on network {net}{where}{RESET}")
+        extra = []
+        for index, _name, _mb in cards[1:] if split else []:
+            name, port = f"{OLLAMA_CONTAINER}-gpu{index}", 11434 + index
+            res = runner.docker(["run", "-d", "--name", name, "--restart", "unless-stopped", "--network", net,
+                                 "-v", f"{OLLAMA_CONTAINER}:/root/.ollama", *env, "-e", f"OLLAMA_HOST=0.0.0.0:{port}",
+                                 "-e", "OLLAMA_NOPRUNE=1", *gpu_run_args(vendor, index), image], timeout=900)
+            if res.returncode:
+                self.say(f"{YELLOW}  could not start '{name}': {(res.stderr or res.stdout).strip()[-200:]}{RESET}")
+                continue
+            extra.append(f"http://localhost:{port}" if net == "host" else f"http://{name}:{port}")
+            self.say(f"  {GREEN}started '{name}' on GPU {index}{RESET}")
+        if extra:
+            self.set("OLLAMA_HOSTS", ",".join(extra))
+        if vendor == "nvidia":
+            self.say(f"  {DIM}Keep Ollama on the GPU after system updates (run as root once): "
+                     f"sh {REPO / 'scripts' / 'host' / 'install-watchdog.sh'}{RESET}")
         return host
 
     def health_check(self, runner: Runner, scripts: Path) -> None:

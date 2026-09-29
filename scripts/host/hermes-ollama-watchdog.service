@@ -1,0 +1,9 @@
+[Unit]
+Description=HermitShell: keep Ollama on the GPU and report the hardware to the scripts
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh @SCRIPT@
+Nice=10
