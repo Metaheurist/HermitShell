@@ -144,6 +144,29 @@ def test_a_report_job_only_runs_for_a_folder_inside_the_profiles_folder(tmp_path
     assert profiles.profile_from_cwd() == ""
 
 
+@pytest.mark.parametrize("provider", ["scrapfly", "PATH", "LD_PRELOAD", "../x", HOSTILE, "firecrawl_backup"])
+def test_a_crawler_key_only_ever_sets_a_search_providers_key(tmp_path, monkeypatch, provider):
+    monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
+    profiles.write_json(profiles.PROFILES_DIR / "sam-lee" / "profile.json", {"id": "sam-lee"})
+    with pytest.raises(profiles.ProfileError):
+        profiles.admin_action({"type": "admin", "action": "set_key", "u": "sam-lee", "key": "tvly-own-longer-key-01",
+                               "provider": provider})
+    assert not (profiles.PROFILES_DIR / "sam-lee" / "secrets.json").exists()
+    profiles.write_json(profiles.PROFILES_DIR / "sam-lee" / "secrets.json", {"provider": provider, "key": "longer-key-0123"})
+    environ = {"PATH": "/usr/bin", "FIRECRAWL_API_KEY": "fc-global-longer0001"}
+    profiles.apply_keys(environ, "sam-lee")
+    assert environ == {"PATH": "/usr/bin", "FIRECRAWL_API_KEY": "fc-global-longer0001"}
+
+
+@POSIX
+def test_a_profiles_own_crawler_key_is_owner_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
+    profiles.write_json(profiles.PROFILES_DIR / "sam-lee" / "profile.json", {"id": "sam-lee"})
+    profiles.admin_action({"type": "admin", "action": "set_key", "u": "sam-lee", "key": "tvly-own-longer-key-01",
+                           "provider": "tavily"})
+    assert (profiles.PROFILES_DIR / "sam-lee" / "secrets.json").stat().st_mode & 0o777 == 0o600
+
+
 def test_stats_sent_to_the_worker_hold_no_notes_links_or_contact_details(tmp_path, monkeypatch):
     monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
     monkeypatch.setattr(profiles, "STATE_DIR", tmp_path / "state")

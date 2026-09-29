@@ -67,6 +67,8 @@ PROFILE_KEYS = frozenset(PERSONAL_KEYS) | frozenset(job_settings.KEYS)
 SMTP_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM")
 API_KEYS = {"firecrawl": "FIRECRAWL_API_KEY", "firecrawl_backup": "FIRECRAWL_BACKUP_KEYS",
             "tavily": "TAVILY_API_KEY", "scrapfly": "SCRAPFLY_API_KEY"}
+# The providers a profile's own key can be for: each can search as well as read pages (Scrapfly cannot search).
+CRAWLERS = ("firecrawl", "tavily")
 ID_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 KEY_RE = re.compile(r"^[A-Za-z0-9_-]{8,120}$")
 EMAIL_RE = re.compile(r"[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+")
@@ -239,16 +241,27 @@ def update_dashboard_env(updates: dict[str, str | None]) -> None:
     load_env_file()
 
 
-def own_key(pid: str) -> str:
-    key = read_json(profile_dir(pid) / "secrets.json", {}).get("firecrawl_key", "")
-    return key if KEY_RE.match(key) else ""
+def own_crawler(pid: str) -> tuple[str, str]:
+    """(provider, key) of a profile's own crawler key, or ("", "") when it uses the global keys."""
+    saved = read_json(profile_dir(pid) / "secrets.json", {})
+    provider = str(saved.get("provider") or "firecrawl")
+    key = str(saved.get("key") or saved.get("firecrawl_key") or "")
+    return (provider, key) if provider in CRAWLERS and KEY_RE.match(key) else ("", "")
+
+
+def global_crawler() -> tuple[str, str]:
+    """The global key the owner's searches start with: (provider, key), or ("", "") when none is set."""
+    provider = next((name for name in CRAWLERS if env(API_KEYS[name])), "")
+    return (provider, env(API_KEYS[provider]) or "") if provider else ("", "")
 
 
 def apply_keys(environ, pid: str) -> None:
-    """A profile with its own Firecrawl key uses only that; the others keep the global keys (dashboard, else .env)."""
-    if key := own_key(pid):
-        environ["FIRECRAWL_API_KEY"] = key
-        environ["FIRECRAWL_BACKUP_KEYS"] = ""
+    """A profile with its own key uses only that, so it never spends the owner's credits; the others keep the
+    global keys (dashboard, else .env). An empty value stops .env filling the key back in."""
+    provider, key = own_crawler(pid)
+    if key:
+        environ.update({name: "" for name in API_KEYS.values()})
+        environ[API_KEYS[provider]] = key
 
 
 def child_env(profile: dict) -> dict[str, str]:
@@ -878,14 +891,15 @@ def admin_action(item: dict, api=None) -> None:
         else:
             create_profile({**item, **{k: profile.get(k, "") for k in ("name", "email", "phone", "location", "roles")}},
                            api, existing=profile)
-    elif action == "set_key" and pid == OWNER:
-        apply_api_keys({"firecrawl": [str(item.get("key") or "")]})
     elif action == "set_key":
-        key = str(item.get("key") or "")
-        if not KEY_RE.match(key):
+        key, provider = str(item.get("key") or ""), str(item.get("provider") or "firecrawl")
+        if provider not in CRAWLERS or not KEY_RE.match(key):
             raise ProfileError("invalid crawler key")
-        write_json(profile_dir(pid) / "secrets.json", {"firecrawl_key": key}, private=True)
-        log(f"Profile {pid} now uses its own crawler key ({mask(key)})")
+        if pid == OWNER:
+            apply_api_keys({"firecrawl": [key]} if provider == "firecrawl" else {provider: key})
+        else:
+            write_json(profile_dir(pid) / "secrets.json", {"provider": provider, "key": key}, private=True)
+            log(f"Profile {pid} now uses its own {provider} key ({mask(key)})")
     elif action == "use_global":
         (profile_dir(pid) / "secrets.json").unlink(missing_ok=True)
         log(f"Profile {pid} now uses the global crawler key")
@@ -966,13 +980,14 @@ def status_payload() -> dict:
         else:
             has_cv = (profile_dir(p["id"]) / "job_profile.md").is_file()
             name, email = p.get("name", ""), p.get("email", "")
-        key = own_key(p["id"])
+        provider, key = global_crawler() if owner else own_crawler(p["id"])
         job = daily_job(p, jobs or [])
         schedule = p.get("schedule") or (_expr(job) if job else "")
         report_time, report_days = schedule_parts(schedule)
         profiles.append({
             "id": p["id"], "name": name, "email": email, "status": p.get("status", "active"), "owner": owner,
-            "crawler": "own" if key else "global", "key_hint": mask(key), "has_cv": has_cv,
+            "crawler": "own" if key and not owner else "global", "provider": provider, "key_hint": mask(key),
+            "has_cv": has_cv,
             "created": _ms(p.get("created")), "last_run": _ms(last), "cv_updated": _ms(p.get("cv_updated")),
             "details": current_details(p),
             "job": job_settings.form_values(profile_getter(p)),
@@ -1600,8 +1615,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.list:
             for p in all_profiles():
-                crawler = f"own key {mask(own_key(p['id']))}" if own_key(p["id"]) else "global key"
-                print(f"{p['id']:<24} {p.get('status', ''):<7} {crawler:<18} {p.get('name', '')} <{p.get('email', '')}>")
+                provider, key = own_crawler(p["id"])
+                crawler = f"{provider} {mask(key)}" if key else "global key"
+                print(f"{p['id']:<24} {p.get('status', ''):<7} {crawler:<20} {p.get('name', '')} <{p.get('email', '')}>")
             return 0
         if args.pause or args.resume:
             set_status(args.pause or args.resume, "paused" if args.pause else "active")

@@ -262,12 +262,58 @@ def test_admin_actions_set_keys_pause_and_delete(home, monkeypatch):
     assert (environ["FIRECRAWL_API_KEY"], environ["FIRECRAWL_BACKUP_KEYS"]) == ("fc-test-own-long-key", "")
     payload = api.statuses[-1]
     row = next(p for p in payload["profiles"] if p["id"] == pid)
-    assert row["crawler"] == "own" and row["key_hint"] == "fc-...-key"
+    assert (row["crawler"], row["provider"], row["key_hint"]) == ("own", "firecrawl", "fc-...-key")
+    owner = next(p for p in payload["profiles"] if p["owner"])
+    assert (owner["crawler"], owner["provider"], owner["key_hint"]) == ("global", "firecrawl", "fc-...0001")
     assert "fc-test-own-long-key" not in json.dumps(payload) and "fc-global-longer0001" not in json.dumps(payload)
     assert payload["keys"]["firecrawl"] == {"source": "dashboard", "hint": "fc-...0001", "backups": 1}
     assert profiles.dashboard_env()["FIRECRAWL_API_KEY"] == "fc-global-longer0001"
     assert profiles.os.environ["FIRECRAWL_API_KEY"] == "fc-global-longer0001"
     assert profiles.os.environ["FIRECRAWL_BACKUP_KEYS"] == "fc-global-longer0002"
+
+
+def test_an_own_tavily_key_is_the_only_crawler_key_a_profile_uses(home, monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-global-longer0003")
+    monkeypatch.setenv("SCRAPFLY_API_KEY", "scp-global-longer0004")
+    profiles.sync(FakeApi([signup()]))
+    pid = "sam-lee-456789"
+    api = FakeApi([
+        {"id": "queue:2:a", "type": "admin", "action": "set_key", "u": pid, "key": "tvly-own-longer-key-01",
+         "provider": "tavily"},
+        {"id": "queue:3:b", "type": "admin", "action": "set_key", "u": pid, "key": "scp-own-longer-key-02",
+         "provider": "scrapfly"},
+    ])
+    report = profiles.sync(api)
+    assert report[-1] == "admin: rejected (invalid crawler key)"
+    environ = profiles.child_env(profiles.load(pid))
+    assert {k: environ[k] for k in profiles.API_KEYS.values()} == {
+        "FIRECRAWL_API_KEY": "", "FIRECRAWL_BACKUP_KEYS": "", "TAVILY_API_KEY": "tvly-own-longer-key-01",
+        "SCRAPFLY_API_KEY": ""}
+    row = next(p for p in api.statuses[-1]["profiles"] if p["id"] == pid)
+    assert (row["crawler"], row["provider"], row["key_hint"]) == ("own", "tavily", "tvl...y-01")
+    assert "tvly-own-longer-key-01" not in json.dumps(api.statuses)
+
+    (profiles.profile_dir(pid) / "secrets.json").write_text(json.dumps({"firecrawl_key": "fc-older-longer-key-3"}))
+    assert profiles.own_crawler(pid) == ("firecrawl", "fc-older-longer-key-3")
+
+    profiles.sync(FakeApi([{"id": "queue:4:c", "type": "admin", "action": "use_global", "u": pid}]))
+    assert profiles.own_crawler(pid) == ("", "")
+    assert profiles.child_env(profiles.load(pid))["TAVILY_API_KEY"] == "tvly-global-longer0003"
+
+
+def test_the_owners_key_from_the_dashboard_becomes_the_global_key(home, monkeypatch):
+    for key in ("FIRECRAWL_API_KEY", "FIRECRAWL_BACKUP_KEYS"):
+        monkeypatch.delenv(key)
+    api = FakeApi([])
+    profiles.sync(api)
+    owner = next(p for p in api.statuses[-1]["profiles"] if p["owner"])
+    assert (owner["provider"], owner["key_hint"]) == ("", "")
+    api = FakeApi([{"id": "queue:2:a", "type": "admin", "action": "set_key", "u": "owner",
+                    "key": "tvly-owner-longer-key9", "provider": "tavily"}])
+    profiles.sync(api)
+    assert profiles.dashboard_env()["TAVILY_API_KEY"] == "tvly-owner-longer-key9"
+    owner = next(p for p in api.statuses[-1]["profiles"] if p["owner"])
+    assert (owner["crawler"], owner["provider"], owner["key_hint"]) == ("global", "tavily", "tvl...key9")
 
 
 def test_rejected_dashboard_changes_are_reported_for_a_day(home, monkeypatch):
