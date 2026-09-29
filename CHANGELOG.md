@@ -16,6 +16,11 @@ using [Semantic Versioning](https://semver.org/).
   so they survive container updates; downloads the model through Ollama's API; makes `.env`
   owner-only; and generates the data key, never replacing a lost one. The CVE audit now covers
   `requirements.txt`.
+- **Self-configuring setup.** The wizard now runs the doctor right after installing: it installs
+  missing packages, offers to start an `ollama/ollama` container on the Hermes container's network
+  when no Ollama answers (reusing an existing one, with the GPU when there is one), sets
+  `OLLAMA_HOST`, asks for the model and downloads it. It ends with a health check. `--no-prereqs`
+  skips all of this.
 
 - **Security tests and static analysis.** A security test suite (`tests/security`) checks that
   hostile job keys, profile ids, names and CV files are handled as data (SQL, paths, HTML, log

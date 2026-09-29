@@ -145,7 +145,8 @@ def test_ollama_uses_hermes_model_when_hermes_talks_to_ollama(home, monkeypatch)
     report = doctor.Report(as_json=True)
     doctor.check_ollama(report, fix=False)
     assert report.items == [{"check": "ollama", "status": "ok", "message": "Ollama at http://gpu:11434 has llama3:8b",
-                             "fix": ""}]
+                             "fix": "", "host": "http://gpu:11434", "model": "llama3:8b",
+                             "wanted": hc.DEFAULT_MODEL}]
 
 
 def test_a_cloud_model_in_hermes_config_is_not_looked_for_on_ollama(home, monkeypatch):

@@ -28,6 +28,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -44,6 +45,7 @@ KEY_RE = re.compile(r"^(?:export\s+)?([A-Z][A-Z0-9_]*)=(.*)$")
 TIME_RE = re.compile(r"^(?:(weekdays|daily|sun(?:day)?|mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|"
                      r"thu(?:rs(?:day)?)?|fri(?:day)?|sat(?:urday)?)\s+)?([01]?\d|2[0-3]):([0-5]\d)$", re.I)
 CRON_RE = re.compile(r"^\S+(\s+\S+){4}$")
+OLLAMA_CONTAINER, OLLAMA_IMAGE, OLLAMA_WAIT_TRIES = "ollama", "ollama/ollama", 12
 DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
 SALARY_SYMBOLS = {"gb": "£", "us": "$", "ca": "$", "au": "$", "nz": "$", "in": "₹", "jp": "¥", "ch": "CHF"}
 EURO_COUNTRIES = {"at", "be", "cy", "de", "ee", "es", "fi", "fr", "gr", "hr", "ie", "it", "lt", "lu", "lv", "mt",
@@ -276,24 +278,35 @@ class Runner:
             return f"inside the '{self.args.container}' container as user '{self.args.container_user}'"
         return "with the local `hermes` command" if self.mode == "local" else "not available"
 
-    def command(self, argv: list[str], tty: bool = False, in_scripts: bool = False) -> list[str]:
+    def command(self, argv: list[str], tty: bool = False, in_scripts: bool = False,
+                env: dict[str, str] | None = None) -> list[str]:
         if self.mode == "docker":
             workdir = f"{self.args.container_home.rstrip('/')}/scripts" if in_scripts else self.args.container_home
+            extra = [a for k, v in (env or {}).items() for a in ("-e", f"{k}={v}")]
             return (["docker", "exec"] + (["-it"] if tty else []) +
-                    ["-u", self.args.container_user, "-w", workdir, self.args.container] + argv)
+                    ["-u", self.args.container_user, "-w", workdir, *extra, self.args.container] + argv)
         return argv
 
     def run(self, argv: list[str], tty: bool = False, capture: bool = False, in_scripts: bool = False,
-            timeout: int | None = None) -> subprocess.CompletedProcess | None:
+            timeout: int | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess | None:
         if not self.mode:
             return None
-        cmd = self.command(argv, tty and sys.stdin.isatty(), in_scripts)
+        cmd = self.command(argv, tty and sys.stdin.isatty(), in_scripts, env)
         cwd = self.scripts_dir if self.mode == "local" and in_scripts else None
+        proc_env = {**os.environ, **env} if env and self.mode == "local" else None
         try:
-            return subprocess.run(cmd, cwd=cwd, text=True, capture_output=capture, timeout=timeout)
+            return subprocess.run(cmd, cwd=cwd, env=proc_env, text=True, capture_output=capture, timeout=timeout)
         except (OSError, subprocess.SubprocessError) as exc:
             print(f"{YELLOW}  command failed: {exc}{RESET}")
             return None
+
+    @staticmethod
+    def docker(argv: list[str], timeout: int = 120) -> subprocess.CompletedProcess:
+        """A docker command on this host (for the Ollama container), never raising."""
+        try:
+            return subprocess.run(["docker", *argv], capture_output=True, text=True, timeout=timeout)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return subprocess.CompletedProcess(["docker", *argv], 1, "", str(exc))
 
     def cron_jobs(self) -> list[dict]:
         res = self.run(["hermes", "cron", "list"], capture=True, timeout=60)
@@ -549,6 +562,119 @@ class Wizard:
         self.set("HERMES_DATA_KEY", base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("="))
         self.say(f"  {DIM}generated HERMES_DATA_KEY: it encrypts CVs, profiles, letters and the nightly backups. "
                  f"Copy it from .env into a password manager; without it those can't be read.{RESET}")
+
+    # ------------------------------------------------------------------ prerequisites: packages and Ollama
+
+    def doctor(self, runner: Runner, scripts: Path, argv: list[str], capture: bool = False,
+               env: dict[str, str] | None = None) -> subprocess.CompletedProcess | None:
+        """doctor.py in Hermes' own Python (in the container or next to the local `hermes`), else in this one."""
+        if runner.mode:
+            return runner.run([self.args.python, "doctor.py", *argv], capture=capture, in_scripts=True, env=env)
+        try:
+            return subprocess.run([sys.executable, str(scripts / "doctor.py"), *argv], cwd=scripts, text=True,
+                                  capture_output=capture, env={**os.environ, "HERMES_HOME": str(scripts.parent),
+                                                               **(env or {})})
+        except (OSError, subprocess.SubprocessError) as exc:
+            self.say(f"{YELLOW}  doctor.py failed: {exc}{RESET}")
+            return None
+
+    def doctor_items(self, runner: Runner, scripts: Path, only: str, env: dict[str, str] | None = None) -> list[dict]:
+        res = self.doctor(runner, scripts, ["--json", "--no-pull", "--only", only], capture=True, env=env)
+        try:
+            return json.loads(res.stdout.strip().splitlines()[-1]) if res and res.stdout.strip() else []
+        except ValueError:
+            return []
+
+    def prerequisites(self, runner: Runner, scripts: Path) -> None:
+        self.heading("Prerequisites: Python packages and Ollama")
+        if not (scripts / "doctor.py").is_file():
+            self.say(f"{YELLOW}  {scripts / 'doctor.py'} is missing; re-run the wizard without --no-install.{RESET}")
+            return
+        if self.args.dry_run:
+            self.say("  would run: doctor.py --fix --only python,packages, then check Ollama and its model")
+            return
+        self.doctor(runner, scripts, ["--fix", "--only", "python,packages"])
+        self.ollama(runner, scripts)
+
+    def ollama(self, runner: Runner, scripts: Path) -> None:
+        env: dict[str, str] = {}
+        item = next(iter(self.doctor_items(runner, scripts, "ollama")), {})
+        if item.get("status") == "fail" and not item.get("host") and (host := self.start_ollama(runner)):
+            env = {"OLLAMA_HOST": host}
+            if self.value("OLLAMA_HOST") != host:
+                self.set("OLLAMA_HOST", host)
+            item = self.wait_for_ollama(runner, scripts, env) or item
+        if not item.get("host"):
+            self.say(f"{YELLOW}  No Ollama server answers, so jobs can't be rated yet. Install it "
+                     f"(https://ollama.com/download) or set OLLAMA_HOST, then run: python3 doctor.py --fix{RESET}")
+            return
+        host = item["host"]
+        if item.get("status") == "ok":
+            self.say(f"  {GREEN}Ollama at {host} has {item.get('model')}{RESET}")
+            return
+        wanted = item.get("wanted") or ""
+        key = "JOB_SCANNER_MODEL" if self.value("JOB_SCANNER_MODEL") else "OLLAMA_MODEL"
+        model = self.text("Ollama model for the job finder", self.preset(key) or wanted)
+        if not model:
+            return
+        if model != wanted:
+            self.set(key, model)
+        if not self.confirm(f"Download {model} to Ollama at {host} now? (a few GB, once)", True):
+            self.say(f"  {DIM}later: python3 doctor.py --fix --only ollama --model {model}{RESET}")
+            return
+        self.doctor(runner, scripts, ["--fix", "--only", "ollama", "--model", model], env=env)
+
+    def wait_for_ollama(self, runner: Runner, scripts: Path, env: dict[str, str]) -> dict | None:
+        for _ in range(OLLAMA_WAIT_TRIES):
+            item = next(iter(self.doctor_items(runner, scripts, "ollama", env)), {})
+            if item.get("host"):
+                return item
+            time.sleep(5)
+        return None
+
+    def start_ollama(self, runner: Runner) -> str | None:
+        """Start (or reuse) an Ollama container on the Hermes container's network; returns its address for Hermes."""
+        if runner.mode != "docker" or not shutil.which("docker"):
+            return None
+        if not self.confirm(f"No Ollama server found. Start an Ollama container next to Hermes ({OLLAMA_IMAGE}, "
+                            f"models kept in the '{OLLAMA_CONTAINER}' volume)?", True):
+            return None
+        container = self.args.container
+        nets = runner.docker(["inspect", container, "--format",
+                              "{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}"]).stdout.split()
+        if "host" in nets:
+            net, host = "host", "http://localhost:11434"
+        else:
+            # Containers only find each other by name on a user-defined network, not on the default bridge.
+            net = next((n for n in nets if n not in ("bridge", "none")), None)
+            if not net:
+                net = "hermes-net"
+                if runner.docker(["network", "inspect", net]).returncode:
+                    runner.docker(["network", "create", net])
+                runner.docker(["network", "connect", net, container])
+            host = f"http://{OLLAMA_CONTAINER}:11434"
+        state = runner.docker(["ps", "-a", "--filter", f"name=^/{OLLAMA_CONTAINER}$", "--format", "{{.State}}"])
+        if state.stdout.strip():
+            if state.stdout.strip() != "running":
+                runner.docker(["start", OLLAMA_CONTAINER])
+            if net != "host":
+                runner.docker(["network", "connect", net, OLLAMA_CONTAINER])
+            self.say(f"  {GREEN}using the existing '{OLLAMA_CONTAINER}' container{RESET}")
+            return host
+        gpu = ["--gpus", "all"] if shutil.which("nvidia-smi") else []
+        res = runner.docker(["run", "-d", "--name", OLLAMA_CONTAINER, "--restart", "unless-stopped", "--network", net,
+                             "-v", f"{OLLAMA_CONTAINER}:/root/.ollama", *gpu, OLLAMA_IMAGE], timeout=900)
+        if res.returncode:
+            self.say(f"{YELLOW}  could not start Ollama: {(res.stderr or res.stdout).strip()[-300:]}{RESET}")
+            return None
+        self.say(f"  {GREEN}started '{OLLAMA_CONTAINER}' on network {net}{' with the GPU' if gpu else ''}{RESET}")
+        return host
+
+    def health_check(self, runner: Runner, scripts: Path) -> None:
+        if not (scripts / "doctor.py").is_file():
+            return
+        self.heading("Health check")
+        self.doctor(runner, scripts, ["--no-pull"])
 
     # ------------------------------------------------------------------ package: daily-vacancy-report
 
@@ -1053,6 +1179,8 @@ class Wizard:
         self.current = EnvFile(home / ".env").values()
         runner = Runner(self.args, scripts)
         self.say(f"\nHermes commands: {runner.describe()}")
+        if not self.args.no_prereqs:
+            self.prerequisites(runner, scripts)
 
         self.shared()
         for pkg in packages:
@@ -1078,6 +1206,8 @@ class Wizard:
             self.schedules(runner)
         if saved:
             self.tests(runner, known)
+            if not self.args.no_prereqs:
+                self.health_check(runner, scripts)
         self.heading("Done")
         self.say(f"Settings: {home / '.env'}\nRe-run `python3 scripts/setup.py` to change anything, "
                  "or `--advanced` to see every option.")
@@ -1097,6 +1227,8 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="show what would change; write and run nothing")
     parser.add_argument("--no-install", action="store_true", help="skip copying package files")
     parser.add_argument("--no-cron", action="store_true", help="skip the schedule step")
+    parser.add_argument("--no-prereqs", action="store_true",
+                        help="skip installing Python packages, starting Ollama and downloading its model")
     parser.add_argument("--owner", help="uid:gid for written files (default: owner of the Hermes home when run as root)")
     parser.add_argument("--container", help="Hermes Docker container for hermes/python commands "
                                             "(auto-detects 'hermes-agent')")

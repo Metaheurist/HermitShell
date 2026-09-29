@@ -48,8 +48,8 @@ class Report:
         self.items: list[dict] = []
         self.as_json = as_json
 
-    def add(self, check: str, status: str, message: str, fix: str = "") -> None:
-        self.items.append({"check": check, "status": status, "message": message, "fix": fix})
+    def add(self, check: str, status: str, message: str, fix: str = "", **data) -> None:
+        self.items.append({"check": check, "status": status, "message": message, "fix": fix, **data})
         if not self.as_json:
             label = {"ok": "ok   ", "warn": "warn ", "fail": "FAIL ", "fixed": "fixed"}[status]
             print(f"  {label} {message}" + (f"\n         -> {fix}" if fix else ""), flush=True)
@@ -230,22 +230,25 @@ def check_ollama(report: Report, fix: bool, model: str | None = None, pull: bool
     reachable = {h: names for h in hosts if (names := ollama_models(hc, h)) is not None}
     if not reachable:
         report.add("ollama", "fail", f"no Ollama server answers at {', '.join(hosts)}",
-                   "start Ollama (the wizard can start a container next to Hermes) or set OLLAMA_HOST")
+                   "start Ollama (the wizard can start a container next to Hermes) or set OLLAMA_HOST",
+                   host="", model="", wanted=wanted)
         return
     for host, names in reachable.items():
         if found := next((m for m in models if m in names), None):
-            report.add("ollama", "ok", f"Ollama at {host} has {found}")
+            report.add("ollama", "ok", f"Ollama at {host} has {found}", host=host, model=found, wanted=wanted)
             return
     host = next(iter(reachable))
     if not (fix and pull):
         report.add("ollama", "fail", f"Ollama at {host} has none of {', '.join(models)}",
-                   f"run: python3 doctor.py --fix --only ollama   (downloads {wanted}, about 2.5 GB for the default)")
+                   f"run: python3 doctor.py --fix --only ollama   (downloads {wanted}, about 2.5 GB for the default)",
+                   host=host, model="", wanted=wanted)
         return
     report.progress(f"downloading {wanted} to Ollama at {host} (a few GB; this can take a while)")
     if pull_model(hc, host, wanted, report):
-        report.add("ollama", "fixed", f"downloaded {wanted} to Ollama at {host}")
+        report.add("ollama", "fixed", f"downloaded {wanted} to Ollama at {host}", host=host, model=wanted, wanted=wanted)
     else:
-        report.add("ollama", "fail", f"could not download {wanted}", f"on the Ollama machine run: ollama pull {wanted}")
+        report.add("ollama", "fail", f"could not download {wanted}", f"on the Ollama machine run: ollama pull {wanted}",
+                   host=host, model="", wanted=wanted)
 
 
 # --------------------------------------------------------------------------- settings, worker, disk

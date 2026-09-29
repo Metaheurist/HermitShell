@@ -25,14 +25,20 @@ It asks, in order:
 1. **Hermes home.** Then it runs `install.sh` to copy the job finder in. Run as
    root on a Docker host, it gives the files the same owner as the Hermes home directory (the
    official image uses `10000:10000`).
-2. **Shared settings.** SMTP server, login and recipient, then Firecrawl (plus backup keys),
+2. **Prerequisites.** Runs [`doctor.py --fix`](#3-check-the-prerequisites) in Hermes' own Python to
+   install any missing packages. If no Ollama server answers and Hermes runs in Docker, it offers to
+   start an `ollama/ollama` container on the Hermes container's network (reusing an existing
+   `ollama` container, using the GPU when `nvidia-smi` is present, and putting Hermes on a
+   `hermes-net` network if it's only on Docker's default bridge) and sets `OLLAMA_HOST`. Then it
+   asks which model to use and downloads it, showing progress. `--no-prereqs` skips this step.
+3. **Shared settings.** SMTP server, login and recipient, then Firecrawl (plus backup keys),
    Tavily and Scrapfly API keys, and your timezone. Leave empty any key you don't have. Secrets
    are read without echo and are only ever shown masked, as their last four characters
    (`****9z8y`).
-3. **Package settings.** Every setting tagged `# @basic` in the package's `.env.example`. With
+4. **Package settings.** Every setting tagged `# @basic` in the package's `.env.example`. With
    `--advanced`, you get every setting, including provider order, Ollama fallbacks, title regexes
    and limits.
-4. **Job search** (vacancy report). Where you're job hunting: region or city, the towns that
+5. **Job search** (vacancy report). Where you're job hunting: region or city, the towns that
    count as inside it, and a two-letter country code. Then whether fully remote jobs elsewhere count, and what kind of
    job you want from numbered menus:
    - **Level:** junior, mid, senior, lead or any. Titles above or below it lose fit points.
@@ -43,10 +49,10 @@ It asks, in order:
      suggested from your country. Jobs that don't list a salary are always kept.
    - **Unnamed agency adverts:** whether to hide recruitment-agency adverts that don't name the
      employer.
-5. **Job titles** (vacancy report). Enter the job titles you want. The wizard turns them into
+6. **Job titles** (vacancy report). Enter the job titles you want. The wizard turns them into
    web search queries for your location and a title filter. It also removes
    any of your titles from the default exclude list, so a nurse or teacher isn't filtered out.
-6. **Candidate profile** (vacancy report). Answer a few questions, import a text or markdown CV,
+7. **Candidate profile** (vacancy report). Answer a few questions, import a text or markdown CV,
    paste text, or start from the example. Your skills and gaps become `cv_keywords.json`.
    Then the optional **feedback buttons and admin page**: paste your Cloudflare account ID and an
    API token ([how to create them](cloudflare-setup.md)) and the wizard deploys the
@@ -55,16 +61,17 @@ It asks, in order:
    you choose and, optionally, Cloudflare Access. Without a token you can paste the URL of a Worker
    you deployed by hand instead; the wizard then offers to pipe the secrets into
    `wrangler secret put` so they never appear on screen.
-7. **Run times:** `07:00` runs daily,
+8. **Run times:** `07:00` runs daily,
    `weekdays 07:30` runs Monday to Friday, `sunday 18:00` once a week, and a cron expression or
    `-` (don't schedule) also work. The vacancy report also asks when to send its weekly roll-up
    (default `sunday 18:00`). Times use Hermes' timezone (`timezone:` in `config.yaml`).
-8. **Review.** Every change is listed (secrets masked) before anything is written. `.env` is
+9. **Review.** Every change is listed (secrets masked) before anything is written. `.env` is
    backed up to `.env.bak-<timestamp>`, updated in place (other Hermes settings are left
    alone) and kept at mode 600.
-9. **Schedules.** Creates or updates the `hermes cron` jobs with the run times you chose. If
+10. **Schedules.** Creates or updates the `hermes cron` jobs with the run times you chose. If
    Hermes isn't reachable from where the wizard runs, it prints the commands to run instead.
-10. **Test.** Sends a test email and offers a dry run.
+11. **Test.** Sends a test email and offers a dry run.
+12. **Health check.** Runs `doctor.py` once more and lists anything still missing, with the fix.
 
 The wizard finds Hermes by itself. It uses the `hermes` command when it's on your PATH;
 otherwise it runs commands in the `hermes-agent` container with `docker exec` (change this with
@@ -77,6 +84,7 @@ Useful options:
 | `--advanced` | Ask for every setting, not just the essentials |
 | `--dry-run` | Show what would change; write and run nothing |
 | `--no-install` / `--no-cron` | Skip copying files / the schedule step |
+| `--no-prereqs` | Skip installing packages, starting Ollama, downloading the model and the final health check |
 | `--non-interactive --answers FILE` | Unattended: values from a `KEY=VALUE` file, then the environment, then current values |
 | `daily-vacancy-report` | Skip the "which packages" question |
 

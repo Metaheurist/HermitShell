@@ -56,7 +56,9 @@ cd HermitShell
 python3 scripts/setup.py
 ```
 
-The setup wizard installs the job finder and then walks you through everything it needs:
+The setup wizard installs the job finder, sets up what it runs on (missing Python packages, an
+Ollama container next to Hermes if there's no Ollama yet, and the model), and then walks you
+through everything it needs:
 
 1. Email (SMTP) details and any web search API keys you have (Firecrawl, Tavily, Scrapfly). Keys
    are typed without being shown and are only ever displayed masked.
@@ -72,7 +74,7 @@ The setup wizard installs the job finder and then walks you through everything i
    `07:30`, `weekdays 08:00` or `sunday 18:00`).
 6. Along the way, the other essential settings, such as email titles and score thresholds.
    `--advanced` asks for every setting.
-7. The cron jobs, a test email and an optional dry run.
+7. The cron jobs, a test email, an optional dry run and a final health check.
 
 Settings are saved to `$HERMES_HOME/.env`, which is backed up first. Re-run the wizard any time;
 your current values are offered as the defaults. On a Docker host, point it at the bind-mounted
