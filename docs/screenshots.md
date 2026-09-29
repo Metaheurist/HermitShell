@@ -8,7 +8,7 @@ Health, Fabrikam...) and `example.com` addresses.
 - [Weekly roll-up](#weekly-roll-up)
 - [Cover letters and tailored CVs](#cover-letters-and-tailored-cvs)
 - [A job emailed from the dashboard](#a-job-emailed-from-the-dashboard)
-- [Profile emails](#profile-emails)
+- [Profile emails](#recruit-emails)
 - [Test emails](#test-emails)
 - [Button pages](#button-pages)
 - [Sign-up page](#sign-up-page)
@@ -123,22 +123,22 @@ reorders and rephrases what is already on your CV, keeping titles, employers and
 
 ## A job emailed from the dashboard
 
-**Send** on an opened job in the [jobs sent list](#the-jobs-sent-to-a-profile) emails that job to the profile as
+**Send** on an opened job in the [jobs sent list](#the-jobs-sent-to-a-recruit) emails that job to the profile as
 the card it had in the daily report, with its buttons working for that profile
 ([how it works](feedback-worker.md#jobs-sent)). The header gives the fit and how long is left to
 apply, and says when the advert has already closed.
 
 <img src="images/emails/job-email.png" alt="A job emailed from the dashboard: the report card with its fit, closing date and buttons" width="400">
 
-## Profile emails
+## Recruit emails
 
-Sent by `profiles.py` when you use [extra profiles](feedback-worker.md#extra-profiles-and-the-admin-page).
+Sent by `profiles.py` when you use [extra profiles](feedback-worker.md#recruits-and-the-admin-page).
 
 <table>
-<tr><th>Welcome (to the new person)</th><th>New profile (to you)</th></tr>
+<tr><th>Welcome (to the new person)</th><th>New recruit (to you)</th></tr>
 <tr>
 <td><img src="images/emails/welcome.png" alt="Welcome email" width="400"></td>
-<td><img src="images/emails/owner-new-profile.png" alt="New profile notice" width="400"></td>
+<td><img src="images/emails/owner-new-profile.png" alt="New recruit notice" width="400"></td>
 </tr>
 <tr><th>Unsubscribed (to you)</th><th>Goodbye (to the person who left)</th></tr>
 <tr>
@@ -148,10 +148,10 @@ Sent by `profiles.py` when you use [extra profiles](feedback-worker.md#extra-pro
 </table>
 
 - **Welcome** lists the job titles HermitShell will search for and the skills it read from the CV, so
-  the person can reply if something is wrong. It is sent again as "Profile updated" when they
+  the person can reply if something is wrong. It is sent again as "Recruit updated" when they
   send a new CV.
 - **Notices to you** share one layout, with a count of active and paused profiles and a
-  **Manage profiles** link: new profile, profile updated, unsubscribed (with their feedback),
+  **Manage recruits** link: new recruit, recruit updated, unsubscribed (with their feedback),
   your own CV rebuilt from the dashboard, and sign-ups that couldn't be applied.
 - **Goodbye** is the last email an extra profile gets: it confirms that their profile, CV and
   history are deleted and their name and email removed from the logs.
@@ -288,7 +288,7 @@ deleted ([data protection](configuration.md#data-protection)).
 ## Admin page
 
 `/admin` on the feedback Worker, off until `ADMIN_PASSWORD` is set
-([setup](feedback-worker.md#extra-profiles-and-the-admin-page)).
+([setup](feedback-worker.md#recruits-and-the-admin-page)).
 
 <table>
 <tr><th>Sign-in</th><th>Wrong password</th><th>Locked for 15 minutes</th></tr>
@@ -304,9 +304,9 @@ deleted ([data protection](configuration.md#data-protection)).
 </tr>
 </table>
 
-### Profiles
+### Recruits
 
-<img src="images/worker/admin-dashboard.png" alt="Admin page with three profiles" width="760">
+<img src="images/worker/admin-dashboard.png" alt="Admin page with three recruits" width="760">
 
 | Control | What it does |
 | --- | --- |
@@ -316,15 +316,15 @@ deleted ([data protection](configuration.md#data-protection)).
 | **pending** (orange) | Someone who has sent the invite form. They stay in the table, with when they signed up and what they're looking for, while HermitShell reads their CV, then the row becomes their profile |
 | Profile, Status | Name, email and start date, **no CV** when there is none yet; owner, active or paused; **scanning now** while a report runs; time of the last report and the daily report time |
 | **Send jobs now** | Runs that profile's report straight away and emails it when the scan finishes, even if nothing new turned up. Shows **Scanning…** while a report runs; missing without a CV |
-| **Manage** | Opens [that profile's page](#a-profiles-page): details, job search, report time and CV |
-| Stats line (the little chart) | This week's jobs sent, day by day; opens [that profile's stats and charts](#a-profiles-stats) |
-| **24 sent** | How many jobs were sent this week; opens [the list of those jobs](#the-jobs-sent-to-a-profile) |
+| **Manage** | Opens [that profile's page](#a-recruits-page): details, job search, report time and CV |
+| Stats line (the little chart) | This week's jobs sent, day by day; opens [that profile's stats and charts](#a-recruits-stats) |
+| **24 sent** | How many jobs were sent this week; opens [the list of those jobs](#the-jobs-sent-to-a-recruit) |
 | Crawler, with a key | The provider (Firecrawl or Tavily) and the start and end of the key, never the whole key. The owner's row shows the global key, tagged **global** |
 | Crawler: **Add key** | Only when the profile has no key: opens a window to pick Firecrawl or Tavily and paste the key. That profile then searches with only its own key. On the owner's row it sets the global key |
 | **Change** / **Remove** | Opens the same window to replace the key, or takes the profile back to the global keys. On the owner's row, **Change** opens [Global settings](#global-settings) |
 | **Pause** / **Resume** | Stops or restarts that profile's reports |
 | **Delete** (with the tick box) | Deletes an extra profile's CV and history from your server. The owner can't be deleted |
-| **Profiles** / **Global settings** tabs | Switch between the profiles and the [settings shared by the whole tool](#global-settings) |
+| **Recruits** / **Global settings** tabs | Switch between the recruits and the [settings shared by the whole tool](#global-settings) |
 | Invite someone + **Create invite link** | Makes a one-time `/join` link; the note is only for you |
 | **Revoke** | Cancels an unused invite |
 | **Sign out** | Ends every admin session |
@@ -333,7 +333,7 @@ deleted ([data protection](configuration.md#data-protection)).
 <tr><th>Add key</th><th>Searching for a profile</th></tr>
 <tr>
 <td><img src="images/worker/admin-key-modal.png" alt="The Add key window: Firecrawl or Tavily, and the API key" width="380"></td>
-<td><img src="images/worker/admin-dashboard-search.png" alt="The profiles table searched for York" width="380"></td>
+<td><img src="images/worker/admin-dashboard-search.png" alt="The recruits table searched for York" width="380"></td>
 </tr>
 </table>
 
@@ -367,7 +367,7 @@ Applied…) are never listed and can't be cancelled here.
 
 ### Global settings
 
-`/admin/settings`: the email server and web search keys every profile uses.
+`/admin/settings`: the email server and web search keys every recruit uses.
 
 <img src="images/worker/admin-settings.png" alt="Global settings: email server and web search API keys" width="620">
 
@@ -382,14 +382,14 @@ Applied…) are never listed and can't be cancelled here.
 Keys are shown only as `fc-...1234`. Keys typed here are removed from the Worker after 2 days if
 HermitShell hasn't collected them.
 
-### A profile's page
+### A recruit's page
 
 <img src="images/worker/admin-profile.png" alt="A profile's settings page" width="620">
 
 | Section | What it sets |
 | --- | --- |
-| **Back to profiles** | Floats in the top-left corner while you scroll |
-| **View stats** | Opens [this profile's stats](#a-profiles-stats) |
+| **Back to recruits** | Floats in the top-left corner while you scroll |
+| **View stats** | Opens [this profile's stats](#a-recruits-stats) |
 | Status box | Under the tabs: **Up to date**, **Waiting for HermitShell** while a save is queued (it checks again by itself), **Applied by HermitShell**, **Scanning for jobs since…** while a report runs, or why a change couldn't be applied |
 | Details | Name, the email address reports go to, phone and home town (for cover letters) |
 | Job search | Job titles (up to 8), region or city (used in web searches), country from a list, towns, remote elsewhere, seniority, minimum salary (empty = none) and currency, employment types, work location, hiding unnamed agency adverts |
@@ -413,7 +413,7 @@ yours. Changes to different fields are both kept.
 *While a report runs (here after **Send jobs now**), the status box says when the scan started and
 the button waits until it has finished.*
 
-### A profile's stats
+### A recruit's stats
 
 `/admin/stats?u=<id>`: one profile's numbers at a glance. Hover a bar or ring segment for its figures.
 
@@ -432,14 +432,14 @@ the button waits until it has finished.*
 | Top employers / Top sources | Where the jobs sent came from, and their hybrid, remote and on-site split |
 | Best matches sent | The three highest scores of the period |
 
-<table><tr><th>90 days, weekly bars</th><th>A new profile, 7 days</th><th>Before HermitShell sends stats</th></tr>
+<table><tr><th>90 days, weekly bars</th><th>A new recruit, 7 days</th><th>Before HermitShell sends stats</th></tr>
 <tr><td><img src="images/worker/admin-stats-90-days.png" alt="The stats page for 90 days" width="250"></td>
 <td><img src="images/worker/admin-stats-new-profile.png" alt="The stats page of a profile that is a few days old" width="250"></td>
 <td><img src="images/worker/admin-stats-empty.png" alt="The stats page before any stats have arrived" width="250"></td></tr></table>
 
 The **Jobs sent** link at the top opens the list of the jobs behind these numbers.
 
-### The jobs sent to a profile
+### The jobs sent to a recruit
 
 `/admin/sent?u=<id>`: every job in that profile's reports, newest first, grouped by day. The
 dashboard's **24 sent** button opens it for this week.
@@ -453,7 +453,7 @@ dashboard's **24 sent** button opens it for this week.
 | Score ring | The job's match out of 10 (green 8+, lime 7, amber 5-6) |
 | Title, employer, place, work mode, salary | As in the email. Press the row (or its arrow) to open the job's full card |
 | Answer tag, source | The last button pressed on that job, and where it was found |
-| **Stats** / **Manage profile** | Back to the charts, or to the profile's settings |
+| **Stats** / **Manage recruit** | Back to the charts, or to the recruit's settings |
 
 Notes typed on the buttons' confirmation pages are never shown.
 

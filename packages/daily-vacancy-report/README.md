@@ -69,7 +69,7 @@ light and dark modes.
    full card with a cover letter and tailored CV to generate or download, and a button that emails
    the job to them again ([screenshot](../../docs/images/worker/admin-sent-open.png)). Every report has an
    **Unsubscribe** link that deletes their profile (or pauses yours)
-   ([how it works](../../docs/feedback-worker.md#extra-profiles-and-the-admin-page)).
+   ([how it works](../../docs/feedback-worker.md#recruits-and-the-admin-page)).
 
 It only emails when there are new matches or follow-ups due, unless
 `JOB_SCANNER_EMAIL_WHEN_EMPTY=1` is set. A job is only marked as seen once it has been rated or

@@ -459,6 +459,13 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Profiles are called recruits on the admin page.** The dashboard tab, page title, table column,
+  search box and count, **Back to recruits**, **Manage recruit**, the not-found pages and the Tasks
+  labels (**Delete recruit**, **Recruit changes**) now say recruit, and so do the notices HermitShell
+  emails you (**New recruit**, **Recruit updated**, **Manage recruits**). Addresses (`/admin/profile`),
+  settings (`JOB_PROFILE_ID`), KV keys, API errors, `profiles.py` and `state/profiles/` keep their
+  names, and the sign-up, unsubscribe and privacy pages and the emails recruits get still speak of
+  their profile.
 - **Drawn arrows instead of arrow characters.** **Back to profiles** on the profile, settings,
   stats and jobs sent pages, and the links to an advert or employer's site on a job card, now show a
   line icon instead of the `←` and `↗` text characters, which looked out of place in the buttons.

@@ -42,7 +42,7 @@ email button ──> Worker /f (confirm page) ──> KV ──> HermitShell GET
 - **Private API.** `/events`, `/ack` and `/api/*` need `Authorization: Bearer <JOB_FEEDBACK_API_TOKEN>`.
 - **Protected admin page.** `/admin` is off until you set `ADMIN_PASSWORD`, and can sit behind
   Cloudflare Access (an emailed one-time code) as well; see
-  [Extra profiles](#extra-profiles-and-the-admin-page).
+  [Recruits](#recruits-and-the-admin-page).
 - **Size limits.** Request bodies are capped (answers and status reports at a few KB, sign-ups at
   the CV limit), and uploaded CVs are checked to really be a PDF, .docx or text file. Letters and
   CVs kept for download (`POST /api/doc`) must be a PDF of at most 2 MB.
@@ -280,9 +280,10 @@ python3 job_scanner.py --skills                   # list the skills you added
 python3 job_scanner.py --remove-skill "Kubernetes"
 ```
 
-## Extra profiles and the admin page
+## Recruits and the admin page
 
-One HermitShell can send reports to other people too, each built from their own CV. You manage them
+One HermitShell can send reports to other people too, each built from their own CV. The admin page
+calls them **recruits** (on the server each one is a profile under `state/profiles/<id>/`). You manage them
 from the Worker's admin page; HermitShell applies the changes, since the Worker can't reach your server.
 
 ```
@@ -341,22 +342,22 @@ from the Worker's admin page; HermitShell applies the changes, since the Worker 
 *The sign-up form and the welcome email. The other states are in
 [screenshots.md](screenshots.md#sign-up-page).*
 
-From then on each profile has its own daily report: a Hermes cron job named
-`vacancy-report-<id>` that `profiles.py` creates with the profile, running `profile_report.py`
-from the profile's folder. It is paused while the profile is and removed when it is deleted, so
-`hermes cron list` shows every profile's report, when it runs next and whether its last run worked,
-and one profile's slow or failed run doesn't hold up the others. A new profile's report starts 15
-minutes after the latest one (yours is the setup's `job_scanner.py` job); change any profile's time
-on its page. Weekly roll-ups and cover letters still run for each active profile once your own
+From then on each recruit has their own daily report: a Hermes cron job named
+`vacancy-report-<id>` that `profiles.py` creates with the recruit, running `profile_report.py`
+from their folder. It is paused while the recruit is and removed when they are deleted, so
+`hermes cron list` shows every recruit's report, when it runs next and whether its last run worked,
+and one recruit's slow or failed run doesn't hold up the others. A new recruit's report starts 15
+minutes after the latest one (yours is the setup's `job_scanner.py` job); change any recruit's time
+on their page. Weekly roll-ups and cover letters still run for each active recruit once your own
 run has finished. Outside Hermes' scheduler (no `cron/jobs.json`), your daily run runs everyone's
-reports one after the other instead. Each profile keeps its own seen jobs, tracker, feedback buttons
+reports one after the other instead. Each recruit keeps their own seen jobs, tracker, feedback buttons
 and skills pool. They share your region, sources and model settings, and every
-model request (ratings, cover letters, CVs, sign-ups, for all profiles) waits in one shared queue,
+model request (ratings, cover letters, CVs, sign-ups, for all recruits) waits in one shared queue,
 so the model only ever gets one request at a time; see
 [configuration](configuration.md#where-settings-come-from). A sign-up
-that uses the email of an existing profile is not applied (so an invite can't take over someone
+that uses the email of an existing recruit is not applied (so an invite can't take over someone
 else's profile); HermitShell emails you about it instead. Opening the same invite twice creates only
-one profile.
+one recruit.
 
 CVs are read in a separate process with a time and memory limit, so a broken or hostile file
 can't stall the server.
@@ -367,14 +368,14 @@ they are. `profiles.py` registers you on its first run.
 ### The admin page
 
 Once the wizard has deployed the Worker, everything else can be set here: the email server, the
-web search keys, your job search and your CV. Two tabs split it up: **Profiles** (everyone's
+web search keys, your job search and your CV. Two tabs split it up: **Recruits** (everyone's
 details, job search and CV) and **Global settings** (the email server and web search keys the
 whole tool shares).
 
 <img src="images/worker/admin-dashboard-setup.png" alt="Admin page right after setup, with the checklist" width="720">
 
 - **HermitShell is connected**, with a green dot, while the live link is up (changes reach it
-  within seconds), followed by when it last reported its profiles. Without the link the line says
+  within seconds), followed by when it last reported its recruits. Without the link the line says
   when HermitShell last checked in instead (each poll counts). Times on every admin page are in
   your timezone (`HERMES_TIMEZONE`). If it hasn't checked in for 45 minutes, a warning asks you to
   check its `vacancy-profiles` job.
@@ -383,31 +384,31 @@ whole tool shares).
   to its form.
 - **HermitShell could not apply**: changes HermitShell rejected in the last day (a mistyped SMTP server,
   for example), with the reason.
-- **Profiles**: everyone HermitShell reports, with status, last report, daily report time and a
-  **no CV** tag when there is none yet. **Send jobs now** runs that profile's report straight away
+- **Recruits**: everyone HermitShell reports, with status, last report, daily report time and a
+  **no CV** tag when there is none yet. **Send jobs now** runs that recruit's report straight away
   (see [Send jobs now](#send-jobs-now)); while a report is running, daily or sent now, the row says
-  **scanning now** instead. **Manage** opens that profile's page (details, job search, report time
+  **scanning now** instead. **Manage** opens that recruit's page (details, job search, report time
   and CV). The sent button has two halves: the little chart opens its [stats page](#stats) and
   **24 sent** the [list of jobs sent](#jobs-sent). Pause, resume or delete
   (deleting removes their CV and history from your server, their answers still waiting in KV and
   their name and email from the logs; the owner can't be deleted).
 - **Pending sign-ups**: someone who has sent the invite form gets a **pending** row straight away
-  (name, email, when and what they're looking for), while HermitShell reads their CV and builds the
-  profile. HermitShell reports the new profile before it takes the sign-up off the queue, so the row
-  turns into the profile without the person dropping off the dashboard in between.
+  (name, email, when and what they're looking for), while HermitShell reads their CV and sets them
+  up. HermitShell reports the new recruit before it takes the sign-up off the queue, so the row
+  turns into the recruit without the person dropping off the dashboard in between.
 - **Search**: the magnifying glass above the table slides out a search box (CSS only). Press Enter
-  and the page lists only the profiles whose name, email, id, place, status or crawler contain every
+  and the page lists only the recruits whose name, email, id, place, status or crawler contain every
   word you typed (`/admin?q=`), with a count and **&times;** to show everyone again.
-- **Crawler**: a profile with its own key shows the provider and the start and end of the key; the
+- **Crawler**: a recruit with their own key shows the provider and the start and end of the key; the
   owner's row shows the global key. Without a key, **Add key** opens a window (CSS only, no
-  JavaScript) to pick Firecrawl or Tavily and paste the key. A profile with its own key searches with
+  JavaScript) to pick Firecrawl or Tavily and paste the key. A recruit with their own key searches with
   only that key, so it never spends the global credits; **Remove** takes it back to the global keys.
   Scrapfly isn't offered there because it can't search on its own.
 - **Invites**: create, see and revoke unused links.
 
 #### Global settings
 
-`/admin/settings`, the **Global settings** tab. These apply to every profile.
+`/admin/settings`, the **Global settings** tab. These apply to every recruit.
 
 <img src="images/worker/admin-settings.png" alt="Global settings: email server and web search API keys" width="720">
 
@@ -417,7 +418,7 @@ whole tool shares).
   the server or username without a new password clears the old password, so it is never sent to a
   different server. **Send a test email** reports the result on the page after HermitShell's next check.
   **Go back to the .env email settings** undoes the dashboard values. Where each person's reports
-  go is set on their own profile page.
+  go is set on their own page under **Recruits**.
 - **Web search API keys**: Firecrawl (several keys, comma separated, are used in turn), Tavily and
   Scrapfly for everyone without their own key. Empty boxes leave a key alone; **Use the .env key**
   undoes a dashboard key. [Where to get each key](api-keys.md).
@@ -429,11 +430,11 @@ what is pending). Until then the email server form shows what you saved rather t
 Passwords and keys typed into the page are deleted from KV after 2 days if HermitShell hasn't collected
 them.
 
-#### A profile's page
+#### A recruit's page
 
-<img src="images/worker/admin-profile.png" alt="A profile's settings page" width="720">
+<img src="images/worker/admin-profile.png" alt="A recruit's settings page" width="720">
 
-**Back to profiles** stays in the top-left corner while you scroll. Each box has a short hint
+**Back to recruits** stays in the top-left corner while you scroll. Each box has a short hint
 under it. Details, job search and the daily report time are one form with one **Save changes**
 button; **Send jobs now** and the CV's **Upload CV** have their own.
 
@@ -446,7 +447,7 @@ button; **Send jobs now** and the CV's **Upload CV** have their own.
   employer. Saving rebuilds the web search queries and the title filter when the titles or
   location change.
 - **Daily report**: the time (in `HERMES_TIMEZONE`) and days (every day, or weekdays) Hermes sends
-  this profile's report. HermitShell moves the profile's Hermes job, or for you the setup's
+  this recruit's report. HermitShell moves the recruit's Hermes job, or for you the setup's
   `job_scanner.py` job, when it applies the save; until then the dashboard says the time is moving.
   A schedule set by hand with `hermes cron edit` shows here too, and a cron expression that isn't a
   plain time leaves the box empty until you pick one.
@@ -475,20 +476,20 @@ without the link. Meanwhile:
 
 #### Send jobs now
 
-**Send jobs now**, on the dashboard and on each profile's page, runs that profile's report straight
+**Send jobs now**, on the dashboard and on each recruit's page, runs that recruit's report straight
 away instead of waiting for its daily time. HermitShell gets the request over the live link within
 seconds and starts the scan in the background (`profiles.py report --now <id>`, logged to
 `state/profiles/runs.log`), so other dashboard changes keep being applied while it runs. The email
 arrives when the scan finishes, usually 10 to 20 minutes later, and it is sent even when nothing
 new turned up (like `JOB_SCANNER_EMAIL_WHEN_EMPTY=1`), so you know it ran. Jobs already sent in an
-earlier report aren't repeated. It works for a paused profile too, as a one-off.
+earlier report aren't repeated. It works for a paused recruit too, as a one-off.
 
-<img src="images/worker/admin-profile-scanning.png" alt="A profile's page while its report is running" width="720">
+<img src="images/worker/admin-profile-scanning.png" alt="A recruit's page while their report is running" width="720">
 
 While any report is running, daily or sent now, the dashboard row shows **scanning now**, the
-button becomes **Scanning…**, and the profile page's status box says when the scan started,
+button becomes **Scanning…**, and the recruit's page status box says when the scan started,
 checking every 30 seconds (from HermitShell's status report only, with no KV listing) for up to 40
-minutes. A second press while a scan is running does nothing. A profile without a CV has no button;
+minutes. A second press while a scan is running does nothing. A recruit without a CV has no button;
 HermitShell refuses the request and says so under **HermitShell could not apply**.
 
 #### Tasks
@@ -526,11 +527,11 @@ nothing running, every 20 seconds for 10 minutes. Reopen the window to start aga
 #### Stats
 
 Each dashboard row shows a small line of the jobs sent each day this week and how many. The line
-opens `/admin/stats` (the profile page has a **View stats** link too), one page of KPIs and charts
-for that profile over the last **7 days**, **30 days**, **90 days** or **12 months**. The number
+opens `/admin/stats` (the recruit's page has a **View stats** link too), one page of KPIs and charts
+for that recruit over the last **7 days**, **30 days**, **90 days** or **12 months**. The number
 opens the [jobs sent](#jobs-sent).
 
-<img src="images/worker/admin-stats.png" alt="A profile's stats page: KPI tiles, activity chart, funnel, answers, match scores, applications and top lists" width="720">
+<img src="images/worker/admin-stats.png" alt="A recruit's stats page: KPI tiles, activity chart, funnel, answers, match scores, applications and top lists" width="720">
 
 - **Tiles**: postings scanned, jobs rated, jobs sent, average match of the jobs sent (out of 10),
   liked (Interested or Good match), applied, heard back, and cover letters plus tailored CVs asked
@@ -549,30 +550,30 @@ opens the [jobs sent](#jobs-sent).
 
 <table><tr><th>90 days</th><th>Someone who joined last week</th></tr>
 <tr><td><img src="images/worker/admin-stats-90-days.png" alt="The stats page for 90 days" width="360"></td>
-<td><img src="images/worker/admin-stats-new-profile.png" alt="The stats page of a profile that is a few days old" width="360"></td></tr></table>
+<td><img src="images/worker/admin-stats-new-profile.png" alt="The stats page of a recruit who is a few days old" width="360"></td></tr></table>
 
-The numbers come from the profile's tracker (`job_tracker.db`) on your server:
+The numbers come from the recruit's tracker (`job_tracker.db`) on your server:
 `profile_stats.py` counts each day in `HERMES_TIMEZONE` and `profiles.py` sends the result to the
 Worker (`POST /api/stats`, kept in KV as `stats:<id>`) when it has changed, at most every 30
-minutes per profile, and straight after each report. Notes typed on the buttons' pages and the
+minutes per recruit, and straight after each report. Notes typed on the buttons' pages and the
 listing text are never sent. For the [jobs sent](#jobs-sent) list, each job sent in the last 90 days
 also carries its title, employer, place, work mode, salary, score, source, advert link, last answer
 and the details its email card showed (kept apart as `sent:<id>` so the stats page stays quick).
-Email addresses, phone numbers and the profile's name and email are removed from that text first.
-A deleted profile's stats are removed with it. The page is drawn on the Worker as plain SVG and CSS,
+Email addresses, phone numbers and the recruit's name and email are removed from that text first.
+A deleted recruit's stats are removed with them. The page is drawn on the Worker as plain SVG and CSS,
 without JavaScript, and its icons and charts animate in unless your system asks for reduced motion.
 `python3 profile_stats.py` prints the owner's numbers on the server.
 
 #### Jobs sent
 
 The **24 sent** half of a dashboard row's button, and **Jobs sent** on the stats page, open
-`/admin/sent`: the jobs in that profile's reports, newest first and grouped by day, for the last
+`/admin/sent`: the jobs in that recruit's reports, newest first and grouped by day, for the last
 **7 days**, **30 days** or **90 days** (up to 150 jobs). Each shows its match score, title (a link to
 the advert, opened in a new tab), employer, place, work mode, salary, source and the last button
 pressed. Filters above the list show **All**, **No answer yet** or one answer (**Applied**,
 **Heard back**…), with a count for each.
 
-<img src="images/worker/admin-sent.png" alt="The jobs sent to a profile this week, grouped by day" width="720">
+<img src="images/worker/admin-sent.png" alt="The jobs sent to a recruit this week, grouped by day" width="720">
 
 Click a job to open its full card, like the one in the email: the advertiser if an agency posted
 it, contract type, seniority, when it was posted and closes, the score's confidence and CV keyword
@@ -588,20 +589,20 @@ and a **Tailored CV**:
 - **Regenerate** writes a new one, replacing the one kept.
 
 The third tile, **Email to Sam** (**Email to you** on your own list), sends the job itself to that
-profile's address: **Send** asks HermitShell, which emails it within 5 minutes as the card it had in
+recruit's address: **Send** asks HermitShell, which emails it within 5 minutes as the card it had in
 the daily report, with its buttons (applied, cover letter, tailored CV and the rest) signed for that
 profile. No model is used. A loading circle shows while it goes, then **Emailed to Sam** with when,
 and **Send again**. The Worker keeps only when each job was emailed, under a hash of its key
-(`emailed:<profile>`, the last 300 jobs, 90 days), and forgets it with the profile. This can only be
+(`emailed:<profile>`, the last 300 jobs, 90 days), and forgets it with the recruit. This can only be
 asked for from the signed-in dashboard, never from an email link
 ([the email](images/emails/job-email.png)).
 
-<img src="images/worker/admin-sent-open.png" alt="A job on the jobs sent list opened to its full details, with Download and Regenerate for the cover letter, Generate for the CV and Send to email the job to the profile" width="620">
+<img src="images/worker/admin-sent-open.png" alt="A job on the jobs sent list opened to its full details, with Download and Regenerate for the cover letter, Generate for the CV and Send to email the job to the recruit" width="620">
 
 Only `http` and `https` advert and company links are kept, both on your server and again on the
 Worker, and they open with `rel="noopener noreferrer"`.
 
-Every control is described in [screenshots.md](screenshots.md#profiles).
+Every control is described in [screenshots.md](screenshots.md#recruits).
 
 Sign-in: five wrong passwords lock that address (an IPv6 /64 counts as one address) out for 15
 minutes, and 30 wrong passwords from anywhere lock sign-in for everyone for 15 minutes. If KV
@@ -642,7 +643,7 @@ python3 profiles.py --pause <id>     # or --resume, --delete
 ### Unsubscribe
 
 Every daily report and weekly roll-up ends with an **Unsubscribe** link (signed like the buttons,
-with a confirmation page). For an extra profile the Worker drops their answers still waiting in
+with a confirmation page). For a recruit the Worker drops their answers still waiting in
 KV straight away, and the next `profiles.py` run deletes the profile, CV, tracker and letters,
 replaces their name and email address with `[deleted]` in the logs, emails them a confirmation and
 tells you (without their address). For the owner it only pauses your own reports (the others keep
@@ -675,9 +676,9 @@ from HermitShell are only written when something changed or every 15 minutes (at
 a report's progress while it runs (a 20-minute scan adds about 20), and one per cover letter or
 tailored CV as it starts and finishes. An
 email-button request adds one write when it arrives and one when HermitShell collects it. The
-Tasks window only lists the queue when its flag says something is waiting. Each profile's stats
+Tasks window only lists the queue when its flag says something is waiting. Each recruit's stats
 are written only when they changed, at most every 30 minutes, plus once after each report (in
-practice a few writes per profile a day). If the Durable Object allowance ever ran out, saves still work and
+practice a few writes per recruit a day). If the Durable Object allowance ever ran out, saves still work and
 HermitShell falls back to polling.
 
 ## Removing it
