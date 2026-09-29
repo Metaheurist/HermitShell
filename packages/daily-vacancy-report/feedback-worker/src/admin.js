@@ -228,7 +228,7 @@ function lastUpdate(current, queued, presence) {
   const seen = Math.max(presence.seen, current.updated || 0);
   if (!seen) return `<p class="muted">HermitShell hasn't reported yet.${waiting}</p>`;
   const stale = Date.now() - seen > STALE_MS
-    ? `<div class="warn">HermitShell last checked in ${esc(ago(seen))}. Check that its <b>vacancy-profiles</b> job is running (<code>hermes cron list</code>).</div>` : "";
+    ? `<div class="warn">HermitShell last checked in ${esc(ago(seen))}. Check that HermitShell is running (<code>docker logs hermitshell</code>) and its <b>vacancy-profiles</b> job is scheduled (<code>python3 scheduler.py list</code>).</div>` : "";
   return `${stale}<p class="muted">HermitShell last checked in ${esc(ago(seen))} (${esc(when(seen, current.timezone))}).${waiting}</p>`;
 }
 

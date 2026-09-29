@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Daily Vacancy Report (HermitShell package): CV-matched job scanner rated by Hermes' model.
+"""Daily Vacancy Report (HermitShell package): CV-matched job scanner rated by a local model.
 
 Finds roles that match a candidate profile (job_profile.md + cv_keywords.json),
-optionally restricted to one region, rates each one with the model Hermes is
+optionally restricted to one region, rates each one with the local Ollama model it is
 configured to use (config.yaml) and emails a scored HTML report.
 
 Pipeline:
@@ -11,11 +11,11 @@ Pipeline:
   2. Pre-filter on title relevance, drop already-seen jobs, fetch the rest.
   3. Hard filters: inside JOB_REGION_* when configured; full-time / permanent
      or contract only (no part-time, internships).
-  4. Hermes' model returns fit score, confidence, matched CV keywords, gaps,
+  4. The model returns fit score, confidence, matched CV keywords, gaps,
      and the real employer behind agency adverts.
   5. Company logo + website lookup, CV keyword coverage, HTML email.
 
-Runs from $HERMES_HOME/scripts (see the package README for cron setup):
+Runs from $HERMITSHELL_HOME/scripts (see the package README for cron setup):
     python3 job_scanner.py              # full run + email
     python3 job_scanner.py --dry-run    # no email / state update
     python3 job_scanner.py --test-email # SMTP check only
@@ -99,7 +99,7 @@ COUNTRY_FULL_NAMES = re.compile(r"united kingdom of great britain and northern i
 
 
 def load_settings() -> SimpleNamespace:
-    """Everything personal or regional comes from the environment ($HERMES_HOME/.env)."""
+    """Everything personal or regional comes from the environment ($HERMITSHELL_HOME/.env)."""
     region = env("JOB_REGION_NAME", "")
     places = [p.strip() for p in (env("JOB_REGION_PLACES") or "").split(",") if p.strip()]
     pattern = env("JOB_REGION_REGEX") or "|".join(
@@ -1079,7 +1079,7 @@ def model_stretch(title: str, model_seniority: str) -> tuple[str | None, int]:
 
 def main() -> int:
     global CFG
-    parser = argparse.ArgumentParser(description="CV-matched job scanner rated by Hermes' model.")
+    parser = argparse.ArgumentParser(description="CV-matched job scanner rated by a local model.")
     parser.add_argument("--dry-run", action="store_true", help="don't send email or update seen-state")
     parser.add_argument("--test-email", action="store_true", help="send a test email and exit")
     parser.add_argument("--limit", type=int, help="max job pages to scrape and rate this run")

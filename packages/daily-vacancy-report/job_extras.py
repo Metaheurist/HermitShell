@@ -1,7 +1,5 @@
 """Daily Vacancy Report helpers: salary and closing-date parsing, seniority, title triage,
 a second opinion on top picks, and grouping of recruitment-agency adverts.
-
-Shared unchanged between the HermitShell package and the Hermes server copy.
 """
 
 from __future__ import annotations

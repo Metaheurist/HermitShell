@@ -247,7 +247,7 @@ def test_with_a_data_key_profile_files_are_encrypted_but_still_used(home, monkey
 def test_deleting_a_profile_removes_the_person_from_the_logs(home, monkeypatch):
     tmp, _ = home
     logs = tmp / "hermes"
-    monkeypatch.setattr(profiles.hc, "HERMES_HOME", logs)
+    monkeypatch.setattr(profiles.hc, "APP_HOME", logs)
     (logs / "logs").mkdir(parents=True)
     (logs / "cron" / "output" / "job").mkdir(parents=True)
     (tmp / "state").mkdir(exist_ok=True)
@@ -603,7 +603,7 @@ def test_a_finished_listener_hands_over_or_leaves_it_to_polling(home, monkeypatc
 
 
 def test_the_live_link_log_and_rotated_logs_are_scrubbed_too(home, monkeypatch):
-    monkeypatch.setattr(profiles.hc, "HERMES_HOME", home[0])
+    monkeypatch.setattr(profiles.hc, "APP_HOME", home[0])
     (home[0] / "state").mkdir(parents=True, exist_ok=True)
     (home[0] / "profiles").mkdir(parents=True, exist_ok=True)
     files = [home[0] / "state" / "profiles-live.log", home[0] / "state" / "profiles-live.log.1",
@@ -700,8 +700,8 @@ def test_spawn_only_from_the_owner_with_extra_profiles(home, monkeypatch):
     assert started[0][2:] == ["run", "--after", str(profiles.os.getpid()), "job_scanner.py", "--weekly"]
 
 
-class FakeHermes:
-    """`hermes cron` changing a jobs.json in the test's home the way Hermes does."""
+class FakeScheduler:
+    """`scheduler.py` changing a jobs.json in the test's home the way it does."""
 
     def __init__(self, path, owner_schedule="0 8 * * *"):
         self.path, self.calls = path, []
@@ -719,8 +719,7 @@ class FakeHermes:
         return next((j for j in self.jobs() if j["name"] == name), None)
 
     def __call__(self, cmd, **kwargs):
-        assert cmd[:2] in (["hermes", "cron"], [sys.executable, "-m"]) and kwargs["timeout"] == 60
-        cmd = cmd[cmd.index("cron") - 1:]
+        assert cmd[:2] == [sys.executable, str(profiles.SCRIPT_DIR / "scheduler.py")] and kwargs["timeout"] == 60
         verb, rest = cmd[2], cmd[3:]
         self.calls.append([verb, *rest])
         jobs = self.jobs()
@@ -728,8 +727,7 @@ class FakeHermes:
         if verb == "create":
             jobs.append({"id": f"job{len(self.calls)}", "name": opt("--name"), "script": opt("--script"),
                          "workdir": opt("--workdir"), "schedule": {"kind": "cron", "expr": rest[0]},
-                         "enabled": "--paused" not in rest, "state": "paused" if "--paused" in rest else "scheduled",
-                         "no_agent": "--no-agent" in rest})
+                         "enabled": "--paused" not in rest, "state": "paused" if "--paused" in rest else "scheduled"})
         else:
             job = next(j for j in jobs if j["id"] == rest[0])
             if verb == "edit":
@@ -743,8 +741,8 @@ class FakeHermes:
 
 
 @pytest.fixture
-def hermes(home, monkeypatch):
-    fake = FakeHermes(home[0] / "cron" / "jobs.json")
+def cron(home, monkeypatch):
+    fake = FakeScheduler(home[0] / "cron" / "jobs.json")
     monkeypatch.setattr(profiles.subprocess, "run", fake)
     return fake
 
@@ -753,46 +751,73 @@ def admin(action, u, n=2, **extra):
     return {"id": f"queue:{n}:a{n}", "type": "admin", "action": action, "u": u, **extra}
 
 
-def test_every_profile_gets_its_own_daily_hermes_job(home, hermes):
+def test_every_profile_gets_its_own_daily_job(home, cron):
     profiles.sync(FakeApi([signup()]))
-    sam = hermes.job("vacancy-report-sam-lee-456789")
-    assert sam["script"] == "profile_report.py" and sam["no_agent"] and sam["enabled"]
+    sam = cron.job("vacancy-report-sam-lee-456789")
+    assert sam["script"] == "profile_report.py" and sam["enabled"]
     assert sam["workdir"] == str((profiles.PROFILES_DIR / "sam-lee-456789").resolve())
     assert sam["schedule"]["expr"] == "15 8 * * *"
     profiles.sync(FakeApi([signup(id="queue:9:0a0a0a", name="Kim Park", email="kim@example.com")]))
-    assert hermes.job("vacancy-report-kim-park-0a0a0a")["schedule"]["expr"] == "30 8 * * *"
-    calls = len(hermes.calls)
+    assert cron.job("vacancy-report-kim-park-0a0a0a")["schedule"]["expr"] == "30 8 * * *"
+    calls = len(cron.calls)
     profiles.schedule_reports()
-    assert len(hermes.calls) == calls
+    assert len(cron.calls) == calls
 
     profiles.sync(FakeApi([admin("pause", "kim-park-0a0a0a")]))
-    assert hermes.job("vacancy-report-kim-park-0a0a0a")["state"] == "paused"
+    assert cron.job("vacancy-report-kim-park-0a0a0a")["state"] == "paused"
     profiles.sync(FakeApi([admin("resume", "kim-park-0a0a0a", 3)]))
-    assert hermes.job("vacancy-report-kim-park-0a0a0a")["enabled"] is True
+    assert cron.job("vacancy-report-kim-park-0a0a0a")["enabled"] is True
     profiles.sync(FakeApi([admin("delete", "sam-lee-456789", 4)]))
-    assert hermes.job("vacancy-report-sam-lee-456789") is None
-    assert [j["name"] for j in hermes.jobs()] == ["job-scanner", "vacancy-report-kim-park-0a0a0a"]
+    assert cron.job("vacancy-report-sam-lee-456789") is None
+    assert [j["name"] for j in cron.jobs()] == ["job-scanner", "vacancy-report-kim-park-0a0a0a"]
 
 
-def test_hermes_is_found_off_the_path_and_its_failures_are_logged(home, monkeypatch, capsys):
+def test_the_scheduler_runs_beside_the_scripts_and_its_failures_are_logged(home, capsys):
     seen = []
 
     def runner(cmd, **kwargs):
         seen.append(cmd)
-        return subprocess.CompletedProcess(cmd, len(seen) - 1, "", "no such job")
-    monkeypatch.setattr(profiles.shutil, "which", lambda name: None)
-    assert profiles.hermes_cron(["list"], runner) is True
-    monkeypatch.setattr(profiles.shutil, "which", lambda name: "/usr/local/bin/hermes")
-    assert profiles.hermes_cron(["pause", "abc"], runner) is False
-    assert seen == [[sys.executable, "-m", "hermes_cli.main", "cron", "list"], ["hermes", "cron", "pause", "abc"]]
-    assert "hermes cron pause failed: no such job" in capsys.readouterr().err
-    assert profiles.hermes_cron(["list"], lambda cmd, **k: (_ for _ in ()).throw(FileNotFoundError())) is False
+        return subprocess.CompletedProcess(cmd, len(seen) - 1, "", "no job 'abc'")
+    assert profiles.scheduler_cmd(["list"], runner) is True
+    assert profiles.scheduler_cmd(["pause", "abc"], runner) is False
+    script = str(profiles.SCRIPT_DIR / "scheduler.py")
+    assert seen == [[sys.executable, script, "list"], [sys.executable, script, "pause", "abc"]]
+    assert "scheduler pause failed: no job 'abc'" in capsys.readouterr().err
+    assert profiles.scheduler_cmd(["list"], lambda cmd, **k: (_ for _ in ()).throw(FileNotFoundError())) is False
+
+
+def test_the_real_scheduler_takes_every_command_profiles_sends(home, monkeypatch):
+    """profiles.py against scheduler.py itself, in-process: create, edit, pause, resume and remove."""
+    import scheduler
+    cron_dir = home[0] / "cron"
+    for name, value in {"CRON_DIR": cron_dir, "JOBS_FILE": cron_dir / "jobs.json", "LOCK_DIR": cron_dir / "locks",
+                        "OUTPUT_DIR": cron_dir / "output", "HEARTBEAT": cron_dir / "heartbeat.json"}.items():
+        monkeypatch.setattr(scheduler, name, value)
+    monkeypatch.setattr(scheduler.hc, "APP_HOME", home[0])
+    monkeypatch.setattr(profiles, "CRON_FILE", cron_dir / "jobs.json")
+    scheduler.create("0 8 * * *", "Daily", "job-scanner", "job_scanner.py")
+
+    def run(cmd, **kwargs):
+        code = scheduler.main(cmd[2:])
+        return subprocess.CompletedProcess(cmd, code, "", "")
+    monkeypatch.setattr(profiles.subprocess, "run", run)
+    profiles.sync(FakeApi([signup()]))
+    jobs = {j["name"]: j for j in scheduler.load_jobs()}
+    sam = jobs["vacancy-report-sam-lee-456789"]
+    assert sam["workdir"] == str((profiles.PROFILES_DIR / "sam-lee-456789").resolve()) and sam["enabled"]
+    assert scheduler.expression(sam) == "15 8 * * *"
+    profiles.sync(FakeApi([admin("profile", "sam-lee-456789", report={"time": "06:45", "days": "weekdays"}),
+                           admin("pause", "sam-lee-456789", 3)]))
+    sam = {j["name"]: j for j in scheduler.load_jobs()}["vacancy-report-sam-lee-456789"]
+    assert scheduler.expression(sam) == "45 6 * * 1-5" and not scheduler.enabled(sam)
+    profiles.sync(FakeApi([admin("delete", "sam-lee-456789", 4)]))
+    assert [j["name"] for j in scheduler.load_jobs()] == ["job-scanner"]
 
 
 def test_the_owners_report_runs_the_others_only_without_their_own_jobs(home, monkeypatch):
     profiles.sync(FakeApi([signup()]))
     assert [p["id"] for p in profiles.others("job_scanner.py", [])] == ["sam-lee-456789"]
-    fake = FakeHermes(profiles.CRON_FILE)
+    fake = FakeScheduler(profiles.CRON_FILE)
     monkeypatch.setattr(profiles.subprocess, "run", fake)
     profiles.schedule_reports()
     assert profiles.others("job_scanner.py", []) == []
@@ -802,39 +827,39 @@ def test_the_owners_report_runs_the_others_only_without_their_own_jobs(home, mon
     assert profiles.spawn_others("job_scanner.py", ["--weekly"]) is False
 
 
-def test_the_dashboard_sets_each_profiles_report_time(home, hermes):
+def test_the_dashboard_sets_each_profiles_report_time(home, cron):
     profiles.sync(FakeApi([signup()]))
     api = FakeApi([admin("profile", "sam-lee-456789", report={"time": "06:45", "days": "weekdays"}),
                    admin("profile", "owner", 3, report={"time": "07:30"})])
     profiles.sync(api)
-    assert hermes.job("vacancy-report-sam-lee-456789")["schedule"]["expr"] == "45 6 * * 1-5"
-    assert hermes.job("job-scanner")["schedule"]["expr"] == "30 7 * * *"
+    assert cron.job("vacancy-report-sam-lee-456789")["schedule"]["expr"] == "45 6 * * 1-5"
+    assert cron.job("job-scanner")["schedule"]["expr"] == "30 7 * * *"
     assert "schedule" not in profiles.load("sam-lee-456789") and "schedule" not in profiles.load("owner")
     rows = {p["id"]: p["report"] for p in api.statuses[-1]["profiles"]}
     assert rows["sam-lee-456789"] == {"time": "06:45", "days": "weekdays", "schedule": "45 6 * * 1-5",
-                                      "hermes_job": True, "pending": False}
+                                      "job": True, "pending": False}
     assert rows["owner"]["time"] == "07:30" and rows["owner"]["days"] == "daily"
     profiles.sync(FakeApi([admin("profile", "sam-lee-456789", 4, report={"days": "daily"})]))
-    assert hermes.job("vacancy-report-sam-lee-456789")["schedule"]["expr"] == "45 6 * * *"
+    assert cron.job("vacancy-report-sam-lee-456789")["schedule"]["expr"] == "45 6 * * *"
 
 
 @pytest.mark.parametrize("report", [{"time": "25:00"}, {"time": "8am"}, {"time": "08:00", "days": "sundays"},
                                     {"time": "08:00 * * * 1; rm -rf /"}])
-def test_a_bad_report_time_is_rejected(home, hermes, report):
+def test_a_bad_report_time_is_rejected(home, cron, report):
     api = FakeApi([admin("profile", "owner", report=report)])
     profiles.sync(api)
     assert api.statuses[-1]["problems"][-1]["error"] == "invalid daily report time"
-    assert hermes.job("job-scanner")["schedule"]["expr"] == "0 8 * * *"
+    assert cron.job("job-scanner")["schedule"]["expr"] == "0 8 * * *"
 
 
-def test_without_hermes_the_report_time_waits_and_nothing_is_scheduled(home, monkeypatch):
-    monkeypatch.setattr(profiles.subprocess, "run", lambda *a, **k: pytest.fail("hermes called"))
+def test_without_the_scheduler_the_report_time_waits_and_nothing_is_scheduled(home, monkeypatch):
+    monkeypatch.setattr(profiles.subprocess, "run", lambda *a, **k: pytest.fail("scheduler called"))
     api = FakeApi([signup(), admin("profile", "owner", 3, report={"time": "09:00"})])
     profiles.sync(api)
     payload = api.statuses[-1]
     owner = next(p for p in payload["profiles"] if p["owner"])
-    assert payload["hermes_jobs"] is False
-    assert owner["report"] == {"time": "09:00", "days": "daily", "schedule": "0 9 * * *", "hermes_job": False,
+    assert payload["scheduler"] is False
+    assert owner["report"] == {"time": "09:00", "days": "daily", "schedule": "0 9 * * *", "job": False,
                                "pending": True}
 
 
@@ -887,7 +912,7 @@ def test_the_owners_report_runs_alone(home, monkeypatch):
     assert "JOB_SCANNER_EMAIL_WHEN_EMPTY" not in envs[0] and "last_run" not in profiles.load("owner")
 
 
-def test_a_hermes_job_runs_the_report_of_the_folder_it_starts_in(home, monkeypatch):
+def test_a_scheduled_job_runs_the_report_of_the_folder_it_starts_in(home, monkeypatch):
     profiles.sync(FakeApi([signup()]))
     ran = []
     monkeypatch.setattr(profiles, "run_report", lambda pid, now=False: ran.append((pid, now)) or 0)

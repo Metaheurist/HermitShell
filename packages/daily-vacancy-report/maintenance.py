@@ -6,10 +6,10 @@ Runs nightly (the setup wizard schedules it as vacancy-maintenance), for the own
    cover letters and tailored CVs, and logs and scheduled-job output older than HERMES_LOG_RETENTION_DAYS
    (default 90) are deleted. 0 turns either off.
 2. Encryption: with HERMES_DATA_KEY set, profile files, CVs and letters saved before it was set are encrypted.
-3. Permissions: everything under state/ becomes readable by Hermes' account only (files 0600, folders 0700).
-4. Backup: .env, Hermes' config.yaml, SOUL.md, memories, cron jobs and this scripts folder with its state go into
+3. Permissions: everything under state/ becomes readable by HermitShell's account only (files 0600, folders 0700).
+4. Backup: .env, the scheduler's jobs (cron/) and this scripts folder with its state go into
    one archive, encrypted with HERMES_DATA_KEY (AES-256-GCM), in HERMES_BACKUP_DIR (default
-   <Hermes home>/backups/nightly). The newest HERMES_BACKUP_KEEP_DAILY (14) are kept, plus the newest of each week
+   <HermitShell home>/backups/nightly). The newest HERMES_BACKUP_KEEP_DAILY (14) are kept, plus the newest of each week
    for HERMES_BACKUP_KEEP_WEEKLY (8) more weeks.
 
     python3 maintenance.py                          # all of the above (cron)
@@ -40,16 +40,19 @@ from job_tracker import Tracker
 hc.LOG_TAG = "maintenance"
 SCRIPT_DIR = Path(__file__).resolve().parent
 DAY = 86400
-BACKUP_PREFIX = "hermes-"
-HOME_ITEMS = (".env", "config.yaml", "SOUL.md", "memories", "cron")
-SKIP_DIRS = {"__pycache__", ".ruff_cache", ".pytest_cache", "model-queue", "output", "tests", "node_modules"}
+# Backups made while HermitShell ran inside Hermes are named hermes-..., and are listed and rotated too.
+BACKUP_PREFIX = "hermitshell-"
+OLD_PREFIXES = ("hermes-",)
+HOME_ITEMS = (".env", "cron")
+SKIP_DIRS = {"__pycache__", ".ruff_cache", ".pytest_cache", "model-queue", "output", "locks", "tests",
+             "node_modules"}
 SKIP_SUFFIXES = (".lock", ".tmp", "-wal", "-shm", "-journal", ".pyc")
 LETTER_DIRS = ("cover_letters", "tailored_cvs")
 STATE_PRIVATE = ("cv.json", "cv_skills_merged.json")
 
 
 def backup_dir() -> Path:
-    return Path(env("HERMES_BACKUP_DIR") or hc.HERMES_HOME / "backups" / "nightly")
+    return Path(env("HERMES_BACKUP_DIR") or hc.APP_HOME / "backups" / "nightly")
 
 
 def state_dirs() -> list[Path]:
@@ -148,7 +151,7 @@ def tighten(root: Path) -> int:
 # --------------------------------------------------------------------------- backups
 
 def backup_sources() -> list[tuple[Path, str]]:
-    home = hc.HERMES_HOME
+    home = hc.APP_HOME
     items = [(home / name, name) for name in HOME_ITEMS if (home / name).exists()]
     items.append((SCRIPT_DIR, "scripts"))
     if SCRIPT_DIR not in STATE_DIR.resolve().parents and STATE_DIR.is_dir():
@@ -157,7 +160,7 @@ def backup_sources() -> list[tuple[Path, str]]:
 
 
 def _skipped(path: Path) -> bool:
-    return path.name.endswith(SKIP_SUFFIXES) or (".bak-" in path.name and path.parent == hc.HERMES_HOME)
+    return path.name.endswith(SKIP_SUFFIXES) or (".bak-" in path.name and path.parent == hc.APP_HOME)
 
 
 def _add(tar: tarfile.TarFile, src: Path, arc: str, tmp: Path) -> None:
@@ -191,15 +194,18 @@ def build_archive() -> bytes:
 
 
 def stamp_of(path: Path) -> datetime | None:
-    try:
-        return datetime.strptime(path.name[len(BACKUP_PREFIX):len(BACKUP_PREFIX) + 15], "%Y%m%d-%H%M%S")
-    except ValueError:
-        return None
+    for prefix in (BACKUP_PREFIX, *OLD_PREFIXES):
+        if path.name.startswith(prefix):
+            try:
+                return datetime.strptime(path.name[len(prefix):len(prefix) + 15], "%Y%m%d-%H%M%S")
+            except ValueError:
+                return None
+    return None
 
 
 def list_backups(folder: Path | None = None) -> list[Path]:
     folder = folder or backup_dir()
-    found = [p for p in folder.glob(f"{BACKUP_PREFIX}*.tar.gz*") if p.is_file() and stamp_of(p)]
+    found = [p for p in folder.glob("*.tar.gz*") if p.is_file() and stamp_of(p)]
     return sorted(found, key=stamp_of, reverse=True)
 
 

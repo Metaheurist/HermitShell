@@ -1,0 +1,9 @@
+{
+  "jobs": [
+    {"name": "daily-vacancy-report", "title": "Daily Vacancy Report", "script": "job_scanner.py", "schedule": "0 7 * * *"},
+    {"name": "weekly-vacancy-report", "title": "Weekly vacancy roll-up", "script": "job_weekly.py", "schedule": "0 18 * * 0"},
+    {"name": "vacancy-cover-letters", "title": "Cover letter requests", "script": "cover_letter.py", "schedule": "*/5 * * * *"},
+    {"name": "vacancy-profiles", "title": "Extra profiles", "script": "profiles.py", "schedule": "*/5 * * * *"},
+    {"name": "vacancy-maintenance", "title": "Nightly maintenance", "script": "maintenance.py", "schedule": "30 3 * * *"}
+  ]
+}

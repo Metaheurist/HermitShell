@@ -296,8 +296,8 @@ export const STATUS_URL = "/admin/profile/status";
 function reportHint(p, status) {
   const zone = status.timezone ? ` (${status.timezone})` : "";
   if (p.report?.pending) return `HermitShell moves the report to this time when it next checks in${zone}.`;
-  if (status.hermes_jobs === false) return `Saved, but HermitShell isn't running under Hermes' scheduler, so its own schedule applies${zone}.`;
-  return `When Hermes sends ${p.owner ? "your" : "their"} report${zone}. Each recruit's report is its own Hermes job.`;
+  if ((status.scheduler ?? status.hermes_jobs) === false) return `Saved, but HermitShell's scheduler isn't set up, so the time applies once it is${zone}.`;
+  return `When HermitShell sends ${p.owner ? "your" : "their"} report${zone}. Each recruit's report is its own scheduled job.`;
 }
 
 // A report now, rather than at the daily time; the email follows when the scan finishes.

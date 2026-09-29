@@ -3,8 +3,6 @@
 Uses the standard Helvetica fonts every PDF reader has, so the text stays real text (selectable
 and readable by applicant tracking systems) and nothing needs installing on the HermitShell server.
 Text is encoded as Windows-1252; characters outside it become "?".
-
-Shared unchanged between the HermitShell package and the Hermes server copy.
 """
 
 from __future__ import annotations

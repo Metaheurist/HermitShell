@@ -26,10 +26,11 @@ def tree(tmp_path, monkeypatch):
     state = scripts / "state"
     for d in (home / "logs", home / "cron" / "output", state / "cover_letters", state / "profiles"):
         d.mkdir(parents=True)
-    (home / "config.yaml").write_text("model: {}\n", encoding="utf-8")
-    (home / "SOUL.md").write_text("Be helpful.\n", encoding="utf-8")
+    (home / ".env").write_text("OLLAMA_MODEL=qwen3:8b\n", encoding="utf-8")
+    (home / "cron" / "jobs.json").write_text('{"jobs": []}', encoding="utf-8")
+    (home / "notes.md").write_text("not ours\n", encoding="utf-8")
     (scripts / "job_scanner.py").write_text("print('scan')\n", encoding="utf-8")
-    monkeypatch.setattr(hc, "HERMES_HOME", home)
+    monkeypatch.setattr(hc, "APP_HOME", home)
     monkeypatch.setattr(maintenance, "SCRIPT_DIR", scripts)
     monkeypatch.setattr(maintenance, "STATE_DIR", state)
     monkeypatch.setattr(profiles, "STATE_DIR", state)
@@ -122,13 +123,14 @@ def test_encrypted_backup_restores_everything(tree, monkeypatch, tmp_path):
         t.upsert_job("k1", {"title": "Analyst", "company": "Northwind"}, True)
     aged(state / "cover_letters" / "tmp.lock", 0)
     summary = maintenance.make_backup(datetime(2026, 5, 1, 3, 30))
-    assert summary.startswith("backup: hermes-20260501-033000.tar.gz.enc (") and "encrypted" in summary
-    archive = home / "backups" / "nightly" / "hermes-20260501-033000.tar.gz.enc"
+    assert summary.startswith("backup: hermitshell-20260501-033000.tar.gz.enc (") and "encrypted" in summary
+    archive = home / "backups" / "nightly" / "hermitshell-20260501-033000.tar.gz.enc"
     assert hc.is_sealed(archive) and b"Northwind" not in archive.read_bytes()
 
     out = tmp_path / "restored"
     assert maintenance.restore(archive, out) > 0
-    assert (out / "SOUL.md").read_text(encoding="utf-8") == "Be helpful.\n"
+    assert (out / ".env").read_text(encoding="utf-8") == "OLLAMA_MODEL=qwen3:8b\n"
+    assert (out / "cron" / "jobs.json").is_file() and not (out / "notes.md").exists()
     assert (out / "scripts" / "job_scanner.py").is_file()
     assert not (out / "scripts" / "state" / "cover_letters" / "tmp.lock").exists()
     with sqlite3.connect(str(out / "scripts" / "state" / "job_tracker.db")) as db:
@@ -143,10 +145,11 @@ def test_encrypted_backup_restores_everything(tree, monkeypatch, tmp_path):
 def test_backups_rotate_to_daily_and_weekly(tmp_path):
     start = datetime(2026, 1, 1, 3, 30)
     for day in range(60):
-        (tmp_path / f"hermes-{start + timedelta(days=day):%Y%m%d-%H%M%S}.tar.gz.enc").write_bytes(b"x")
+        prefix = "hermes-" if day < 30 else "hermitshell-"
+        (tmp_path / f"{prefix}{start + timedelta(days=day):%Y%m%d-%H%M%S}.tar.gz.enc").write_bytes(b"x")
     (tmp_path / "notes.txt").write_text("kept", encoding="utf-8")
     assert maintenance.rotate(tmp_path, keep_daily=5, keep_weekly=3) == 52
-    names = [p.name[7:15] for p in maintenance.list_backups(tmp_path)]
+    names = [maintenance.stamp_of(p).strftime("%Y%m%d") for p in maintenance.list_backups(tmp_path)]
     assert names[:5] == ["20260301", "20260228", "20260227", "20260226", "20260225"]
     assert len(names) == 8 and (tmp_path / "notes.txt").exists()
     weeks = [datetime.strptime(n, "%Y%m%d").isocalendar()[:2] for n in names[5:]]

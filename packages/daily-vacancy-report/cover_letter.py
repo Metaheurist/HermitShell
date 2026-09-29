@@ -3,8 +3,8 @@
 
 The "Cover letter" and "Tailored CV" buttons on a job card are signed links to the feedback Worker.
 Once you confirm (optionally adding a note such as "mention my Azure work"), the Worker queues the
-request. This script, run every few minutes by `hermes cron`, fetches the queue, writes the letter
-(or tailors the CV, see tailored_cv.py) with Hermes' model from your CV and the job listing, lays it
+request. This script, run every few minutes by HermitShell's scheduler, fetches the queue, writes the letter
+(or tailors the CV, see tailored_cv.py) with the local model from your CV and the job listing, lays it
 out as an A4 PDF and emails it to you with the job details. Your CV itself never leaves the HermitShell server.
 
 The finished PDF is also sent to the Worker, which keeps it encrypted for COVER_LETTER_KEEP_DAYS (default 7) so
@@ -22,7 +22,6 @@ it is sent from here too, without the model, and the Worker is told so it can ma
     python3 cover_letter.py --job KEY --dry-run     # save the PDF under state/, no email
 
 Prints nothing when there is nothing to do, so the cron job stays silent.
-Shared unchanged between the HermitShell package and the Hermes server copy.
 """
 
 from __future__ import annotations

@@ -4,8 +4,6 @@ the skills you added from the email's missing-skill tags.
 Feedback arrives through the optional feedback Worker (see docs/feedback-worker.md in HermitShell):
 email buttons are signed links to the Worker, which stores confirmed answers until
 sync_feedback() fetches and acknowledges them. Nothing on the HermitShell server is exposed.
-
-Shared unchanged between the HermitShell package and the Hermes server copy.
 """
 
 from __future__ import annotations

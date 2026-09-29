@@ -434,9 +434,9 @@ describe("profile page", () => {
 });
 
 describe("daily report and Send jobs now", () => {
-  const scheduled = (sam = {}) => ({ ...STATUS, timezone: "Europe/London", hermes_jobs: true, profiles: [
-    { ...STATUS.profiles[0], report: { time: "08:00", days: "daily", schedule: "0 8 * * *", hermes_job: true, pending: false } },
-    { ...STATUS.profiles[1], report: { time: "08:15", days: "weekdays", schedule: "15 8 * * 1-5", hermes_job: true, pending: false },
+  const scheduled = (sam = {}) => ({ ...STATUS, timezone: "Europe/London", scheduler: true, profiles: [
+    { ...STATUS.profiles[0], report: { time: "08:00", days: "daily", schedule: "0 8 * * *", job: true, pending: false } },
+    { ...STATUS.profiles[1], report: { time: "08:15", days: "weekdays", schedule: "15 8 * * 1-5", job: true, pending: false },
       ...sam }] });
 
   it("shows each profile's report time and queues a new one as { time, days }", async () => {
@@ -447,7 +447,8 @@ describe("daily report and Send jobs now", () => {
     const { body } = await get("/admin/profile?u=sam-lee");
     expect(body).toContain('<input id="report_time" name="report_time" type="time" value="08:15">');
     expect(body).toContain('<option value="weekdays" selected>Weekdays (Monday to Friday)</option>');
-    expect(body).toContain("(Europe/London). Each recruit&#39;s report is its own Hermes job.");
+    expect(body).toContain("When HermitShell sends their report (Europe/London). Each recruit&#39;s report is its own scheduled job.");
+    expect(body).not.toContain("Hermes ");
     await save(get, act, "sam-lee", { report_time: "06:45", report_days: "daily" });
     await save(get, act, "owner", { report_days: "weekdays" });
     expect(valuesWith(env, "queue:").map((i) => [i.u, i.report, i.details, i.job])).toEqual([
@@ -471,8 +472,10 @@ describe("daily report and Send jobs now", () => {
     const pending = await setup(scheduled({ report: { time: "07:00", days: "daily", schedule: "0 7 * * *", pending: true } }));
     expect((await pending.get("/admin")).body).toContain("daily report 07:00 (moving)");
     expect((await pending.get("/admin/profile?u=sam-lee")).body).toContain("HermitShell moves the report to this time when it next checks in");
-    const outside = await setup({ ...scheduled(), hermes_jobs: false });
-    expect((await outside.get("/admin/profile?u=owner")).body).toContain("isn&#39;t running under Hermes&#39; scheduler");
+    const outside = await setup({ ...scheduled(), scheduler: false });
+    expect((await outside.get("/admin/profile?u=owner")).body).toContain("HermitShell&#39;s scheduler isn&#39;t set up");
+    const older = await setup({ ...scheduled(), scheduler: undefined, hermes_jobs: false });
+    expect((await older.get("/admin/profile?u=owner")).body).toContain("HermitShell&#39;s scheduler isn&#39;t set up");
   });
 
   it("queues Send jobs now for one profile, from the dashboard or its page", async () => {

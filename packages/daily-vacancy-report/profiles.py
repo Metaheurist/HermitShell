@@ -4,10 +4,10 @@
 The owner (whoever set up HermitShell) uses .env, job_profile.md and cv_keywords.json, overlaid by anything saved
 on the Worker's /admin dashboard (state/dashboard.json, read by hermes_common before .env). Everyone else joins
 through a single-use invite link made on the dashboard. Their details and CV wait in the Worker until this
-script collects them, reads the CV, has Hermes' model turn it into a profile and search terms, and emails them.
+script collects them, reads the CV, has the local model turn it into a profile and search terms, and emails them.
 Each extra profile lives in state/profiles/<id>/ and gets the same daily report, buttons, cover letters,
 tailored CVs and weekly roll-up; the unsubscribe link in its reports deletes it. Its daily report is its own
-Hermes cron job (vacancy-report-<id>, running profile_report.py), kept in step with the profile by this script;
+scheduled job (vacancy-report-<id>, running profile_report.py), kept in step with the profile by this script;
 the dashboard sets its time and can send any profile's report at once. Each profile's stats (profile_stats.py)
 go to the Worker when they change, for the dashboard's stats page.
 Dashboard changes (email server, API keys, job search settings, new CVs, pause, resume, delete) arrive the
@@ -81,7 +81,7 @@ STATUS_EVERY = 900
 # Each changed profile's stats are sent at most this often (the free plan allows 1,000 KV writes a day), and at
 # once when its report finishes.
 STATS_EVERY = 1800
-# The cron job runs every 5 minutes and Hermes skips a run while the last one is still going, so each run
+# The cron job runs every 5 minutes and the scheduler skips a run while the last one is still going, so each run
 # watches for dashboard changes until comfortably before the next (counted from when the run started).
 WATCH_SECONDS = 250
 POLL_SECONDS = 15
@@ -104,7 +104,7 @@ WRITING_NAME = "writing.json"
 TASK_RE = re.compile(r"^report:([a-z0-9-]{1,40})$|^letter:([a-z0-9-]{1,40}):(event:[a-z0-9_-]{1,40}:[A-Za-z0-9:_-]{1,120})$")
 TRIGGERS = ("schedule", "dashboard")
 MAX_TASKS = 40
-# Each extra profile's daily report is its own Hermes cron job, running REPORT_SCRIPT from the profile's folder.
+# Each extra profile's daily report is its own scheduled job, running REPORT_SCRIPT from the profile's folder.
 REPORT_SCRIPT = "profile_report.py"
 REPORT_JOB = "vacancy-report-"
 # A new profile's report starts this many minutes after the owner's (and the last profile's), unless the
@@ -113,7 +113,7 @@ REPORT_GAP = 15
 DEFAULT_SCHEDULE = "0 7 * * *"
 SIMPLE_CRON = re.compile(r"^(\d{1,2}) (\d{1,2}) \* \* (\*|1-5)$")
 REPORT_TIME = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
-CRON_FILE = hc.HERMES_HOME / "cron" / "jobs.json"
+CRON_FILE = hc.APP_HOME / "cron" / "jobs.json"
 MAX_CV_CHARS = 12_000
 MIN_CV_CHARS = 200
 MAX_FILE_BYTES = 6 * 1024 * 1024
@@ -681,9 +681,9 @@ def set_status(pid: str, status: str) -> None:
 
 
 def log_files() -> list[Path]:
-    """Script output that may name a person: Hermes' logs, scheduled-job output, run logs in state/ (the live link's
+    """Script output that may name a person: logs, scheduled-job output, run logs in state/ (the live link's
     too) and the per-profile runs log, with their rotated copies."""
-    roots = [hc.HERMES_HOME / "logs", hc.HERMES_HOME / "cron" / "output"]
+    roots = [hc.APP_HOME / "logs", hc.APP_HOME / "cron" / "output"]
     found = [f for root in roots if root.is_dir() for f in root.rglob("*")]
     runs = sorted(STATE_DIR.glob("*.log")) + sorted(STATE_DIR.glob("*.log.1")) + sorted(PROFILES_DIR.glob("runs.log*"))
     return [f for f in found + runs if f.is_file() and not f.is_symlink()]
@@ -998,7 +998,7 @@ def status_payload() -> dict:
             "created": _ms(p.get("created")), "last_run": _ms(last), "cv_updated": _ms(p.get("cv_updated")),
             "details": current_details(p),
             "job": job_settings.form_values(profile_getter(p)),
-            "report": {"time": report_time, "days": report_days, "schedule": schedule, "hermes_job": bool(job),
+            "report": {"time": report_time, "days": report_days, "schedule": schedule, "job": bool(job),
                        "pending": bool(p.get("schedule"))},
             "scanning": _ms(scanning(p["id"]))})
     test = read_json(PROFILES_DIR / ".email_test.json", {})
@@ -1012,7 +1012,7 @@ def status_payload() -> dict:
     keys["firecrawl"]["backups"] = len([k for k in (env("FIRECRAWL_BACKUP_KEYS") or "").split(",") if k.strip()])
     problems = [{"at": _ms(p["at"]), "what": p.get("what", ""), "error": p.get("error", "")} for p in recent_problems()]
     return {"profiles": profiles, "email": email, "keys": keys, "problems": problems, "timezone": timezone_name(),
-            "hermes_jobs": jobs is not None, "tasks": tasks()}
+            "scheduler": jobs is not None, "tasks": tasks()}
 
 
 def timezone_name() -> str:
@@ -1287,10 +1287,10 @@ def run_listener(api: Api, spawn=subprocess.Popen) -> int:
     return 0
 
 
-# --------------------------------------------------------------------------- one Hermes cron job per profile
+# --------------------------------------------------------------------------- one scheduled job per profile
 
 def cron_jobs() -> list[dict] | None:
-    """Hermes' scheduled jobs, read-only (changes go through `hermes cron`); None when not running under Hermes."""
+    """The scheduler's jobs, read-only (changes go through scheduler.py); None when it isn't set up here."""
     try:
         data = json.loads(CRON_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -1348,29 +1348,28 @@ def shifted(expr: str, minutes: int) -> str:
     return f"{total % 60} {total // 60} * * {m.group(3)}"
 
 
-def hermes_cron(args: list[str], runner=None) -> bool:
-    # A cron run's PATH may lack the hermes command; the scripts run on Hermes' own Python, which has its CLI.
-    cli = ["hermes"] if shutil.which("hermes") else [sys.executable, "-m", "hermes_cli.main"]
+def scheduler_cmd(args: list[str], runner=None) -> bool:
+    cli = [sys.executable, str(SCRIPT_DIR / "scheduler.py")]
     try:
-        res = (runner or subprocess.run)([*cli, "cron", *args], capture_output=True, text=True, timeout=60)
+        res = (runner or subprocess.run)([*cli, *args], capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.SubprocessError) as exc:
-        log(f"hermes cron {args[0]} failed: {exc.__class__.__name__}")
+        log(f"scheduler {args[0]} failed: {exc.__class__.__name__}")
         return False
     if res.returncode:
-        log(f"hermes cron {args[0]} failed: {((res.stdout or '') + (res.stderr or '')).strip()[-200:]}")
+        log(f"scheduler {args[0]} failed: {((res.stdout or '') + (res.stderr or '')).strip()[-200:]}")
     return res.returncode == 0
 
 
 def _applied(pid: str) -> None:
-    """The time set on the dashboard is in the Hermes job now, which from here on is what counts."""
+    """The time set on the dashboard is in the scheduled job now, which from here on is what counts."""
     if (fresh := load(pid)) and fresh.pop("schedule", None):
         save(fresh)
 
 
 def schedule_reports(runner=None) -> None:
-    """Keep one Hermes cron job per extra profile with a CV, running its daily report: created with the profile,
+    """Keep one scheduled job per extra profile with a CV, running its daily report: created with the profile,
     paused while it is, removed with it. The owner keeps the setup's job. A time set on the dashboard goes into
-    the profile's job; otherwise a new job starts REPORT_GAP minutes after the last. Outside Hermes the owner's
+    the profile's job; otherwise a new job starts REPORT_GAP minutes after the last. Without the scheduler the owner's
     run runs everyone's reports instead (spawn_others)."""
     jobs = cron_jobs()
     if jobs is None or not (SCRIPT_DIR / REPORT_SCRIPT).is_file():
@@ -1378,14 +1377,14 @@ def schedule_reports(runner=None) -> None:
     owner = load(OWNER) or {}
     owner_job = daily_job(owner or {"owner": True}, jobs)
     if owner_job and owner.get("schedule"):
-        if _expr(owner_job) == owner["schedule"] or hermes_cron(["edit", owner_job["id"], "--schedule",
-                                                                  owner["schedule"]], runner):
+        if _expr(owner_job) == owner["schedule"] or scheduler_cmd(["edit", owner_job["id"], "--schedule",
+                                                                    owner["schedule"]], runner):
             _applied(OWNER)
     own = report_jobs(jobs)
     wanted = {p["id"]: p for p in all_profiles() if not p.get("owner")
               and (profile_dir(p["id"]) / "job_profile.md").is_file()}
     for pid, job in own.items():
-        if pid not in wanted and hermes_cron(["remove", job["id"]], runner):
+        if pid not in wanted and scheduler_cmd(["remove", job["id"]], runner):
             log(f"Removed the daily report job of {pid}")
     last = max([_expr(owner_job) if owner_job else DEFAULT_SCHEDULE] + [_expr(own[pid]) for pid in own if pid in wanted],
                key=lambda e: schedule_parts(e)[0] or "")
@@ -1393,17 +1392,17 @@ def schedule_reports(runner=None) -> None:
         active, job = p.get("status") == "active", own.get(pid)
         if job is None:
             expr = p.get("schedule") or (last := shifted(last, REPORT_GAP))
-            if hermes_cron(["create", expr, f"Daily Vacancy Report ({pid})", "--name", REPORT_JOB + pid,
-                            "--script", REPORT_SCRIPT, "--workdir", str(profile_dir(pid).resolve()), "--no-agent",
-                            "--deliver", "local", *([] if active else ["--paused"])], runner):
+            if scheduler_cmd(["create", expr, f"Daily Vacancy Report ({pid})", "--name", REPORT_JOB + pid,
+                              "--script", REPORT_SCRIPT, "--workdir", str(profile_dir(pid).resolve()),
+                              *([] if active else ["--paused"])], runner):
                 log(f"Scheduled the daily report of {pid} ({expr})")
                 _applied(pid)
             continue
         if p.get("schedule"):
-            if _expr(job) == p["schedule"] or hermes_cron(["edit", job["id"], "--schedule", p["schedule"]], runner):
+            if _expr(job) == p["schedule"] or scheduler_cmd(["edit", job["id"], "--schedule", p["schedule"]], runner):
                 _applied(pid)
         if active != _enabled(job):
-            hermes_cron(["resume" if active else "pause", job["id"]], runner)
+            scheduler_cmd(["resume" if active else "pause", job["id"]], runner)
 
 
 # --------------------------------------------------------------------------- one profile's report, now or daily
@@ -1512,7 +1511,7 @@ def has_cv(profile: dict) -> bool:
 
 
 def run_report(pid: str, now: bool = False, runner=None, args: list[str] | tuple = ()) -> int:
-    """One profile's report: the job of its Hermes cron job, or Send jobs now on the dashboard (`now`, which
+    """One profile's report: the run of its scheduled job, or Send jobs now on the dashboard (`now`, which
     emails even when nothing new turned up and runs for a paused profile too)."""
     runner = runner or run_child
     profile = load(pid)
@@ -1674,7 +1673,7 @@ def cancel_task(task: str, pid: str) -> str:
 
 
 def profile_from_cwd() -> str:
-    """The profile whose folder a Hermes job runs profile_report.py from."""
+    """The profile whose folder a scheduled job runs profile_report.py from."""
     cwd = Path.cwd().resolve()
     return cwd.name if cwd.parent == PROFILES_DIR.resolve() and ID_RE.match(cwd.name) else ""
 
@@ -1687,7 +1686,7 @@ def _daily(script: str, args: list[str]) -> bool:
 
 def others(script: str, args: list[str]) -> list[dict]:
     """The extra profiles the owner's run of `script` runs too: all the active ones, except for the daily report
-    those with their own Hermes job."""
+    those with their own scheduled job."""
     extra = active_extra()
     if extra and _daily(script, args):
         own = report_jobs(cron_jobs() or [])

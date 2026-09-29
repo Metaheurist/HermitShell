@@ -3,8 +3,6 @@ Sunday weekly roll-up built from job_tracker.db.
 
 Run directly (`python3 job_weekly.py`, e.g. from a weekly cron job) to send the roll-up; it is the
 same as `python3 job_scanner.py --weekly`, and extra arguments such as --dry-run are passed on.
-
-Shared unchanged between the HermitShell package and the Hermes server copy.
 """
 
 from __future__ import annotations
