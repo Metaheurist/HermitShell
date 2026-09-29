@@ -151,9 +151,10 @@ script from `$HERMES_HOME/scripts`.
 Run everything locally from the repository root:
 
 ```bash
-python -m pip install -r requirements-dev.txt ruff
+python -m pip install -r requirements-dev.txt ruff bandit
 ruff check .
-python -m pytest common/tests packages/*/tests scripts/tests
+bandit -c .bandit.yml -r common packages scripts -ll
+python -m pytest common/tests packages/*/tests scripts/tests tests/security
 cd packages/daily-vacancy-report/feedback-worker && npm ci && npm test
 ```
 
@@ -162,7 +163,7 @@ Two GitHub Actions workflows run on every push and pull request:
 | Workflow | Jobs |
 | --- | --- |
 | [CI](.github/workflows/ci.yml) | Ruff lint; a compile check on Python 3.10; unit tests for the shared library, the job finder and the setup wizard, each on Python 3.10 and 3.12; the feedback Worker's Vitest tests and a `wrangler deploy --dry-run` build check; and a final "All CI checks passed" job to use as a required check |
-| [Security](.github/workflows/security.yml) | Gitleaks secret scan of the full history; CVE audits of the Python packages (`pip-audit`) and the Worker's npm packages (`npm audit`, high and critical fail); dependency review on pull requests; CodeQL code scanning of the Python, JavaScript and workflow files. It also runs every Monday, so newly published CVEs are reported even when nothing has changed |
+| [Security](.github/workflows/security.yml) | Gitleaks secret scan of the full history; the security test suites ([`tests/security`](tests/security) for hostile input, encryption, backups and file permissions; the Worker's `test/security.test.js` for headers, escaping, authentication, CSRF and size limits); Bandit static analysis of the Python code; CVE audits of the Python packages (`pip-audit`) and the Worker's npm packages (`npm audit`, high and critical fail); dependency review on pull requests; CodeQL code scanning of the Python, JavaScript and workflow files. It also runs every Monday, so newly published CVEs are reported even when nothing has changed |
 
 ## Security
 

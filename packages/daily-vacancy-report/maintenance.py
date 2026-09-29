@@ -245,7 +245,7 @@ def restore(archive: Path, target: Path) -> int:
                 raise SystemExit(f"refusing to unpack {m.name!r}")
         target.mkdir(parents=True, exist_ok=True)
         extra = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
-        tar.extractall(target, members=members, **extra)
+        tar.extractall(target, members=members, **extra)  # nosec B202
     return len(members)
 
 

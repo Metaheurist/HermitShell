@@ -1,7 +1,8 @@
 # HermitShell - Security
 # Every push and pull request, and every Monday so newly published CVEs are caught even when
-# nothing has changed: secret scan of the full history, CVE audits of the Python and npm
-# dependencies, dependency review on pull requests and CodeQL code scanning.
+# nothing has changed: secret scan of the full history, the security test suites (Python and
+# Worker), Bandit static analysis, CVE audits of the Python and npm dependencies, dependency
+# review on pull requests and CodeQL code scanning.
 name: Security
 
 on:
@@ -44,6 +45,52 @@ jobs:
           chmod +x gitleaks
       - name: Scan every commit
         run: ./gitleaks git --redact --verbose --exit-code 1 .
+
+  security-tests-python:
+    name: "Security · Tests · Python (hostile input, data at rest, backups)"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: pytest tests/security
+        run: python -m pytest tests/security -v
+
+  security-tests-worker:
+    name: "Security · Tests · Feedback Worker (headers, escaping, auth, limits)"
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: packages/daily-vacancy-report/feedback-worker
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: packages/daily-vacancy-report/feedback-worker/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Vitest security suite
+        run: npx vitest run security
+
+  bandit:
+    name: "Security · Static analysis · Python (Bandit)"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install Bandit
+        run: python -m pip install bandit==1.9.4
+      - name: Bandit (medium and high severity fail)
+        run: bandit -c .bandit.yml -r common packages scripts -ll
 
   python-cve:
     name: "Security · CVE audit · Python packages (pip-audit)"

@@ -76,9 +76,10 @@ def docx_text(data: bytes) -> str:
                 xml = part.read(MAX_INFLATE + 1)
             if len(xml) > MAX_INFLATE:
                 continue
-            if b"<!DOCTYPE" in xml or b"<!ENTITY" in xml:
+            # Entity declarations are refused (no expansion attacks); UTF-16/32 would hide them from this check.
+            if b"<!DOCTYPE" in xml or b"<!ENTITY" in xml or b"\x00" in xml:
                 continue
-            root = ElementTree.fromstring(xml)
+            root = ElementTree.fromstring(xml)  # nosec B314
             for para in root.iter(f"{_W}p"):
                 bits = []
                 for node in para.iter():

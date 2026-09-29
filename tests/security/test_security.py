@@ -1,0 +1,194 @@
+"""Security tests across the Python side: hostile input, data at rest, backups and secret hygiene.
+
+Run from the repository root:  python -m pytest tests/security
+"""
+
+import io
+import os
+import sqlite3
+import subprocess
+import sys
+import tarfile
+import time
+import zipfile
+from pathlib import Path
+
+import pytest
+
+REPO = Path(__file__).resolve().parents[2]
+PACKAGE = REPO / "packages" / "daily-vacancy-report"
+sys.path[:0] = [str(PACKAGE), str(REPO / "common")]
+
+import cv_text  # noqa: E402
+import hermes_common as hc  # noqa: E402
+import maintenance  # noqa: E402
+import profiles  # noqa: E402
+from job_tracker import Tracker, sign  # noqa: E402
+
+POSIX = pytest.mark.skipif(os.name != "posix", reason="file modes are POSIX only")
+HOSTILE = "<script>alert(1)</script>\"'><img src=x onerror=alert(2)>"
+
+
+# --------------------------------------------------------------------------- hostile input
+
+def test_tracker_binds_hostile_keys_as_values(tmp_path):
+    evil = "nijobs:1'); DROP TABLE jobs; --"
+    with Tracker(tmp_path / "tracker.db") as t:
+        t.upsert_job(evil, {"title": HOSTILE, "company": "Northwind"}, True, now=time.time() - 400 * 86400)
+        t.add_event("e1' OR '1'='1", evil, "interested", reason="x' OR 1=1 --", at=time.time() - 400 * 86400)
+        assert t.job(evil)["title"] == HOSTILE
+        assert t.prune(time.time() - 365 * 86400)["jobs"] == 1
+    with sqlite3.connect(str(tmp_path / "tracker.db")) as db:
+        tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert {"jobs", "events", "letters", "runs", "skills"} <= tables
+
+
+@pytest.mark.parametrize("pid", ["../etc", "owner/../x", "..", "", "A" * 50, "sam lee", "sam\x00lee", "/abs"])
+def test_profile_ids_cannot_leave_the_profiles_folder(pid):
+    with pytest.raises(profiles.ProfileError):
+        profiles.profile_dir(pid)
+
+
+@pytest.mark.parametrize("key", ["PATH", "LD_PRELOAD", "PYTHONPATH", "HERMES_HOME", "HERMES_DATA_KEY",
+                                 "JOB_PROFILE_FILE", "HERMES_STATE_DIR"])
+def test_the_dashboard_cannot_set_process_or_path_settings(key):
+    assert not hc.dashboard_key_allowed(key)
+
+
+def test_email_text_is_escaped():
+    header = hc.email_header(HOSTILE, HOSTILE, HOSTILE, HOSTILE, [(HOSTILE, HOSTILE)])
+    assert "<script>" not in header and "<img" not in header and "&lt;script&gt;" in header
+
+
+def test_goodbye_email_escapes_the_name(monkeypatch):
+    sent = []
+    monkeypatch.setattr(profiles, "send", lambda to, subject, html_body, text: sent.append(html_body))
+    profiles.send_goodbye({"name": f"{HOSTILE} Lee", "email": "sam@example.com"})
+    assert sent and "<script>" not in sent[0] and "<img" not in sent[0]
+
+
+def test_log_scrubbing_treats_names_as_text_not_patterns(tmp_path, monkeypatch):
+    monkeypatch.setattr(hc, "HERMES_HOME", tmp_path)
+    monkeypatch.setattr(profiles, "STATE_DIR", tmp_path / "state")
+    (tmp_path / "logs").mkdir()
+    log = tmp_path / "logs" / "agent.log"
+    log.write_text("abcz Lee applied\nJ.* Lee left\n", encoding="utf-8")
+    assert profiles.scrub_logs(["J.* Lee", "(a+)+$x"]) == 1
+    assert log.read_text(encoding="utf-8") == "abcz Lee applied\n[deleted] left\n"
+
+
+def _docx(xml: bytes) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("word/document.xml", xml)
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-16"])
+def test_word_cvs_with_entity_declarations_are_not_expanded(encoding):
+    bomb = ('<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;">'
+            '<!ENTITY c "&b;&b;&b;&b;&b;&b;&b;&b;">]><w:document xmlns:w="http://schemas.openxmlformats.org/'
+            'wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>&c;</w:t></w:r></w:p></w:body></w:document>')
+    assert cv_text.extract_text(_docx(bomb.encode(encoding)), "docx") == ""
+
+
+def test_zip_bombs_are_not_inflated():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("word/document.xml", b"<x>" + b" " * (cv_text.MAX_INFLATE + 10) + b"</x>")
+    assert cv_text.extract_text(buf.getvalue(), "docx") == ""
+
+
+def test_feedback_links_are_bound_to_profile_action_job_and_day():
+    base = sign("secret", "nijobs:1", "applied", "Analyst", "", "sam-lee", "20000")
+    for args in [("nijobs:1", "applied", "Analyst", "", "alex-kim", "20000"),
+                 ("nijobs:1", "interested", "Analyst", "", "sam-lee", "20000"),
+                 ("nijobs:2", "applied", "Analyst", "", "sam-lee", "20000"),
+                 ("nijobs:1", "applied", "Analyst", "", "sam-lee", "20001"),
+                 ("nijobs:1", "applied", "Analyst", "", "", "20000")]:
+        assert sign("secret", *args) != base
+    assert sign("other-secret", "nijobs:1", "applied", "Analyst", "", "sam-lee", "20000") != base
+
+
+# --------------------------------------------------------------------------- data at rest and backups
+
+def _tar(members: list[tarfile.TarInfo]) -> bytes:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for info in members:
+            tar.addfile(info, io.BytesIO(b"x") if info.isfile() else None)
+    return buf.getvalue()
+
+
+def _member(name: str, kind: bytes = tarfile.REGTYPE, link: str = "") -> tarfile.TarInfo:
+    info = tarfile.TarInfo(name)
+    info.type, info.linkname, info.size = kind, link, 1 if kind == tarfile.REGTYPE else 0
+    return info
+
+
+@pytest.mark.parametrize("member", [_member("../escape.txt"), _member("/abs/escape.txt"),
+                                    _member("scripts/../../escape.txt"), _member("link", tarfile.SYMTYPE, "/etc"),
+                                    _member("hard", tarfile.LNKTYPE, "../escape.txt")],
+                         ids=["parent", "absolute", "nested-parent", "symlink", "hardlink"])
+def test_restore_refuses_archives_that_write_outside_the_folder(tmp_path, member):
+    archive = tmp_path / "hermes-20260101-000000.tar.gz"
+    archive.write_bytes(_tar([_member("SOUL.md"), member]))
+    with pytest.raises(SystemExit, match="refusing"):
+        maintenance.restore(archive, tmp_path / "out")
+    assert not (tmp_path / "escape.txt").exists() and not (tmp_path / "out" / "SOUL.md").exists()
+
+
+def test_errors_about_the_key_never_contain_it(monkeypatch):
+    pytest.importorskip("cryptography")
+    key = hc.new_data_key()
+    monkeypatch.setenv(hc.DATA_KEY_ENV, key)
+    sealed = hc.seal(b"cv")
+    monkeypatch.setenv(hc.DATA_KEY_ENV, hc.new_data_key())
+    with pytest.raises(hc.DataKeyError) as err:
+        hc.unseal(sealed)
+    monkeypatch.setenv(hc.DATA_KEY_ENV, key[:20])
+    with pytest.raises(hc.DataKeyError) as err2:
+        hc.seal(b"cv")
+    assert key not in str(err.value) and key[:20] not in str(err2.value)
+
+
+@POSIX
+def test_files_the_scripts_create_are_owner_only(tmp_path):
+    script = f"import sys; sys.path.insert(0, {str(REPO / 'common')!r}); import hermes_common; " \
+             f"open({str(tmp_path / 'plain.txt')!r}, 'w').write('x')"
+    subprocess.run([sys.executable, "-c", script], check=True, env={**os.environ, "HERMES_HOME": str(tmp_path)})
+    assert (tmp_path / "plain.txt").stat().st_mode & 0o777 == 0o600
+    hc.write_private(tmp_path / "private.txt", "x")
+    hc.write_atomic(tmp_path / "atomic.txt", "x", private=True)
+    for name in ("private.txt", "atomic.txt"):
+        assert (tmp_path / name).stat().st_mode & 0o777 == 0o600
+
+
+@POSIX
+def test_backups_are_owner_only_and_encrypted(tmp_path, monkeypatch):
+    pytest.importorskip("cryptography")
+    monkeypatch.setattr(hc, "HERMES_HOME", tmp_path / "home")
+    monkeypatch.setattr(maintenance, "SCRIPT_DIR", tmp_path / "scripts")
+    monkeypatch.setattr(maintenance, "STATE_DIR", tmp_path / "scripts" / "state")
+    (tmp_path / "scripts" / "state").mkdir(parents=True)
+    (tmp_path / "home").mkdir()
+    (tmp_path / "home" / ".env").write_text("SMTP_PASSWORD=app-password-value\n", encoding="utf-8")
+    monkeypatch.setenv(hc.DATA_KEY_ENV, hc.new_data_key())
+    monkeypatch.delenv("HERMES_BACKUP_DIR", raising=False)
+    maintenance.make_backup()
+    [archive] = maintenance.list_backups()
+    assert archive.stat().st_mode & 0o777 == 0o600
+    assert hc.is_sealed(archive) and b"app-password-value" not in archive.read_bytes()
+
+
+# --------------------------------------------------------------------------- secret hygiene
+
+def test_gitignore_keeps_personal_files_and_backups_out_of_the_repo():
+    patterns = set((REPO / ".gitignore").read_text(encoding="utf-8").split())
+    assert {".env", "job_profile.md", "cv_keywords.json", "state/", "backups/", "*.enc", ".deps/"} <= patterns
+
+
+def test_secrets_are_only_shown_masked():
+    for secret in ("fc-0123456789abcdef", "sk-live-abcdefghijklmnop", "short"):
+        shown = hc.mask_secret(secret)
+        assert secret not in shown and len(shown) < len(secret) + 4

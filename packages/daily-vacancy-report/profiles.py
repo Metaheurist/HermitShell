@@ -339,7 +339,7 @@ def search_settings(built: dict, get=env) -> dict[str, str]:
 def profile_id(item: dict) -> str:
     base = slug(item.get("name", ""))[:30].strip("-") or "profile"
     tail = re.sub(r"[^0-9a-f]", "", str(item.get("id", "")))[-6:] or hashlib.sha1(
-        json.dumps(item, sort_keys=True).encode()).hexdigest()[:6]
+        json.dumps(item, sort_keys=True).encode(), usedforsecurity=False).hexdigest()[:6]
     return f"{base}-{tail}"
 
 

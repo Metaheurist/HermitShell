@@ -7,9 +7,12 @@ job_profile.md
 cv_keywords.json
 sections.json
 
-# Runtime state, caches, reports
+# Runtime state, caches, reports, backups and packages installed by doctor.py
 state/
 *.log
+backups/
+*.enc
+.deps/
 
 # Python
 __pycache__/

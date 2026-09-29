@@ -1,0 +1,6 @@
+# Bandit (Python security linter), run by .github/workflows/security.yml:
+#   bandit -c .bandit.yml -r common packages scripts -ll
+exclude_dirs: ["tests", "node_modules", "screenshots"]
+# B608: the tracker's f-string queries only insert "?" placeholder lists and module constants; every
+# value is bound as a parameter (tests/security/test_input_handling.py checks hostile keys).
+skips: ["B608"]
