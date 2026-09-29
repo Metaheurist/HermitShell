@@ -1,6 +1,6 @@
 // Settings pages of the admin dashboard: the setup checklist, the global settings page (email server and web
-// search API keys, shared by every profile) and each profile's page (details and job search in one form, and
-// the CV). Forms open prefilled from the last status HermitShell reported plus the changes still waiting for
+// search API keys, shared by every profile) and each profile's page (details, job search and daily report time
+// in one form, Send jobs now, and the CV). Forms open prefilled from the last status HermitShell reported plus the changes still waiting for
 // it; saving only queues the change, which profiles.py validates again and applies, within seconds over the live link.
 
 import { COUNTRIES, countryCode } from "./countries.js";
@@ -182,8 +182,12 @@ function boxes(name, options, current) {
 const DETAIL_FIELDS = ["name", "email", "phone", "location"];
 const JOB_FIELDS = ["titles", "region", "places", "country", "remote_anywhere", "level", "types", "modes", "min_salary",
   "currency", "hide_agency"];
-const PROFILE_FIELDS = [...DETAIL_FIELDS, ...JOB_FIELDS];
+const REPORT_FIELDS = ["report_time", "report_days"];
+const PROFILE_FIELDS = [...DETAIL_FIELDS, ...JOB_FIELDS, ...REPORT_FIELDS];
+const REPORT_DAYS = [["daily", "Every day"], ["weekdays", "Weekdays (Monday to Friday)"]];
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const LABELS = {
+  report_time: "Daily report time", report_days: "Report days",
   name: "Name", email: "Email for reports", phone: "Phone", location: "Home town", titles: "Job titles",
   region: "Region or city", places: "Towns", country: "Country", remote_anywhere: "Fully remote jobs", level: "Seniority",
   types: "Employment types", modes: "Work location", min_salary: "Minimum salary", currency: "Currency",
@@ -215,19 +219,28 @@ export function profileValues(src = {}) {
     types: EMPLOYMENT_TYPES.filter((t) => items(src.types, 10, 20).includes(t)),
     modes: WORK_MODES.filter((m) => items(src.modes, 5, 20).includes(m)),
     min_salary: salary(src.min_salary), currency: tidy(src.currency, 4), hide_agency: src.hide_agency === true,
+    report_time: TIME_RE.test(String(src.report_time ?? "")) ? String(src.report_time) : "",
+    report_days: src.report_days === "weekdays" ? "weekdays" : "daily",
   };
+}
+
+// A queued change carries the report time as report: { time, days }, the shape profiles.py takes.
+function reportPart(report) {
+  if (!report || typeof report !== "object" || Array.isArray(report)) return {};
+  return Object.fromEntries([["report_time", report.time], ["report_days", report.days]].filter(([, v]) => v !== undefined));
 }
 
 function patchFields(item) {
   const part = (x) => (x && typeof x === "object" && !Array.isArray(x) ? x : {});
-  return Object.fromEntries(Object.entries({ ...part(item.details), ...part(item.job) }).filter(([k]) => PROFILE_FIELDS.includes(k)));
+  return Object.fromEntries(Object.entries({ ...part(item.details), ...part(item.job), ...reportPart(item.report) })
+    .filter(([k]) => PROFILE_FIELDS.includes(k)));
 }
 
 // What HermitShell reported for the profile, with the changes still waiting for it applied in order.
 export function latestValues(p, queue = []) {
   const changes = byId(queue.filter((i) => i.type === "admin" && i.action === "profile" && i.u === p.id));
   return changes.reduce((v, i) => profileValues({ ...v, ...patchFields(i) }),
-    profileValues({ name: p.name, email: p.email, ...(p.details || {}), ...(p.job || {}) }));
+    profileValues({ name: p.name, email: p.email, ...(p.details || {}), ...(p.job || {}), ...reportPart(p.report) }));
 }
 
 function formValues(form) {
@@ -267,17 +280,21 @@ export function profileChange(p, queue, form) {
   if (!changed.length) return { mine, nothing: true };
   const merged = { ...latest, ...pick(mine, changed) };
   if (!merged.name || !EMAIL_RE.test(merged.email)) return { mine, base, error: "baddetails" };
+  if (changed.some((k) => REPORT_FIELDS.includes(k)) && !merged.report_time) return { mine, base, error: "badtime" };
   const details = changed.filter((k) => DETAIL_FIELDS.includes(k));
   const job = changed.filter((k) => JOB_FIELDS.includes(k));
+  const report = changed.filter((k) => REPORT_FIELDS.includes(k));
   return {
     mine,
     item: { type: "admin", action: "profile", u: p.id, ...(details.length ? { details: pick(mine, details) } : {}),
-      ...(job.length ? { job: pick(mine, job) } : {}) },
+      ...(job.length ? { job: pick(mine, job) } : {}),
+      ...(report.length ? { report: Object.fromEntries(report.map((k) => [k.slice(7), mine[k]])) } : {}) },
   };
 }
 
 function shown(key, value) {
   if (key === "min_salary" && value === "0") return "no minimum";
+  if (key === "report_days") return REPORT_DAYS.find(([d]) => d === value)?.[1] || value;
   if (key === "country") return COUNTRIES.find(([c]) => c === value)?.[1] || "any country";
   if (Array.isArray(value)) return value.join(", ") || "none";
   if (typeof value === "boolean") return value ? "yes" : "no";
@@ -293,6 +310,26 @@ function conflictBox(conflicts, latest, mine) {
 // ------------------------------------------------------------------------- one profile's page, and its save status
 
 export const STATUS_URL = "/admin/profile/status";
+
+function reportHint(p, status) {
+  const zone = status.timezone ? ` (${status.timezone})` : "";
+  if (p.report?.pending) return `HermitShell moves the report to this time when it next checks in${zone}.`;
+  if (status.hermes_jobs === false) return `Saved, but HermitShell isn't running under Hermes' scheduler, so its own schedule applies${zone}.`;
+  return `When Hermes sends ${p.owner ? "your" : "their"} report${zone}. Each profile's report is its own Hermes job.`;
+}
+
+// A report now, rather than at the daily time; the email follows when the scan finishes.
+export function sendButton(p, csrf, fields = {}) {
+  if (p.scanning) return '<button class="small" disabled>Scanning&hellip;</button>';
+  return p.has_cv === false ? "" : button(csrf, "send_now", "Send jobs now", { u: p.id, ...fields }, "small");
+}
+
+export function sendSection(p, csrf, tz) {
+  const state = p.scanning ? `Scanning now (started ${esc(when(p.scanning, tz))}); the email follows when it finishes.`
+    : p.has_cv === false ? "Upload a CV first: jobs are rated against it."
+      : `Runs ${p.owner ? "your" : "their"} report straight away instead of waiting for the daily time, and emails it even if nothing new turned up. A scan usually takes 10 to 20 minutes.`;
+  return `<h2 id="send">Send jobs now</h2><p class="muted">${state}</p>${sendButton(p, csrf, { back: "profile" })}`;
+}
 
 export function profilePage(status, pid, csrf,
   { done = "", error = "", queue = [], saving = false, draft = null, base = null, conflicts = [], code = 200 } = {}) {
@@ -325,7 +362,13 @@ ${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
 <label>Employment types</label>${boxes("types", EMPLOYMENT_TYPES, v.types)}
 <label>Work location</label>${boxes("modes", WORK_MODES, v.modes)}
 <label class="check"><input type="checkbox" name="hide_agency" value="1"${checked(v.hide_agency)}> <span>Hide agency adverts that don't name the employer</span></label>
+
+<h2 id="report">Daily report</h2>
+<div class="grid2"><div><label for="report_time">Time</label><input id="report_time" name="report_time" type="time" value="${esc(v.report_time)}">${hint(reportHint(p, status))}</div>
+<div><label for="report_days">Days</label><select id="report_days" name="report_days">${REPORT_DAYS.map(([d, label]) =>
+    `<option value="${d}"${d === v.report_days ? " selected" : ""}>${label}</option>`).join("")}</select></div></div>
 <button>Save changes</button></form>
+${sendSection(p, csrf, status.timezone)}
 
 <h2 id="cv">CV</h2>
 <p class="muted">${p.has_cv ? `HermitShell has a CV${p.cv_updated ? ` (updated ${esc(when(p.cv_updated, status.timezone))})` : ""}. A new one replaces it and rebuilds the skills and profile the jobs are rated against.` : "No CV yet: jobs can't be rated until one is uploaded."}</p>
@@ -338,6 +381,7 @@ ${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
 
 const WAIT_FAST = 12; // checks 5 seconds apart, then
 const WAIT_SLOW = 21; // 20 seconds apart, then stop: each check lists the KV queue (1,000 lists a day on the free plan)
+const SCAN_CHECKS = 80; // a running scan is checked every 30 seconds, from the reported status only, for up to 40 minutes
 
 // The small box at the top of a profile page, reloading itself while a change for the profile is waiting for
 // HermitShell. `n` counts the checks; it starts at 1 right after a save so "applied" can be said once it is.
@@ -347,12 +391,17 @@ export function saveStatus(status, pid, queue, n) {
   const failed = (status.problems || []).filter((x) => x.what?.endsWith(` for ${pid}`) && Date.now() - x.at < 15 * 60 * 1000);
   let body;
   let refresh = 0;
+  const scan = (status.profiles || []).find((x) => x.id === pid)?.scanning;
   if (mine.length) {
     refresh = n < WAIT_FAST ? 5 : n < WAIT_SLOW ? 20 : 0;
     const cv = mine.some((i) => i.action === "cv");
     body = !refresh ? `Still waiting for HermitShell. <a href="/admin/profile?u=${esc(pid)}" target="_top">Reload</a> to check again; <a href="/admin" target="_top">Profiles</a> shows when it last reported.`
       : cv ? "Saved. HermitShell is reading the new CV; this takes a few minutes."
-        : "Saved. Waiting for HermitShell to apply it (a few seconds while it is connected)&hellip;";
+        : mine.every((i) => i.action === "send_now") ? "Starting the scan&hellip;"
+          : "Saved. Waiting for HermitShell to apply it (a few seconds while it is connected)&hellip;";
+  } else if (scan && !failed.length) {
+    refresh = n < SCAN_CHECKS ? 30 : 0;
+    body = `Scanning for jobs since ${esc(when(scan, tz))}; the email follows when it finishes.`;
   } else if (failed.length) {
     body = `<b>HermitShell could not apply a change:</b> ${esc(failed.at(-1).error)}`;
   } else if (n > 0) {
@@ -361,7 +410,7 @@ export function saveStatus(status, pid, queue, n) {
     body = status.updated ? `Up to date. HermitShell last reported ${esc(ago(status.updated))}.` : "HermitShell hasn't reported yet.";
   }
   const next = refresh ? `<meta http-equiv="refresh" content="${refresh};url=${STATUS_URL}?u=${esc(pid)}&amp;n=${n + 1}">` : "";
-  const state = mine.length ? (refresh ? "wait" : "idle") : failed.length ? "bad" : n > 0 ? "done" : "ok";
+  const state = mine.length || (scan && !failed.length) ? (refresh ? "wait" : "idle") : failed.length ? "bad" : n > 0 ? "done" : "ok";
   return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8">${next}<style>${WIDGET_STYLE}</style></head>
 <body class="${state}">${body}</body></html>`, {
     headers: {
@@ -460,4 +509,6 @@ export const SETTINGS_DONE = {
   cvtype: "The CV must be a PDF, a Word .docx file or a text file.",
   cvmissing: "Upload a CV file or paste the CV (at least a few lines).",
   cvqueued: "CV uploaded. HermitShell reads it and rebuilds the profile within about 10 minutes, then emails a summary.",
+  badtime: "Choose a time for the daily report.",
+  sending: "Sending. HermitShell starts the scan within seconds while it is connected; the email follows when it finishes, usually in 10 to 20 minutes.",
 };

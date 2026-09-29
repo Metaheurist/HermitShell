@@ -169,6 +169,29 @@ describe("authentication", () => {
     expect(valuesWith(env, "queue:")).toEqual([]);
   });
 
+  it("only starts a report for a real profile id, with a session and its CSRF token", async () => {
+    const env = testEnv(ADMIN);
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "sam-lee", name: "Sam Lee", has_cv: true,
+      scanning: HOSTILE, report: { time: HOSTILE, days: HOSTILE, pending: false } }] }));
+    const noSession = await worker.fetch(new Request(`${BASE}/admin/action`, {
+      method: "POST", body: new URLSearchParams({ action: "send_now", u: "sam-lee" }) }), env);
+    expect(await noSession.text()).toContain("Admin sign-in");
+    const cookie = await signIn(env, "203.0.113.5");
+    const dash = await (await get("/admin", env, { Cookie: cookie })).text();
+    expect(dash).not.toContain("<script>");
+    const csrf = dash.match(/name="csrf" value="([0-9a-f]+)"/)[1];
+    const send = (fields) => worker.fetch(new Request(`${BASE}/admin/action`, { method: "POST", headers: { Cookie: cookie },
+      body: new URLSearchParams(fields) }), env);
+    expect((await send({ csrf: "0".repeat(64), action: "send_now", u: "sam-lee" })).status).toBe(403);
+    for (const u of ["../owner", "Sam", "sam lee", "sam&u=owner", "a".repeat(41)]) {
+      expect((await send({ csrf, action: "send_now", u })).status).toBe(400);
+    }
+    const page = await (await get("/admin/profile?u=sam-lee", env, { Cookie: cookie })).text();
+    expect(page).not.toContain("<script>");
+    expect(page).toContain('name="report_time" type="time" value=""');
+    expect(valuesWith(env, "queue:")).toEqual([]);
+  });
+
   it("keeps the settings pages, including email and key forms, behind a session", async () => {
     const env = testEnv(ADMIN);
     await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "owner", owner: true, name: "Alex Morgan" }],

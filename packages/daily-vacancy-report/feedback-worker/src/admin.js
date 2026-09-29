@@ -16,7 +16,7 @@ import {
 } from "./lib.js";
 import {
   SETTINGS_DONE, SETTINGS_URL, STATUS_URL, button, checklist, cvUpload, nav, problems, profileChange, profilePage, saveStatus,
-  settingsItem, settingsPage,
+  sendButton, settingsItem, settingsPage,
 } from "./settings.js";
 
 const SESSION_SECONDS = 12 * 3600;
@@ -170,8 +170,15 @@ function initials(name) {
   return (words.length > 1 ? words[0][0] + words.at(-1)[0] : (words[0] || "?").slice(0, 2)).toUpperCase();
 }
 
+function schedule(p) {
+  const r = p.report || {};
+  if (!r.time) return "";
+  return `<div class="muted">daily report ${esc(r.time)}${r.days === "weekdays" ? " on weekdays" : ""}${r.pending ? " (moving)" : ""}</div>`;
+}
+
 function profileRow(p, csrf, tz) {
-  const status = `<span class="pill${p.owner ? " owner" : p.status === "paused" ? " paused" : ""}">${p.owner ? "owner, " : ""}${esc(p.status)}</span>`;
+  const status = `<span class="pill${p.owner ? " owner" : p.status === "paused" ? " paused" : ""}">${p.owner ? "owner, " : ""}${esc(p.status)}</span>`
+    + (p.scanning ? ' <span class="pill scanning">scanning now</span>' : "");
   const crawler = p.crawler === "own" ? `own key ${esc(p.key_hint || "")}` : "global key";
   const toggle = p.status === "paused" ? button(csrf, "resume", "Resume", { u: p.id }) : button(csrf, "pause", "Pause", { u: p.id });
   const remove = p.owner ? "" : `<form method="post" action="/admin/action" class="inline" style="margin-top:6px">
@@ -182,13 +189,13 @@ function profileRow(p, csrf, tz) {
   return `<tr><td><div class="who"><span class="avatar" aria-hidden="true">${esc(initials(p.name))}</span><div>
 <b>${esc(p.name)}</b>${cv}<div class="muted">${esc(p.email || "")}</div><div class="muted">since ${esc(when(p.created, tz))}</div>
 <a class="small" href="/admin/profile?u=${esc(p.id)}">Manage</a></div></div></td>
-<td>${status}<div class="muted">last report ${esc(p.last_run ? `${ago(p.last_run)} (${when(p.last_run, tz)})` : "never")}</div></td>
+<td>${status}<div class="muted">last report ${esc(p.last_run ? `${ago(p.last_run)} (${when(p.last_run, tz)})` : "never")}</div>${schedule(p)}</td>
 <td><div class="muted">${crawler}</div>
 <form method="post" action="/admin/action" class="inline" style="margin-top:6px">
 <input type="hidden" name="csrf" value="${esc(csrf)}"><input type="hidden" name="action" value="set_key"><input type="hidden" name="u" value="${esc(p.id)}">
 <input name="key" type="password" placeholder="Their Firecrawl key" autocomplete="off"><button class="small">Save</button></form>
 ${p.crawler === "own" ? button(csrf, "use_global", "Use global key", { u: p.id }) : ""}</td>
-<td>${toggle}${remove}</td></tr>`;
+<td><div class="actions">${sendButton(p, csrf)}${toggle}</div>${remove}</td></tr>`;
 }
 
 async function dashboard(request, env, s) {
@@ -219,7 +226,7 @@ async function action(request, env, s) {
   if (!safeEqual(String(form.get("csrf") || ""), s.csrf)) return page("Expired form", "<p>Reload the admin page and try again.</p>", { status: 403 });
   const act = String(form.get("action") || "");
   const u = String(form.get("u") || "");
-  if (["set_key", "use_global", "pause", "resume", "delete"].includes(act) && !PROFILE_RE.test(u)) {
+  if (["set_key", "use_global", "pause", "resume", "delete", "send_now"].includes(act) && !PROFILE_RE.test(u)) {
     return page("Unknown profile", "<p>Reload the admin page and try again.</p>", { status: 400 });
   }
   if (act === "invite") {
@@ -233,6 +240,10 @@ async function action(request, env, s) {
     return redirect("/admin?done=revoked");
   }
   if (act === "profile") return saveProfile(env, s, form, u);
+  if (act === "send_now") {
+    await queueItem(env, { type: "admin", action: act, u });
+    return redirect(form.get("back") === "profile" ? `/admin/profile?u=${u}&done=sending` : "/admin?done=sending");
+  }
   const setting = settingsItem(act, form);
   if (setting) {
     const back = `${SETTINGS_URL}?done=`;
@@ -283,7 +294,7 @@ export async function handleAdmin(request, env, ctx) {
     const [current, queue] = await Promise.all([status(env), queued(env)]);
     const done = url.searchParams.get("done");
     return profilePage(current, url.searchParams.get("u") || "", s.csrf,
-      { done: DONE[done] || "", queue, saving: done === "saved" || done === "cvqueued" });
+      { done: DONE[done] || "", queue, saving: ["saved", "cvqueued", "sending"].includes(done) });
   }
   if (path === STATUS_URL && request.method === "GET") {
     const url = new URL(request.url);

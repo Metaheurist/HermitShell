@@ -65,6 +65,7 @@ async function openForm(get, u) {
   const fields = { action: "profile", u, base, name: v.name, email: v.email, phone: v.phone, location: v.location,
     titles: v.titles.join("\n"), region: v.region, places: v.places.join(", "), country: v.country, level: v.level,
     types: v.types, modes: v.modes, min_salary: v.min_salary === "0" ? "" : v.min_salary, currency: v.currency,
+    report_time: v.report_time, report_days: v.report_days,
     ...(v.remote_anywhere ? { remote_anywhere: "1" } : {}), ...(v.hide_agency ? { hide_agency: "1" } : {}) };
   return (edits = {}) => ({ ...fields, ...edits });
 }
@@ -301,16 +302,19 @@ describe("profile page", () => {
     expect(body).toContain("Admin sign-in");
   });
 
-  it("has one form with one Save for details and job search, and one CV upload", async () => {
+  it("has one form with one Save for details, job search and report time, then Send jobs now and the CV upload", async () => {
     const { get } = await setup();
     const { body } = await get("/admin/profile?u=sam-lee");
     expect(body.match(/<button>Save changes<\/button>/g)).toHaveLength(1);
     expect(body.match(/<button>Upload CV<\/button>/g)).toHaveLength(1);
-    expect(body.match(/<form /g)).toHaveLength(2);
+    expect(body.match(/<button class="small">Send jobs now<\/button>/g)).toHaveLength(1);
+    expect(body.match(/<form /g)).toHaveLength(3);
     expect(body).not.toContain("Save details");
     expect(body).not.toContain("Save job search");
     expect(body.indexOf('id="details"')).toBeGreaterThan(body.indexOf('action="/admin/action"'));
     expect(body.indexOf('id="job"')).toBeLessThan(body.indexOf("Save changes"));
+    expect(body.indexOf('id="report"')).toBeLessThan(body.indexOf("Save changes"));
+    expect(body.indexOf('id="send"')).toBeGreaterThan(body.indexOf("Save changes"));
   });
 
   it("queues only the fields that changed, cleaned", async () => {
@@ -425,6 +429,84 @@ describe("profile page", () => {
     const { body } = await get("/admin/profile?u=owner");
     expect(body).toContain(">Data Engineer\nML Engineer</textarea>");
     expect(body).toContain('value="York"');
+  });
+});
+
+describe("daily report and Send jobs now", () => {
+  const scheduled = (sam = {}) => ({ ...STATUS, timezone: "Europe/London", hermes_jobs: true, profiles: [
+    { ...STATUS.profiles[0], report: { time: "08:00", days: "daily", schedule: "0 8 * * *", hermes_job: true, pending: false } },
+    { ...STATUS.profiles[1], report: { time: "08:15", days: "weekdays", schedule: "15 8 * * 1-5", hermes_job: true, pending: false },
+      ...sam }] });
+
+  it("shows each profile's report time and queues a new one as { time, days }", async () => {
+    const { env, get, act } = await setup(scheduled());
+    const dash = (await get("/admin")).body;
+    expect(dash).toContain("daily report 08:00</div>");
+    expect(dash).toContain("daily report 08:15 on weekdays</div>");
+    const { body } = await get("/admin/profile?u=sam-lee");
+    expect(body).toContain('<input id="report_time" name="report_time" type="time" value="08:15">');
+    expect(body).toContain('<option value="weekdays" selected>Weekdays (Monday to Friday)</option>');
+    expect(body).toContain("(Europe/London). Each profile&#39;s report is its own Hermes job.");
+    await save(get, act, "sam-lee", { report_time: "06:45", report_days: "daily" });
+    await save(get, act, "owner", { report_days: "weekdays" });
+    expect(valuesWith(env, "queue:").map((i) => [i.u, i.report, i.details, i.job])).toEqual([
+      ["sam-lee", { time: "06:45", days: "daily" }, undefined, undefined], ["owner", { days: "weekdays" }, undefined, undefined]]);
+    expect((await get("/admin/profile?u=sam-lee")).body).toContain('name="report_time" type="time" value="06:45"');
+  });
+
+  it("refuses a missing or impossible time without losing the rest", async () => {
+    const { env, get, act } = await setup(scheduled());
+    for (const report_time of ["", "25:00", "8am", "08:00; rm -rf /"]) {
+      const res = await save(get, act, "sam-lee", { report_time, location: "Leeds" });
+      expect(res.status).toBe(400);
+      const body = await res.text();
+      expect(body).toContain("Choose a time for the daily report.");
+      expect(body).toContain('value="Leeds"');
+    }
+    expect(valuesWith(env, "queue:")).toEqual([]);
+  });
+
+  it("says when a new time is still to be applied, or can't be", async () => {
+    const pending = await setup(scheduled({ report: { time: "07:00", days: "daily", schedule: "0 7 * * *", pending: true } }));
+    expect((await pending.get("/admin")).body).toContain("daily report 07:00 (moving)");
+    expect((await pending.get("/admin/profile?u=sam-lee")).body).toContain("HermitShell moves the report to this time when it next checks in");
+    const outside = await setup({ ...scheduled(), hermes_jobs: false });
+    expect((await outside.get("/admin/profile?u=owner")).body).toContain("isn&#39;t running under Hermes&#39; scheduler");
+  });
+
+  it("queues Send jobs now for one profile, from the dashboard or its page", async () => {
+    const { env, get, act } = await setup(scheduled());
+    const dash = (await get("/admin")).body;
+    expect(dash.match(/>Send jobs now</g)).toHaveLength(1);
+    expect(dash).toContain('name="action" value="send_now"><input type="hidden" name="u" value="sam-lee">');
+    const res = await act({ action: "send_now", u: "sam-lee" });
+    expect(res.headers.get("Location")).toBe("/admin?done=sending");
+    expect((await get("/admin?done=sending")).body).toContain("HermitShell starts the scan within seconds");
+    const back = await act({ action: "send_now", u: "sam-lee", back: "profile" });
+    expect(back.headers.get("Location")).toBe("/admin/profile?u=sam-lee&done=sending");
+    expect(valuesWith(env, "queue:")).toEqual([
+      expect.objectContaining({ type: "admin", action: "send_now", u: "sam-lee" }),
+      expect.objectContaining({ type: "admin", action: "send_now", u: "sam-lee" })]);
+    const page = (await get("/admin/profile?u=sam-lee&done=sending")).body;
+    expect(page).toContain('src="/admin/profile/status?u=sam-lee&amp;n=1"');
+    expect((await get("/admin/profile/status?u=sam-lee&n=1")).body).toContain("Starting the scan&hellip;");
+    expect((await get("/admin/profile?u=owner")).body).toContain("Upload a CV first");
+    expect((await act({ action: "send_now", u: "../owner" })).status).toBe(400);
+  });
+
+  it("shows a scan that is running instead of the button", async () => {
+    const started = Date.now() - 3 * 60 * 1000;
+    const { get } = await setup(scheduled({ scanning: started }));
+    const dash = (await get("/admin")).body;
+    expect(dash).toContain('<span class="pill scanning">scanning now</span>');
+    expect(dash).toContain('<button class="small" disabled>Scanning&hellip;</button>');
+    expect(dash).not.toContain(">Send jobs now<");
+    expect((await get("/admin/profile?u=sam-lee")).body).toContain("Scanning now (started ");
+    const box = (await get("/admin/profile/status?u=sam-lee&n=1")).body;
+    expect(box).toContain('<body class="wait">');
+    expect(box).toContain("Scanning for jobs since");
+    expect(box).toContain('content="30;url=/admin/profile/status?u=sam-lee&amp;n=2"');
+    expect((await get("/admin/profile/status?u=sam-lee&n=80")).body).not.toContain("http-equiv");
   });
 });
 
