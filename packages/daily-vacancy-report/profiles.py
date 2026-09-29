@@ -956,6 +956,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         run_all(rest[0], rest[1:], after)
         return 0
+    hc.set_model_priority(waiting=True)
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--list", action="store_true", help="list profiles")
     parser.add_argument("--invite", metavar="NOTE", help="create a single-use sign-up link (note is only for you)")

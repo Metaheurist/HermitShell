@@ -116,6 +116,9 @@ script from `$HERMES_HOME/scripts`.
 
 - **Uses Hermes' own model.** Reads `model.default`, `model.base_url` and `ollama_num_ctx` from
   `$HERMES_HOME/config.yaml`, with an override for the job finder.
+- **One model queue for everyone.** Every profile's ratings, cover letters, tailored CVs and
+  sign-ups share one queue, so the model gets one request at a time however many people you run
+  it for, with requests someone is waiting on served first.
 - **Web provider failover.** Firecrawl comes first (with extra backup keys when credits run
   low), then Tavily and Scrapfly. See [docs/web-providers.md](docs/web-providers.md).
 - **Email that survives Gmail.** Table layout, inline CSS, PNG icons sent as inline attachments,

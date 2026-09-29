@@ -30,6 +30,13 @@ The model, Ollama host and context size come from Hermes' own `$HERMES_HOME/conf
 
 The first host that responds and has one of the candidate models is used.
 
+Every model request, from every script and every profile, joins one shared queue, so extra
+profiles, cover letters and sign-ups never pile up on Ollama at the same time. Requests run one at
+a time (`HERMES_MODEL_CONCURRENCY`) in arrival order, except that ones a person is waiting for
+(cover letters, tailored CVs, new profiles) go ahead of background job ratings. A running request
+is never interrupted, and a crashed script's place in the queue is freed automatically. Runs that
+had to wait log `Waited 42s for the model (shared queue)`.
+
 ## Shared settings
 
 Full template: [`.env.example`](../.env.example).
@@ -48,6 +55,7 @@ Full template: [`.env.example`](../.env.example).
 | `WEB_SCRAPE_ORDER` | `firecrawl,scrapfly,tavily` | Scrape provider priority |
 | `SCRAPFLY_COUNTRY` | none | Scrapfly proxy country (two-letter code) for geo-blocked sites |
 | `OLLAMA_HOST` / `OLLAMA_FALLBACK_HOST` / `OLLAMA_MODEL` | see above | Model fallbacks |
+| `HERMES_MODEL_CONCURRENCY` | `1` | Model requests allowed at once across all scripts and profiles; the rest queue |
 | `HERMES_TIMEZONE` | `UTC` | IANA timezone for dates shown in emails |
 | `HERMES_STATE_DIR` | `<scripts>/state` | Seen-state, caches and last reports |
 | `HERMES_HOME` | parent of the scripts directory | Where `.env` and `config.yaml` are read from. Environment only |

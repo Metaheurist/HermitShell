@@ -8,6 +8,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **One model queue for all profiles.** Every model request, from the daily ratings, cover
+  letters, tailored CVs and sign-ups of every profile, now waits its turn in one shared queue, so
+  Ollama gets one request at a time (`HERMES_MODEL_CONCURRENCY` to allow more). Requests a person is
+  waiting for go ahead of background ratings, and a crashed script never blocks the queue.
 - **Screenshots of every view.** [docs/screenshots.md](docs/screenshots.md) shows every email
   (daily report and its variants, weekly roll-up, cover letter and tailored CV with their PDFs,
   profile and test emails) and every feedback Worker page (button confirmations, sign-up, admin

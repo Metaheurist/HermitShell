@@ -343,6 +343,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="save the PDF but send no email")
     args = parser.parse_args(argv)
     load_env_file()
+    hc.set_model_priority(waiting=True)
     if not args.job:
         profiles.spawn_others("cover_letter.py", ["--dry-run"] if args.dry_run else [])
 

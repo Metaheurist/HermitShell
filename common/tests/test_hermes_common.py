@@ -3,10 +3,13 @@
 Run from the repository root:  python -m pytest common/tests
 """
 
+import contextlib
 import json
 import os
 import re
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -226,6 +229,92 @@ def test_ollama_chat_with_a_schema_returns_undashed_json(monkeypatch):
     monkeypatch.setattr(hc.requests, "post", lambda url, json, timeout: FakeResponse({"message": {"content": content}}))
     reply = hc.ollama_chat("http://ollama:11434", "m", "s", "u", None, fmt={"type": "object"})
     assert json.loads(reply) == {"reason": "Strong, but junior"}
+
+
+def test_ollama_chat_waits_for_its_turn_in_the_shared_queue(monkeypatch):
+    events = []
+
+    @contextlib.contextmanager
+    def turn():
+        events.append("queued")
+        yield
+        events.append("done")
+
+    def fake_post(url, json, timeout):
+        events.append("request")
+        return FakeResponse({"message": {"content": "ok"}})
+
+    monkeypatch.setattr(hc, "model_turn", turn)
+    monkeypatch.setattr(hc.requests, "post", fake_post)
+    hc.ollama_chat("http://ollama:11434", "m", "s", "u", None)
+    assert events == ["queued", "request", "done"]
+
+
+def _tickets(folder):
+    return [p for p in folder.iterdir() if re.fullmatch(r"[01]-\d{20}-[0-9a-f]{6}", p.name)]
+
+
+def _wait_until(condition, seconds=5.0):
+    deadline = time.monotonic() + seconds
+    while not condition():
+        assert time.monotonic() < deadline, "timed out"
+        time.sleep(0.02)
+
+
+def test_model_requests_take_turns_waiting_ones_first_then_by_arrival(tmp_path, monkeypatch):
+    pytest.importorskip("fcntl")
+    monkeypatch.setattr(hc, "MODEL_QUEUE_DIR", tmp_path)
+    order, release = [], threading.Event()
+
+    def run(name, priority, hold=False):
+        with hc.model_turn(priority):
+            order.append(name)
+            if hold:
+                release.wait(5)
+
+    threads = [threading.Thread(target=run, args=("running", 1, True))]
+    threads[0].start()
+    _wait_until(lambda: order == ["running"])
+    for n, (name, priority) in enumerate([("background", 1), ("background 2", 1), ("cover letter", 0)], start=2):
+        threads.append(threading.Thread(target=run, args=(name, priority)))
+        threads[-1].start()
+        _wait_until(lambda n=n: len(_tickets(tmp_path)) == n)
+    release.set()
+    for t in threads:
+        t.join(10)
+    assert order == ["running", "cover letter", "background", "background 2"]
+    assert _tickets(tmp_path) == []
+
+
+def test_a_crashed_process_ticket_does_not_block_the_queue(tmp_path, monkeypatch):
+    pytest.importorskip("fcntl")
+    monkeypatch.setattr(hc, "MODEL_QUEUE_DIR", tmp_path)
+    abandoned = tmp_path / f"0-{1:020d}-abcdef"
+    abandoned.write_text("")
+    with hc.model_turn(1):
+        assert not abandoned.exists()
+
+
+def test_model_concurrency_lets_that_many_requests_run_at_once(tmp_path, monkeypatch):
+    pytest.importorskip("fcntl")
+    monkeypatch.setattr(hc, "MODEL_QUEUE_DIR", tmp_path)
+    monkeypatch.setenv("HERMES_MODEL_CONCURRENCY", "2")
+    together = threading.Barrier(2, timeout=5)
+    errors = []
+
+    def run():
+        with hc.model_turn(1):
+            try:
+                together.wait()
+            except threading.BrokenBarrierError as exc:
+                errors.append(exc)
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(10)
+    assert errors == []
 
 
 def test_fit_ctx_keeps_the_configured_size_unless_the_prompt_needs_more():

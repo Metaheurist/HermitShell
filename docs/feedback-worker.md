@@ -295,7 +295,10 @@ from the Worker's admin page; Hermes applies the changes, since the Worker can't
 
 From then on every daily report, weekly roll-up and cover letter run also runs for each active
 profile, one after the other once your own run has finished, with their own seen jobs, tracker,
-feedback buttons and skills pool. They share your region, sources and model settings. A sign-up
+feedback buttons and skills pool. They share your region, sources and model settings, and every
+model request (ratings, cover letters, CVs, sign-ups, for all profiles) waits in one shared queue,
+so the model only ever gets one request at a time; see
+[configuration](configuration.md#where-settings-come-from). A sign-up
 that uses the email of an existing profile is not applied (so an invite can't take over someone
 else's profile); Hermes emails you about it instead. Opening the same invite twice creates only
 one profile.

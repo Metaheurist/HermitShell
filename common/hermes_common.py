@@ -674,6 +674,91 @@ def fit_ctx(num_ctx: int | None, *texts: str, num_predict: int = 500) -> int | N
     return min(32768, -(-needed // 2048) * 2048)
 
 
+# Every script and profile shares one queue for the model, so extra profiles, cover letters and sign-ups never
+# stack requests on Ollama. Tickets are files named "<priority>-<time ns>-<random>", each flock-ed by its process,
+# so a crashed process's ticket is recognised (lockable) and removed. Priority 0 (someone is waiting: cover letters,
+# tailored CVs, new profiles) goes ahead of 1 (background ratings); a running request is never interrupted.
+MODEL_QUEUE_DIR = Path(os.environ.get("HERMES_MODEL_QUEUE_DIR") or SCRIPT_DIR / "state" / "model-queue")
+MODEL_QUEUE_MAX_WAIT = 3600
+_TICKET_RE = re.compile(r"^[01]-\d{20}-[0-9a-f]{6}$")
+_model_priority = 1
+
+
+def set_model_priority(waiting: bool) -> None:
+    """Mark this process's model requests as ones a person is waiting for, served before background ratings."""
+    global _model_priority
+    _model_priority = 0 if waiting else 1
+
+
+def _ticket_gone(path: Path, fcntl) -> bool:
+    """True (and the ticket removed) when no live process holds the ticket's lock."""
+    try:
+        fd = os.open(path, os.O_RDWR)
+    except OSError:
+        return True
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    else:
+        path.unlink(missing_ok=True)
+        return True
+    finally:
+        os.close(fd)
+
+
+@contextlib.contextmanager
+def model_turn(priority: int | None = None):
+    """Wait for this request's turn at the model: at most HERMES_MODEL_CONCURRENCY (default 1) requests run at
+    once across all processes, in priority then arrival order. A no-op where flock is missing (Windows)."""
+    try:
+        import fcntl
+    except ImportError:
+        yield
+        return
+    slots = max(1, env_int("HERMES_MODEL_CONCURRENCY", 1))
+    MODEL_QUEUE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = MODEL_QUEUE_DIR / f".new-{os.getpid()}-{secrets.token_hex(4)}"
+    fd = os.open(tmp, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    # Renamed only once locked, so no other process can mistake a new ticket for an abandoned one.
+    prio = _model_priority if priority is None else priority
+    ticket = MODEL_QUEUE_DIR / f"{1 if prio else 0}-{time.time_ns():020d}-{secrets.token_hex(3)}"
+    os.replace(tmp, ticket)
+    slot, started, ahead = None, time.monotonic(), 0
+    try:
+        while True:
+            ahead = sum(1 for p in MODEL_QUEUE_DIR.iterdir()
+                        if _TICKET_RE.match(p.name) and p.name < ticket.name and not _ticket_gone(p, fcntl))
+            if ahead < slots:
+                slot = _free_model_slot(fcntl, slots)
+                if slot is not None:
+                    break
+            if time.monotonic() - started > MODEL_QUEUE_MAX_WAIT:
+                log("Waited over an hour for the model queue; going ahead anyway")
+                break
+            time.sleep(0.5)
+        if (waited := time.monotonic() - started) >= 5:
+            log(f"Waited {waited:.0f}s for the model (shared queue)")
+        yield
+    finally:
+        if slot is not None:
+            os.close(slot)
+        ticket.unlink(missing_ok=True)
+        os.close(fd)
+
+
+def _free_model_slot(fcntl, slots: int) -> int | None:
+    for i in range(slots):
+        fd = os.open(MODEL_QUEUE_DIR / f"slot-{i}", os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except OSError:
+            os.close(fd)
+    return None
+
+
 def ollama_chat(host: str, model: str, system: str, user: str, num_ctx: int | None,
                 fmt: dict | None = None, num_predict: int = 500) -> str:
     options = {"temperature": 0, "num_predict": num_predict}
@@ -683,7 +768,8 @@ def ollama_chat(host: str, model: str, system: str, user: str, num_ctx: int | No
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     if fmt:
         body["format"] = fmt
-    resp = requests.post(f"{host}/api/chat", json=body, timeout=600)
+    with model_turn():
+        resp = requests.post(f"{host}/api/chat", json=body, timeout=600)
     resp.raise_for_status()
     content = resp.json()["message"]["content"]
     if fmt:
