@@ -249,8 +249,36 @@ describe("profile page", () => {
       details: { name: "Alex Morgan", email: "alex.m@example.com", phone: "07700 900456", location: "Leeds" } });
     expect(details).not.toHaveProperty("job");
     expect(job.job).toEqual({ titles: ["Data Engineer", "Analytics Engineer"], region: "West Yorkshire", places: ["Leeds", "Bradford"],
-      search_location: "", country: "gb", remote_anywhere: true, level: "senior", types: ["Permanent"], modes: ["Remote"],
+      country: "gb", remote_anywhere: true, level: "senior", types: ["Permanent"], modes: ["Remote"],
       min_salary: "55000", currency: "£", hide_agency: false });
+  });
+
+  it("offers countries by name and stores only known codes", async () => {
+    const { env, act, get } = await setup();
+    const { body } = await get("/admin/profile?u=sam-lee");
+    expect(body).toContain('<select id="country" name="country"><option value="">Any country</option>');
+    expect(body).toContain('<option value="gb" selected>United Kingdom</option>');
+    expect(body).toContain('<option value="ie">Ireland</option>');
+    expect(body).not.toContain('name="search_location"');
+    for (const country of ["uk", "IE", "zz", "", "g<"]) {
+      await act({ action: "profile", section: "job", u: "owner", country });
+    }
+    expect(valuesWith(env, "queue:").map((i) => i.job.country)).toEqual(["gb", "ie", "", "", ""]);
+    expect(valuesWith(env, "queue:")[0].job).not.toHaveProperty("search_location");
+  });
+
+  it("uses plain labels with hints, an empty salary box for no minimum, and a back button", async () => {
+    const { env, act, get } = await setup();
+    const { body } = await get("/admin/profile?u=sam-lee");
+    expect(body).toContain('<label for="places">Towns</label>');
+    expect(body).toContain('<label for="min_salary">Minimum salary</label>');
+    expect(body).toContain("Jobs that don&#39;t show a salary are always included.");
+    expect(body).not.toContain("All profiles");
+    expect(body).toContain('<a class="back" href="/admin">&larr; Back to profiles</a>');
+    expect((await get("/admin/profile?u=owner")).body).toContain('id="min_salary" name="min_salary" value=""');
+    await act({ action: "profile", section: "job", u: "owner", min_salary: "£45,000" });
+    await act({ action: "profile", section: "job", u: "owner", min_salary: "" });
+    expect(valuesWith(env, "queue:").map((i) => i.job.min_salary)).toEqual(["45000", "0"]);
   });
 
   it("refuses a bad email, an unknown level and a bad profile id", async () => {

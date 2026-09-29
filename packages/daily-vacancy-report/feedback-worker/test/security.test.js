@@ -61,6 +61,25 @@ describe("escaping", () => {
     expect(body).not.toContain("<script>");
     expect(body).not.toContain("<img");
   });
+
+  it("never echoes or queues a hostile country, whether reported or posted", async () => {
+    const env = testEnv(ADMIN);
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "owner", owner: true, name: "Alex Morgan",
+      job: { country: HOSTILE, titles: [], places: [] } }] }));
+    const login = await worker.fetch(new Request(`${BASE}/admin/login`, {
+      method: "POST", body: new URLSearchParams({ username: "admin", password: ADMIN.ADMIN_PASSWORD }),
+      headers: { "CF-Connecting-IP": "203.0.113.8" } }), env);
+    const cookie = login.headers.get("Set-Cookie").split(";")[0];
+    const body = await (await get("/admin/profile?u=owner", env, { Cookie: cookie })).text();
+    expect(body).not.toContain("<script>");
+    expect(body).not.toContain("<img");
+    expect(body).toContain('<option value="">Any country</option>');
+    expect(body.match(/<select id="country"[\s\S]*?<\/select>/)[0]).not.toContain("selected");
+    const csrf = body.match(/name="csrf" value="([0-9a-f]+)"/)[1];
+    await worker.fetch(new Request(`${BASE}/admin/action`, { method: "POST", headers: { Cookie: cookie },
+      body: new URLSearchParams({ csrf, action: "profile", section: "job", u: "owner", country: HOSTILE }) }), env);
+    expect(valuesWith(env, "queue:").map((i) => i.job.country)).toEqual([""]);
+  });
 });
 
 describe("authentication", () => {

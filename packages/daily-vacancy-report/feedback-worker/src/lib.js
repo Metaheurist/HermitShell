@@ -109,6 +109,11 @@ ul.steps{list-style:none;padding:0;margin:0 0 18px}ul.steps li{padding:8px 12px;
 ul.steps li.done{background:#ecfdf5;color:#047857}ul.steps li.todo{background:#fffbeb;color:#92400e}
 .warn{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:10px 14px;font-size:14px;margin-bottom:14px}
 .warn ul{margin:6px 0 0;padding-left:18px}a.small{font-size:13px;color:#4f46e5}
+.hint{display:block;margin-top:5px;font-size:12px;color:#64748b;line-height:1.4}
+a.back{position:fixed;top:20px;left:20px;z-index:10;display:inline-block;background:#fff;color:#3730a3;border:1px solid #e2e8f0;
+border-radius:10px;padding:9px 14px;font-size:14px;font-weight:600;text-decoration:none;box-shadow:0 4px 14px rgba(15,23,42,.08)}
+a.back:hover{background:#eef2ff}
+@media (max-width:1220px){a.back{top:8px;left:8px;padding:7px 11px;font-size:13px}}
 nav.tabs{display:flex;gap:4px;margin:6px 0 18px;border-bottom:1px solid #e2e8f0}
 nav.tabs a{padding:8px 12px;font-size:14px;font-weight:600;color:#475569;text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px}
 nav.tabs a.on{color:#4f46e5;border-bottom-color:#4f46e5}

@@ -3,6 +3,7 @@
 // prefilled from the last status HermitShell reported; saving only queues the change, which profiles.py
 // validates again and applies within about 5 minutes.
 
+import { COUNTRIES, countryCode } from "./countries.js";
 import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem } from "./join.js";
 import { esc, limitedForm, newId, page, redirect, safeEqual, when } from "./lib.js";
 
@@ -95,9 +96,9 @@ export function emailSection(status, csrf) {
 <form method="post" action="/admin/action">${hidden({ csrf, action: "email" })}
 <div class="grid2"><div><label for="smtp_host">SMTP server</label><input id="smtp_host" name="host" value="${esc(e.host || "smtp.gmail.com")}" required maxlength="120"></div>
 <div><label for="smtp_port">Port</label><input id="smtp_port" name="port" value="${esc(e.port || "587")}" inputmode="numeric" maxlength="5"></div>
-<div><label for="smtp_user">Username (usually your email address)</label><input id="smtp_user" name="user" value="${esc(e.user || "")}" required maxlength="120" autocomplete="off"></div>
+<div><label for="smtp_user">Username</label><input id="smtp_user" name="user" value="${esc(e.user || "")}" required maxlength="120" autocomplete="off">${hint("Usually your email address.")}</div>
 <div><label for="smtp_pass">Password or app password</label><input id="smtp_pass" name="password" type="password" maxlength="200" autocomplete="new-password" placeholder="${e.password_set ? "unchanged (leave empty to keep it)" : "Gmail: a 16-letter app password"}"></div></div>
-<label for="smtp_from">Send as (optional; default the username)</label><input id="smtp_from" name="from" value="${esc(e.from || "")}" maxlength="120" type="email">
+<label for="smtp_from">Send as</label><input id="smtp_from" name="from" value="${esc(e.from || "")}" maxlength="120" type="email">${hint("Optional. Leave empty to send from the username.")}
 <button>Save email server</button></form>
 <p class="muted">Gmail needs 2-Step Verification and an <a href="https://myaccount.google.com/apppasswords" rel="noopener">app password</a>; Outlook.com uses smtp-mail.outlook.com.</p>
 <form method="post" action="/admin/action" class="inline">${hidden({ csrf, action: "test_email" })}
@@ -122,7 +123,7 @@ export function keysSection(status, csrf) {
 <p class="muted">Used to search job boards for everyone without their own key. Firecrawl is tried first, then Tavily, then Scrapfly.</p>
 <table class="list">${rows}</table>
 <form method="post" action="/admin/action">${hidden({ csrf, action: "api_keys" })}
-<div class="grid2"><div><label for="k_fc">Firecrawl key (several: comma separated)</label><input id="k_fc" name="firecrawl" type="password" autocomplete="off" maxlength="700"></div>
+<div class="grid2"><div><label for="k_fc">Firecrawl key</label><input id="k_fc" name="firecrawl" type="password" autocomplete="off" maxlength="700">${hint("Several keys can be separated by commas.")}</div>
 <div><label for="k_tv">Tavily key</label><input id="k_tv" name="tavily" type="password" autocomplete="off" maxlength="120"></div>
 <div><label for="k_sf">Scrapfly key</label><input id="k_sf" name="scrapfly" type="password" autocomplete="off" maxlength="120"></div></div>
 <button>Save keys</button></form><p class="muted">Empty boxes leave that key as it is. Keys are only shown as their last four characters.</p>`;
@@ -144,6 +145,16 @@ function select(name, options, current) {
   return `<select id="${name}" name="${name}">${options.map((o) => `<option value="${esc(o)}"${o === current ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
 }
 
+function hint(text) {
+  return `<span class="hint">${esc(text)}</span>`;
+}
+
+function countrySelect(current) {
+  const code = countryCode(current);
+  return `<select id="country" name="country"><option value="">Any country</option>${COUNTRIES.map(([c, name]) =>
+    `<option value="${c}"${c === code ? " selected" : ""}>${esc(name)}</option>`).join("")}</select>`;
+}
+
 function boxes(name, options, current) {
   return `<div class="checks">${options.map((o) => `<label class="check"><input type="checkbox" name="${name}" value="${esc(o)}"${checked(current.includes(o))}> <span>${esc(o)}</span></label>`).join("")}</div>`;
 }
@@ -156,38 +167,38 @@ export function profilePage(status, pid, csrf, { done = "", queued = [] } = {}) 
   const d = p.details || { name: p.name, email: p.email };
   const j = p.job || {};
   const waiting = queued.filter((q) => q.endsWith(` for ${pid}`));
-  return page(p.owner ? "Your profile" : p.name, `${nav("profiles")}<p><a href="/admin">&larr; All profiles</a></p>
+  const salary = j.min_salary && j.min_salary !== "0" ? j.min_salary : "";
+  return page(p.owner ? "Your profile" : p.name, `<a class="back" href="/admin">&larr; Back to profiles</a>${nav("profiles")}
 ${done ? `<p style="color:#047857">${esc(done)}</p>` : ""}${waiting.length ? `<p class="muted">Waiting for HermitShell: ${esc(waiting.join("; "))}.</p>` : ""}
 <h2 id="details">Details</h2>
 <form method="post" action="/admin/action">${hidden({ csrf, action: "profile", section: "details", u: pid })}
-<div class="grid2"><div><label for="d_name">Name</label><input id="d_name" name="name" value="${esc(d.name)}" required maxlength="80"></div>
-<div><label for="d_email">Email the reports go to</label><input id="d_email" name="email" type="email" value="${esc(d.email)}" required maxlength="120"></div>
-<div><label for="d_phone">Phone (shown on cover letters)</label><input id="d_phone" name="phone" value="${esc(d.phone || "")}" maxlength="40"></div>
-<div><label for="d_loc">Where they live</label><input id="d_loc" name="location" value="${esc(d.location || "")}" maxlength="80"></div></div>
+<div class="grid2"><div><label for="d_name">Name</label><input id="d_name" name="name" value="${esc(d.name)}" required maxlength="80" autocomplete="off"></div>
+<div><label for="d_email">Email for reports</label><input id="d_email" name="email" type="email" value="${esc(d.email)}" required maxlength="120" autocomplete="off"></div>
+<div><label for="d_phone">Phone</label><input id="d_phone" name="phone" value="${esc(d.phone || "")}" maxlength="40" autocomplete="off">${hint("Optional. Shown on cover letters.")}</div>
+<div><label for="d_loc">Home town</label><input id="d_loc" name="location" value="${esc(d.location || "")}" maxlength="80" autocomplete="off">${hint("Shown on cover letters.")}</div></div>
 <button>Save details</button></form>
 
 <h2 id="job">Job search</h2>
 <form method="post" action="/admin/action">${hidden({ csrf, action: "profile", section: "job", u: pid })}
-<label for="titles">Job titles (one per line, up to ${MAX_TITLES})</label><textarea id="titles" name="titles" maxlength="600">${esc((j.titles || []).join("\n"))}</textarea>
-<div class="grid2"><div><label for="region">Region or city</label><input id="region" name="region" value="${esc(j.region || "")}" maxlength="80" placeholder="For example: Greater Manchester"></div>
-<div><label for="country">Country code</label><input id="country" name="country" value="${esc(j.country || "")}" maxlength="2" placeholder="gb, us, ie..."></div></div>
-<label for="places">Towns that count as inside it (comma separated)</label><input id="places" name="places" value="${esc((j.places || []).join(", "))}" maxlength="1200">
-<label for="search_location">Location used in web searches (optional; default the region)</label><input id="search_location" name="search_location" value="${esc(j.search_location || "")}" maxlength="80">
-<label class="check"><input type="checkbox" name="remote_anywhere" value="1"${checked(j.remote_anywhere)}> <span>Also fully remote jobs based elsewhere</span></label>
-<div class="grid2"><div><label for="level">Level</label>${select("level", LEVELS, j.level || "any")}</div>
-<div><label for="min_salary">Minimum salary (0 = none; jobs without a salary are kept)</label><input id="min_salary" name="min_salary" value="${esc(j.min_salary || "0")}" maxlength="12" placeholder="45k"></div>
-<div><label for="currency">Currency symbol in adverts</label><input id="currency" name="currency" value="${esc(j.currency || "")}" maxlength="4" placeholder="£"></div></div>
+<label for="titles">Job titles</label><textarea id="titles" name="titles" maxlength="600" placeholder="Data Engineer&#10;Analytics Engineer">${esc((j.titles || []).join("\n"))}</textarea>${hint(`One per line, up to ${MAX_TITLES}.`)}
+<div class="grid2"><div><label for="region">Region or city</label><input id="region" name="region" value="${esc(j.region || "")}" maxlength="80" placeholder="Greater Manchester">${hint("Where to look. Web searches use this.")}</div>
+<div><label for="country">Country</label>${countrySelect(j.country || "")}${hint("Searches favour jobs in this country.")}</div></div>
+<label for="places">Towns</label><input id="places" name="places" value="${esc((j.places || []).join(", "))}" maxlength="1200" placeholder="Salford, Stockport, Trafford">${hint("Towns in the region whose jobs count as local, separated by commas.")}
+<label class="check"><input type="checkbox" name="remote_anywhere" value="1"${checked(j.remote_anywhere)}> <span>Include fully remote jobs based anywhere</span></label>
+<div class="grid2"><div><label for="level">Seniority</label>${select("level", LEVELS, j.level || "any")}</div>
+<div><label for="min_salary">Minimum salary</label><input id="min_salary" name="min_salary" value="${esc(salary)}" maxlength="12" placeholder="No minimum" inputmode="decimal">${hint("For example 45000 or 45k. Jobs that don't show a salary are always included.")}</div>
+<div><label for="currency">Currency</label><input id="currency" name="currency" value="${esc(j.currency || "")}" maxlength="4" placeholder="£">${hint("The symbol adverts use, such as £, € or $.")}</div></div>
 <label>Employment types</label>${boxes("types", EMPLOYMENT_TYPES, j.types || [])}
-<label>Work modes</label>${boxes("modes", WORK_MODES, j.modes || [])}
-<label class="check"><input type="checkbox" name="hide_agency" value="1"${checked(j.hide_agency)}> <span>Hide recruitment-agency adverts that don't name the employer</span></label>
+<label>Work location</label>${boxes("modes", WORK_MODES, j.modes || [])}
+<label class="check"><input type="checkbox" name="hide_agency" value="1"${checked(j.hide_agency)}> <span>Hide agency adverts that don't name the employer</span></label>
 <button>Save job search</button></form>
 
 <h2 id="cv">CV</h2>
 <p class="muted">${p.has_cv ? `HermitShell has a CV${p.cv_updated ? ` (updated ${esc(when(p.cv_updated))})` : ""}. A new one replaces it and rebuilds the skills and profile the jobs are rated against.` : "No CV yet: jobs can't be rated until one is uploaded."}</p>
 <form method="post" action="/admin/cv" enctype="multipart/form-data">${hidden({ csrf, u: pid })}
-<label for="cv">CV file (PDF, Word .docx or text, up to 5 MB)</label><input id="cv" name="cv" type="file" accept=".pdf,.docx,.txt,.md">
-<label for="cv_text">Or paste the CV</label><textarea id="cv_text" name="cv_text" maxlength="${MAX_CV_TEXT}"></textarea>
-<label for="roles">Roles being looked for (optional; helps the model suggest titles)</label><input id="roles" name="roles" maxlength="300">
+<label for="cv">CV file</label><input id="cv" name="cv" type="file" accept=".pdf,.docx,.txt,.md">${hint("PDF, Word (.docx) or text, up to 5 MB.")}
+<label for="cv_text">Or paste the CV text</label><textarea id="cv_text" name="cv_text" maxlength="${MAX_CV_TEXT}"></textarea>
+<label for="roles">Roles you're after</label><input id="roles" name="roles" maxlength="300">${hint("Optional. Helps suggest job titles from the CV.")}
 <button>Upload CV</button></form>`, { wide: true });
 }
 
@@ -234,14 +245,12 @@ export function settingsItem(act, form) {
       if (!details.name || !EMAIL_RE.test(details.email)) return { error: "baddetails" };
       return { item: { type: "admin", action: "profile", u, details } };
     }
-    const country = field(form, "country", 2).toLowerCase();
-    const salary = field(form, "min_salary", 12).replace(/[,\s]/g, "");
+    const salary = field(form, "min_salary", 16).replace(/[,\s£€$]/g, "");
     const job = {
       titles: list(form.get("titles"), /[\n,]/, MAX_TITLES, 60),
       region: field(form, "region", 80),
       places: list(form.get("places"), /[\n,]/, MAX_PLACES, 40),
-      search_location: field(form, "search_location", 80),
-      country: /^[a-z]{2}$/.test(country) ? country : "",
+      country: countryCode(field(form, "country", 2)),
       remote_anywhere: form.get("remote_anywhere") === "1",
       level: LEVELS.includes(form.get("level")) ? form.get("level") : "any",
       types: form.getAll("types").filter((t) => EMPLOYMENT_TYPES.includes(t)),

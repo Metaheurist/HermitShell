@@ -271,6 +271,15 @@ def test_rejected_dashboard_changes_are_reported_for_a_day(home, monkeypatch):
     assert profiles.status_payload()["problems"] == []
 
 
+def test_dashboard_job_search_uses_the_region_for_searches(home, monkeypatch):
+    monkeypatch.setenv("JOB_SEARCH_LOCATION", "Lisburn")
+    job = {"titles": ["Data Engineer"], "region": "Belfast", "places": ["Holywood"], "country": "uk"}
+    profiles.sync(FakeApi([{"id": "queue:2:a", "type": "admin", "action": "profile", "u": "owner", "job": job}]))
+    saved = profiles.dashboard_env()
+    assert saved["JOB_SEARCH_LOCATION"] == "" and saved["JOB_SEARCH_COUNTRY"] == "gb"
+    assert saved["JOB_SCANNER_QUERIES"] == '("Data Engineer") "Belfast" job'
+
+
 def test_admin_can_go_back_to_the_env_keys_and_delete(home):
     profiles.sync(FakeApi([signup()]))
     pid = "sam-lee-456789"
