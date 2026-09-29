@@ -5,7 +5,7 @@
 
 import { COUNTRIES, countryCode } from "./countries.js";
 import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem } from "./join.js";
-import { CSP, SECURITY_HEADERS, ago, esc, limitedForm, newId, note, page, redirect, safeEqual, when } from "./lib.js";
+import { BACK_TO_PROFILES, CSP, SECURITY_HEADERS, ago, esc, limitedForm, newId, note, page, redirect, safeEqual, when } from "./lib.js";
 import { LINK_STYLE, STATS_URL, icon } from "./stats.js";
 
 export const LEVELS = ["junior", "mid", "senior", "lead", "any"];
@@ -378,7 +378,7 @@ ${sendSection(p, csrf, status.timezone)}
 <label for="cv">CV file</label><input id="cv" name="cv" type="file" accept=".pdf,.docx,.txt,.md">${hint("PDF, Word (.docx) or text, up to 5 MB.")}
 <label for="cv_text">Or paste the CV text</label><textarea id="cv_text" name="cv_text" maxlength="${MAX_CV_TEXT}"></textarea>
 <label for="roles">Roles you're after</label><input id="roles" name="roles" maxlength="300">${hint("Optional. Helps suggest job titles from the CV.")}
-<button>Upload CV</button></form>`, { wide: true, status: code, before: '<a class="back" href="/admin">&larr; Back to profiles</a>', headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` } });
+<button>Upload CV</button></form>`, { wide: true, status: code, before: BACK_TO_PROFILES, headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` } });
 }
 
 const WAIT_FAST = 12; // checks 5 seconds apart, then

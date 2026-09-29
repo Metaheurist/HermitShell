@@ -199,12 +199,20 @@ describe("jobs sent page", () => {
     for (const part of ["Closes in 2 days", "Full-time permanent", "Hybrid", "Mid", "Posted 2 days ago", "HermitShell fit</span><b>9/10",
       "Confidence</span><b>80%", "CV keyword match</span><b>65%", '<p class="why">Strong SQL and Python overlap with the CV.</p>',
       "About the company", "<b>Northwind</b> &middot; Manufacturer", 'href="https://www.northwind.example.com/about"',
-      "northwind.example.com &#8599;", "Northwind makes kitchen tools.", "Advertised by <b>Contoso Recruitment</b>",
+      'northwind.example.com<svg class="ext"', "Northwind makes kitchen tools.", "Advertised by <b>Contoso Recruitment</b>",
       "Strongest matches with the CV", "<span>Python</span><span>SQL</span>", "Missing from the CV", "<span>dbt</span>",
       '<div class="salary">']) {
       expect(body).toContain(part);
     }
     expect(body).toContain("Salary not listed");
+  });
+
+  it("draws its arrows as icons, never as arrow characters", async () => {
+    const pages = [await sentOf(detailed(), "sam-lee", { range: "7", open: "n0" }), await (await statsPage(STATUS, sample(), "sam-lee", "30")).text()];
+    for (const body of pages) {
+      expect(body).toContain('<a class="back" href="/admin"><svg ');
+      expect(body).not.toMatch(/&larr;|&rarr;|&#8599;|&#8592;|&#8594;|&nearr;|[\u2190-\u21ff]/);
+    }
   });
 
   it("offers each job's cover letter and tailored CV: Generate, then Download and Regenerate, and a spinner while one is made", async () => {

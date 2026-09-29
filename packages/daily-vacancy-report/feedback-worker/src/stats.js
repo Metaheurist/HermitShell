@@ -4,7 +4,7 @@
 // and hovering a bar shows its numbers through the SVG <title>.
 
 import { DOC_STYLE, docActions, jobHash, validJobKey } from "./docs.js";
-import { ago, esc, page } from "./lib.js";
+import { BACK_TO_PROFILES, EXTERNAL_ICON, ago, esc, page } from "./lib.js";
 
 export const STATS_URL = "/admin/stats";
 export const SENT_URL = "/admin/sent";
@@ -393,11 +393,11 @@ function jobMore(j, fit, color, today, docs) {
   const why = text(m.reasoning, 600) ? `<p class="why">${esc(text(m.reasoning, 600))}</p>` : "";
   const site = safeUrl(m.site);
   const company = [text(j.employer, 60) ? `<b>${esc(text(j.employer, 60))}</b>` : "", esc(text(m.profile, 120)),
-    site ? `<a href="${esc(site)}" target="_blank" rel="noopener noreferrer nofollow">${esc(domain(site))} &#8599;</a>` : ""].filter(Boolean).join(" &middot; ");
+    site ? `<a href="${esc(site)}" target="_blank" rel="noopener noreferrer nofollow">${esc(domain(site))}${EXTERNAL_ICON}</a>` : ""].filter(Boolean).join(" &middot; ");
   const about = text(m.about, 400) || text(m.company, 60) ? `<div class="about"><span class="lbl">About the company</span>${company ? `<div>${company}</div>` : ""}${
     text(m.about, 400) ? `<p>${esc(text(m.about, 400))}</p>` : ""}${text(m.company, 60) ? `<div class="muted">Advertised by <b>${esc(text(m.company, 60))}</b></div>` : ""}</div>` : "";
   const url = safeUrl(j.url);
-  const advert = url ? `<a class="advert" href="${esc(url)}" target="_blank" rel="noopener noreferrer nofollow">View the advert on ${esc(domain(url))} &#8599;</a>` : "";
+  const advert = url ? `<a class="advert" href="${esc(url)}" target="_blank" rel="noopener noreferrer nofollow">View the advert on ${esc(domain(url))}${EXTERNAL_ICON}</a>` : "";
   return `<div class="more">${chips ? `<div class="facts">${chips}</div>` : ""}${salary}${meters ? `<div class="meters">${meters}</div>` : ""}${why}${about}
 ${skillChips("Strongest matches with the CV", words(m.matched, 12), "have")}${skillChips("Missing from the CV", words(m.gaps, 6), "gap")}
 ${docs ? `<div class="docs">${docs}</div>` : ""}${advert}</div>`;
@@ -431,7 +431,7 @@ const SENT_NOTES = {
 // their details), docs (the letters and CVs kept) and pending (those being made).
 export async function sentPage(status, stats, pid, opts = {}) {
   const p = (status.profiles || []).find((x) => x.id === pid);
-  const back = { wide: true, before: '<a class="back" href="/admin">&larr; Back to profiles</a>' };
+  const back = { wide: true, before: BACK_TO_PROFILES };
   if (!p) return page("Profile not found", '<p>HermitShell has not reported this profile. <a href="/admin">Back to profiles</a></p>', { status: 404 });
   const range = SENT_RANGES[opts.range] ? Number(opts.range) : DEFAULT_RANGE;
   const answer = opts.answer === "none" || ANSWER_LABELS[opts.answer] ? opts.answer : "";
@@ -467,7 +467,7 @@ here are kept to download for a few days and are not emailed. Notes typed on the
 
 export function statsPage(status, stats, pid, rangeParam) {
   const p = (status.profiles || []).find((x) => x.id === pid);
-  const back = { wide: true, before: '<a class="back" href="/admin">&larr; Back to profiles</a>' };
+  const back = { wide: true, before: BACK_TO_PROFILES };
   if (!p) return page("Profile not found", '<p>HermitShell has not reported this profile. <a href="/admin">Back to profiles</a></p>', { status: 404 });
   const range = RANGES[rangeParam] ? Number(rangeParam) : DEFAULT_RANGE;
   const heading = p.owner ? "Your stats" : `${p.name || "Profile"}: stats`;

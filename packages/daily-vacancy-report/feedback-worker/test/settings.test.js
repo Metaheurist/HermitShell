@@ -401,7 +401,8 @@ describe("profile page", () => {
     expect(body).toContain('<label for="min_salary">Minimum salary</label>');
     expect(body).toContain("Jobs that don&#39;t show a salary are always included.");
     expect(body).not.toContain("All profiles");
-    expect(body).toContain('<body><a class="back" href="/admin">&larr; Back to profiles</a><main class="wide">');
+    expect(body).toMatch(/<body><a class="back" href="\/admin"><svg [^>]*aria-hidden="true"><path [^>]*\/><\/svg>Back to profiles<\/a><main class="wide">/);
+    expect(body).not.toMatch(/&larr;|[\u2190-\u21ff]/);
     expect((await get("/admin/profile?u=owner")).body).toContain('id="min_salary" name="min_salary" value=""');
     for (const min_salary of ["£45,000", "", "45k"]) await save(get, act, "owner", { min_salary });
     expect(valuesWith(env, "queue:").map((i) => i.job.min_salary)).toEqual(["45000", "0", "45000"]);

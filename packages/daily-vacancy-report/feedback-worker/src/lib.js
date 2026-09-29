@@ -16,6 +16,10 @@ export const FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 
 <rect width="64" height="64" rx="18" fill="url(#g)"/><path d="M33 48c-9 0-15-7-15-15s6-14 14-14 13 6 13 12-4.5 10-10 10-8.5-3.5-8.5-7.5 3-6.5 6.5-6.5 4.5 2.2 4.5 4.5"
 fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
+const LINE_ICON = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+export const EXTERNAL_ICON = `<svg class="ext" ${LINE_ICON}><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg>`;
+export const BACK_TO_PROFILES = `<a class="back" href="/admin"><svg ${LINE_ICON}><path d="M19 12H5M11 6l-6 6 6 6"/></svg>Back to profiles</a>`;
+
 export function favicon() {
   return new Response(FAVICON, {
     headers: {
@@ -243,6 +247,8 @@ color:var(--brand-ink);border:1px solid var(--line);border-radius:12px;
 padding:9px 15px;font-size:14px;font-weight:650;text-decoration:none;box-shadow:0 8px 24px -12px rgba(15,23,42,.25);
 transition:transform .18s var(--ease),box-shadow .18s,background .18s;animation:drop .45s var(--ease) both}
 a.back:hover{transform:translateX(-2px);background:#fff;box-shadow:0 12px 28px -12px rgba(15,23,42,.3)}
+a.back svg{flex:none;width:16px;height:16px;transition:transform .18s var(--ease)}a.back:hover svg{transform:translateX(-2px)}
+svg.ext{display:inline-block;width:13px;height:13px;margin-left:3px;vertical-align:-2px;flex:none}
 @media (max-width:1240px){a.back{top:10px;left:10px;padding:7px 12px;font-size:13px}}
 nav.tabs{display:inline-flex;gap:2px;margin:10px 0 24px;padding:4px;background:#f0f2f8;border:1px solid var(--line);border-radius:14px}
 nav.tabs a{padding:7px 16px;font-size:14px;font-weight:650;color:var(--muted);text-decoration:none;border-radius:10px;

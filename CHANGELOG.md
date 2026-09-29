@@ -447,6 +447,9 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Drawn arrows instead of arrow characters.** **Back to profiles** on the profile, settings,
+  stats and jobs sent pages, and the links to an advert or employer's site on a job card, now show a
+  line icon instead of the `←` and `↗` text characters, which looked out of place in the buttons.
 - **A smooth loading circle for running tasks.** The icon of a running task in the Tasks window, and
   the busy Tasks button, now spin a round ring with a fading tail instead of an arc swinging round a
   square. The ring carries on where it was when the list refreshes rather than jumping back.
