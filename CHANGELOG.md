@@ -550,6 +550,9 @@ using [Semantic Versioning](https://semver.org/).
 
 A review of the whole app; none of these were known to be exploited.
 
+- The feedback Worker's build tools are updated to wrangler 4.144.0, which brings undici 7.29.1 and
+  clears a new high-severity undici advisory in `npm audit`. These are development tools only; the
+  deployed Worker does not include them.
 - Word CVs saved as UTF-16 or UTF-32 are refused like ones declaring XML entities, since those
   encodings hid the declarations from the check.
 
