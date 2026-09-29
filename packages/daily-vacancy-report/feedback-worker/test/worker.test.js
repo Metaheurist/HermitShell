@@ -299,6 +299,23 @@ describe("feedback worker", () => {
     expect(await (await worker.fetch(new Request(`${BASE}/`), env)).text()).toBe("HermitShell feedback endpoint.");
   });
 
+  it("animates with CSS only, and not for people who ask for reduced motion", async () => {
+    const env = testEnv({ ADMIN_PASSWORD: "correct horse battery" });
+    const res = await worker.fetch(new Request(`${BASE}/admin`), env);
+    const body = await res.text();
+    expect(body).toContain("@keyframes rise");
+    expect(body).toMatch(/@media \(prefers-reduced-motion:reduce\)\{\*,\*::before,\*::after\{animation:none!important/);
+    expect(body).not.toMatch(/<script|<link|@import|url\(/);
+    expect(res.headers.get("Content-Security-Policy")).not.toContain("script-src");
+  });
+
+  it("shows errors as a banner", async () => {
+    const env = testEnv({ ADMIN_PASSWORD: "correct horse battery" });
+    const res = await worker.fetch(new Request(`${BASE}/admin/login`, { method: "POST",
+      body: new URLSearchParams({ username: "admin", password: "wrong" }), headers: { "CF-Connecting-IP": "203.0.113.4" } }), env);
+    expect(await res.text()).toContain('<p class="note bad" role="status">Wrong username or password.</p>');
+  });
+
   it("only pauses when the owner unsubscribes", async () => {
     const env = testEnv();
     const params = await link("unsubscribe", "profile-pause", "Your reports");

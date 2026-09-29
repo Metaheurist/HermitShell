@@ -1,7 +1,7 @@
 // Invite-only sign-up: /join?i=<invite id> shows a form for a new profile with a CV upload.
 // The answers and the CV wait in KV until HermitShell collects them from /api/queue.
 
-import { esc, limitedForm, newId, page, text } from "./lib.js";
+import { esc, limitedForm, newId, note, page, text } from "./lib.js";
 
 export const INVITE_DAYS = 7;
 export const QUEUE_TTL_SECONDS = 60 * 60 * 24 * 30;
@@ -68,7 +68,7 @@ export function cvKind(file, bytes) {
 
 function form(inviteId, values = {}, error = "") {
   const v = (k) => esc(values[k] || "");
-  return page("Join HermitShell", `${error ? `<p style="color:#b91c1c">${esc(error)}</p>` : ""}
+  return page("Join HermitShell", `${error ? note(error, "bad") : ""}
 <p>HermitShell checks job boards every day and emails you the roles that match your CV, with a fit score and the skills each one asks for.</p>
 <form method="post" action="/join?i=${esc(inviteId)}" enctype="multipart/form-data">
 <input type="hidden" name="i" value="${esc(inviteId)}">

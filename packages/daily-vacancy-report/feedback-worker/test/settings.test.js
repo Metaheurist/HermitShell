@@ -99,6 +99,25 @@ describe("setup checklist", () => {
     expect(body).toContain("no CV");
   });
 
+  it("shows progress and each step's state as styled items", async () => {
+    const { get } = await setup();
+    const { body } = await get("/admin?done=queued");
+    expect(body).toContain('<p class="note ok" role="status">Saved. HermitShell usually applies it within a minute.</p>');
+    expect(body).toContain("1 of 6 done");
+    expect(body).toMatch(/role="progressbar"[^>]*aria-valuenow="1"><span style="width:17%"><\/span>/);
+    expect(body).toContain('<li class="done"><span class="tick" aria-hidden="true"></span><div><b>HermitShell is connected</b>');
+    expect(body.match(/<li class="todo">/g)).toHaveLength(5);
+  });
+
+  it("gives each profile an initials avatar, never markup", async () => {
+    const { get } = await setup({ ...STATUS, profiles: [...STATUS.profiles,
+      { id: "riley", name: "<img src=x onerror=alert(1)>", email: "r@example.com", status: "active" }] });
+    const { body } = await get("/admin");
+    expect(body).toContain('<span class="avatar" aria-hidden="true">AM</span>');
+    expect(body).toContain('<span class="avatar" aria-hidden="true">SL</span>');
+    expect(body).not.toContain("<img");
+  });
+
   it("says so when everything is set", async () => {
     const owner = { ...STATUS.profiles[0], has_cv: true, job: { ...STATUS.profiles[0].job, titles: ["Data Engineer"] } };
     const { get } = await setup({ ...STATUS, profiles: [owner],
@@ -378,7 +397,7 @@ describe("profile page", () => {
     expect(body).toContain('<label for="min_salary">Minimum salary</label>');
     expect(body).toContain("Jobs that don&#39;t show a salary are always included.");
     expect(body).not.toContain("All profiles");
-    expect(body).toContain('<a class="back" href="/admin">&larr; Back to profiles</a>');
+    expect(body).toContain('<body><a class="back" href="/admin">&larr; Back to profiles</a><main class="wide">');
     expect((await get("/admin/profile?u=owner")).body).toContain('id="min_salary" name="min_salary" value=""');
     for (const min_salary of ["£45,000", "", "45k"]) await save(get, act, "owner", { min_salary });
     expect(valuesWith(env, "queue:").map((i) => i.job.min_salary)).toEqual(["45000", "0", "45000"]);
@@ -416,17 +435,20 @@ describe("save status box", () => {
     const { env, get, act } = await setup();
     const idle = await get("/admin/profile/status?u=sam-lee");
     expect(idle.res.status).toBe(200);
+    expect(idle.body).toContain('<body class="ok">');
     expect(idle.body).toContain("Up to date. HermitShell last reported just now.");
     expect(idle.body).not.toContain("http-equiv");
     await save(get, act, "sam-lee", { phone: "07700 900111" });
     const waiting = await get("/admin/profile/status?u=sam-lee&n=1");
     expect(waiting.body).toContain("Waiting for HermitShell to apply it");
+    expect(waiting.body).toContain('<body class="wait">');
     expect(waiting.body).toContain('<meta http-equiv="refresh" content="5;url=/admin/profile/status?u=sam-lee&amp;n=2">');
     expect((await get("/admin/profile/status?u=owner")).body).toContain("Up to date");
     const ids = keysWith(env, "queue:");
     await worker.fetch(new Request(`${BASE}/api/queue/ack`, { method: "POST", headers: API_HEADERS, body: JSON.stringify({ ids }) }), env);
     const applied = await get("/admin/profile/status?u=sam-lee&n=3");
     expect(applied.body).toContain("Applied by HermitShell");
+    expect(applied.body).toContain('<body class="done">');
     expect(applied.body).not.toContain("http-equiv");
   });
 
@@ -436,6 +458,7 @@ describe("save status box", () => {
     expect((await get("/admin/profile/status?u=sam-lee&n=15")).body).toContain('content="20;url=');
     const stopped = await get("/admin/profile/status?u=sam-lee&n=21");
     expect(stopped.body).toContain("Still waiting for HermitShell");
+    expect(stopped.body).toContain('<body class="idle">');
     expect(stopped.body).not.toContain("http-equiv");
     expect((await get("/admin/profile/status?u=sam-lee&n=-5")).body).toContain('content="5;url=/admin/profile/status?u=sam-lee&amp;n=1"');
   });

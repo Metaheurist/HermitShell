@@ -5,7 +5,7 @@
 
 import { COUNTRIES, countryCode } from "./countries.js";
 import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem } from "./join.js";
-import { CSP, SECURITY_HEADERS, ago, esc, limitedForm, newId, page, redirect, safeEqual, when } from "./lib.js";
+import { CSP, SECURITY_HEADERS, ago, esc, limitedForm, newId, note, page, redirect, safeEqual, when } from "./lib.js";
 
 export const LEVELS = ["junior", "mid", "senior", "lead", "any"];
 export const EMPLOYMENT_TYPES = ["Permanent", "Contract", "Temporary", "Part-time", "Internship"];
@@ -78,8 +78,11 @@ export function checklist(status) {
   ];
   const todo = items.filter(([ok]) => !ok);
   if (!todo.length) return '<p class="muted">Setup complete.</p>';
-  return `<h2>Finish setting up</h2><ul class="steps">${items.map(([ok, label, help]) =>
-    `<li class="${ok ? "done" : "todo"}"><b>${ok ? "&#10003;" : "&#9675;"} ${esc(label)}</b>${ok ? "" : `<div class="muted">${help}</div>`}</li>`).join("")}</ul>`;
+  const done = items.length - todo.length;
+  return `<h2>Finish setting up</h2>
+<div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${items.length}" aria-valuenow="${done}"><span style="width:${Math.round(done / items.length * 100)}%"></span></div>
+<p class="muted">${done} of ${items.length} done</p><ul class="steps">${items.map(([ok, label, help]) =>
+    `<li class="${ok ? "done" : "todo"}"><span class="tick" aria-hidden="true"></span><div><b>${esc(label)}</b>${ok ? "" : `<div class="muted">${help}</div>`}</div></li>`).join("")}</ul>`;
 }
 
 export function problems(status) {
@@ -141,7 +144,7 @@ function pendingEmail(email, queue) {
 export function settingsPage(status, csrf, { done = "", queued = [], queue = [] } = {}) {
   const waiting = queued.filter((q) => /^(email|test email|api keys)$/.test(q));
   return page("Global settings", `${nav("settings")}
-${done ? `<p style="color:#047857">${esc(done)}</p>` : ""}${waiting.length ? `<p class="muted">Waiting for HermitShell: ${esc(waiting.join("; "))}.</p>` : ""}
+${done ? note(done) : ""}${waiting.length ? `<p class="muted">Waiting for HermitShell: ${esc(waiting.join("; "))}.</p>` : ""}
 <p class="muted">These apply to the whole of HermitShell and every profile. Where each person's reports go, their job search
 and CV are on their own page under <a href="/admin">Profiles</a>.</p>
 ${emailSection({ ...status, email: pendingEmail(status.email || {}, queue) }, csrf)}
@@ -299,9 +302,9 @@ export function profilePage(status, pid, csrf,
   }
   const latest = latestValues(p, queue);
   const v = draft || latest;
-  const note = error ? `<p style="color:#b91c1c">${esc(error)}</p>` : done ? `<p style="color:#047857">${esc(done)}</p>` : "";
-  return page(p.owner ? "Your profile" : p.name, `<a class="back" href="/admin">&larr; Back to profiles</a>${nav("profiles")}
-${note}<iframe class="saving" src="${STATUS_URL}?u=${esc(pid)}${saving ? "&amp;n=1" : ""}" title="Save status"></iframe>
+  const message = error ? note(error, "bad") : done ? note(done) : "";
+  return page(p.owner ? "Your profile" : p.name, `${nav("profiles")}
+${message}<iframe class="saving" src="${STATUS_URL}?u=${esc(pid)}${saving ? "&amp;n=1" : ""}" title="Save status"></iframe>
 ${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
 <form method="post" action="/admin/action">${hidden({ csrf, action: "profile", u: pid, base: JSON.stringify(base || latest) })}
 <h2 id="details">Details</h2>
@@ -330,7 +333,7 @@ ${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
 <label for="cv">CV file</label><input id="cv" name="cv" type="file" accept=".pdf,.docx,.txt,.md">${hint("PDF, Word (.docx) or text, up to 5 MB.")}
 <label for="cv_text">Or paste the CV text</label><textarea id="cv_text" name="cv_text" maxlength="${MAX_CV_TEXT}"></textarea>
 <label for="roles">Roles you're after</label><input id="roles" name="roles" maxlength="300">${hint("Optional. Helps suggest job titles from the CV.")}
-<button>Upload CV</button></form>`, { wide: true, status: code, headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` } });
+<button>Upload CV</button></form>`, { wide: true, status: code, before: '<a class="back" href="/admin">&larr; Back to profiles</a>', headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` } });
 }
 
 const WAIT_FAST = 12; // checks 5 seconds apart, then
@@ -348,18 +351,19 @@ export function saveStatus(status, pid, queue, n) {
     refresh = n < WAIT_FAST ? 5 : n < WAIT_SLOW ? 20 : 0;
     const cv = mine.some((i) => i.action === "cv");
     body = !refresh ? `Still waiting for HermitShell. <a href="/admin/profile?u=${esc(pid)}" target="_top">Reload</a> to check again; <a href="/admin" target="_top">Profiles</a> shows when it last reported.`
-      : cv ? "&#8987; Saved. HermitShell is reading the new CV; this takes a few minutes."
-        : "&#8987; Saved. Waiting for HermitShell to apply it (usually within a minute)&hellip;";
+      : cv ? "Saved. HermitShell is reading the new CV; this takes a few minutes."
+        : "Saved. Waiting for HermitShell to apply it (usually within a minute)&hellip;";
   } else if (failed.length) {
     body = `<b>HermitShell could not apply a change:</b> ${esc(failed.at(-1).error)}`;
   } else if (n > 0) {
-    body = `&#10003; Applied by HermitShell${status.updated ? ` at ${esc(when(status.updated, tz))}` : ""}.`;
+    body = `Applied by HermitShell${status.updated ? ` at ${esc(when(status.updated, tz))}` : ""}.`;
   } else {
     body = status.updated ? `Up to date. HermitShell last reported ${esc(ago(status.updated))}.` : "HermitShell hasn't reported yet.";
   }
   const next = refresh ? `<meta http-equiv="refresh" content="${refresh};url=${STATUS_URL}?u=${esc(pid)}&amp;n=${n + 1}">` : "";
+  const state = mine.length ? (refresh ? "wait" : "idle") : failed.length ? "bad" : n > 0 ? "done" : "ok";
   return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8">${next}<style>${WIDGET_STYLE}</style></head>
-<body class="${mine.length ? "wait" : failed.length ? "bad" : "ok"}">${body}</body></html>`, {
+<body class="${state}">${body}</body></html>`, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'",
@@ -368,9 +372,24 @@ export function saveStatus(status, pid, queue, n) {
   });
 }
 
-const WIDGET_STYLE = "body{margin:0;padding:10px 14px;font:14px/1.4 system-ui,-apple-system,'Segoe UI',sans-serif;"
-  + "border-radius:8px;color:#334155;background:#f1f5f9}body.wait{background:#eff6ff;color:#1e3a8a}"
-  + "body.ok{background:#f0fdf4;color:#166534}body.bad{background:#fef2f2;color:#991b1b}a{color:inherit}";
+const WIDGET_STYLE = `
+body{margin:0;height:44px;box-sizing:border-box;padding:0 14px 0 42px;display:block;line-height:42px;white-space:nowrap;overflow:hidden;
+text-overflow:ellipsis;font:500 14px/42px system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;border:1px solid;border-radius:12px;
+position:relative;color:#334155;background:#f8fafc;border-color:#e5e8f0;-webkit-font-smoothing:antialiased;animation:in .4s ease both}
+body::before{content:"";position:absolute;left:14px;top:12px;width:18px;height:18px;box-sizing:border-box;border-radius:50%}
+body.wait{background:#eef0ff;border-color:#c7d2fe;color:#3730a3}
+body.wait::before{border:2px solid #c7d2fe;border-top-color:#6366f1;animation:spin .8s linear infinite}
+body.idle{background:#fffbeb;border-color:#fde68a;color:#92400e}body.idle::before{border:2px solid #f59e0b}
+body.ok,body.done{background:#f0fdf6;border-color:#bbf7d0;color:#166534}
+body.ok::before{background:#22c55e;width:8px;height:8px;left:19px;top:17px;box-shadow:0 0 0 4px rgba(34,197,94,.2)}
+body.done::before{background:#059669;animation:pop .45s cubic-bezier(.2,.8,.2,1) both}
+body.done::after{content:"";position:absolute;left:21px;top:15px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;
+transform:rotate(45deg)}
+body.bad{background:#fef2f2;border-color:#fecaca;color:#991b1b}body.bad::before{background:#dc2626}
+body.bad::after{content:"!";position:absolute;left:14px;top:0;width:18px;text-align:center;color:#fff;font-weight:800;font-size:12px}
+a{color:inherit;text-underline-offset:3px}
+@keyframes spin{to{transform:rotate(360deg)}}@keyframes pop{from{transform:scale(.3);opacity:0}}@keyframes in{from{opacity:0}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important}}`;
 
 // ------------------------------------------------------------------------- turning forms into queue items
 

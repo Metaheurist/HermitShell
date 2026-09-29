@@ -11,7 +11,7 @@ import { SECRET_TTL_SECONDS, createInvite, queueItem } from "./join.js";
 import {
   SECURITY_HEADERS, accessUser, ago, authorised, deleteAndUnflag, esc, hmacHex, json, limitedForm, limitedJson, listFlagged,
   purgeProfileEvents,
-  page, redirect, safeEqual, secretEqual, text, when,
+  note, page, redirect, safeEqual, secretEqual, text, when,
 } from "./lib.js";
 import {
   SETTINGS_DONE, SETTINGS_URL, STATUS_URL, button, checklist, cvUpload, nav, problems, profileChange, profilePage, saveStatus,
@@ -66,7 +66,7 @@ function cookieHeader(value, maxAge) {
 }
 
 function loginPage(message = "", status = 200) {
-  return page("Admin sign-in", `${message ? `<p style="color:#b91c1c">${esc(message)}</p>` : ""}
+  return page("Admin sign-in", `${message ? note(message, "bad") : ""}
 <form method="post" action="/admin/login">
 <label for="u">Username</label><input id="u" name="username" autocomplete="username" required>
 <label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password" required>
@@ -159,6 +159,11 @@ function lastUpdate(current, queued) {
   return `${stale}<p class="muted">Last update from HermitShell: ${esc(ago(current.updated))} (${esc(when(current.updated, current.timezone))}).${waiting}</p>`;
 }
 
+function initials(name) {
+  const words = String(name || "").replace(/<[^>]*>/g, " ").match(/\p{L}[\p{L}'-]*/gu) || [];
+  return (words.length > 1 ? words[0][0] + words.at(-1)[0] : (words[0] || "?").slice(0, 2)).toUpperCase();
+}
+
 function profileRow(p, csrf, tz) {
   const status = `<span class="pill${p.owner ? " owner" : p.status === "paused" ? " paused" : ""}">${p.owner ? "owner, " : ""}${esc(p.status)}</span>`;
   const crawler = p.crawler === "own" ? `own key ${esc(p.key_hint || "")}` : "global key";
@@ -168,8 +173,9 @@ function profileRow(p, csrf, tz) {
 <label class="check" style="margin:0"><input type="checkbox" name="confirm" value="yes"> <span class="muted">delete CV and history</span></label>
 <button class="small danger">Delete</button></form>`;
   const cv = p.has_cv === false ? ' <span class="pill paused">no CV</span>' : "";
-  return `<tr><td><b>${esc(p.name)}</b>${cv}<div class="muted">${esc(p.email || "")}</div><div class="muted">since ${esc(when(p.created, tz))}</div>
-<a class="small" href="/admin/profile?u=${esc(p.id)}">Manage</a></td>
+  return `<tr><td><div class="who"><span class="avatar" aria-hidden="true">${esc(initials(p.name))}</span><div>
+<b>${esc(p.name)}</b>${cv}<div class="muted">${esc(p.email || "")}</div><div class="muted">since ${esc(when(p.created, tz))}</div>
+<a class="small" href="/admin/profile?u=${esc(p.id)}">Manage</a></div></div></td>
 <td>${status}<div class="muted">last report ${esc(p.last_run ? `${ago(p.last_run)} (${when(p.last_run, tz)})` : "never")}</div></td>
 <td><div class="muted">${crawler}</div>
 <form method="post" action="/admin/action" class="inline" style="margin-top:6px">
@@ -187,7 +193,7 @@ async function dashboard(request, env, s) {
     .map((i) => `<tr><td>${esc(i.note || "No note")}</td><td class="muted">expires ${esc(when(i.expires, current.timezone))}</td>
 <td>${button(s.csrf, "revoke", "Revoke", { invite: i.id })}</td></tr>`).join("");
   const done = DONE[url.searchParams.get("done")];
-  return page("Profiles", `${nav("profiles")}${done ? `<p style="color:#047857">${esc(done)}</p>` : ""}
+  return page("Profiles", `${nav("profiles")}${done ? note(done) : ""}
 ${lastUpdate(current, queued)}
 ${problems(current)}${checklist(current)}
 <table class="list"><tr><th>Profile</th><th>Status</th><th>Crawler</th><th></th></tr>
@@ -198,7 +204,7 @@ ${(current.profiles || []).map((p) => profileRow(p, s.csrf, current.timezone)).j
 <input name="note" maxlength="80" placeholder="Who it is for (only you see this)"><button class="small">Create invite link</button></form>
 <p class="muted">Each link works once and expires after 7 days.</p>
 ${inviteRows ? `<table class="list">${inviteRows}</table>` : ""}
-<form method="post" action="/admin/logout"><button class="small quiet" style="margin-top:28px">Sign out</button></form>`, { wide: true });
+<form method="post" action="/admin/logout" class="signout"><button class="small quiet">Sign out</button></form>`, { wide: true });
 }
 
 async function action(request, env, s) {
