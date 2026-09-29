@@ -35,8 +35,8 @@ handle this themselves:
 
 The result renders the same: the 126 KB report became 69 KB with identical computed styles on
 every element. The vacancy report also uses `fitted_html()`. If the compacted email is still
-over budget, the lowest-ranked jobs appear as one-line entries under "More matches", with the
-same feedback links, instead of full cards.
+over budget, the lowest-ranked jobs appear as one-line entries under "More matches" instead of
+full cards. They keep the feedback buttons and their icons (`mini_buttons()`), at a smaller size.
 
 ## Images: inline attachments, not SVG or remote URLs
 

@@ -65,7 +65,8 @@ The buttons and tags only appear when the [feedback Worker](feedback-worker.md) 
 - **Added to your CV** (cyan) lists skills you added from the missing-skill tags that were merged
   into your CV this run.
 - **More matches**: when the email would be clipped by Gmail (over about 100 KB), the
-  lowest-ranked jobs become one-line entries with text links instead of full cards.
+  lowest-ranked jobs become one-line entries instead of full cards. They keep the card buttons, with
+  the same icons, at a smaller size.
 - **Footer**: the filters in force, how many jobs each filter excluded, the model, the sources, the
   web credits used, how fit penalties work, and the **Unsubscribe** link.
 

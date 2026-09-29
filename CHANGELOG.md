@@ -380,6 +380,9 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The one-line entries under **More matches** in the vacancy report use smaller versions of the card
+  buttons, with the same icons, instead of underlined text links. Cover letter and Tailored CV sit on a
+  line of their own, as on the full cards.
 - A profile with its own crawler key now searches with only that key. Before, it could still fall back
   to the global Tavily and Scrapfly keys and spend their credits.
 - Vacancy report cards show the three strongest matching skills in bold (the rest as one line),
