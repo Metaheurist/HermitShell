@@ -47,6 +47,9 @@ email button ──> Worker /f (confirm page) ──> KV ──> HermitShell GET
   the CV limit), and uploaded CVs are checked to really be a PDF, .docx or text file.
 - **Short-lived data.** Answers are deleted once HermitShell has saved them, and expire after 30 days
   in any case. Only the job key, action, optional note and time are stored.
+- **No scripts or outside content.** Every page's Content-Security-Policy blocks JavaScript and
+  anything loaded from elsewhere. The only file a page loads is the tab icon, `/favicon.svg`, from
+  the Worker itself (a plain SVG with no scripts or links).
 - **No secrets in git.** The two secrets live only in HermitShell's `.env` and in the Worker's
   encrypted secrets. Your KV namespace ID goes in an untracked `wrangler.local.jsonc`.
 

@@ -8,6 +8,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A tab icon for the dashboard and every Worker page**: the purple square next to "HermitShell" with
+  a white shell spiral, served by the Worker at `/favicon.svg` (and `/favicon.ico`). The pages'
+  security policy now allows images from the Worker itself only, for this icon.
+
 - **See the jobs sent to each person from the dashboard.** A row's sent button now has two halves:
   the little chart opens the stats page as before, and **24 sent** opens `/admin/sent`, the jobs in
   that profile's reports grouped by day. Each job shows its score, title (linking to the advert),
