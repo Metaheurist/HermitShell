@@ -33,7 +33,7 @@ import requests
 
 import hermes_common as hc
 from hermes_common import EMAIL_HEAD, STATE_DIR, connect_model, env, env_int, load_env_file, log, ollama_chat
-from job_tracker import Tracker, sync_feedback
+from job_tracker import Tracker, skills_text, sync_feedback
 from letter_pdf import letter_pdf
 
 hc.LOG_TAG = "cover_letter"
@@ -64,12 +64,14 @@ ROLE_RE = re.compile(r"\b[Aa]s (?:(?:an?|the|my) )?(?:(?:former|current) )?"
 
 # --------------------------------------------------------------------------- inputs
 
-def profile_text() -> str:
+def profile_text(tracker: Tracker | None = None) -> str:
     parts = []
     for name in (env("JOB_PROFILE_FILE") or "job_profile.md", env("COVER_LETTER_CV_FILE")):
         path = Path(name) if name and Path(name).is_absolute() else PACKAGE_DIR / (name or "")
         if name and path.is_file():
             parts.append(path.read_text(encoding="utf-8").strip())
+    if parts and skills_text(tracker):
+        parts.append(skills_text(tracker))
     return "\n\n".join(parts)
 
 
@@ -261,7 +263,7 @@ def make_letter(tracker: Tracker, key: str, note: str, model_info: tuple[str, st
     job = tracker.job(key)
     if not job:
         raise LookupError(f"job {key} is not in the tracker")
-    profile = profile_text()
+    profile = profile_text(tracker)
     if not profile:
         raise FileNotFoundError("no CV profile found (JOB_PROFILE_FILE / job_profile.md)")
     name = candidate_name(profile)

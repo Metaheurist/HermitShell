@@ -1,11 +1,14 @@
 # Vacancy feedback Worker
 
 A small Cloudflare Worker that gives the Daily Vacancy Report email working buttons
-(I applied, Good match, Not for me, Interested, Cover letter, Heard back, Rejected) without opening
-any port on your server.
+(I applied, Good match, Not for me, Interested, Cover letter, Heard back, Rejected, and the
+missing-skill tags) without opening any port on your server.
 
 - Each button is a signed link (`/f?j=…&a=…&n=…&t=…`). Opening it only shows a confirmation page, so
   mail scanners that follow every link cannot record answers.
+- Missing-skill tags use `a=add_skill` with the job's missing skills in `s` (covered by the
+  signature) and the tapped one in `p`. The page offers them as checkboxes plus a free-text box;
+  the saved event carries the chosen `skills`.
 - Pressing **Confirm** saves the answer in Workers KV for up to 30 days.
 - On its next run the scanner calls `GET /events`, stores the answers in `job_tracker.db`, then calls
   `POST /ack` to delete them from KV. Both API calls need `Authorization: Bearer <JOB_FEEDBACK_API_TOKEN>`.

@@ -1,4 +1,5 @@
-"""Daily Vacancy Report tracker: every rated job, your feedback, applications and cover letter requests.
+"""Daily Vacancy Report tracker: every rated job, your feedback, applications, cover letter requests and
+the skills you added from the email's missing-skill tags.
 
 Feedback arrives through the optional feedback Worker (see docs/feedback-worker.md in HermitShell):
 email buttons are signed links to the Worker, which stores confirmed answers until
@@ -12,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -27,6 +29,7 @@ ACTIONS = {
     "rejected": "Rejected",
     "good_match": "Good match",
     "cover_letter": "Generate cover letter",
+    "add_skill": "Add to my skills",
 }
 CARD_ACTIONS = ("applied", "good_match", "not_for_me", "interested", "cover_letter")
 FOLLOWUP_ACTIONS = ("heard_back", "rejected")
@@ -36,13 +39,21 @@ _STATUS_SQL = ", ".join(f"'{a}'" for a in STATUS_ACTIONS)
 LETTER_ATTEMPTS = 3
 FOLLOWUP_DAYS = (7, 14)
 DAY = 86400
+# Same limits as the feedback Worker.
+MAX_SKILL = 60
+MAX_SKILLS = 12
+_SKILL_RE = re.compile(r"[^\w .+#/&()-]")
+
+
+def clean_skill(text: str) -> str:
+    return " ".join(_SKILL_RE.sub("", str(text)).split())[:MAX_SKILL].strip()
 
 
 # --------------------------------------------------------------------------- signed links
 
-def sign(secret: str, key: str, action: str, title: str) -> str:
-    """HMAC-SHA256 over key, action and title (first 32 hex chars); the Worker checks the same value."""
-    msg = f"{key}\n{action}\n{title}".encode("utf-8")
+def sign(secret: str, key: str, action: str, title: str, skills: str = "") -> str:
+    """HMAC-SHA256 over key, action, title and any skill list (first 32 hex chars); the Worker checks the same."""
+    msg = (f"{key}\n{action}\n{title}" + (f"\n{skills}" if skills else "")).encode("utf-8")
     return hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()[:32]
 
 
@@ -57,6 +68,17 @@ def card_links(base_url: str, secret: str, key: str, title: str,
     if not (base_url and secret):
         return {}
     return {a: action_link(base_url, secret, key, a, title) for a in actions}
+
+
+def skill_link(base_url: str, secret: str, key: str, title: str, skills: list[str]) -> str:
+    """Signed link to the Worker page that adds a job's missing skills to your pool (append &p=<skill> to tick one)."""
+    skills = [s for s in dict.fromkeys(clean_skill(s) for s in skills) if s][:MAX_SKILLS]
+    if not (base_url and secret and skills):
+        return ""
+    title, packed = title[:120], "|".join(skills)
+    query = urlencode({"j": key, "a": "add_skill", "n": title, "s": packed,
+                       "t": sign(secret, key, "add_skill", title, packed)})
+    return f"{base_url.rstrip('/')}/f?{query}"
 
 
 # --------------------------------------------------------------------------- store
@@ -80,6 +102,7 @@ CREATE TABLE IF NOT EXISTS letters (
     event_id TEXT PRIMARY KEY, key TEXT, status TEXT, attempts INTEGER DEFAULT 0, error TEXT,
     file TEXT, at REAL
 );
+CREATE TABLE IF NOT EXISTS skills (skill TEXT PRIMARY KEY COLLATE NOCASE, key TEXT, at REAL);
 """
 # Listing details kept for cover letters (added after the first release, hence not in CREATE TABLE).
 DETAIL_FIELDS = ("location", "employment_type", "work_mode", "seniority", "salary", "reasoning", "about",
@@ -138,13 +161,34 @@ class Tracker:
 
     # ------------------------------------------------------------------ events
 
-    def add_event(self, event_id: str, key: str, action: str, reason: str = "", at: float | None = None) -> bool:
+    def add_event(self, event_id: str, key: str, action: str, reason: str = "", at: float | None = None,
+                  skills: list[str] | None = None) -> bool:
         if action not in ACTIONS or not key:
             return False
+        if action == "add_skill":
+            skills = [s for s in dict.fromkeys(clean_skill(s) for s in skills or []) if s][:MAX_SKILLS]
+            if not skills:
+                return False
+            reason = ", ".join(skills)
+        at = at or time.time()
         cur = self.db.execute("INSERT OR IGNORE INTO events (id, key, action, reason, at) VALUES (?, ?, ?, ?, ?)",
-                              (event_id, key, action, (reason or "")[:300], at or time.time()))
+                              (event_id, key, action, (reason or "")[:300], at))
+        if cur.rowcount == 1 and action == "add_skill":
+            self.db.executemany("INSERT OR IGNORE INTO skills (skill, key, at) VALUES (?, ?, ?)",
+                                [(s, key, at) for s in skills])
         self.db.commit()
         return cur.rowcount == 1
+
+    # ------------------------------------------------------------------ skills pool
+
+    def skills(self) -> list[str]:
+        """Skills you confirmed from the email's missing-skill tags, oldest first."""
+        return [r["skill"] for r in self.db.execute("SELECT skill FROM skills ORDER BY at, skill")]
+
+    def remove_skill(self, skill: str) -> bool:
+        cur = self.db.execute("DELETE FROM skills WHERE skill = ?", (clean_skill(skill),))
+        self.db.commit()
+        return cur.rowcount > 0
 
     def latest_action(self, key: str) -> str | None:
         row = self.db.execute(f"SELECT action FROM events WHERE key = ? AND action IN ({_STATUS_SQL}) "
@@ -261,8 +305,9 @@ def sync_feedback(tracker: Tracker, base_url: str, api_token: str, ack: bool = T
         event_id = str(ev.get("id") or "")
         if not event_id:
             continue
+        skills = ev.get("skills") if isinstance(ev.get("skills"), list) else None
         saved += tracker.add_event(event_id, str(ev.get("j") or ""), str(ev.get("a") or ""),
-                                   str(ev.get("r") or ""), float(ev.get("at") or 0) / 1000 or None)
+                                   str(ev.get("r") or ""), float(ev.get("at") or 0) / 1000 or None, skills)
         ids.append(event_id)
     if ack and ids:
         try:
@@ -270,6 +315,13 @@ def sync_feedback(tracker: Tracker, base_url: str, api_token: str, ack: bool = T
         except requests.RequestException as exc:
             return saved, f"feedback saved but not acknowledged ({exc.__class__.__name__})"
     return saved, None
+
+
+def skills_text(tracker: Tracker | None) -> str:
+    """Line appended to the candidate profile for skills added from the email."""
+    skills = tracker.skills() if tracker else []
+    return ("Additional skills the candidate confirmed they have (not tied to a particular employer): "
+            + ", ".join(skills) + ".") if skills else ""
 
 
 def prompt_examples(tracker: Tracker | None, per_kind: int = 3) -> str:

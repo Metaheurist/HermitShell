@@ -30,6 +30,12 @@ using [Semantic Versioning](https://semver.org/).
   rewritten, and failed requests are retried up to 3 times. Settings:
   `COVER_LETTER_NAME`, `COVER_LETTER_CONTACT`, `COVER_LETTER_CV_FILE`, `COVER_LETTER_SIGN_OFF`,
   `COVER_LETTER_FROM_NAME` and `COVER_LETTER_MODEL`. `send_email()` now takes attachments.
+- **Add missing skills from the email.** A card's missing skills are now amber tags. With the
+  feedback Worker, tapping one opens a page with that skill ticked, the job's other missing
+  skills beside it and a box for more. Confirmed skills join a pool in `state/job_tracker.db`:
+  the scanner counts them as CV keywords and adds them to the rating profile, and cover letters
+  may mention them as general skills. Review or undo with `job_scanner.py --skills` and
+  `--remove-skill`.
 - **`state/job_tracker.db`** (`job_tracker.py`, SQLite) records rated and emailed jobs (with the
   listing, for cover letters), feedback, reminders, cover letter requests and run statistics:
   - Recent liked and rejected jobs, with your reasons, are added to the rating prompt as

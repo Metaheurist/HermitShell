@@ -8,7 +8,9 @@ round thumbs up (**Good match**) and thumbs down (**Not for me**) buttons, **Int
   (thumbs down, with your reason) are added to the rating prompt as examples;
 - drive reminders: jobs you applied to come back in a "Follow up" section after 7 and 14 days;
 - feed the Sunday roll-up (applications, replies, rejections);
-- request a tailored cover letter, emailed to you as a PDF (see [Cover letters](#cover-letters)).
+- request a tailored cover letter, emailed to you as a PDF (see [Cover letters](#cover-letters));
+- add skills you have but your CV doesn't mention, by tapping the amber missing-skill tags (see
+  [Adding missing skills](#adding-missing-skills)).
 
 The button icons are [Lucide](https://lucide.dev) SVGs (`packages/daily-vacancy-report/icons/src`)
 rendered to PNG by `icons/build_icons.py`, because Gmail strips SVG from emails.
@@ -203,6 +205,28 @@ python3 cover_letter.py --job <tracker key> --dry-run   # try one without email
 ```
 
 The job prints nothing when there is nothing to do, so Hermes records it as a silent run.
+
+## Adding missing skills
+
+Each job card lists the skills the listing asks for that your CV doesn't show, as amber tags
+under **Missing from your CV**. If you have one of them, tap it. The Worker opens a page with
+that skill ticked and the job's other missing skills beside it, plus a box for any other skills
+you want to add. After you confirm:
+
+- the skills join your skills pool (`skills` in `state/job_tracker.db`) at the next sync, which
+  happens within 5 minutes when cover letters are set up, otherwise at the next scan;
+- the scanner treats them as CV keywords, so they count as matches instead of gaps, and adds
+  them to the profile the model rates jobs against;
+- cover letters may mention them as general skills, never as work done at a named employer.
+
+The skill list is part of the link's signature, so a link can't be edited to offer other
+skills; typed skills are limited to letters, numbers and `+ # . / & ( ) -`. Your CV files are
+never changed. To review or undo:
+
+```sh
+python3 job_scanner.py --skills                   # list the skills you added
+python3 job_scanner.py --remove-skill "Kubernetes"
+```
 
 ## Removing it
 

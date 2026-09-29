@@ -16,10 +16,12 @@ sys.path[:0] = [str(PACKAGE), str(PACKAGE.parents[1] / "common")]
 import job_tracker  # noqa: E402
 from job_extras import (below_min_salary, closing_date, combined_level, days_left,  # noqa: E402
                         group_agency_posts, parse_salary, rating_failed, repost_key)
-from job_tracker import Tracker, action_link, card_links, prompt_examples, sign, sync_feedback  # noqa: E402
+from job_tracker import (Tracker, action_link, card_links, prompt_examples, sign, skill_link,  # noqa: E402
+                         skills_text, sync_feedback)
 
 # The feedback Worker's test suite checks the same value (feedback-worker/test/worker.test.js).
 KNOWN_SIGNATURE = "7a1921b9bd33f759be1489d932b2a57f"
+KNOWN_SKILL_SIGNATURE = "2852e1bfe92031fafbd79fffc07522f5"
 
 
 # --------------------------------------------------------------------------- salary
@@ -130,6 +132,15 @@ def test_action_link_is_signed_and_truncates_title():
     assert card_links("", "s3cret", "k", "t") == {} and card_links("https://x", "", "k", "t") == {}
 
 
+def test_skill_link_signs_the_skill_list_like_the_worker():
+    link = skill_link("https://fb.example.workers.dev", "test-secret", "nijobs:123", "AI Engineer",
+                      ["Kubernetes", "Terraform", "Go", "Go", "<script>"])
+    assert "a=add_skill" in link and "s=Kubernetes%7CTerraform%7CGo%7Cscript&" in link
+    assert sign("test-secret", "nijobs:123", "add_skill", "AI Engineer", "Kubernetes|Terraform|Go") == \
+        KNOWN_SKILL_SIGNATURE
+    assert skill_link("https://x", "s", "k", "t", []) == "" and skill_link("", "s", "k", "t", ["Go"]) == ""
+
+
 # --------------------------------------------------------------------------- tracker
 
 @pytest.fixture
@@ -193,6 +204,40 @@ def test_cover_letter_requests_do_not_change_application_status(tracker):
     assert tracker.week(now - 7 * 86400)["applications"][0]["status"] == "applied"
 
 
+def test_added_skills_join_the_pool_once_and_can_be_removed(tracker):
+    assert skills_text(tracker) == "" and skills_text(None) == ""
+    assert tracker.add_event("e1", "k1", "add_skill", skills=["Kubernetes", " terraform ", "Kubernetes"], at=1)
+    assert not tracker.add_event("e1", "k1", "add_skill", skills=["Go"])
+    assert not tracker.add_event("e2", "k1", "add_skill", skills=["", "<>"])
+    tracker.add_event("e3", "k2", "add_skill", skills=["kubernetes", "Go"], at=2)
+    assert tracker.skills() == ["Kubernetes", "terraform", "Go"]
+    assert "confirmed they have" in skills_text(tracker) and "Kubernetes, terraform, Go." in skills_text(tracker)
+    assert tracker.latest_action("k1") is None
+    assert tracker.remove_skill("KUBERNETES") and not tracker.remove_skill("Rust")
+    assert tracker.skills() == ["terraform", "Go"]
+
+
+def test_sync_feedback_stores_added_skills(tracker, monkeypatch):
+    events = [{"id": "event:1:a", "j": "k1", "a": "add_skill", "r": "", "skills": ["Helm", "Go"], "at": 1}]
+    monkeypatch.setattr(job_tracker.requests, "get", lambda *a, **k: FakeResponse({"events": events}))
+    assert sync_feedback(tracker, "https://fb.example.workers.dev", "tok", ack=False) == (1, None)
+    assert tracker.skills() == ["Go", "Helm"]
+
+
+def test_added_skills_count_as_cv_keywords():
+    import re
+
+    import job_scanner
+
+    cv = {"Python": re.compile("python", re.I)}
+    other = {"Kubernetes": re.compile(r"\bk8s\b|kubernetes", re.I), "Go": re.compile(r"\bgolang\b", re.I)}
+    cv2, other2 = job_scanner.with_added_skills(cv, other, ["kubernetes", "C++", "python"])
+    assert list(cv2) == ["Python", "Kubernetes", "C++"] and list(other2) == ["Go"] and "Kubernetes" in other
+    matched, gaps = job_scanner.keyword_match("Python, k8s and C++ wanted; golang a plus", cv2, other2)
+    assert matched == ["Python", "Kubernetes", "C++"] and gaps == ["Go"]
+    assert not cv2["C++"].search("C+++")
+
+
 def test_pending_letters_retry_then_give_up(tracker):
     tracker.add_event("e1", "k1", "cover_letter", reason="short please")
     tracker.add_event("e2", "k2", "cover_letter")
@@ -253,7 +298,8 @@ def report_job(key: str = "k1", title: str = "AI Engineer", fit: int = 8) -> dic
             "confidence": 80, "coverage": 70, "matched": ["Python", "Azure", "LLMs", "Docker"],
             "gaps": ["Kubernetes", "Go"], "reasoning": "Strong overlap.", "snippet_only": False,
             "second_opinion": 8, "also_advertised_by": ["Agency Ltd"],
-            "actions": card_links("https://fb.example.workers.dev", "s", key, title)}
+            "actions": card_links("https://fb.example.workers.dev", "s", key, title),
+            "skill_link": skill_link("https://fb.example.workers.dev", "s", key, title, ["Kubernetes", "Go"])}
 
 
 REPORT_STATS = {"when": "today", "shown": 1, "strong": 1, "avg_fit": "8.0", "scanned": 3, "min_score": 5,
@@ -267,13 +313,27 @@ def test_report_renders_new_card_parts():
 
     job = report_job()
     page = job_scanner.build_html([job], [], REPORT_STATS, "Summary.", ["Indeed failed: expired."], "")
-    for text in ("Closes in 2 days", "Salary not listed", "Biggest gap:", "Also on your CV: Docker",
+    for text in ("Closes in 2 days", "Salary not listed", "Missing from your CV", "Also on your CV: Docker",
                  "Also advertised by Agency Ltd", "Checked twice", "Indeed failed: expired.",
                  "salary at least £40,000", "1 already closed", "/f?j=k1&amp;a=applied"):
         assert text in page, text
     plain = job_scanner.build_text([job], "Summary.")
     assert "closes in 2 days" in plain and "I applied: https://fb.example.workers.dev/f?" in plain
     assert "Generate cover letter: https://fb.example.workers.dev/f?" in plain
+
+
+def test_missing_skill_tags_open_the_add_skill_page_with_that_skill_ticked():
+    import job_scanner
+
+    page = job_scanner.build_html([report_job()], [], REPORT_STATS, "Summary.")
+    assert "tap one you already have to add it to your skills" in page
+    assert "a=add_skill" in page and "s=Kubernetes%7CGo" in page
+    assert "&amp;p=Kubernetes\"" in page and ">+ Kubernetes</a>" in page and "&amp;p=Go\"" in page
+    plain = job_scanner.build_text([report_job()], "Summary.")
+    assert "Missing from your CV: Kubernetes, Go" in plain and "Add to my skills: https://fb.example.workers.dev/f?" in plain
+    offline = job_scanner.gap_tags(["Go"], "")
+    assert ">Go</span>" in offline and "href" not in offline and "tap one" not in offline
+    assert job_scanner.gap_tags([], "https://x") == ""
 
 
 def test_card_buttons_sit_next_to_view_job_with_icons():

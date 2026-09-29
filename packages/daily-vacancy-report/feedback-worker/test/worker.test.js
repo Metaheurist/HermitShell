@@ -3,6 +3,7 @@ import worker, { sign } from "../src/index.js";
 
 // Same value as KNOWN_SIGNATURE in packages/daily-vacancy-report/tests/test_vacancy_report.py.
 const KNOWN_SIGNATURE = "7a1921b9bd33f759be1489d932b2a57f";
+const KNOWN_SKILL_SIGNATURE = "2852e1bfe92031fafbd79fffc07522f5";
 const BASE = "https://vacancy-feedback.example.workers.dev";
 
 function memoryKV() {
@@ -29,6 +30,11 @@ function testEnv() {
 async function link(action = "applied", key = "nijobs:123", title = "AI Engineer") {
   const t = await sign("test-secret", key, action, title);
   return { j: key, a: action, n: title, t };
+}
+
+async function skillLink(skills = "Kubernetes|Terraform|Go") {
+  const t = await sign("test-secret", "nijobs:123", "add_skill", "AI Engineer", skills);
+  return { j: "nijobs:123", a: "add_skill", n: "AI Engineer", s: skills, t };
 }
 
 function formRequest(fields) {
@@ -87,6 +93,48 @@ describe("feedback worker", () => {
     const res = await worker.fetch(formRequest({ ...(await link("good_match")), r: "" }), env);
     expect(await res.text()).toContain("Good match: AI Engineer");
     expect(env.FEEDBACK.store.size).toBe(1);
+  });
+
+  it("signs skill lists exactly like the Python scanner", async () => {
+    expect(await sign("test-secret", "nijobs:123", "add_skill", "AI Engineer", "Kubernetes|Terraform|Go"))
+      .toBe(KNOWN_SKILL_SIGNATURE);
+  });
+
+  it("offers the job's missing skills with the tapped one ticked", async () => {
+    const env = testEnv();
+    const res = await worker.fetch(new Request(`${BASE}/f?${new URLSearchParams({ ...(await skillLink()), p: "Terraform" })}`), env);
+    const body = await res.text();
+    expect(res.status).toBe(200);
+    expect(body).toContain('value="Terraform" checked');
+    expect(body).toContain('value="Kubernetes">');
+    expect(body).toContain("Other skills you have");
+    expect(env.FEEDBACK.store.size).toBe(0);
+  });
+
+  it("rejects skill links whose skill list was changed", async () => {
+    const env = testEnv();
+    const tampered = { ...(await skillLink()), s: "Kubernetes|Terraform|Go|Rust" };
+    expect((await worker.fetch(new Request(`${BASE}/f?${new URLSearchParams(tampered)}`), env)).status).toBe(403);
+    const unsigned = { ...(await link("add_skill")) };
+    expect((await worker.fetch(new Request(`${BASE}/f?${new URLSearchParams(unsigned)}`), env)).status).toBe(403);
+  });
+
+  it("saves ticked and typed skills, ignoring ticks that were not offered", async () => {
+    const env = testEnv();
+    const fields = new URLSearchParams({ ...(await skillLink()), r: "", o: "Rust, <Helm>!" });
+    fields.append("k", "Terraform");
+    fields.append("k", "Cobol");
+    const res = await worker.fetch(new Request(`${BASE}/f`, { method: "POST", body: fields }), env);
+    expect(await res.text()).toContain("Added to your skills: Terraform, Rust, Helm.");
+    const [event] = [...env.FEEDBACK.store.values()].map((v) => JSON.parse(v));
+    expect(event).toMatchObject({ j: "nijobs:123", a: "add_skill", skills: ["Terraform", "Rust", "Helm"] });
+  });
+
+  it("asks again when no skill was chosen", async () => {
+    const env = testEnv();
+    const res = await worker.fetch(formRequest({ ...(await skillLink()), r: "", o: " , " }), env);
+    expect(res.status).toBe(400);
+    expect(env.FEEDBACK.store.size).toBe(0);
   });
 
   it("requires the API token for /events and /ack", async () => {

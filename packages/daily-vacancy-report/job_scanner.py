@@ -51,7 +51,8 @@ from hermes_common import (BROWSER_HEADERS, EMAIL_HEAD, STATE_DIR, WebClient, co
 from indeed_mcp import IndeedMCP
 from job_extras import (below_min_salary, closing_date, combined_level, days_left, group_agency_posts,
                         parse_salary, rating_failed, repost_key, second_opinion, triage_titles)
-from job_tracker import ACTIONS, FOLLOWUP_ACTIONS, Tracker, card_links, prompt_examples, sync_feedback
+from job_tracker import (ACTIONS, FOLLOWUP_ACTIONS, Tracker, card_links, prompt_examples, skill_link, skills_text,
+                         sync_feedback)
 from job_weekly import (ICON_DIR, card_action_bar, build_weekly, closing_pill, followup_section, followup_text,
                         source_banner, weekly_when)
 
@@ -195,6 +196,21 @@ def load_keywords() -> tuple[dict[str, re.Pattern], dict[str, re.Pattern]]:
     data = json.loads(CFG.keywords_file.read_text(encoding="utf-8"))
     cv = {k: re.compile(v, re.I) for k, v in data["cv_keywords"].items()}
     other = {k: re.compile(v, re.I) for k, v in data.get("other_tech", {}).items()}
+    return cv, other
+
+
+def with_added_skills(cv: dict[str, re.Pattern], other: dict[str, re.Pattern],
+                      added: list[str]) -> tuple[dict[str, re.Pattern], dict[str, re.Pattern]]:
+    """Treat skills added from the email's missing-skill tags as CV keywords."""
+    cv, other = dict(cv), dict(other)
+    known = {k.lower() for k in cv}
+    for skill in added:
+        if skill.lower() in known:
+            continue
+        found = next((k for k in other if k.lower() == skill.lower()), None)
+        cv[found or skill] = other.pop(found) if found else \
+            re.compile(rf"(?<![\w+#]){re.escape(skill)}(?![\w+#])", re.I)
+        known.add(skill.lower())
     return cv, other
 
 
@@ -743,6 +759,21 @@ def about_block(job: dict) -> str:
             f'margin-bottom:4px">About the company</div>{body}</div>')
 
 
+def gap_tags(gaps: list[str], link: str) -> str:
+    """Missing skills as amber tags; with the feedback Worker each one opens the add-to-my-skills page."""
+    if not gaps:
+        return ""
+    style = ("display:inline-block;background:#fffbeb;color:#92400e;border:1px solid #fcd34d;border-radius:999px;"
+             "padding:3px 10px;font-size:12px;font-weight:600;margin:0 6px 6px 0;text-decoration:none")
+    tags = "".join(
+        f'<a href="{esc(link)}&amp;{urlencode({"p": g})}" style="{style}">+ {esc(g)}</a>' if link
+        else f'<span style="{style}">{esc(g)}</span>' for g in gaps)
+    hint = " &middot; tap one you already have to add it to your skills" if link else ""
+    return (f'<div style="font-size:11px;color:#92400e;text-transform:uppercase;letter-spacing:.06em;'
+            f'margin:12px 0 6px">Missing from your CV<span style="text-transform:none;letter-spacing:0;'
+            f'color:{C_MUTED}">{hint}</span></div><div>{tags}</div>')
+
+
 def job_card(job: dict, rank: int) -> str:
     colour = fit_colour(job["fit"])
     shown = job.get("employer") or job["company"]
@@ -758,12 +789,7 @@ def job_card(job: dict, rank: int) -> str:
         f'<span style="font-size:12px;color:{C_MUTED}">None detected</span>'
     more_skills = (f'<div style="font-size:12px;color:{C_MUTED};margin-top:2px">Also on your CV: '
                    f'{esc(", ".join(job["matched"][3:]))}</div>') if len(job["matched"]) > 3 else ""
-    gaps_block = ""
-    if job["gaps"]:
-        rest = (f'<span style="color:{C_MUTED}"> &middot; also {esc(", ".join(job["gaps"][1:]))}</span>'
-                if len(job["gaps"]) > 1 else "")
-        gaps_block = (f'<div style="font-size:13px;color:#92400e;margin-top:10px"><b>Biggest gap:</b> '
-                      f'{esc(job["gaps"][0])}{rest}</div>')
+    gaps_block = gap_tags(job["gaps"], job.get("skill_link", ""))
     note = ('<div style="font-size:11px;color:#b45309;margin-top:6px">Rated from the search snippet only '
             '(page could not be scraped), so confidence is capped.</div>') if job["snippet_only"] else ""
     if job.get("also_advertised_by"):
@@ -943,6 +969,8 @@ def build_text(jobs: list[dict], summary: str, followups: str = "") -> str:
                      + "".join(f"\n   {label}: {j[k]}" for label, k in (("Employer", "employer"), ("About", "about"),
                                                                         ("Company site", "company_site"))
                                if j.get(k))
+                     + (f"\n   Missing from your CV: {', '.join(j['gaps'])}" if j.get("gaps") else "")
+                     + (f"\n   {ACTIONS['add_skill']}: {j['skill_link']}" if j.get("skill_link") else "")
                      + "".join(f"\n   {ACTIONS[a]}: {url}" for a, url in (j.get("actions") or {}).items()))
     if followups:
         parts.append(followups)
@@ -1004,6 +1032,9 @@ def main() -> int:
     parser.add_argument("--no-search", action="store_true", help="board listings only (nijobs.com), skip web searches")
     parser.add_argument("--no-indeed", action="store_true", help="skip the Indeed MCP source")
     parser.add_argument("--weekly", action="store_true", help="send the weekly roll-up from job_tracker.db and exit")
+    parser.add_argument("--skills", action="store_true",
+                        help="list the skills added from the email's missing-skill tags and exit")
+    parser.add_argument("--remove-skill", metavar="SKILL", help="remove a skill added from the email and exit")
     args = parser.parse_args()
 
     load_env_file()
@@ -1021,12 +1052,19 @@ def main() -> int:
         return 0
 
     tracker = Tracker(TRACKER_FILE)
+    if args.remove_skill:
+        removed = tracker.remove_skill(args.remove_skill)
+        print(f"Removed {args.remove_skill}." if removed else f"{args.remove_skill} is not in your added skills.")
+        return 0 if removed else 1
     fb_url, fb_secret = env("JOB_FEEDBACK_URL", ""), env("JOB_FEEDBACK_SECRET", "")
     synced, fb_error = sync_feedback(tracker, fb_url, env("JOB_FEEDBACK_API_TOKEN", ""), ack=not args.dry_run)
     if synced:
         log(f"synced {synced} feedback answers from the feedback Worker")
     if fb_error:
         log(fb_error)
+    if args.skills:
+        print("\n".join(tracker.skills()) or "No skills added from the email yet.")
+        return 0
     if args.weekly:
         return send_weekly(tracker, tz, args.dry_run)
 
@@ -1042,6 +1080,9 @@ def main() -> int:
     except OSError as exc:
         log(f"Candidate profile missing ({exc}); copy job_profile.example.md and cv_keywords.example.json")
         return 4
+    cv_kw, other_kw = with_added_skills(cv_kw, other_kw, tracker.skills())
+    profile = "\n\n".join(x for x in (profile, skills_text(tracker)) if x)
+    cv_lower = {k.lower() for k in cv_kw}
     nijobs_kw, queries = CFG.nijobs_keywords, CFG.queries
     max_scrape = args.limit or env_int("JOB_SCANNER_MAX_SCRAPE", 25)
     min_score = env_int("JOB_SCANNER_MIN_SCORE", 5)
@@ -1188,7 +1229,7 @@ def main() -> int:
         kw_matched, kw_other = keyword_match(full_text, cv_kw, other_kw)
         llm_matched = [s for s in rating.get("matched_skills", []) if s in cv_kw]
         matched = list(dict.fromkeys(llm_matched + kw_matched))
-        gaps = list(dict.fromkeys([s for s in rating.get("missing_skills", []) if s and s not in cv_kw]
+        gaps = list(dict.fromkeys([s for s in rating.get("missing_skills", []) if s and s.lower() not in cv_lower]
                                   + kw_other))[:6]
         coverage = round(100 * len(matched) / max(1, len(matched) + len(kw_other)))
         confidence = rating["confidence"]
@@ -1263,6 +1304,7 @@ def main() -> int:
     results = top + maybe
     for r in results:
         r["actions"] = card_links(fb_url, fb_secret, r["key"], r["title"])
+        r["skill_link"] = skill_link(fb_url, fb_secret, r["key"], r["title"], r["gaps"])
 
     followups = tracker.followups(now)
     followups_html = followup_section(

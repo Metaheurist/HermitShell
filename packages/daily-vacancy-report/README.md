@@ -38,11 +38,13 @@ light and dark modes.
    company" section. Lookups are cached for 30 days in `state/companies.json`. The same job
    advertised by several agencies becomes one card that lists the other advertisers.
 6. **Email.** Sends a summary, then one card per job with the closing date (jobs closing within
-   three days come first), your three strongest matching skills, the biggest gap and a link to
+   three days come first), your three strongest matching skills, the skills your CV is missing and a link to
    apply. A banner warns when a source failed (for example an expired Indeed login). With the
    optional [feedback buttons](../../docs/feedback-worker.md), each card also has **I applied**,
-   thumbs up / thumbs down, **Interested** and **Cover letter** buttons next to **View job**, and
-   jobs you applied to come back in a follow-up section after 7 and 14 days.
+   thumbs up / thumbs down, **Interested** and **Cover letter** buttons next to **View job**,
+   jobs you applied to come back in a follow-up section after 7 and 14 days, and tapping a
+   missing-skill tag adds skills you have to your skills pool
+   ([how it works](../../docs/feedback-worker.md#adding-missing-skills)).
 8. **Cover letters.** Pressing **Cover letter** gets you a tailored A4 PDF letter by email within
    about 5 minutes, written by Hermes' model from your profile and the listing
    ([how it works](../../docs/feedback-worker.md#cover-letters)).
@@ -193,6 +195,8 @@ weekly roll-up has its own entry point, `job_weekly.py`.
 | `--no-search` | Board listings only (nijobs.com, Indeed); skip web searches |
 | `--no-indeed` | Skip the Indeed MCP source for this run |
 | `--weekly` | Send the weekly roll-up from `state/job_tracker.db` and exit (with `--dry-run`: write it to `state/job_scanner_weekly.html` only) |
+| `--skills` | List the skills you added from the email's missing-skill tags and exit |
+| `--remove-skill SKILL` | Remove a skill you added from the email and exit |
 
 ## Configuration
 
