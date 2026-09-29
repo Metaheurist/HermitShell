@@ -82,15 +82,15 @@ export function checklist(status) {
 export function problems(status) {
   const recent = (status.problems || []).slice(-5);
   return recent.length ? `<div class="warn"><b>HermitShell could not apply:</b><ul>${recent.map((p) =>
-    `<li>${esc(p.what)}: ${esc(p.error)} <span class="muted">(${esc(when(p.at))})</span></li>`).join("")}</ul></div>` : "";
+    `<li>${esc(p.what)}: ${esc(p.error)} <span class="muted">(${esc(when(p.at, status.timezone))})</span></li>`).join("")}</ul></div>` : "";
 }
 
 export function emailSection(status, csrf) {
   const e = status.email || {};
   const owner = ownerOf(status);
   const now = e.source === "dashboard" ? "set here" : e.source === "env" ? "from HermitShell's .env" : "not set";
-  const test = e.last_test ? (e.last_test.ok ? `worked, sent to ${e.last_test.to} ${when(e.last_test.at)}`
-    : `failed ${when(e.last_test.at)}: ${e.last_test.error}`) : "none yet";
+  const test = e.last_test ? (e.last_test.ok ? `worked, sent to ${e.last_test.to} ${when(e.last_test.at, status.timezone)}`
+    : `failed ${when(e.last_test.at, status.timezone)}: ${e.last_test.error}`) : "none yet";
   return `<h2 id="email">Email server</h2>
 <p class="muted">Sends every report, cover letter and tailored CV. Now: ${esc(now)}. Last test: ${esc(test)}.</p>
 <form method="post" action="/admin/action">${hidden({ csrf, action: "email" })}
@@ -194,7 +194,7 @@ ${done ? `<p style="color:#047857">${esc(done)}</p>` : ""}${waiting.length ? `<p
 <button>Save job search</button></form>
 
 <h2 id="cv">CV</h2>
-<p class="muted">${p.has_cv ? `HermitShell has a CV${p.cv_updated ? ` (updated ${esc(when(p.cv_updated))})` : ""}. A new one replaces it and rebuilds the skills and profile the jobs are rated against.` : "No CV yet: jobs can't be rated until one is uploaded."}</p>
+<p class="muted">${p.has_cv ? `HermitShell has a CV${p.cv_updated ? ` (updated ${esc(when(p.cv_updated, status.timezone))})` : ""}. A new one replaces it and rebuilds the skills and profile the jobs are rated against.` : "No CV yet: jobs can't be rated until one is uploaded."}</p>
 <form method="post" action="/admin/cv" enctype="multipart/form-data">${hidden({ csrf, u: pid })}
 <label for="cv">CV file</label><input id="cv" name="cv" type="file" accept=".pdf,.docx,.txt,.md">${hint("PDF, Word (.docx) or text, up to 5 MB.")}
 <label for="cv_text">Or paste the CV text</label><textarea id="cv_text" name="cv_text" maxlength="${MAX_CV_TEXT}"></textarea>

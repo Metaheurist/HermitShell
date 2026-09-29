@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import worker, { sign } from "../src/index.js";
-import { today } from "../src/lib.js";
+import { ago, today, when } from "../src/lib.js";
 import { BASE, testEnv, valuesWith } from "./helpers.js";
 
 // Same values as the KNOWN_* constants in packages/daily-vacancy-report/tests/test_vacancy_report.py.
@@ -23,6 +23,31 @@ async function skillLink(skills = "Kubernetes|Terraform|Go", profile = "") {
 function formRequest(fields) {
   return new Request(`${BASE}/f`, { method: "POST", body: new URLSearchParams(fields) });
 }
+
+describe("times on the pages", () => {
+  const summer = Date.UTC(2026, 8, 29, 15, 24);
+  const winter = Date.UTC(2026, 0, 15, 9, 5);
+
+  it("are shown in the owner's timezone, or UTC when it is missing or invalid", () => {
+    expect(when(summer, "Europe/London")).toBe("2026-09-29 16:24 BST");
+    expect(when(winter, "Europe/London")).toBe("2026-01-15 09:05 GMT");
+    expect(when(summer)).toBe("2026-09-29 15:24 UTC");
+    expect(when(summer, "Mars/Olympus")).toBe("2026-09-29 15:24 UTC");
+    expect(when(summer, "<script>")).toBe("2026-09-29 15:24 UTC");
+    expect(when(0, "Europe/London")).toBe("never");
+  });
+
+  it("say how long ago", () => {
+    const now = summer;
+    expect(ago(now - 20 * 1000, now)).toBe("just now");
+    expect(ago(now - 60 * 1000, now)).toBe("1 minute ago");
+    expect(ago(now - 4 * 60 * 1000, now)).toBe("4 minutes ago");
+    expect(ago(now - 3 * 3600 * 1000, now)).toBe("3 hours ago");
+    expect(ago(now - 2 * 86400 * 1000, now)).toBe("2 days ago");
+    expect(ago(now + 7 * 86400 * 1000, now)).toBe("in 7 days");
+    expect(ago(null, now)).toBe("never");
+  });
+});
 
 describe("feedback worker", () => {
   it("signs links exactly like the Python scanner", async () => {

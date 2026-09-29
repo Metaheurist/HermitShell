@@ -308,7 +308,7 @@ def test_child_env_replaces_the_owners_personal_settings(home):
     assert environ["JOB_FEEDBACK_SECRET"] == "test-secret"
 
 
-def test_status_is_only_pushed_when_it_changes(home):
+def test_status_is_only_pushed_when_it_changes(home, monkeypatch):
     api = FakeApi()
     profiles.ensure_owner()
     profiles.push_status(api)
@@ -317,6 +317,17 @@ def test_status_is_only_pushed_when_it_changes(home):
     profiles.set_status("owner", "paused")
     profiles.push_status(api)
     assert len(api.statuses) == 2 and api.statuses[-1]["profiles"][0]["status"] == "paused"
+    later = profiles.time.time() + profiles.STATUS_EVERY + 1
+    monkeypatch.setattr(profiles.time, "time", lambda: later)
+    profiles.push_status(api)
+    assert len(api.statuses) == 3 and profiles.STATUS_EVERY <= 900
+
+
+@pytest.mark.parametrize("zone, shown", [("Europe/London", "Europe/London"), ("", "UTC"), ("Mars/Olympus", "UTC"),
+                                         ("../../etc/passwd", "UTC")])
+def test_status_reports_the_timezone_for_the_dashboard(home, monkeypatch, zone, shown):
+    monkeypatch.setenv("HERMES_TIMEZONE", zone)
+    assert profiles.status_payload()["timezone"] == shown
 
 
 def test_worker_outage_leaves_the_queue_alone(home):

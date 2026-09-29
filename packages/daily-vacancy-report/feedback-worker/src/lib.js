@@ -80,9 +80,40 @@ export function newId() {
   return crypto.randomUUID().replaceAll("-", "");
 }
 
-export function when(ms) {
+function validMs(ms) {
   const n = Number(ms);
-  return Number.isFinite(n) && n > 0 && n < 8.64e15 ? new Date(n).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never";
+  return Number.isFinite(n) && n > 0 && n < 8.64e15 ? n : null;
+}
+
+function zoned(n, timeZone) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+    timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    timeZoneName: "short",
+  }).formatToParts(n).map((p) => [p.type, p.value]));
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} ${parts.timeZoneName}`;
+}
+
+// A time in the owner's timezone (HERMES_TIMEZONE, as HermitShell reports it), or UTC if that isn't valid.
+export function when(ms, timeZone = "UTC") {
+  const n = validMs(ms);
+  if (n === null) return "never";
+  try {
+    return zoned(n, timeZone || "UTC");
+  } catch {
+    return zoned(n, "UTC");
+  }
+}
+
+export function ago(ms, now = Date.now()) {
+  const n = validMs(ms);
+  if (n === null) return "never";
+  const seconds = Math.round((now - n) / 1000);
+  const size = Math.abs(seconds);
+  if (size < 60) return "just now";
+  const [value, unit] = size < 3600 ? [Math.round(size / 60), "minute"] : size < 86400 ? [Math.round(size / 3600), "hour"]
+    : [Math.round(size / 86400), "day"];
+  const span = `${value} ${unit}${value === 1 ? "" : "s"}`;
+  return seconds < 0 ? `in ${span}` : `${span} ago`;
 }
 
 const STYLE = `

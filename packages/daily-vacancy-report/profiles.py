@@ -64,7 +64,7 @@ EMAIL_RE = re.compile(r"[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+")
 HOST_RE = re.compile(r"^[A-Za-z0-9.-]{3,120}$")
 QUEUE_ATTEMPTS = 5
 FULL_LIST_EVERY = 3600
-STATUS_EVERY = 3600
+STATUS_EVERY = 900
 RUN_TIMEOUT = 4 * 3600
 MAX_CV_CHARS = 12_000
 MIN_CV_CHARS = 200
@@ -910,7 +910,17 @@ def status_payload() -> dict:
     keys = {name: _key_info(API_KEYS[name]) for name in ("firecrawl", "tavily", "scrapfly")}
     keys["firecrawl"]["backups"] = len([k for k in (env("FIRECRAWL_BACKUP_KEYS") or "").split(",") if k.strip()])
     problems = [{"at": _ms(p["at"]), "what": p.get("what", ""), "error": p.get("error", "")} for p in recent_problems()]
-    return {"profiles": profiles, "email": email, "keys": keys, "problems": problems}
+    return {"profiles": profiles, "email": email, "keys": keys, "problems": problems, "timezone": timezone_name()}
+
+
+def timezone_name() -> str:
+    """HERMES_TIMEZONE if it is a real IANA zone, else UTC; the dashboard shows its times in it."""
+    name = (env("HERMES_TIMEZONE") or "").strip()
+    try:
+        ZoneInfo(name)
+    except (ValueError, KeyError, OSError):
+        return "UTC"
+    return name or "UTC"
 
 
 def push_status(api: Api, force: bool = False) -> None:

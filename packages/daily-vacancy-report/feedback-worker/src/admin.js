@@ -9,7 +9,7 @@
 
 import { SECRET_TTL_SECONDS, createInvite, queueItem } from "./join.js";
 import {
-  SECURITY_HEADERS, accessUser, authorised, deleteAndUnflag, esc, hmacHex, json, limitedForm, limitedJson, listFlagged,
+  SECURITY_HEADERS, accessUser, ago, authorised, deleteAndUnflag, esc, hmacHex, json, limitedForm, limitedJson, listFlagged,
   purgeProfileEvents,
   page, redirect, safeEqual, secretEqual, text, when,
 } from "./lib.js";
@@ -118,7 +118,18 @@ async function pending(env) {
     ? `Unsubscribe ${i.u || "owner"}` : `${String(i.action || i.type).replaceAll("_", " ")}${i.u ? ` for ${i.u}` : ""}`);
 }
 
-function profileRow(p, csrf) {
+// HermitShell reports at least every 15 minutes, so a much older report means its profiles job has stopped.
+const STALE_MS = 45 * 60 * 1000;
+
+function lastUpdate(current, queued) {
+  const waiting = queued.length ? ` Waiting for HermitShell: ${esc(queued.join("; "))}.` : "";
+  if (!current.updated) return `<p class="muted">HermitShell hasn't reported yet.${waiting}</p>`;
+  const stale = Date.now() - current.updated > STALE_MS
+    ? `<div class="warn">HermitShell last reported ${esc(ago(current.updated))}. Check that its <b>vacancy-profiles</b> job is running (<code>hermes cron list</code>).</div>` : "";
+  return `${stale}<p class="muted">Last update from HermitShell: ${esc(ago(current.updated))} (${esc(when(current.updated, current.timezone))}).${waiting}</p>`;
+}
+
+function profileRow(p, csrf, tz) {
   const status = `<span class="pill${p.owner ? " owner" : p.status === "paused" ? " paused" : ""}">${p.owner ? "owner, " : ""}${esc(p.status)}</span>`;
   const crawler = p.crawler === "own" ? `own key ${esc(p.key_hint || "")}` : "global key";
   const toggle = p.status === "paused" ? button(csrf, "resume", "Resume", { u: p.id }) : button(csrf, "pause", "Pause", { u: p.id });
@@ -127,9 +138,9 @@ function profileRow(p, csrf) {
 <label class="check" style="margin:0"><input type="checkbox" name="confirm" value="yes"> <span class="muted">delete CV and history</span></label>
 <button class="small danger">Delete</button></form>`;
   const cv = p.has_cv === false ? ' <span class="pill paused">no CV</span>' : "";
-  return `<tr><td><b>${esc(p.name)}</b>${cv}<div class="muted">${esc(p.email || "")}</div><div class="muted">since ${esc(when(p.created))}</div>
+  return `<tr><td><b>${esc(p.name)}</b>${cv}<div class="muted">${esc(p.email || "")}</div><div class="muted">since ${esc(when(p.created, tz))}</div>
 <a class="small" href="/admin/profile?u=${esc(p.id)}">Settings, job search and CV</a></td>
-<td>${status}<div class="muted">last report ${esc(when(p.last_run))}</div></td>
+<td>${status}<div class="muted">last report ${esc(p.last_run ? `${ago(p.last_run)} (${when(p.last_run, tz)})` : "never")}</div></td>
 <td><div class="muted">${crawler}</div>
 <form method="post" action="/admin/action" class="inline" style="margin-top:6px">
 <input type="hidden" name="csrf" value="${esc(csrf)}"><input type="hidden" name="action" value="set_key"><input type="hidden" name="u" value="${esc(p.id)}">
@@ -143,14 +154,14 @@ async function dashboard(request, env, s) {
   const [current, invites, queued] = await Promise.all([
     status(env), env.FEEDBACK.list({ prefix: "invite:", limit: 100 }), pending(env)]);
   const inviteRows = (await Promise.all(invites.keys.map((k) => env.FEEDBACK.get(k.name, "json")))).filter(Boolean)
-    .map((i) => `<tr><td>${esc(i.note || "No note")}</td><td class="muted">expires ${esc(when(i.expires))}</td>
+    .map((i) => `<tr><td>${esc(i.note || "No note")}</td><td class="muted">expires ${esc(when(i.expires, current.timezone))}</td>
 <td>${button(s.csrf, "revoke", "Revoke", { invite: i.id })}</td></tr>`).join("");
   const done = DONE[url.searchParams.get("done")];
   return page("Profiles", `${nav("profiles")}${done ? `<p style="color:#047857">${esc(done)}</p>` : ""}
-<p class="muted">Last update from HermitShell: ${esc(when(current.updated))}.${queued.length ? ` Waiting for HermitShell: ${esc(queued.join("; "))}.` : ""}</p>
+${lastUpdate(current, queued)}
 ${problems(current)}${checklist(current)}
 <table class="list"><tr><th>Profile</th><th>Status</th><th>Crawler</th><th></th></tr>
-${(current.profiles || []).map((p) => profileRow(p, s.csrf)).join("") || '<tr><td colspan="4" class="muted">HermitShell has not reported any profiles yet.</td></tr>'}</table>
+${(current.profiles || []).map((p) => profileRow(p, s.csrf, current.timezone)).join("") || '<tr><td colspan="4" class="muted">HermitShell has not reported any profiles yet.</td></tr>'}</table>
 <p class="muted">The email server and web search keys everyone shares are under <a href="${SETTINGS_URL}">Global settings</a>.</p>
 <h2>Invite someone</h2>
 <form method="post" action="/admin/action" class="inline"><input type="hidden" name="csrf" value="${esc(s.csrf)}"><input type="hidden" name="action" value="invite">
@@ -170,9 +181,9 @@ async function action(request, env, s) {
     return page("Unknown profile", "<p>Reload the admin page and try again.</p>", { status: 400 });
   }
   if (act === "invite") {
-    const invite = await createInvite(env, form.get("note") || "");
+    const [invite, current] = await Promise.all([createInvite(env, form.get("note") || ""), status(env)]);
     const link = `${new URL(request.url).origin}/join?i=${invite.id}`;
-    return page("Invite link", `<p>Send this link to ${esc(invite.note || "the person")}. It works once and expires on ${esc(when(invite.expires))}.</p>
+    return page("Invite link", `<p>Send this link to ${esc(invite.note || "the person")}. It works once and expires on ${esc(when(invite.expires, current.timezone))}.</p>
 <code class="link">${esc(link)}</code><p><a href="/admin">Back to profiles</a></p>`);
   }
   if (act === "revoke") {

@@ -89,6 +89,21 @@ describe("setup checklist", () => {
     expect(body).not.toContain("Finish setting up");
   });
 
+  it("shows the last update as time ago in the owner's timezone", async () => {
+    const { get } = await setup({ ...STATUS, timezone: "Europe/London" });
+    const { body } = await get("/admin");
+    expect(body).toMatch(/Last update from HermitShell: just now \(\d{4}-\d\d-\d\d \d\d:\d\d (BST|GMT)\)/);
+    expect(body).not.toContain("HermitShell last reported");
+  });
+
+  it("warns when HermitShell has stopped reporting", async () => {
+    const { env, get } = await setup();
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ ...STATUS, updated: Date.now() - 3 * 3600 * 1000 }));
+    const { body } = await get("/admin");
+    expect(body).toContain("HermitShell last reported 3 hours ago");
+    expect(body).toContain("vacancy-profiles");
+  });
+
   it("asks for HermitShell to connect before anything else", async () => {
     const { get } = await setup(null);
     const { body } = await get("/admin");
