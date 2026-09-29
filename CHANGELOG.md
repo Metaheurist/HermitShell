@@ -8,6 +8,16 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Email a job to its profile from the jobs sent list.** An opened card on `/admin/sent` has a third
+  tile, **Email to Sam** (**Email to you** on your own list): **Send** asks HermitShell to email that
+  job to the profile within 5 minutes, as the card it had in the daily report with its buttons signed
+  for that profile, without using the model (new `job_mail.py`, carried out by `cover_letter.py`). A
+  loading circle shows while it goes, then **Emailed to Sam** with when, and **Send again**. The
+  request is a `send_job` event, asked for only from the signed-in dashboard (CSRF-checked), never
+  from an email link, and shows in Tasks as **Job email**. HermitShell then calls the new
+  `POST /api/emailed` (API token), and the Worker keeps only when each job was emailed, under a hash
+  of its key (`emailed:<profile>`, the last 300 jobs, 90 days); removing a profile deletes it.
+  [PRIVACY.md](PRIVACY.md) says so.
 - **Full job cards, and letters and CVs to download, on the jobs sent list.** Pressing a job on
   `/admin/sent` opens everything its email card showed: tags, salary, the fit, confidence and CV
   keyword meters, why it was rated a fit, the company and role, the skills matched and missing, and

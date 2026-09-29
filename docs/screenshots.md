@@ -7,6 +7,7 @@ Health, Fabrikam...) and `example.com` addresses.
 - [Daily report](#daily-report)
 - [Weekly roll-up](#weekly-roll-up)
 - [Cover letters and tailored CVs](#cover-letters-and-tailored-cvs)
+- [A job emailed from the dashboard](#a-job-emailed-from-the-dashboard)
 - [Profile emails](#profile-emails)
 - [Test emails](#test-emails)
 - [Button pages](#button-pages)
@@ -119,6 +120,15 @@ The email repeats the job details (employer, agency, location, type, salary, clo
 your note from the confirmation page, and a preview: the letter's paragraphs, or the CV's
 headline, profile and skills. The letter uses your name and `COVER_LETTER_CONTACT`; the CV only
 reorders and rephrases what is already on your CV, keeping titles, employers and dates.
+
+## A job emailed from the dashboard
+
+**Send** on an opened job in the [jobs sent list](#the-jobs-sent-to-a-profile) emails that job to the profile as
+the card it had in the daily report, with its buttons working for that profile
+([how it works](feedback-worker.md#jobs-sent)). The header gives the fit and how long is left to
+apply, and says when the advert has already closed.
+
+<img src="images/emails/job-email.png" alt="A job emailed from the dashboard: the report card with its fit, closing date and buttons" width="400">
 
 ## Profile emails
 
@@ -447,9 +457,10 @@ dashboard's **24 sent** button opens it for this week.
 
 Notes typed on the buttons' confirmation pages are never shown.
 
-An opened job shows what its email card did, and its cover letter and tailored CV:
+An opened job shows what its email card did, its cover letter and tailored CV, and a button to email
+it to the profile:
 
-<img src="images/worker/admin-sent-open.png" alt="A job opened to its full details, with Download and Regenerate for its cover letter and its tailored CV being made" width="620">
+<img src="images/worker/admin-sent-open.png" alt="A job opened to its full details, with Download and Regenerate for its cover letter, its tailored CV being made and Send to email the job to the profile" width="620">
 
 | Part | What it shows |
 | --- | --- |
@@ -460,6 +471,7 @@ An opened job shows what its email card did, and its cover letter and tailored C
 | **About the company** | The employer, what it does, its website, what the role is, and the agency when one posted it |
 | **Strongest matches** / **Missing from the CV** | The skills found, and the ones the advert wants that your CV doesn't show |
 | **Cover letter** / **Tailored CV** | **Generate** has one made (not emailed), shown with a loading circle until it is ready. **Download** gets the one made in the last `COVER_LETTER_KEEP_DAYS` days (7 by default), from here or an email button; **Regenerate** replaces it |
+| **Email to Sam** (**Email to you**) | **Send** has HermitShell email the job to the profile as its report card, with a loading circle while it goes; then **Emailed to Sam** with when, and **Send again** |
 | **View the advert** | Opens the advert in a new tab, when the report had a link |
 
 <img src="images/worker/admin-sent-applied.png" alt="The jobs sent in 30 days that were applied for" width="460">

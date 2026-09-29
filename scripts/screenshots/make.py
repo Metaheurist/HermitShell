@@ -23,6 +23,7 @@ import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 REPO = Path(__file__).resolve().parents[2]
 PACKAGE = REPO / "packages" / "daily-vacancy-report"
@@ -195,6 +196,7 @@ def email_page(inner_rows: str) -> str:
 
 def render_emails(out: Path) -> dict[str, str]:
     import cover_letter
+    import job_mail
     import job_scanner as js
     import job_weekly
     import profiles
@@ -249,6 +251,8 @@ def render_emails(out: Path) -> dict[str, str]:
     preview = [CV["headline"], CV["summary"], "Skills: " + ", ".join(CV["skills"])]
     pages["tailored-cv"] = cover_letter.email_bodies(letter_job, preview, "CV - Alex Morgan - Data Engineer.pdf", "",
                                                      kind="tailored_cv")[1]
+    pages["job-email"] = job_mail.job_email(letter_job["key"], letter_job,
+                                            datetime(2026, 9, 29, 14, 5, tzinfo=ZoneInfo("Europe/London")))[1]
 
     sent: list[str] = []
     profiles.send = lambda to, subject, html_body, text: sent.append(html_body)

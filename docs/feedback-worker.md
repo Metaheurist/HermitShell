@@ -48,7 +48,8 @@ email button ──> Worker /f (confirm page) ──> KV ──> HermitShell GET
   CVs kept for download (`POST /api/doc`) must be a PDF of at most 2 MB.
 - **Short-lived data.** Answers are deleted once HermitShell has saved them, and expire after 30 days
   in any case. Only the job key, action, optional note and time are stored. Letters and CVs kept for
-  download are encrypted and deleted after `COVER_LETTER_KEEP_DAYS` (7 by default).
+  download are encrypted and deleted after `COVER_LETTER_KEEP_DAYS` (7 by default). Jobs emailed
+  from the dashboard (`POST /api/emailed`) are kept as a hash of the job key and a time, for 90 days.
 - **No scripts or outside content.** Every page's Content-Security-Policy blocks JavaScript and
   anything loaded from elsewhere. The only file a page loads is the tab icon, `/favicon.svg`, from
   the Worker itself (a plain SVG with no scripts or links).
@@ -575,8 +576,8 @@ pressed. Filters above the list show **All**, **No answer yet** or one answer (*
 Click a job to open its full card, like the one in the email: the advertiser if an agency posted
 it, contract type, seniority, when it was posted and closes, the score's confidence and CV keyword
 match, why it was rated a fit, what the role and company are, the skills matched and missing, and
-links to the advert and the employer's site. Below that, for both a **Cover letter** and a
-**Tailored CV**:
+links to the advert and the employer's site. Below that are three tiles. For both a **Cover letter**
+and a **Tailored CV**:
 
 - **Generate** asks HermitShell for one. It is made within 5 minutes (a loading circle shows
   meanwhile, and the page refreshes itself every 15 seconds until it is ready) and is **not**
@@ -585,7 +586,16 @@ links to the advert and the employer's site. Below that, for both a **Cover lett
   days (7 by default), from here or from an email button.
 - **Regenerate** writes a new one, replacing the one kept.
 
-<img src="images/worker/admin-sent-open.png" alt="A job on the jobs sent list opened to its full details, with Download and Regenerate for the cover letter and Generate for the CV" width="620">
+The third tile, **Email to Sam** (**Email to you** on your own list), sends the job itself to that
+profile's address: **Send** asks HermitShell, which emails it within 5 minutes as the card it had in
+the daily report, with its buttons (applied, cover letter, tailored CV and the rest) signed for that
+profile. No model is used. A loading circle shows while it goes, then **Emailed to Sam** with when,
+and **Send again**. The Worker keeps only when each job was emailed, under a hash of its key
+(`emailed:<profile>`, the last 300 jobs, 90 days), and forgets it with the profile. This can only be
+asked for from the signed-in dashboard, never from an email link
+([the email](images/emails/job-email.png)).
+
+<img src="images/worker/admin-sent-open.png" alt="A job on the jobs sent list opened to its full details, with Download and Regenerate for the cover letter, Generate for the CV and Send to email the job to the profile" width="620">
 
 Only `http` and `https` advert and company links are kept, both on your server and again on the
 Worker, and they open with `rel="noopener noreferrer"`.

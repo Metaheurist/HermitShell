@@ -66,8 +66,8 @@ light and dark modes.
    report at once. Each row's little chart opens that person's jobs, answers and applications as
    charts over 7 days to 12 months ([screenshot](../../docs/images/worker/admin-stats.png)), and its
    **sent** count lists the jobs they were sent ([screenshot](../../docs/images/worker/admin-sent.png)); each opens to its
-   full card with a cover letter and tailored CV to generate or download
-   ([screenshot](../../docs/images/worker/admin-sent-open.png)). Every report has an
+   full card with a cover letter and tailored CV to generate or download, and a button that emails
+   the job to them again ([screenshot](../../docs/images/worker/admin-sent-open.png)). Every report has an
    **Unsubscribe** link that deletes their profile (or pauses yours)
    ([how it works](../../docs/feedback-worker.md#extra-profiles-and-the-admin-page)).
 
