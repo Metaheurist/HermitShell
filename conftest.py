@@ -7,8 +7,9 @@ from pathlib import Path
 _HOME = Path(tempfile.mkdtemp(prefix="hermes-tests-"))
 os.environ.update({"HERMES_HOME": str(_HOME), "HERMES_STATE_DIR": str(_HOME / "state"),
                    "HERMES_DASHBOARD_FILE": str(_HOME / "state" / "dashboard.json"),
-                   "HERMES_MODEL_QUEUE_DIR": str(_HOME / "model-queue")})
+                   "HERMES_MODEL_QUEUE_DIR": str(_HOME / "model-queue"), "HERMES_AUTOFIT": "off"})
 for _key in [k for k in os.environ if k.startswith(("JOB_", "SMTP_", "FIRECRAWL_", "TAVILY_", "SCRAPFLY_", "ALERT_",
-                                                    "COVER_LETTER_", "CLOUDFLARE_"))]:
+                                                    "COVER_LETTER_", "CLOUDFLARE_", "OLLAMA_HOSTS",
+                                                    "HERMES_MODEL_CONCURRENCY", "HERMES_AUTOFIT_"))]:
     del os.environ[_key]
 os.environ.pop("HERMES_DASHBOARD_APPLIED", None)

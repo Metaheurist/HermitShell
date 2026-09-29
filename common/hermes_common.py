@@ -803,15 +803,16 @@ def _ticket_gone(path: Path, fcntl) -> bool:
 
 
 @contextlib.contextmanager
-def model_turn(priority: int | None = None):
-    """Wait for this request's turn at the model: at most HERMES_MODEL_CONCURRENCY (default 1) requests run at
-    once across all processes, in priority then arrival order. A no-op where flock is missing (Windows)."""
+def model_turn(priority: int | None = None, slots: int | None = None):
+    """Wait for this request's turn at the model: at most `slots` (else HERMES_MODEL_CONCURRENCY, default 1)
+    requests run at once across all processes, in priority then arrival order. Yields the slot number, which
+    picks the Ollama instance. A no-op where flock is missing (Windows)."""
     try:
         import fcntl
     except ImportError:
-        yield
+        yield 0
         return
-    slots = max(1, env_int("HERMES_MODEL_CONCURRENCY", 1))
+    slots = max(1, slots or env_int("HERMES_MODEL_CONCURRENCY", 1))
     MODEL_QUEUE_DIR.mkdir(parents=True, exist_ok=True)
     tmp = MODEL_QUEUE_DIR / f".new-{os.getpid()}-{secrets.token_hex(4)}"
     fd = os.open(tmp, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
@@ -835,20 +836,20 @@ def model_turn(priority: int | None = None):
             time.sleep(0.5)
         if (waited := time.monotonic() - started) >= 5:
             log(f"Waited {waited:.0f}s for the model (shared queue)")
-        yield
+        yield slot[1] if slot else 0
     finally:
         if slot is not None:
-            os.close(slot)
+            os.close(slot[0])
         ticket.unlink(missing_ok=True)
         os.close(fd)
 
 
-def _free_model_slot(fcntl, slots: int) -> int | None:
+def _free_model_slot(fcntl, slots: int) -> tuple[int, int] | None:
     for i in range(slots):
         fd = os.open(MODEL_QUEUE_DIR / f"slot-{i}", os.O_RDWR | os.O_CREAT, 0o600)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            return fd
+            return fd, i
         except OSError:
             os.close(fd)
     return None
@@ -856,17 +857,31 @@ def _free_model_slot(fcntl, slots: int) -> int | None:
 
 def ollama_chat(host: str, model: str, system: str, user: str, num_ctx: int | None,
                 fmt: dict | None = None, num_predict: int = 500) -> str:
-    options = {"temperature": 0, "num_predict": num_predict}
-    if num_ctx:
-        options["num_ctx"] = num_ctx
-    body = {"model": model, "stream": False, "keep_alive": "30m", "options": options,
+    """One chat request, on the instance, context size and GPU/CPU split autofit picks (see autofit.py)."""
+    import autofit
+    body = {"model": model, "stream": False, "keep_alive": "30m",
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     if fmt:
         body["format"] = fmt
-    with model_turn():
-        resp = requests.post(f"{host}/api/chat", json=body, timeout=600)
-    resp.raise_for_status()
-    content = resp.json()["message"]["content"]
+    chars = len(system) + len(user)
+    with model_turn(slots=autofit.slots(host)) as slot:
+        target, extra = autofit.choose(host, model, num_ctx, chars, num_predict, slot)
+        body["options"] = {"temperature": 0, "num_predict": num_predict, **extra}
+        try:
+            resp = requests.post(f"{target}/api/chat", json=body, timeout=600)
+            resp.raise_for_status()
+        except requests.RequestException as exc:
+            autofit.failed(target, model, extra, exc)
+            if target == host.rstrip("/") or isinstance(exc, requests.Timeout):
+                raise
+            log(f"{target} failed ({exc.__class__.__name__}); trying {host}")
+            target, extra = autofit.choose(host, model, num_ctx, chars, num_predict, 0)
+            body["options"] = {"temperature": 0, "num_predict": num_predict, **extra}
+            resp = requests.post(f"{target}/api/chat", json=body, timeout=600)
+            resp.raise_for_status()
+        reply = resp.json()
+        autofit.record(target, model, extra, reply)
+    content = reply["message"]["content"]
     if fmt:
         try:
             return json.dumps(_undash(json.loads(content)), ensure_ascii=False)

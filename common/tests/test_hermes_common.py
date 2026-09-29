@@ -235,9 +235,9 @@ def test_ollama_chat_waits_for_its_turn_in_the_shared_queue(monkeypatch):
     events = []
 
     @contextlib.contextmanager
-    def turn():
+    def turn(**_):
         events.append("queued")
-        yield
+        yield 0
         events.append("done")
 
     def fake_post(url, json, timeout):
