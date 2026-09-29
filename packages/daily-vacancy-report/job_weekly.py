@@ -118,7 +118,7 @@ def card_action_bar(job_url: str, links: dict[str, str]) -> str:
     because Gmail strips SVG."""
     main = [f'<a href="{esc(job_url)}" style="display:inline-block;background:{C_ACCENT};color:#ffffff;'
             f'border:1px solid {C_ACCENT};border-radius:10px;padding:9px 22px;font-size:14px;line-height:20px;'
-            f'font-weight:700;text-decoration:none;margin:0 6px 8px 0;vertical-align:middle">View job &rarr;</a>']
+            f'font-weight:700;text-decoration:none;margin:0 6px 8px 0;vertical-align:middle">View job</a>']
     main += [_pill(a, links[a]) for a in ("applied", "interested") if links.get(a)]
     docs = [a for a in ("cover_letter", "tailored_cv") if links.get(a)]
     panel = ""

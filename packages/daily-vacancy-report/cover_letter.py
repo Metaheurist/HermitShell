@@ -223,7 +223,7 @@ def email_bodies(job: dict, paragraphs: list[str], filename: str, note: str,
                   if note else "")
     view = (f'<a href="{esc(job["url"])}" style="display:inline-block;background:{C_ACCENT};color:#ffffff;'
             f'border-radius:10px;padding:10px 18px;font-size:14px;font-weight:600;text-decoration:none">'
-            f'View job &rarr;</a>') if job.get("url") else ""
+            f'View job</a>') if job.get("url") else ""
     body = f"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{EMAIL_HEAD}<title>{esc(subject)}</title></head>
 <body class="body" style="margin:0;padding:0;background:{C_BG};font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">

@@ -121,8 +121,9 @@ def test_candidate_name_prefers_the_setting(monkeypatch):
 def test_email_lists_the_job_and_attachment():
     subject, body, text = cover_letter.email_bodies(JOB, PARAGRAPHS, "Cover letter - Sam - AI Engineer.pdf", "short")
     assert subject == "Cover letter: AI Engineer at Acme"
-    for part in ("Cover letter - Sam - AI Engineer.pdf", "Belfast", "8/10", "Your note: short", "View job"):
+    for part in ("Cover letter - Sam - AI Engineer.pdf", "Belfast", "8/10", "Your note: short", "View job</a>"):
         assert part in body
+    assert "&rarr;" not in body and "\u2192" not in body
     assert "https://example.com/job/1" in text and PARAGRAPHS[-1] in text
     assert "HermitShell fit" in body and "Hermes" not in body + text
 
