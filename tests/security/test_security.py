@@ -55,6 +55,26 @@ def test_the_dashboard_cannot_set_process_or_path_settings(key):
     assert not hc.dashboard_key_allowed(key)
 
 
+def test_a_dashboard_profile_change_can_only_set_its_own_fields(tmp_path, monkeypatch):
+    monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
+    written = {}
+    monkeypatch.setattr(profiles, "update_dashboard_env", written.update)
+    monkeypatch.setattr(profiles, "save", lambda profile: None)
+    monkeypatch.setattr(profiles, "profile_getter", lambda profile: lambda key, default=None: default)
+    monkeypatch.setattr(profiles, "owner_name", lambda: "Alex Morgan")
+    monkeypatch.setenv("ALERT_EMAIL", "alex@example.com")
+    profile = {"id": "owner", "owner": True}
+    profiles.apply_profile_settings(profile, {
+        "details": {"location": HOSTILE, "status": "paused", "owner": False, "id": "../x"},
+        "job": {"PATH": "/tmp", "JOB_SCANNER_QUERIES": "evil", "level": "wizard", "country": HOSTILE,
+                "titles": [HOSTILE] * 20}})
+    assert profile["id"] == "owner" and profile["owner"] is True and "status" not in profile
+    assert "PATH" not in written and not {k for k in written if k not in profiles.PROFILE_KEYS | {"COVER_LETTER_CONTACT"}}
+    assert written["JOB_LEVEL"] == "any" and written["JOB_SEARCH_COUNTRY"] == ""
+    assert "evil" not in written["JOB_SCANNER_QUERIES"]
+    assert len(written["JOB_TARGET_TITLES"].split("||")) == 1
+
+
 def test_email_text_is_escaped():
     header = hc.email_header(HOSTILE, HOSTILE, HOSTILE, HOSTILE, [(HOSTILE, HOSTILE)])
     assert "<script>" not in header and "<img" not in header and "&lt;script&gt;" in header

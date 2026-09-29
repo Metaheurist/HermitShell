@@ -11,7 +11,8 @@ Dashboard changes (email server, API keys, job search settings, new CVs, pause, 
 same way; passwords and keys stay in the Worker only until this script collects them. The Worker never
 reaches this server: this script polls it.
 
-    python3 profiles.py                        # sync with the Worker (cron, every 5 minutes)
+    python3 profiles.py                        # sync, then watch for changes until the next run (cron, every 5 min)
+    python3 profiles.py --once                 # sync once and exit
     python3 profiles.py --list
     python3 profiles.py --invite "Sam from the meetup"
     python3 profiles.py --pause ID | --resume ID | --delete ID
@@ -65,6 +66,9 @@ HOST_RE = re.compile(r"^[A-Za-z0-9.-]{3,120}$")
 QUEUE_ATTEMPTS = 5
 FULL_LIST_EVERY = 3600
 STATUS_EVERY = 900
+# The cron job runs every 5 minutes; each run watches for dashboard changes until just before the next.
+WATCH_SECONDS = 270
+POLL_SECONDS = 15
 RUN_TIMEOUT = 4 * 3600
 MAX_CV_CHARS = 12_000
 MIN_CV_CHARS = 200
@@ -585,6 +589,10 @@ class Api:
     def queue(self, full: bool = False) -> list[dict]:
         return self.call("GET", "/api/queue", params={"full": "1"} if full else None).get("items", [])
 
+    def flag(self) -> str:
+        """Changes whenever something is queued and is empty once the queue is; one KV read, no list."""
+        return str(self.call("GET", "/api/queue/flag").get("flag") or "")
+
     def ack(self, ids: list[str]) -> None:
         self.call("POST", "/api/queue/ack", json={"ids": ids})
 
@@ -758,13 +766,24 @@ def profile_getter(profile: dict):
     return lambda key, default=None: (environ.get(key) or "").strip() or default
 
 
+def current_details(profile: dict) -> dict:
+    if profile.get("owner"):
+        name, email = owner_name(), env("ALERT_EMAIL") or profile.get("email", "")
+    else:
+        name, email = profile.get("name", ""), profile.get("email", "")
+    return {"name": name, "email": email, "phone": profile.get("phone", ""), "location": profile.get("location", "")}
+
+
 def apply_profile_settings(profile: dict, item: dict) -> None:
+    """The dashboard sends only the fields someone changed, so each is laid over the current values; changes made
+    meanwhile (by another admin, a CV rebuild or an email button) are kept."""
     owner = bool(profile.get("owner"))
     details = item.get("details") if isinstance(item.get("details"), dict) else None
     if details:
-        new = {"name": _text(details.get("name"), 80) or profile.get("name", ""),
-               "email": _text(details.get("email"), 120) or profile.get("email", ""),
-               "phone": _text(details.get("phone"), 40), "location": _text(details.get("location"), 80)}
+        merged = {**current_details(profile), **details}
+        new = {"name": _text(merged.get("name"), 80) or profile.get("name", ""),
+               "email": _text(merged.get("email"), 120) or profile.get("email", ""),
+               "phone": _text(merged.get("phone"), 40), "location": _text(merged.get("location"), 80)}
         if not EMAIL_RE.fullmatch(new["email"]):
             raise ProfileError("invalid email address")
         if owner:
@@ -775,8 +794,10 @@ def apply_profile_settings(profile: dict, item: dict) -> None:
         profile.update(new)
     job = item.get("job") if isinstance(item.get("job"), dict) else None
     if job:
-        form = job_settings.clean_form(job)
-        updates = job_settings.env_updates(form, profile_getter(profile), profile.get("title_keywords") or [])
+        getter = profile_getter(profile)
+        # The dashboard has no separate search location: its searches use the region.
+        form = job_settings.clean_form({**job_settings.form_values(getter), "search_location": "", **job})
+        updates = job_settings.env_updates(form, getter, profile.get("title_keywords") or [])
         if owner:
             update_dashboard_env(updates)
         else:
@@ -898,7 +919,7 @@ def status_payload() -> dict:
             "id": p["id"], "name": name, "email": email, "status": p.get("status", "active"), "owner": owner,
             "crawler": "own" if key else "global", "key_hint": mask(key), "has_cv": has_cv,
             "created": _ms(p.get("created")), "last_run": _ms(last), "cv_updated": _ms(p.get("cv_updated")),
-            "details": {"name": name, "email": email, "phone": p.get("phone", ""), "location": p.get("location", "")},
+            "details": current_details(p),
             "job": job_settings.form_values(profile_getter(p))})
     test = read_json(PROFILES_DIR / ".email_test.json", {})
     smtp_dash = any(dashboard_env().get(k) for k in SMTP_KEYS)
@@ -986,6 +1007,38 @@ def sync(api: Api, full: bool = False) -> list[str]:
         return report
 
 
+def _seconds(key: str, default: int, minimum: int) -> int:
+    try:
+        value = int(env(key) or default)
+    except ValueError:
+        value = default
+    return value if value <= 0 else max(minimum, value)
+
+
+def watch(api: Api, seconds: int, poll: int, sleep=time.sleep, clock=time.monotonic) -> list[str]:
+    """Between cron runs: check the Worker's queue flag every `poll` seconds and sync as soon as it changes, so a
+    dashboard save is applied in seconds rather than at the next run. A flag that stays the same (an item that keeps
+    failing) is left to the next run, which keeps the Worker's daily KV list quota safe."""
+    report: list[str] = []
+    if seconds <= 0:
+        return report
+    deadline = clock() + seconds
+    try:
+        last = api.flag()
+    except requests.RequestException:
+        last = ""
+    while clock() + poll < deadline:
+        sleep(poll)
+        try:
+            flag = api.flag()
+        except requests.RequestException:
+            continue
+        if flag and flag != last:
+            report += sync(api)
+        last = flag
+    return report
+
+
 # --------------------------------------------------------------------------- running scripts for other profiles
 
 def spawn_others(script: str, args: list[str]) -> bool:
@@ -1062,6 +1115,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--resume", metavar="ID")
     parser.add_argument("--delete", metavar="ID", help="delete a profile, its CV and its history")
     parser.add_argument("--full", action="store_true", help="make the Worker list its whole queue")
+    parser.add_argument("--once", action="store_true", help="sync once and exit, without watching for changes")
     args = parser.parse_args(argv)
     ensure_owner()
     try:
@@ -1094,6 +1148,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     for line in sync(api, args.full):
         print(line)
+    if not args.once:
+        for line in watch(api, _seconds("JOB_PROFILES_WATCH_SECONDS", WATCH_SECONDS, 0),
+                          _seconds("JOB_PROFILES_POLL_SECONDS", POLL_SECONDS, 5)):
+            print(line)
     return 0
 
 

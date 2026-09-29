@@ -49,6 +49,14 @@ class FakeApi:
     def status(self, payload):
         self.statuses.append(payload)
 
+    def flag(self):
+        if getattr(self, "flags", None):
+            value = self.flags.pop(0)
+            if isinstance(value, Exception):
+                raise value
+            return value
+        return ""
+
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
@@ -278,6 +286,94 @@ def test_dashboard_job_search_uses_the_region_for_searches(home, monkeypatch):
     saved = profiles.dashboard_env()
     assert saved["JOB_SEARCH_LOCATION"] == "" and saved["JOB_SEARCH_COUNTRY"] == "gb"
     assert saved["JOB_SCANNER_QUERIES"] == '("Data Engineer") "Belfast" job'
+
+
+def test_a_dashboard_change_only_touches_the_fields_it_names(home, monkeypatch):
+    monkeypatch.setenv("JOB_TARGET_TITLES", "Data Engineer")
+    monkeypatch.setenv("JOB_EMPLOYMENT_TYPES", "Permanent")
+    profiles.sync(FakeApi([{"id": "queue:2:a", "type": "admin", "action": "profile", "u": "owner",
+                            "job": {"min_salary": "45000"}, "details": {"location": "Bangor"}}]))
+    saved = profiles.dashboard_env()
+    assert saved["JOB_MIN_SALARY"] == "45000"
+    assert saved["JOB_REGION_NAME"] == "Belfast" and saved["JOB_TARGET_TITLES"] == "Data Engineer"
+    assert saved["JOB_EMPLOYMENT_TYPES"] == "Permanent"
+    assert saved["ALERT_EMAIL"] == "owner@example.com" and saved["COVER_LETTER_NAME"] == "Alex Morgan"
+    assert saved["COVER_LETTER_CONTACT"] == "owner@example.com · Bangor"
+
+
+def test_changes_from_two_people_to_one_profile_both_apply(home):
+    profiles.sync(FakeApi([signup()]))
+    pid = "sam-lee-456789"
+    profiles.sync(FakeApi([
+        {"id": "queue:2:a", "type": "admin", "action": "profile", "u": pid, "details": {"phone": "07700 900999"}},
+        {"id": "queue:3:b", "type": "admin", "action": "profile", "u": pid, "job": {"region": "Newry"}},
+        {"id": "queue:4:c", "type": "admin", "action": "profile", "u": pid, "job": {"titles": ["BI Developer"]}}]))
+    sam = profiles.load(pid)
+    assert (sam["name"], sam["email"], sam["phone"], sam["location"]) == ("Sam Lee", "sam@example.com", "07700 900999", "Lisburn")
+    settings = json.loads((home[0] / "profiles" / pid / "settings.json").read_text())
+    assert settings["JOB_REGION_NAME"] == "Newry" and settings["JOB_TARGET_TITLES"] == "BI Developer"
+    assert settings["JOB_SCANNER_QUERIES"] == '("BI Developer") "Newry" job'
+
+
+def test_a_change_to_an_invalid_email_is_rejected(home):
+    profiles.sync(FakeApi([signup()]))
+    report = profiles.sync(FakeApi([{"id": "queue:2:a", "type": "admin", "action": "profile", "u": "sam-lee-456789",
+                                     "details": {"email": "nope"}}]))
+    assert report == ["admin: rejected (invalid email address)"]
+    assert profiles.load("sam-lee-456789")["email"] == "sam@example.com"
+
+
+class Clock:
+    def __init__(self):
+        self.now, self.sleeps = 0.0, []
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def test_watch_syncs_as_soon_as_the_queue_flag_changes(home, monkeypatch):
+    clock, synced = Clock(), []
+    monkeypatch.setattr(profiles, "sync", lambda api, full=False: synced.append(clock.now) or [f"synced at {clock.now:.0f}"])
+    api = FakeApi()
+    api.flags = ["", "", "queue:1:a", "queue:1:a", requests.ConnectionError(), "", "queue:2:b", "queue:3:c", ""]
+    report = profiles.watch(api, 120, 15, sleep=clock.sleep, clock=clock)
+    assert synced == [30.0, 90.0, 105.0]
+    assert report == ["synced at 30", "synced at 90", "synced at 105"]
+    assert clock.sleeps == [15] * 7 and clock.now < 120
+
+
+def test_watch_leaves_an_unchanged_flag_to_the_next_run(home, monkeypatch):
+    clock, synced = Clock(), []
+    monkeypatch.setattr(profiles, "sync", lambda api, full=False: synced.append(clock.now) or [])
+    api = FakeApi()
+    api.flags = ["queue:1:stuck"] * 20
+    profiles.watch(api, 270, 15, sleep=clock.sleep, clock=clock)
+    assert synced == []
+    assert profiles.watch(api, 0, 15, sleep=clock.sleep, clock=clock) == []
+
+
+@pytest.mark.parametrize("value, default, minimum, expected", [("", 270, 0, 270), ("0", 270, 0, 0), ("abc", 15, 5, 15),
+                                                                ("1", 15, 5, 5), ("60", 15, 5, 60), ("-1", 270, 0, -1)])
+def test_watch_settings_come_from_the_env(home, monkeypatch, value, default, minimum, expected):
+    monkeypatch.setenv("JOB_PROFILES_TEST_SECONDS", value)
+    assert profiles._seconds("JOB_PROFILES_TEST_SECONDS", default, minimum) == expected
+
+
+@pytest.mark.parametrize("argv, watched", [([], True), (["--once"], False), (["--full", "--once"], False)])
+def test_main_watches_between_cron_runs_unless_once(home, monkeypatch, argv, watched):
+    calls = []
+    monkeypatch.setenv("JOB_FEEDBACK_API_TOKEN", "api-token")
+    monkeypatch.setattr(profiles, "load_env_file", lambda *a, **k: None)
+    monkeypatch.setattr(profiles, "sync", lambda api, full=False: calls.append(("sync", full)) or [])
+    monkeypatch.setattr(profiles, "watch", lambda api, seconds, poll: calls.append(("watch", seconds, poll)) or [])
+    assert profiles.main(argv) == 0
+    assert calls[0] == ("sync", "--full" in argv)
+    assert calls[1:] == ([("watch", profiles.WATCH_SECONDS, profiles.POLL_SECONDS)] if watched else [])
+    assert profiles.WATCH_SECONDS + 2 * profiles.POLL_SECONDS <= 300, "a run must end before the next one starts"
 
 
 def test_admin_can_go_back_to_the_env_keys_and_delete(home):
