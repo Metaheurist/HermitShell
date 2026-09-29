@@ -257,6 +257,7 @@ await save("admin-tasks", new Response(withTasks));
 await save("admin-dashboard-search", await admin("/admin?q=york"));
 await save("admin-recruiter-search", await admin("/admin?q=casey"));
 await save("admin-recruiter-view", await casey("/admin"));
+await save("admin-signed-in", await casey("/admin"));
 await save("admin-users", await admin("/admin/users"));
 // Opened as files, pages cannot be given the fragment that opens a modal, so it is opened with a style.
 const withOpenModal = async (path, id, as = admin) => new Response((await (await as(path)).text()).replace("</head>", `<style>#${id}{display:grid}</style></head>`));

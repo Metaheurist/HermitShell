@@ -308,6 +308,8 @@ deleted ([data protection](configuration.md#data-protection)).
 
 <img src="images/worker/admin-dashboard.png" alt="Admin page with three recruits" width="760">
 
+<img src="images/worker/admin-signed-in.png" alt="On a wide window: the signed-in badge beside the page, with the key button and Sign out under it" width="760">
+
 | Control | What it does |
 | --- | --- |
 | Status line | **HermitShell is connected** (green dot) while its live link is up, so changes reach it within seconds, then when it last reported its profiles. Without the link: when HermitShell last checked in, with the time in your timezone (`HERMES_TIMEZONE`). Also says how many changes are still **Waiting for HermitShell**, which opens **Tasks**. A warning appears above it if HermitShell hasn't checked in for 45 minutes |
@@ -325,7 +327,7 @@ deleted ([data protection](configuration.md#data-protection)).
 | **Recruits** / **Users and roles** / **Global settings** tabs | Switch between the recruits, [who can sign in](#users-and-roles) and the [settings shared by the whole tool](#global-settings). Recruiters only have **Recruits** |
 | Invite someone + recruiter list + **Create invite link** | Makes a one-time `/join` link; the note is only for you. Admins pick whose recruit the person becomes; a recruiter's invites join their own pool |
 | **Revoke** | Cancels an unused invite |
-| Signed in as + **Change password** + **Sign out** | Who you are signed in as and your roles. **Change password** asks for your current password and the new one twice; you stay signed in here and are signed out everywhere else. For the main admin it shows the `wrangler secret put ADMIN_PASSWORD` command instead. Signing out ends that user's sessions |
+| Badge + key + **Sign out** (top right) | Your initials, name and roles, on every dashboard page (just the initials on narrower windows). The key button opens **Change password**: your current password and the new one twice; you stay signed in here and are signed out everywhere else. For the main admin it shows the `wrangler secret put ADMIN_PASSWORD` command instead. Signing out ends that user's sessions |
 
 <img src="images/worker/admin-delete-modal.png" alt="Deleting a recruit: the confirm window with the CV and history tick box" width="380">
 

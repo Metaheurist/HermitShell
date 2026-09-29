@@ -8,8 +8,12 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Who is signed in, at the top right of every dashboard page.** A badge with your initials, name and roles,
+  and under it a key button (**Change password**) and **Sign out**, fixed in the corner like **Back to
+  recruits**. On narrower windows they sit in a row above the page; the old "Signed in as" line at the foot of
+  the Recruits page is gone.
 - **Password changes and resets on the dashboard.** Every dashboard user, recruiters included, changes their
-  own password from **Change password** on the Recruits page with their current password; they stay signed in
+  own password with the key button at the top right, using their current password; they stay signed in
   there and are signed out everywhere else, and five wrong current passwords lock it for 15 minutes. Admins
   reset anyone else's password from **Reset password** on Users and roles, which signs that user out at once.
   The main admin's window shows how to change the `ADMIN_PASSWORD` secret with wrangler.

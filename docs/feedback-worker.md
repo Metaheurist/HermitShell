@@ -448,8 +448,14 @@ own; the main admin's **Sign out** still signs out every main-admin session.
 
 #### Changing your own password
 
-Every dashboard user, recruiters included, has **Change password** next to **Sign out** at the
-bottom of the Recruits page (and on their own row under Users and roles). It asks for the current
+Every dashboard page shows who is signed in at the top right: a badge with your initials, name and
+roles, and under it the key button (**Change password**) and **Sign out**. On narrower windows they sit
+in a row above the page, with just your initials.
+
+<img src="images/worker/admin-signed-in.png" alt="The signed-in badge at the top right: initials, name and role, then the key button and Sign out" width="720">
+
+Every dashboard user, recruiters included, changes their password with the key button (or
+**Change password** on their own row under Users and roles). It asks for the current
 password and the new one twice. You stay signed in in that browser and are signed out everywhere
 else. Five wrong current passwords lock changing it for that account for 15 minutes; an admin's
 **Reset password** clears the lock.
