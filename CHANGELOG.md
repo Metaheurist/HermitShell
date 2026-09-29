@@ -154,6 +154,9 @@ using [Semantic Versioning](https://semver.org/).
   are now retried on the following runs, up to 4 attempts (`state/job_scanner_retry.json`).
   Only jobs that were rated or definitely ruled out are marked as seen.
 - A broken table row and a missing blank line in `docs/configuration.md`.
+- The setup wizard showed the first and last four characters of a stored secret, half of a
+  16-character app password. It now shows only the last four, and only for secrets of 16 or more
+  characters (found by CodeQL).
 - LinkedIn search results showed the page title ("Acme hiring Data Engineer Job in Belfast") instead
   of the job title.
 

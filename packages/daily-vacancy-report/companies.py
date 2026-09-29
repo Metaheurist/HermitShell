@@ -34,7 +34,7 @@ def norm(name: str) -> str:
 
 
 def slug(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:40] or hashlib.md5(name.encode()).hexdigest()[:10]
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:40] or hashlib.sha256(name.encode()).hexdigest()[:10]
 
 
 def domain_matches(domain: str, name: str) -> bool:

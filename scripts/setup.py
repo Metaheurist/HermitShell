@@ -112,7 +112,8 @@ BOLD, DIM, GREEN, YELLOW, RESET = ("\033[1m", "\033[2m", "\033[32m", "\033[33m",
 
 
 def mask(value: str) -> str:
-    return "" if not value else f"{value[:4]}...{value[-4:]}" if len(value) > 12 else "****"
+    """Enough to recognise a stored secret (its last 4 characters, and only for long ones), never more."""
+    return "" if not value else f"****{value[-4:]}" if len(value) >= 16 else "****"
 
 
 def unquote(value: str) -> str:

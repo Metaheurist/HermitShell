@@ -26,7 +26,8 @@ It asks, in order:
    official image uses `10000:10000`).
 2. **Shared settings.** SMTP server, login and recipient, then Firecrawl (plus backup keys),
    Tavily and Scrapfly API keys, and your timezone. Leave empty any key you don't have. Secrets
-   are read without echo and are only ever shown masked (`fc-2a...461a`).
+   are read without echo and are only ever shown masked, as their last four characters
+   (`****9z8y`).
 3. **Package settings.** Every setting tagged `# @basic` in the package's `.env.example`. With
    `--advanced`, you get every setting, including provider order, Ollama fallbacks, title regexes
    and limits.

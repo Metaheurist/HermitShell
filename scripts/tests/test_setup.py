@@ -80,7 +80,8 @@ def test_salary_symbol(country, symbol):
 def test_mask_never_shows_a_whole_secret():
     assert setup.mask("") == ""
     assert setup.mask("short") == "****"
-    assert setup.mask("abcdefghijklmnop") == "abcd...mnop"
+    assert setup.mask("abcdefghijklmno") == "****"
+    assert setup.mask("abcdefghijklmnop") == "****mnop"
 
 
 def test_quote_and_unquote():
