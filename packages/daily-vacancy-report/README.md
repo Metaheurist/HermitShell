@@ -98,8 +98,10 @@ It asks for your email and API keys, then:
   and work modes to keep, a minimum salary, whether to hide agency adverts that don't name the
   employer, and the job titles to search for.
 - Your **candidate profile** (guided questions, an imported CV, or the example).
-- Optional **feedback buttons:** paste your Worker URL and the wizard generates both secrets
-  and can copy them to the Worker for you. See [the guide](../../docs/feedback-worker.md).
+- Optional **feedback buttons and admin page:** with a Cloudflare account ID and API token the
+  wizard deploys the Worker, generates its secrets and sets the `/admin` password
+  ([automatic setup](../../docs/cloudflare-setup.md)); or paste the URL of a Worker you deployed
+  by hand ([the guide](../../docs/feedback-worker.md)).
 - **When** the report should run, for example `07:00` or `weekdays 07:30`, when the weekly
   roll-up goes out (default `sunday 18:00`), and how often to check for cover letter requests
   (default every 5 minutes).

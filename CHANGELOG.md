@@ -8,6 +8,16 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Automatic Cloudflare setup.** The wizard's feedback step now takes a Cloudflare account ID and
+  API token (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`) and deploys the feedback Worker
+  itself through the Cloudflare API, with no Node.js or wrangler: it finds or creates the
+  `workers.dev` subdomain and the KV namespace, uploads the Worker, fills in `JOB_FEEDBACK_URL`,
+  sets the generated secrets plus the `/admin` username and password you choose (never written to
+  `.env`), and can put `/admin` behind Cloudflare Access for the emails in
+  `CLOUDFLARE_ACCESS_EMAILS`. `scripts/cloudflare_worker.py` does the same from the saved settings
+  after an update, and changes the admin password from stdin. New guide
+  [docs/cloudflare-setup.md](docs/cloudflare-setup.md): account, token permissions, Access and the
+  free plan limits.
 - **Tailored CV button.** Next to **Cover letter**, each job card has **Tailored CV**. Like the
   letter, it queues a request (with optional guidance) that `cover_letter.py` picks up, and emails
   an A4 PDF CV fitted to that job (`tailored_cv.py`). The CV is turned into a structured copy once

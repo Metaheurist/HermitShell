@@ -49,8 +49,9 @@ The setup wizard installs the packages you pick and then walks you through every
    targeting, employment types (permanent, contract, part-time, internship...), work modes,
    minimum salary and the job titles to search for.
 3. Your candidate profile for the vacancy report. Answer a few questions, import your CV as text,
-   or start from the example. Optionally, the URL of your feedback Worker; the wizard generates
-   its secrets (see [docs/feedback-worker.md](docs/feedback-worker.md)).
+   or start from the example. Optionally, a Cloudflare account ID and API token: the wizard then
+   deploys the feedback Worker (buttons, `/admin` page, sign-up links) and sets its admin password
+   for you (see [docs/cloudflare-setup.md](docs/cloudflare-setup.md)).
 4. The digest's news topics, picked from a catalog of 23 or added as your own keywords.
 5. What time each package should run (for example `07:30`, `weekdays 08:00` or `sunday 18:00`).
 6. Along the way, each package's other essential settings, such as email titles and score
@@ -68,8 +69,9 @@ follow the package READMEs.
 
 Details are in [docs/installation.md](docs/installation.md) and
 [docs/configuration.md](docs/configuration.md). The optional feedback buttons have their own
-guide, [docs/feedback-worker.md](docs/feedback-worker.md), covering setup with the Cloudflare MCP
-in an AI agent or with wrangler by hand.
+guides: [docs/cloudflare-setup.md](docs/cloudflare-setup.md) for the automatic setup (account,
+API token, free limits) and [docs/feedback-worker.md](docs/feedback-worker.md) for how the Worker
+works and deploying it by hand with wrangler or the Cloudflare MCP.
 
 ## Repository layout
 

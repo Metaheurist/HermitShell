@@ -51,7 +51,12 @@ email button ──> Worker /f (confirm page) ──> KV ──> Hermes GET /eve
   Hermes server).
 - This repository checked out on that machine.
 
-Deploying takes about ten minutes. Pick one of the two routes below; they end in the same
+**Easiest: let the setup wizard deploy it.** Give `scripts/setup.py` your Cloudflare account ID and
+an API token and it creates the KV namespace, uploads the Worker, sets its secrets and fills in
+`JOB_FEEDBACK_URL`, with no Node.js needed: see [docs/cloudflare-setup.md](cloudflare-setup.md).
+The rest of this page is for deploying by hand.
+
+Deploying by hand takes about ten minutes. Pick one of the two routes below; they end in the same
 place. Afterwards, run the setup wizard (or edit `.env`) as described in
 [Connect Hermes](#connect-hermes).
 

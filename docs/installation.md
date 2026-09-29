@@ -47,9 +47,12 @@ It asks, in order:
    any of your titles from the default exclude list, so a nurse or teacher isn't filtered out.
 6. **Candidate profile** (vacancy report). Answer a few questions, import a text or markdown CV,
    paste text, or start from the example. Your skills and gaps become `cv_keywords.json`.
-   Then the optional **feedback buttons**: paste the URL of your
-   [feedback Worker](feedback-worker.md) (or leave it empty). The wizard generates
-   `JOB_FEEDBACK_SECRET` and `JOB_FEEDBACK_API_TOKEN`, and after saving offers to pipe them into
+   Then the optional **feedback buttons and admin page**: paste your Cloudflare account ID and an
+   API token ([how to create them](cloudflare-setup.md)) and the wizard deploys the
+   [feedback Worker](feedback-worker.md) itself: KV namespace, Worker code, `JOB_FEEDBACK_URL`,
+   generated `JOB_FEEDBACK_SECRET` / `JOB_FEEDBACK_API_TOKEN`, the `/admin` username and password
+   you choose and, optionally, Cloudflare Access. Without a token you can paste the URL of a Worker
+   you deployed by hand instead; the wizard then offers to pipe the secrets into
    `wrangler secret put` so they never appear on screen.
 7. **News topics** (digest). Pick topics from a numbered catalog of 23 (AI, cybersecurity,
    cloud, space, science, climate, health, business, markets, world news, gaming, sport and

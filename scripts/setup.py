@@ -33,6 +33,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 PACKAGES_DIR = REPO / "packages"
+sys.path.insert(0, str(REPO / "scripts"))
+import cloudflare_worker  # noqa: E402
 
 SECRET_RE = re.compile(r"PASSWORD|API_KEY|_KEYS$|TOKEN|SECRET")
 PLACEHOLDER_RE = re.compile(r"example\.(com|org)|change-me", re.I)
@@ -318,6 +320,8 @@ class Wizard:
         self.current: dict[str, str] = {}
         self.schedule_plan: dict[str, tuple[dict, str | None]] = {}
         self._cron_jobs: list[dict] | None = None
+        self.cloudflare_factory = cloudflare_worker.Cloudflare
+        self.cf_plan: dict | None = None
 
     # ------------------------------------------------------------------ prompting
 
@@ -609,10 +613,138 @@ class Wizard:
             "always merged)", self.preset("JOB_HIDE_UNNAMED_AGENCY", "0") == "1") else "0", "0")
 
     def feedback_buttons(self) -> None:
-        self.heading("Feedback buttons (optional)")
-        self.say("Buttons on each job (Interested, Not for me, I applied) teach the model what you like and\n"
-                 "remind you to follow up on applications. They need a small free Cloudflare Worker, deployed\n"
-                 "once: see docs/feedback-worker.md. Deploy it first, then paste its URL here (empty = skip).")
+        self.heading("Feedback buttons and admin page (Cloudflare, optional)")
+        self.say("Buttons on each job (Interested, Not for me, I applied, Cover letter, Tailored CV), the /admin\n"
+                 "page for extra profiles and the sign-up links run on a small free Cloudflare Worker. With a free\n"
+                 "Cloudflare account's ID and an API token the wizard deploys it for you and fills in its address;\n"
+                 "docs/cloudflare-setup.md shows how to create both.")
+        account, token = self.preset("CLOUDFLARE_ACCOUNT_ID"), self.preset("CLOUDFLARE_API_TOKEN")
+        if self.interactive:
+            if not self.confirm("Set up the feedback Worker automatically with a Cloudflare API token?",
+                                bool(account and token) or not self.preset("JOB_FEEDBACK_URL")):
+                return self.feedback_manual()
+            account = self.text("Cloudflare account ID (32 characters, dashboard -> Workers & Pages)", account)
+            state = f"current {mask(token)}" if token else "not set"
+            token = self._input(f"Cloudflare API token ({state}; Enter keeps it): ", secret=True).strip() or token
+        elif not (account and token):
+            return self.feedback_manual()
+        try:
+            cf = self.cloudflare_factory(account, token)
+            cf.verify()
+            subdomain = cf.subdomain()
+        except cloudflare_worker.CloudflareError as exc:
+            if not self.interactive:
+                sys.exit(f"Cloudflare: {exc}")
+            self.say(f"  {YELLOW}Cloudflare: {exc}{RESET}")
+            return self.feedback_manual()
+        self.say(f"  {GREEN}token works{RESET}")
+        new_subdomain = ""
+        if not subdomain:
+            self.say("This account has no workers.dev subdomain yet. Pick one: Workers get addresses like\n"
+                     "https://vacancy-feedback.<subdomain>.workers.dev (it can't easily be changed later).")
+            while True:
+                new_subdomain = self.text("workers.dev subdomain", self.preset(
+                    "CLOUDFLARE_SUBDOMAIN", f"hermit-{secrets.token_hex(3)}")).lower()
+                if cloudflare_worker.NAME_RE.match(new_subdomain):
+                    break
+                if not self.interactive:
+                    sys.exit(f"CLOUDFLARE_SUBDOMAIN: '{new_subdomain}' is not valid")
+                self.say(f"  {YELLOW}use lowercase letters, digits and hyphens{RESET}")
+            subdomain = new_subdomain
+        name = self.preset("CLOUDFLARE_WORKER_NAME", cloudflare_worker.DEFAULT_NAME)
+        if self.args.advanced:
+            name = self.text("Worker name", name).lower()
+        if not cloudflare_worker.NAME_RE.match(name):
+            sys.exit(f"CLOUDFLARE_WORKER_NAME: '{name}' is not valid (lowercase letters, digits and hyphens)")
+        self.set("CLOUDFLARE_ACCOUNT_ID", cf.account)
+        self.set("CLOUDFLARE_API_TOKEN", token)
+        self.set("CLOUDFLARE_WORKER_NAME", name, cloudflare_worker.DEFAULT_NAME)
+        url, current = cloudflare_worker.worker_url(name, subdomain), self.preset("JOB_FEEDBACK_URL").rstrip("/")
+        if current and current != url and not current.endswith(".workers.dev"):
+            self.say(f"  {DIM}keeping your custom address {current}{RESET}")
+            url = current
+        self.set("JOB_FEEDBACK_URL", url)
+        self.feedback_secrets()
+        worker_secrets = {k: self.value(k) for k in ("JOB_FEEDBACK_SECRET", "JOB_FEEDBACK_API_TOKEN")}
+
+        self.say("\nThe /admin page (invite people, manage profiles and keys) stays off until it has a password.")
+        password = self.admin_password()
+        if password:
+            worker_secrets["ADMIN_USER"] = self.text("Admin page username", self.preset("ADMIN_USER", "admin")) \
+                or "admin"
+            worker_secrets["ADMIN_PASSWORD"] = password
+        emails: list[str] = []
+        access = self.preset("CLOUDFLARE_ACCESS_EMAILS")
+        if self.interactive:
+            if self.confirm("Also protect /admin with Cloudflare Access (a code emailed to you before the "
+                            "password page; needs Zero Trust, free)?", bool(access)):
+                access = self.text("Emails allowed in (comma-separated)", access or self.value("ALERT_EMAIL"))
+            else:
+                access = ""
+        emails = [e.strip() for e in access.split(",") if e.strip()]
+        bad = [e for e in emails if not cloudflare_worker.EMAIL_RE.match(e)]
+        if bad:
+            sys.exit(f"CLOUDFLARE_ACCESS_EMAILS: not an email address: {', '.join(bad)}")
+        self.set("CLOUDFLARE_ACCESS_EMAILS", ",".join(emails))
+        self.cf_plan = {"cf": cf, "name": name, "subdomain": subdomain, "new_subdomain": new_subdomain,
+                        "secrets": worker_secrets, "emails": emails}
+
+    def admin_password(self) -> str:
+        """A new /admin password (asked twice, 12+ characters), or "" to keep the Worker's current one."""
+        if not self.interactive:
+            password = self.answers.get("ADMIN_PASSWORD", "")
+            if password and len(password) < 12:
+                sys.exit("ADMIN_PASSWORD: use at least 12 characters")
+            return password
+        while True:
+            first = self._input("New admin password (12+ characters; Enter keeps the current one): ",
+                                secret=True).strip()
+            if not first:
+                return ""
+            if len(first) < 12:
+                self.say(f"  {YELLOW}use at least 12 characters{RESET}")
+                continue
+            if self._input("Repeat the password: ", secret=True).strip() == first:
+                return first
+            self.say(f"  {YELLOW}the two passwords differ; try again{RESET}")
+
+    def feedback_secrets(self) -> None:
+        for key in ("JOB_FEEDBACK_SECRET", "JOB_FEEDBACK_API_TOKEN"):
+            value = self.preset(key)
+            if not value:
+                value = secrets.token_urlsafe(32)
+                self.say(f"  {DIM}generated {key}{RESET}")
+            self.set(key, value)
+
+    def deploy_worker(self) -> None:
+        """Create the subdomain if needed, upload the Worker, set its secrets and optionally the Access app."""
+        plan = self.cf_plan
+        self.heading("Feedback Worker (Cloudflare)")
+        if self.args.dry_run:
+            self.say(f"  would deploy {plan['name']} to {cloudflare_worker.worker_url(plan['name'], plan['subdomain'])}"
+                     f" and set {', '.join(plan['secrets'])}")
+            return
+        cf = plan["cf"]
+        try:
+            if plan["new_subdomain"]:
+                cf.create_subdomain(plan["new_subdomain"])
+                self.say(f"  workers.dev subdomain {plan['new_subdomain']}: created")
+            url = cloudflare_worker.deploy(cf, plan["name"], plan["subdomain"], plan["secrets"], log=self.say)
+            if plan["emails"]:
+                try:
+                    cloudflare_worker.protect_admin(cf, plan["name"], plan["subdomain"], plan["emails"], log=self.say)
+                except cloudflare_worker.CloudflareError as exc:
+                    self.say(f"  {YELLOW}Access not set up: {exc}{RESET}\n  The Worker works without it; see "
+                             "docs/cloudflare-setup.md#protect-admin-with-cloudflare-access.")
+        except cloudflare_worker.CloudflareError as exc:
+            self.say(f"  {YELLOW}Cloudflare: {exc}{RESET}\n  Fix it and re-run the wizard, or run "
+                     "`python3 scripts/cloudflare_worker.py` (it reads the saved settings).")
+            return
+        self.say(f"  {GREEN}ready: {url}{RESET}" + ("  (sign in at /admin)" if "ADMIN_PASSWORD" in plan["secrets"]
+                                                   else ""))
+
+    def feedback_manual(self) -> None:
+        self.say("Deploy the Worker by hand (docs/feedback-worker.md), then paste its URL here (empty = skip).")
         while True:
             url = self.text("Feedback Worker URL", self.preset("JOB_FEEDBACK_URL")).rstrip("/")
             if not url or re.fullmatch(r"https://[^\s/?#]+(/[^\s?#]*)?", url):
@@ -621,14 +753,8 @@ class Wizard:
                 sys.exit(f"JOB_FEEDBACK_URL: '{url}' must start with https://")
             self.say(f"  {YELLOW}use the full https:// address of your Worker{RESET}")
         self.set("JOB_FEEDBACK_URL", url)
-        if not url:
-            return
-        for key in ("JOB_FEEDBACK_SECRET", "JOB_FEEDBACK_API_TOKEN"):
-            value = self.preset(key)
-            if not value:
-                value = secrets.token_urlsafe(32)
-                self.say(f"  {DIM}generated {key}{RESET}")
-            self.set(key, value)
+        if url:
+            self.feedback_secrets()
 
     def upload_feedback_secrets(self, home: Path) -> None:
         """Copy newly set feedback secrets to the Worker by piping them to wrangler; they are never printed."""
@@ -979,7 +1105,9 @@ class Wizard:
                     self.ask_schedule(runner, job_id, info)
 
         saved = self.review_and_write(home, owner)
-        if saved:
+        if self.cf_plan and (saved or self.args.dry_run):
+            self.deploy_worker()
+        elif saved:
             self.upload_feedback_secrets(home)
         known = [p for p in packages if p in PACKAGES]
         if not self.args.no_cron and (saved or self.args.dry_run or not self.changes):

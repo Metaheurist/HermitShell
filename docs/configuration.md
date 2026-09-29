@@ -93,9 +93,14 @@ when its best case is below the minimum.
 | `JOB_FEEDBACK_URL` | none | Your feedback Worker, e.g. `https://vacancy-feedback.<subdomain>.workers.dev`. Must start with `https://`. Empty = no buttons |
 | `JOB_FEEDBACK_SECRET` | none | Signs the button links; the Worker holds the same value |
 | `JOB_FEEDBACK_API_TOKEN` | none | Lets Hermes fetch and clear answers from the Worker |
+| `CLOUDFLARE_ACCOUNT_ID` | none | Account the wizard and `scripts/cloudflare_worker.py` deploy the Worker to |
+| `CLOUDFLARE_API_TOKEN` | none | API token for that deployment (Workers Scripts Edit, Workers KV Storage Edit; Access: Apps and Policies Edit for Access). Not changeable from the dashboard |
+| `CLOUDFLARE_WORKER_NAME` | `vacancy-feedback` | Worker name, the first part of its `workers.dev` address |
+| `CLOUDFLARE_ACCESS_EMAILS` | none | Emails Cloudflare Access lets through to `/admin`; empty = password only |
 
-The wizard generates both secrets. Deploying the Worker (with the Cloudflare MCP in an AI agent,
-or with wrangler by hand) is covered in [feedback-worker.md](feedback-worker.md).
+The wizard generates both secrets and, with a Cloudflare token, deploys the Worker itself
+([cloudflare-setup.md](cloudflare-setup.md)). Deploying by hand (with the Cloudflare MCP in an AI
+agent, or with wrangler) is covered in [feedback-worker.md](feedback-worker.md).
 
 ### Topics (News Digest)
 
