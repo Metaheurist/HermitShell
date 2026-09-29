@@ -104,7 +104,7 @@ when its best case is below the minimum.
 | --- | --- | --- |
 | `JOB_FEEDBACK_URL` | none | Your feedback Worker, e.g. `https://vacancy-feedback.<subdomain>.workers.dev`. Must start with `https://`. Empty = no buttons |
 | `JOB_FEEDBACK_SECRET` | none | Signs the button links; the Worker holds the same value |
-| `JOB_FEEDBACK_API_TOKEN` | none | Lets Hermes fetch and clear answers from the Worker |
+| `JOB_FEEDBACK_API_TOKEN` | none | Lets HermitShell fetch and clear answers from the Worker |
 | `CLOUDFLARE_ACCOUNT_ID` | none | Account the wizard and `scripts/cloudflare_worker.py` deploy the Worker to |
 | `CLOUDFLARE_API_TOKEN` | none | API token for that deployment (Workers Scripts Edit, Workers KV Storage Edit; Access: Apps and Policies Edit for Access). Not changeable from the dashboard |
 | `CLOUDFLARE_WORKER_NAME` | `vacancy-feedback` | Worker name, the first part of its `workers.dev` address |
@@ -160,7 +160,7 @@ This is how it is carried out:
 
 ### A second copy of the backups
 
-Backups on the same disk as Hermes don't survive that disk failing. Check with
+Backups on the same disk as HermitShell don't survive that disk failing. Check with
 `df -h /path/to/hermes/data` and compare it with your other disks: on many NAS systems the apps
 live on the small system SSD while the RAID or data disks are mounted elsewhere.
 

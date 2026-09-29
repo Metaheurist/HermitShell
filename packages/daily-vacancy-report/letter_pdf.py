@@ -1,7 +1,7 @@
 """A4 cover letter and CV PDFs with no third-party dependencies.
 
 Uses the standard Helvetica fonts every PDF reader has, so the text stays real text (selectable
-and readable by applicant tracking systems) and nothing needs installing on the Hermes server.
+and readable by applicant tracking systems) and nothing needs installing on the HermitShell server.
 Text is encoded as Windows-1252; characters outside it become "?".
 
 Shared unchanged between the HermitShell package and the Hermes server copy.

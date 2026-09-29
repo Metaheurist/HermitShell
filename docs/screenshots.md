@@ -25,7 +25,7 @@ The email `job_scanner.py` sends each morning.
 (`JOB_REPORT_TITLE`, `JOB_REPORT_TAGLINE`), then four figures: matches in this email, strong fits
 (7 or more, in green), the average fit and how many jobs were rated this run.
 
-**Hermes' take.** A short summary the model writes over all the matches: what to apply for
+**HermitShell's take.** A short summary the model writes over all the matches: what to apply for
 first and which gaps keep coming up.
 
 **Sections.** *Top matches* (fit 7+) come first and *Worth a look* (below 7, down to
@@ -46,7 +46,7 @@ From top to bottom:
 | Salary | The advertised pay as a headline. Day and hourly rates also show a yearly estimate. Jobs clearly below `JOB_MIN_SALARY` never get here |
 | Pills | Closing date (red within three days), employment type, work mode, level (or "Senior-level stretch"), posting age; "Salary not listed" when there is none |
 | Fit circle | The final 0-10 score: green 8+, teal 7, amber 5-6, red below 5 |
-| Meters | **Hermes fit**, the model's **Confidence**, and **CV keyword match** (the share of technologies in the listing that are on your CV) |
+| Meters | **HermitShell fit**, the model's **Confidence**, and **CV keyword match** (the share of technologies in the listing that are on your CV) |
 | Reasoning | The model's one or two sentences on why it scored the job this way |
 | About the company | Industry, size, website and a one-line description. For agency adverts it names the real employer and the agency separately |
 | Strongest matches | Your three strongest matching skills in bold, the rest on one line |
@@ -133,7 +133,7 @@ Sent by `profiles.py` when you use [extra profiles](feedback-worker.md#extra-pro
 </tr>
 </table>
 
-- **Welcome** lists the job titles Hermes will search for and the skills it read from the CV, so
+- **Welcome** lists the job titles HermitShell will search for and the skills it read from the CV, so
   the person can reply if something is wrong. It is sent again as "Profile updated" when they
   send a new CV.
 - **Notices to you** share one layout, with a count of active and paused profiles and a
@@ -291,7 +291,7 @@ deleted ([data protection](configuration.md#data-protection)).
 
 | Control | What it does |
 | --- | --- |
-| Status line | When Hermes last reported, and changes still **Waiting for Hermes** (applied by `profiles.py` within about 5 minutes) |
+| Status line | When HermitShell last reported, and changes still **Waiting for HermitShell** (applied by `profiles.py` within about 5 minutes) |
 | Profile, Status | Name, email and start date, **no CV** when there is none yet; owner, active or paused; time of the last report |
 | **Settings, job search and CV** | Opens [that profile's page](#a-profiles-page) |
 | Crawler: **Their Firecrawl key** + **Save** | Gives that profile its own Firecrawl key, used instead of the global one |
@@ -299,7 +299,7 @@ deleted ([data protection](configuration.md#data-protection)).
 | **Pause** / **Resume** | Stops or restarts that profile's reports |
 | **Delete** (with the tick box) | Deletes an extra profile's CV and history from your server. The owner can't be deleted |
 | Email server + **Save email server** | SMTP server, port, username, password and sender for everyone's emails. The password box stays empty; leave it empty to keep the saved password |
-| **Send a test email** | Sends a test to the address typed (default: yours); the result shows under Email server after Hermes' next check |
+| **Send a test email** | Sends a test to the address typed (default: yours); the result shows under Email server after HermitShell's next check |
 | **Go back to the .env email settings** | Shown when the email server was set here; undoes it |
 | Web search API keys + **Save keys** | Firecrawl (several, comma separated), Tavily and Scrapfly keys for everyone without their own; empty boxes leave a key as it is |
 | **Use the .env key** | Shown next to a key set here; goes back to the one in `.env` |
@@ -308,10 +308,10 @@ deleted ([data protection](configuration.md#data-protection)).
 | **Sign out** | Ends every admin session |
 
 Keys are shown only as `fc-...1234`. Keys typed here are removed from the Worker after 2 days if
-Hermes hasn't collected them.
+HermitShell hasn't collected them.
 
 <table>
-<tr><th>Right after setup: the checklist</th><th>Before Hermes has reported</th><th>New invite link</th></tr>
+<tr><th>Right after setup: the checklist</th><th>Before HermitShell has reported</th><th>New invite link</th></tr>
 <tr>
 <td><img src="images/worker/admin-dashboard-setup.png" alt="Admin page with the setup checklist and a rejected change" width="300"></td>
 <td><img src="images/worker/admin-dashboard-empty.png" alt="Admin page before the first report" width="300"></td>
@@ -319,9 +319,9 @@ Hermes hasn't collected them.
 </tr>
 </table>
 
-The checklist stays until Hermes has connected, the email server is set and a test worked, a web
-search key is in, and your CV and job search are set. **Hermes could not apply** lists changes
-Hermes rejected in the last day, with the reason.
+The checklist stays until HermitShell has connected, the email server is set and a test worked, a web
+search key is in, and your CV and job search are set. **HermitShell could not apply** lists changes
+HermitShell rejected in the last day, with the reason.
 
 ### A profile's page
 
@@ -331,7 +331,7 @@ Hermes rejected in the last day, with the reason.
 | --- | --- |
 | Details | Name, the email address reports go to, phone and town (for cover letters) |
 | Job search | Job titles (up to 8), region and towns, country, remote elsewhere, level, minimum salary and currency, employment types, work modes, hiding unnamed agency adverts |
-| CV | A new CV file or pasted text; Hermes rebuilds the profile and skills from it and emails a summary |
+| CV | A new CV file or pasted text; HermitShell rebuilds the profile and skills from it and emails a summary |
 
 ## Regenerating these images
 

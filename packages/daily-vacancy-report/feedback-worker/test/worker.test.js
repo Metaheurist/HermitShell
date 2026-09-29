@@ -57,7 +57,7 @@ describe("feedback worker", () => {
     expect(env.FEEDBACK.store.size).toBe(0);
   });
 
-  it("rejects links of profiles Hermes no longer reports", async () => {
+  it("rejects links of profiles HermitShell no longer reports", async () => {
     const env = testEnv();
     await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "alex-kim" }] }));
     const sam = await link("applied", "nijobs:9", "Analyst", "sam-lee");
@@ -236,7 +236,7 @@ describe("feedback worker", () => {
     expect(sam.events).toMatchObject([{ a: "interested", u: "sam-lee" }]);
   });
 
-  it("asks before unsubscribing, queues the removal for Hermes and drops uncollected answers", async () => {
+  it("asks before unsubscribing, queues the removal for HermitShell and drops uncollected answers", async () => {
     const env = testEnv();
     await worker.fetch(formRequest({ ...(await link("interested", "nijobs:9", "Analyst", "sam-lee")), r: "commute" }), env);
     await worker.fetch(formRequest({ ...(await link("applied")), r: "" }), env);
@@ -260,6 +260,8 @@ describe("feedback worker", () => {
     for (const heading of ["What is kept", "How long", "How it is protected", "Deleting your data"]) {
       expect(body).toContain(heading);
     }
+    expect(body).toContain("HermitShell server");
+    expect(body).not.toContain("Hermes");
   });
 
   it("only pauses when the owner unsubscribes", async () => {

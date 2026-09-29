@@ -87,7 +87,7 @@ await save("link-invalid", await call(`/f?${new URLSearchParams({ ...(await link
 await save("link-expired", await call(`/f?${new URLSearchParams(await link("interested", TITLE, { day: today() - LINK_DAYS - 1 }))}`));
 env = freshEnv();
 
-// Hermes reports its profiles (what profiles.py sends every few minutes).
+// HermitShell reports its profiles (what profiles.py sends every few minutes).
 const now = Date.now();
 const day = 86400000;
 const JOB = { titles: ["Data Engineer", "Analytics Engineer", "Python Developer"], region: "Greater Manchester",
@@ -143,7 +143,7 @@ await admin("/admin/action", { method: "POST", form: { csrf, action: "resume", u
 await save("admin-dashboard", await admin("/admin?done=queued"));
 await save("admin-profile", await admin("/admin/profile?u=owner"));
 
-// A fresh install: Hermes has connected, nothing else is set yet.
+// A fresh install: HermitShell has connected, nothing else is set yet.
 const fresh = { ...STATUS, profiles: [{ ...STATUS.profiles[0], has_cv: false, job: { ...JOB, titles: [], region: "", places: [] } }],
   email: { host: "smtp.gmail.com", port: "587", user: "", from: "", password_set: false, source: "none", last_test: null },
   keys: { firecrawl: { source: "none", hint: "" }, tavily: { source: "none", hint: "" }, scrapfly: { source: "none", hint: "" } },

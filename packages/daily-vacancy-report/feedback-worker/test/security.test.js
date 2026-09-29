@@ -64,7 +64,7 @@ describe("escaping", () => {
 });
 
 describe("authentication", () => {
-  it("keeps every Hermes API route behind the token", async () => {
+  it("keeps every HermitShell API route behind the token", async () => {
     const env = testEnv();
     const routes = [["GET", "/events"], ["POST", "/ack"], ["GET", "/api/queue"], ["POST", "/api/queue/ack"],
       ["GET", "/api/file?key=cvfile:1"], ["POST", "/api/status"], ["POST", "/api/invite"]];
@@ -129,7 +129,7 @@ describe("size limits", () => {
     expect(env.FEEDBACK.store.size).toBe(0);
   });
 
-  it("rejects an oversized Hermes status report", async () => {
+  it("rejects an oversized HermitShell status report", async () => {
     const env = testEnv();
     const res = await worker.fetch(new Request(`${BASE}/api/status`, {
       method: "POST", headers: { Authorization: "Bearer api-token", "Content-Length": "5000000" }, body: "{}" }), env);

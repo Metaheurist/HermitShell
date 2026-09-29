@@ -536,7 +536,7 @@ def keyword_match(text: str, cv: dict[str, re.Pattern], other: dict[str, re.Patt
 # --------------------------------------------------------------------------- model
 
 SYSTEM_PROMPT = (
-    "You are Hermes, a precise career-matching assistant. You compare a job listing with a candidate's CV "
+    "You are HermitShell, a precise career-matching assistant. You compare a job listing with a candidate's CV "
     "and answer with strict JSON only. Be honest and critical: do not inflate scores."
 )
 
@@ -621,7 +621,7 @@ def hermes_summary(host: str, model: str, num_ctx: int | None, jobs: list[dict])
             "opportunity and why, mention any pattern across the list, and suggest one concrete next step. "
             "Plain text, no lists, no greeting.")
     try:
-        return ollama_chat(host, model, "You are Hermes, a concise career assistant.", user,
+        return ollama_chat(host, model, "You are HermitShell, a concise career assistant.", user,
                            num_ctx, num_predict=180).strip()
     except requests.RequestException as exc:
         log(f"summary failed: {exc.__class__.__name__}")
@@ -853,7 +853,7 @@ def job_card(job: dict, rank: int) -> str:
     </td>
   </tr></table>
   <table width="100%" cellpadding="0" cellspacing="0" style="margin:14px 0 16px"><tr>
-    {meter("Hermes fit", f"{job['fit']}/10", job['fit'] * 10, colour)}
+    {meter("HermitShell fit", f"{job['fit']}/10", job['fit'] * 10, colour)}
     {meter("Confidence", f"{job['confidence']}%", job['confidence'], "#6366f1")}
     {meter("CV keyword match", f"{job['coverage']}%", job['coverage'], "#0ea5e9")}
   </tr></table>
@@ -920,7 +920,7 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, pr
                followups: str = "", more: list[dict] | None = None) -> str:
     summary_block = (
         f'<table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e0e7ff;border-radius:16px;margin:22px 0 4px">'
-        f'<tr><td style="padding:18px 22px"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:{C_ACCENT};font-weight:700">Hermes&rsquo; take</div>'
+        f'<tr><td style="padding:18px 22px"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:{C_ACCENT};font-weight:700">HermitShell&rsquo;s take</div>'
         f'<div style="font-size:15px;color:#1e293b;line-height:1.6;margin-top:6px">{esc(summary)}</div></td></tr></table>'
     ) if summary else ""
     cv_block = (
@@ -932,13 +932,13 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, pr
     where = f" in {esc(CFG.region)}" if CFG.region else ""
     empty = "" if top or maybe else (
         f'<div style="background:#fff;border-radius:16px;padding:28px;text-align:center;color:{C_MUTED};margin-top:22px">'
-        f'No new matching roles{where} this run. Hermes will keep looking.</div>')
+        f'No new matching roles{where} this run. HermitShell will keep looking.</div>')
     location_filter = f"located in {esc(CFG.region)} &middot; " if CFG.region_re else ""
     outside = f"{stats['excluded_location']} outside {esc(CFG.region or 'the region')}, " if CFG.region_re else ""
     penalties = [f"{n} for {label}" for n, label in ((CFG.junior_penalty, "Junior/Graduate"),
                                                       (CFG.senior_penalty, "Senior"),
                                                       (CFG.lead_penalty, "Lead/Principal")) if n]
-    penalty_note = (f"Hermes fit is reduced by {', '.join(penalties)} titles to match your target level, "
+    penalty_note = (f"HermitShell fit is reduced by {', '.join(penalties)} titles to match your target level, "
                     "and by up to 1 when the listing reads at one of those levels even though the title does not say so."
                     if penalties else "")
     salary_filter = (f" &middot; salary at least {esc(stats.get('salary_currency', ''))}{stats['min_salary']:,}"
@@ -950,7 +950,7 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, pr
     verify_note = (f"Scores of {stats['verify_from']} or more are checked a second time and the two scores are averaged."
                    if stats.get("verify_from") else "")
     feedback_note = ("<br>Buttons on each job record your answer after you confirm it. Thumbs up and down "
-                     "teach Hermes what a good match looks like, Interested shortlists a job, I applied starts "
+                     "teach HermitShell what a good match looks like, Interested shortlists a job, I applied starts "
                      "follow-up reminders, and Cover letter and Tailored CV email you a PDF made for that job "
                      "within minutes."
                      if stats.get("feedback") else "")
@@ -974,7 +974,7 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, pr
   <div style="font-size:12px;color:{C_MUTED};line-height:1.6;padding:18px 6px 6px;text-align:center">
     Filters: {location_filter}full-time/permanent or contract &middot; fit &ge; {stats['min_score']}/10{salary_filter}.<br>
     Excluded this run: {outside}{stats['excluded_type']} unwanted job type or work mode, {stats['below_min']} below threshold{extra_excluded}.<br>
-    Rated by {esc(stats['model'])} (Hermes&rsquo; model) on your Hermes server &middot; sources: {esc(stats['sources'])} &middot;
+    Rated by {esc(stats['model'])} (HermitShell&rsquo;s model) on your HermitShell server &middot; sources: {esc(stats['sources'])} &middot;
     Web data: {stats['web_usage']}.<br>
     CV keyword match = share of the technologies named in the listing that appear on your CV.
     {penalty_note} {verify_note}{feedback_note}

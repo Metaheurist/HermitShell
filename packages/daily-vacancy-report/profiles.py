@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Daily Vacancy Report profiles and dashboard settings, managed from the feedback Worker.
 
-The owner (whoever set up Hermes) uses .env, job_profile.md and cv_keywords.json, overlaid by anything saved
+The owner (whoever set up HermitShell) uses .env, job_profile.md and cv_keywords.json, overlaid by anything saved
 on the Worker's /admin dashboard (state/dashboard.json, read by hermes_common before .env). Everyone else joins
 through a single-use invite link made on the dashboard. Their details and CV wait in the Worker until this
 script collects them, reads the CV, has Hermes' model turn it into a profile and search terms, and emails them.
@@ -461,7 +461,7 @@ def rebuild_owner(item: dict, api, model_info_factory=lambda: connect_model("JOB
     save(owner)
     log(f"Rebuilt the owner profile from a new CV ({len(built['skills'])} skills)")
     notify(lambda: send_owner("Your CV was updated", [
-        "Hermes read the CV you uploaded on the dashboard and rebuilt your profile. The previous "
+        "HermitShell read the CV you uploaded on the dashboard and rebuilt your profile. The previous "
         f"{profile_file.name} and {keywords_file.name} are kept as .bak copies.",
         f"Skills read from the CV: {', '.join(owner['skills'])}",
         f"Titles it suggests: {', '.join(built['titles'])}"]))
@@ -520,7 +520,7 @@ def send_welcome(profile: dict, built: dict, updated: bool) -> None:
     unsub = unsubscribe_link(env("JOB_FEEDBACK_URL", "") or "", env("JOB_FEEDBACK_SECRET", "") or "",
                              profile["name"], profile["id"])
     title = f"Welcome, {first}" if not updated else f"Profile updated, {first}"
-    header = email_header(FROM_NAME, _today(), title, "Hermes has read your CV and set up your job search",
+    header = email_header(FROM_NAME, _today(), title, "HermitShell has read your CV and set up your job search",
                           [(len(built["skills"]), "Skills from your CV"), (len(built["titles"]), "Job titles"),
                            ("Daily", "Reports")], highlight=0)
     how = ("<ul style=\"margin:8px 0 0;padding-left:18px;font-size:14px;line-height:22px;color:#334155\">"
@@ -533,7 +533,7 @@ def send_welcome(profile: dict, built: dict, updated: bool) -> None:
            "<li>On Sundays a weekly roll-up shows your applications and the skills that keep coming up.</li></ul>")
     blocks = [
         f'<div style="font-size:13px;font-weight:700;color:#4f46e5;text-transform:uppercase;letter-spacing:.06em">'
-        f'Hermes will search for</div><div style="margin-top:10px">{_chips(built["titles"], "#3730a3", "#eef2ff")}</div>',
+        f'HermitShell will search for</div><div style="margin-top:10px">{_chips(built["titles"], "#3730a3", "#eef2ff")}</div>',
         f'<div style="font-size:13px;font-weight:700;color:#047857;text-transform:uppercase;letter-spacing:.06em">'
         f'Skills it matches jobs against</div><div style="margin-top:10px">'
         f'{_chips([s["name"] for s in built["skills"]], "#065f46", "#ecfdf5")}</div>',
@@ -545,7 +545,7 @@ def send_welcome(profile: dict, built: dict, updated: bool) -> None:
                                         "deletes your profile and CV. "
                                         f'<a href="{html.escape(privacy)}" style="color:#64748b">How your data is '
                                         "handled</a>." if unsub else ""))
-    text = (f"{title}\n\nHermes will search for: {', '.join(built['titles'])}\n"
+    text = (f"{title}\n\nHermitShell will search for: {', '.join(built['titles'])}\n"
             f"Skills: {', '.join(s['name'] for s in built['skills'])}\n\n"
             "Your first report arrives with the next daily run."
             + (f"\n\nUnsubscribe: {unsub}\nHow your data is handled: {privacy}" if unsub else ""))
@@ -564,7 +564,7 @@ def send_owner(subject: str, lines: list[str]) -> None:
     link = f'<p style="margin:10px 0 0"><a href="{html.escape(admin)}/admin" style="color:#4f46e5">Manage profiles</a></p>' \
         if admin else ""
     profiles = all_profiles()
-    header = email_header("Profiles", _today(), subject, "People getting reports from your Hermes",
+    header = email_header("Profiles", _today(), subject, "People getting reports from your HermitShell",
                           [(sum(p.get("status") == "active" for p in profiles), "Active"),
                            (sum(p.get("status") == "paused" for p in profiles), "Paused")], highlight=0)
     send(to, f"{FROM_NAME}: {subject}", _email(header, [body + link]), "\n".join(lines) + (f"\n\n{admin}/admin" if admin else ""))
@@ -662,12 +662,12 @@ def send_goodbye(profile: dict) -> None:
     first = profile["name"].split()[0]
     header = email_header(FROM_NAME, _today(), f"Goodbye, {first}", "You are unsubscribed and your data is deleted",
                           [("0", "More reports"), ("Deleted", "Profile, CV and history")])
-    body = ('<p style="margin:0 0 8px;font-size:14px;line-height:21px;color:#334155">Hermes has deleted your '
+    body = ('<p style="margin:0 0 8px;font-size:14px;line-height:21px;color:#334155">HermitShell has deleted your '
             "profile, your CV, the jobs it found for you, your feedback, cover letters and tailored CVs, and has "
             "removed your name and email address from its logs.</p>"
             '<p style="margin:0;font-size:14px;line-height:21px;color:#334155">This is the last email you will get '
             "from it. Copies in the nightly encrypted backups expire as those backups are rotated out.</p>")
-    text = (f"Goodbye, {first}\n\nHermes has deleted your profile, your CV, the jobs it found for you, your feedback, "
+    text = (f"Goodbye, {first}\n\nHermitShell has deleted your profile, your CV, the jobs it found for you, your feedback, "
             "cover letters and tailored CVs, and removed your name and email address from its logs. This is the "
             "last email you will get from it.")
     send(profile["email"], f"{FROM_NAME}: you are unsubscribed", _email(header, [body]), text)
@@ -863,7 +863,7 @@ def give_up(item: dict, error: Exception) -> None:
         if (PROFILES_DIR / pid).is_dir() and not (PROFILES_DIR / pid / "profile.json").is_file():
             shutil.rmtree(PROFILES_DIR / pid, ignore_errors=True)
         notify(lambda: send_owner(f"Sign-up from {item.get('name', 'someone')} failed",
-                                  [f"{item.get('name', '')} <{item.get('email', '')}> signed up, but Hermes could not "
+                                  [f"{item.get('name', '')} <{item.get('email', '')}> signed up, but HermitShell could not "
                                    f"build their profile: {error}.",
                                    "Send them a new invite from /admin; pasting the CV text on the form helps."]))
 

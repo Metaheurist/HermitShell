@@ -5,7 +5,7 @@ The "Cover letter" and "Tailored CV" buttons on a job card are signed links to t
 Once you confirm (optionally adding a note such as "mention my Azure work"), the Worker queues the
 request. This script, run every few minutes by `hermes cron`, fetches the queue, writes the letter
 (or tailors the CV, see tailored_cv.py) with Hermes' model from your CV and the job listing, lays it
-out as an A4 PDF and emails it to you with the job details. Your CV never leaves the Hermes server.
+out as an A4 PDF and emails it to you with the job details. Your CV never leaves the HermitShell server.
 
     python3 cover_letter.py                         # fetch requests from the Worker and send them
     python3 cover_letter.py --job KEY [--note ...]  # write a letter for a tracked job now
@@ -196,12 +196,12 @@ def esc(text) -> str:
 EMAIL_TEXT = {
     "cover_letter": ("Cover letter ready", "Your tailored letter is attached as <b>{file}</b>. Read it through and "
                      "adjust anything before you send it.", "Letter preview",
-                     "Written by Hermes&rsquo; model on your Hermes server from your CV profile and the job listing. "
+                     "Written by HermitShell&rsquo;s model on your HermitShell server from your CV profile and the job listing. "
                      "Check every claim before sending."),
     "tailored_cv": ("Tailored CV ready", "Your CV, tailored to this job, is attached as <b>{file}</b>. Job titles, "
                     "employers and dates are copied from your CV; read it through before you send it.",
                     "Profile and skills",
-                    "Tailored by Hermes&rsquo; model on your Hermes server: it only reorders and rephrases your own "
+                    "Tailored by HermitShell&rsquo;s model on your HermitShell server: it only reorders and rephrases your own "
                     "CV. Check every line before sending."),
 }
 
@@ -214,7 +214,7 @@ def email_bodies(job: dict, paragraphs: list[str], filename: str, note: str,
     rows = [(label, value) for label, value in (
         ("Employer", company), ("Advertised by", job.get("company") if job.get("company") != company else ""),
         ("Location", job.get("location")), ("Type", job.get("employment_type")), ("Salary", job.get("salary")),
-        ("Closing date", job.get("closing")), ("Hermes fit", f"{job['fit']}/10" if job.get("fit") is not None else ""),
+        ("Closing date", job.get("closing")), ("HermitShell fit", f"{job['fit']}/10" if job.get("fit") is not None else ""),
     ) if value]
     table = "".join(f'<tr><td style="padding:4px 12px 4px 0;font-size:13px;color:{C_MUTED};white-space:nowrap">'
                     f'{esc(label)}</td><td style="padding:4px 0;font-size:13px;color:{C_INK}">{esc(value)}</td></tr>'
@@ -276,7 +276,7 @@ def make_letter(tracker: Tracker, key: str, note: str, model_info: tuple[str, st
     if not dry_run:
         filename = re.sub(r'[\\/:*?"<>|]+', "", f"Cover letter - {name or 'Candidate'} - {job_title(job)}")[:120] + ".pdf"
         subject, body, text = email_bodies(job, paragraphs, filename, note)
-        hc.send_email(subject, body, text, env("COVER_LETTER_FROM_NAME", "Hermes cover letters") or "Hermes",
+        hc.send_email(subject, body, text, env("COVER_LETTER_FROM_NAME", "HermitShell cover letters") or "HermitShell",
                       attachments=[(filename, pdf, "application/pdf")])
     return path
 
@@ -299,7 +299,7 @@ def make_cv(tracker: Tracker, key: str, note: str, model_info: tuple[str, str, i
         filename = re.sub(r'[\\/:*?"<>|]+', "", f"CV - {name} - {job_title(job)}")[:120] + ".pdf"
         preview = [p for p in (cv["headline"], cv["summary"], "Skills: " + ", ".join(cv["skills"])) if p]
         subject, body, text = email_bodies(job, preview, filename, note, kind="tailored_cv")
-        hc.send_email(subject, body, text, env("COVER_LETTER_FROM_NAME", "Hermes cover letters") or "Hermes",
+        hc.send_email(subject, body, text, env("COVER_LETTER_FROM_NAME", "HermitShell cover letters") or "HermitShell",
                       attachments=[(filename, pdf, "application/pdf")])
     return path
 

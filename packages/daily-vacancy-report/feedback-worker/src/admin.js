@@ -1,10 +1,10 @@
-// Admin gateway (/admin) and the Hermes API (/api/*).
+// Admin gateway (/admin) and the HermitShell API (/api/*).
 //
 // /admin: when ACCESS_AUD is set, Cloudflare Access (email one-time code) must let the request through
 // first. Then sign in with ADMIN_USER (default "admin") and the ADMIN_PASSWORD secret; five wrong attempts
 // lock that address, and 30 from anywhere lock sign-in, for 15 minutes. Signed-in pages create invite
-// links, show the profiles Hermes reports, and queue changes that Hermes applies on its next check
-// (settings pages: settings.js). Nothing here can reach the Hermes server; it only reads /api/queue with its
+// links, show the profiles HermitShell reports, and queue changes that HermitShell applies on its next check
+// (settings pages: settings.js). Nothing here can reach the HermitShell server; it only reads /api/queue with its
 // API token.
 
 import { SECRET_TTL_SECONDS, createInvite, queueItem } from "./join.js";
@@ -26,7 +26,7 @@ const COOKIE = "__Host-hv_admin";
 const KEY_RE = /^[A-Za-z0-9_-]{8,120}$/;
 const PROFILE_RE = /^[a-z0-9-]{1,40}$/;
 const DONE = {
-  queued: "Saved. Hermes applies it within about 5 minutes.",
+  queued: "Saved. HermitShell applies it within about 5 minutes.",
   revoked: "Invite revoked.",
   confirm: "Tick the confirmation box to delete a profile.",
   badkey: "That does not look like an API key.",
@@ -147,10 +147,10 @@ async function dashboard(request, env, s) {
 <td>${button(s.csrf, "revoke", "Revoke", { invite: i.id })}</td></tr>`).join("");
   const done = DONE[url.searchParams.get("done")];
   return page("Profiles", `${done ? `<p style="color:#047857">${esc(done)}</p>` : ""}
-<p class="muted">Last update from Hermes: ${esc(when(current.updated))}.${queued.length ? ` Waiting for Hermes: ${esc(queued.join("; "))}.` : ""}</p>
+<p class="muted">Last update from HermitShell: ${esc(when(current.updated))}.${queued.length ? ` Waiting for HermitShell: ${esc(queued.join("; "))}.` : ""}</p>
 ${problems(current)}${checklist(current)}
 <table class="list"><tr><th>Profile</th><th>Status</th><th>Crawler</th><th></th></tr>
-${(current.profiles || []).map((p) => profileRow(p, s.csrf)).join("") || '<tr><td colspan="4" class="muted">Hermes has not reported any profiles yet.</td></tr>'}</table>
+${(current.profiles || []).map((p) => profileRow(p, s.csrf)).join("") || '<tr><td colspan="4" class="muted">HermitShell has not reported any profiles yet.</td></tr>'}</table>
 ${emailSection(current, s.csrf)}
 ${keysSection(current, s.csrf)}
 <h2>Invite someone</h2>

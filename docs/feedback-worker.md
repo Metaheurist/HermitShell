@@ -16,13 +16,13 @@ back** and **Rejected**. Your answers:
 The button icons are [Lucide](https://lucide.dev) SVGs (`packages/daily-vacancy-report/icons/src`)
 rendered to PNG by `icons/build_icons.py`, because Gmail strips SVG from emails.
 
-Emails can't talk to a server on your home network, and opening a port for Hermes isn't a good
+Emails can't talk to a server on your home network, and opening a port for HermitShell isn't a good
 idea. Instead, the buttons link to a tiny [Cloudflare Worker](https://developers.cloudflare.com/workers/)
-that stores each answer in Workers KV. Hermes collects the answers at the start of every run over
+that stores each answer in Workers KV. HermitShell collects the answers at the start of every run over
 HTTPS. Nothing on your server is exposed, and the Workers free plan is more than enough.
 
 ```
-email button ──> Worker /f (confirm page) ──> KV ──> Hermes GET /events, POST /ack
+email button ──> Worker /f (confirm page) ──> KV ──> HermitShell GET /events, POST /ack
 ```
 
 <img src="images/worker/confirm-not-for-me.png" alt="Confirmation page for Not for me" width="300"> <img src="images/worker/saved.png" alt="Saved page" width="300">
@@ -45,16 +45,16 @@ email button ──> Worker /f (confirm page) ──> KV ──> Hermes GET /eve
   [Extra profiles](#extra-profiles-and-the-admin-page).
 - **Size limits.** Request bodies are capped (answers and status reports at a few KB, sign-ups at
   the CV limit), and uploaded CVs are checked to really be a PDF, .docx or text file.
-- **Short-lived data.** Answers are deleted once Hermes has saved them, and expire after 30 days
+- **Short-lived data.** Answers are deleted once HermitShell has saved them, and expire after 30 days
   in any case. Only the job key, action, optional note and time are stored.
-- **No secrets in git.** The two secrets live only in Hermes' `.env` and in the Worker's
+- **No secrets in git.** The two secrets live only in HermitShell's `.env` and in the Worker's
   encrypted secrets. Your KV namespace ID goes in an untracked `wrangler.local.jsonc`.
 
 ## What you need
 
 - A free [Cloudflare account](https://dash.cloudflare.com/sign-up).
 - Node.js 18 or newer on the machine you deploy from (your PC is fine; it doesn't have to be the
-  Hermes server).
+  HermitShell server).
 - This repository checked out on that machine.
 
 **Easiest: let the setup wizard deploy it.** Give `scripts/setup.py` your Cloudflare account ID and
@@ -64,7 +64,7 @@ The rest of this page is for deploying by hand.
 
 Deploying by hand takes about ten minutes. Pick one of the two routes below; they end in the same
 place. Afterwards, run the setup wizard (or edit `.env`) as described in
-[Connect Hermes](#connect-hermes).
+[Connect HermitShell](#connect-hermitshell).
 
 ## Route A: let an AI agent do it with the Cloudflare MCP
 
@@ -93,7 +93,7 @@ add the **Workers Bindings** server (`https://bindings.mcp.cloudflare.com/mcp`) 
 5. It can confirm the deployment with the MCP's `workers_get_worker` tool, and check requests
    later with the observability server.
 6. Note the URL, e.g. `https://vacancy-feedback.<subdomain>.workers.dev`, and continue with
-   [Connect Hermes](#connect-hermes). The secrets are created there.
+   [Connect HermitShell](#connect-hermitshell). The secrets are created there.
 
 ## Route B: by hand with wrangler
 
@@ -123,9 +123,9 @@ pick a name. The deploy prints your URL, e.g.
 `https://vacancy-feedback.<subdomain>.workers.dev`. Opening it in a browser shows
 "Daily Vacancy Report feedback endpoint."
 
-## Connect Hermes
+## Connect HermitShell
 
-Hermes and the Worker must share two random secrets.
+HermitShell and the Worker must share two random secrets.
 
 ### With the setup wizard (recommended)
 
@@ -185,7 +185,7 @@ The next email has buttons under each job. Press one, confirm, and the following
 | Answers never arrive | Check requests with `npx wrangler tail`, or the Workers Observability MCP / dashboard logs. |
 | No cover letter email | Check `hermes cron list` for `vacancy-cover-letters` and its output in `cron/output/`; run `python3 cover_letter.py` by hand to see errors. |
 
-Answers wait in KV until Hermes fetches them, so a server that is off for a few days loses
+Answers wait in KV until HermitShell fetches them, so a server that is off for a few days loses
 nothing (up to 30 days).
 
 ## Cover letters
@@ -211,7 +211,7 @@ Cover letter button ──> Worker (confirm) ──> KV ──> cover_letter.py 
 CV for the job (titles, employers and dates are copied, never invented) and emails it as a PDF
 ([email](images/emails/tailored-cv.png), [PDF](images/emails/tailored-cv-pdf.png)).
 
-Everything runs on your Hermes server; the Worker only sees the job key and your note. Failed
+Everything runs on your HermitShell server; the Worker only sees the job key and your note. Failed
 attempts are retried on the next two runs, then given up (see `letters` in
 `state/job_tracker.db`). Put your name and contact line in `.env` so they appear on the letter:
 
@@ -256,8 +256,8 @@ python3 job_scanner.py --remove-skill "Kubernetes"
 
 ## Extra profiles and the admin page
 
-One Hermes can send reports to other people too, each built from their own CV. You manage them
-from the Worker's admin page; Hermes applies the changes, since the Worker can't reach your server.
+One HermitShell can send reports to other people too, each built from their own CV. You manage them
+from the Worker's admin page; HermitShell applies the changes, since the Worker can't reach your server.
 
 ```
 /admin (you) ──> invite link ──> /join (them: details + CV) ──> KV ──> profiles.py every 5 min
@@ -282,9 +282,9 @@ from the Worker's admin page; Hermes applies the changes, since the Worker can't
    **Create invite link**. Each link works once and expires after 7 days; send it to the person.
    (`python3 profiles.py --invite "note"` makes one from the server too.)
 4. They fill in their name, email, optional phone and town, the roles they want, and upload a CV
-   (PDF, Word .docx or text, up to 5 MB) or paste it. The CV waits in KV, deleted once Hermes has it.
+   (PDF, Word .docx or text, up to 5 MB) or paste it. The CV waits in KV, deleted once HermitShell has it.
 5. Within 5 minutes `profiles.py` downloads it, reads the text (`cv_text.py`, no extra packages;
-   scanned image-only PDFs can't be read, so the pasted text is used instead), and asks Hermes'
+   scanned image-only PDFs can't be read, so the pasted text is used instead), and asks HermitShell's
    model for a summary, job titles, skills and gaps. From those it writes the person's
    `job_profile.md`, `cv_keywords.json` and search settings under `state/profiles/<id>/`, emails
    them a welcome message listing what it will search for, and emails you a note.
@@ -301,7 +301,7 @@ model request (ratings, cover letters, CVs, sign-ups, for all profiles) waits in
 so the model only ever gets one request at a time; see
 [configuration](configuration.md#where-settings-come-from). A sign-up
 that uses the email of an existing profile is not applied (so an invite can't take over someone
-else's profile); Hermes emails you about it instead. Opening the same invite twice creates only
+else's profile); HermitShell emails you about it instead. Opening the same invite twice creates only
 one profile.
 
 CVs are read in a separate process with a time and memory limit, so a broken or hostile file
@@ -317,12 +317,12 @@ web search keys, your job search and your CV.
 
 <img src="images/worker/admin-dashboard-setup.png" alt="Admin page right after setup, with the checklist" width="720">
 
-- **Finish setting up**: a checklist until Hermes has connected, the email server is set and a
+- **Finish setting up**: a checklist until HermitShell has connected, the email server is set and a
   test email worked, there is a web search key, and your CV and job search are in. Each item links
   to its form.
-- **Hermes could not apply**: changes Hermes rejected in the last day (a mistyped SMTP server,
+- **HermitShell could not apply**: changes HermitShell rejected in the last day (a mistyped SMTP server,
   for example), with the reason.
-- **Profiles**: everyone Hermes reports, with status, last report and a **no CV** tag when there
+- **Profiles**: everyone HermitShell reports, with status, last report and a **no CV** tag when there
   is none yet. **Settings, job search and CV** opens that profile's page. Pause, resume or delete
   (deleting removes their CV and history from your server, their answers still waiting in KV and
   their name and email from the logs; the owner can't be deleted).
@@ -332,17 +332,17 @@ web search keys, your job search and your CV.
   [app password](api-keys.md#gmail-app-password)) and an optional sender address, used for
   everyone's reports. The password box stays empty; leave it empty to keep the saved one. Changing
   the server or username without a new password clears the old password, so it is never sent to a
-  different server. **Send a test email** reports the result on the page after Hermes' next check.
+  different server. **Send a test email** reports the result on the page after HermitShell's next check.
   **Go back to the .env email settings** undoes the dashboard values.
 - **Web search API keys**: Firecrawl (several keys, comma separated, are used in turn), Tavily and
   Scrapfly for everyone without their own key. Empty boxes leave a key alone; **Use the .env key**
   undoes a dashboard key. [Where to get each key](api-keys.md).
 - **Invites**: create, see and revoke unused links.
 
-Keys and passwords are stored on the Hermes server (`state/dashboard.json` and
+Keys and passwords are stored on the HermitShell server (`state/dashboard.json` and
 `state/profiles/`, mode 600) and shown only as their last four characters. Changes wait in KV and
-are applied by `profiles.py` within 5 minutes ("Waiting for Hermes" shows what is pending).
-Passwords and keys typed into the page are deleted from KV after 2 days if Hermes hasn't collected
+are applied by `profiles.py` within 5 minutes ("Waiting for HermitShell" shows what is pending).
+Passwords and keys typed into the page are deleted from KV after 2 days if HermitShell hasn't collected
 them.
 
 #### A profile's page
@@ -355,7 +355,7 @@ them.
   remote jobs elsewhere count, level, minimum salary and currency, employment types, work modes
   and whether to hide agency adverts that don't name the employer. Saving rebuilds the web search
   queries and the title filter when the titles or location change.
-- **CV**: upload a PDF, Word or text file, or paste it. Hermes reads it, rebuilds the profile and
+- **CV**: upload a PDF, Word or text file, or paste it. HermitShell reads it, rebuilds the profile and
   skills the jobs are rated against, and emails a summary. Your previous `job_profile.md` and
   `cv_keywords.json` are kept as `.bak` copies.
 
@@ -387,7 +387,7 @@ shows the password form. The Worker then checks Access' signed token on every ad
    ```
 
 With `ACCESS_AUD` set, `/admin` answers 403 to any request without a valid Access token for that
-audience, even if the password is right. Buttons, `/join` invites and the Hermes API are not
+audience, even if the password is right. Buttons, `/join` invites and the HermitShell API are not
 behind Access and keep working.
 
 From the server:
@@ -411,7 +411,7 @@ running) until you resume from `/admin` or with `profiles.py --resume owner`.
 The Worker serves `/privacy`: what is kept about the people you invite, where, for how long, how
 it is protected and how to have it deleted. The sign-up form, the welcome email and the
 unsubscribe page link to it. It is the same text as [PRIVACY.md](../PRIVACY.md); if you change how
-you run Hermes (for example turn encryption off or change the retention days), edit both
+you run HermitShell (for example turn encryption off or change the retention days), edit both
 `src/privacy.js` and that file.
 
 <img src="images/worker/confirm-unsubscribe.png" alt="Unsubscribe confirmation" width="300">
@@ -420,7 +420,7 @@ you run Hermes (for example turn encryption off or change the retention days), e
 
 Workers KV's free plan allows 1,000 list operations a day. Polling (`/events` every 5 minutes for
 cover letters, `/api/queue` for profiles) reads a small flag key instead of listing, and only lists
-when something is waiting, plus an hourly and a daily full check. Status reports from Hermes are
+when something is waiting, plus an hourly and a daily full check. Status reports from HermitShell are
 only written when something changed or once an hour.
 
 ## Removing it

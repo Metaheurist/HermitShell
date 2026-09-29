@@ -8,6 +8,11 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Named HermitShell throughout.** Emails, the Worker's pages, the dashboard, the privacy notice
+  and the docs now say HermitShell where they meant the job finder ("HermitShell fit", "Waiting for
+  HermitShell", "HermitShell has deleted your profile"). Hermes still names the Hermes Agent platform
+  it runs on: its home folder, `config.yaml`, model, container and `hermes cron`. Settings such as
+  `HERMES_HOME` are unchanged. The default sender for letters is now "HermitShell cover letters".
 - **Tidier job cards.** The buttons are no longer in one crowded row. Thumbs up and down sit under
   the fit score. **View job**, **I applied** and **Interested** follow a divider. **Cover letter**
   and **Tailored CV** share a "Made for this job" panel below them. The "Rated from the search

@@ -89,17 +89,17 @@ describe("setup checklist", () => {
     expect(body).not.toContain("Finish setting up");
   });
 
-  it("asks for Hermes to connect before anything else", async () => {
+  it("asks for HermitShell to connect before anything else", async () => {
     const { get } = await setup(null);
     const { body } = await get("/admin");
-    expect(body).toContain("Hermes has not reported yet");
-    expect(body).toContain("Upload your CV once Hermes has connected");
+    expect(body).toContain("HermitShell has not reported yet");
+    expect(body).toContain("Upload your CV once HermitShell has connected");
   });
 
-  it("shows changes Hermes rejected, escaped", async () => {
+  it("shows changes HermitShell rejected, escaped", async () => {
     const { get } = await setup({ ...STATUS, problems: [{ at: Date.now(), what: "email", error: "invalid <script>" }] });
     const { body } = await get("/admin");
-    expect(body).toContain("Hermes could not apply");
+    expect(body).toContain("HermitShell could not apply");
     expect(body).toContain("invalid &lt;script&gt;");
   });
 });
@@ -190,7 +190,7 @@ describe("profile page", () => {
     expect(body).toContain('enctype="multipart/form-data"');
   });
 
-  it("is not found for a profile Hermes hasn't reported", async () => {
+  it("is not found for a profile HermitShell hasn't reported", async () => {
     const { get } = await setup();
     expect((await get("/admin/profile?u=casey-quinn")).res.status).toBe(404);
     expect((await get("/admin/profile?u=../x")).res.status).toBe(404);

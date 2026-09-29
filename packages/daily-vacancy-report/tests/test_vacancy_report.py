@@ -422,9 +422,10 @@ def test_card_buttons_are_grouped_rating_by_the_score_then_actions_then_document
     import job_scanner
 
     page = job_scanner.build_html([report_job()], [], REPORT_STATS, "Summary.")
-    order = [page.index(s) for s in ("a=good_match", "a=not_for_me", "Hermes fit", "View job &rarr;", "a=applied",
+    order = [page.index(s) for s in ("a=good_match", "a=not_for_me", "HermitShell fit", "View job &rarr;", "a=applied",
                                      "a=interested", "Made for this job", "a=cover_letter", "a=tailored_cv")]
     assert order == sorted(order)
+    assert "HermitShell fit" in page and "Hermes" not in page + job_scanner.build_text([report_job()], "Summary.")
     bare = job_scanner.card_action_bar("https://jobs.example.com/1", {})
     assert "View job &rarr;" in bare and "Made for this job" not in bare
     assert job_scanner.rating_buttons({}) == ""

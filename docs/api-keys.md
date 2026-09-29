@@ -14,8 +14,8 @@ links and the `/admin` dashboard where all of the keys below can be entered.
 | [Ollama](#ollama) | Yes | The model that rates jobs and writes letters, on your own machine | Free and open source | Set up by the wizard |
 
 Free plans change: check each pricing page before relying on the numbers. Keys and passwords typed
-on `/admin` wait in the Worker only until Hermes picks them up (within minutes; they expire after
-two days if Hermes is off). Hermes then keeps them
+on `/admin` wait in the Worker only until HermitShell picks them up (within minutes; they expire after
+two days if HermitShell is off). HermitShell then keeps them
 in `state/dashboard.json`, readable only by the Hermes account like `.env`. The dashboard only ever
 shows their last four characters.
 
@@ -28,7 +28,7 @@ data, company home pages) cost nothing. So one person's daily report fits in Fir
 
 For extra profiles, either give each person their own Firecrawl key (on `/admin`, in their row
 under **Crawler**; each person can make a free account), or add several global Firecrawl keys
-separated by commas: Hermes moves to the next key when one runs low. The footer of every report
+separated by commas: HermitShell moves to the next key when one runs low. The footer of every report
 shows the credits each provider used.
 
 ## Cloudflare
@@ -45,7 +45,7 @@ Gmail doesn't accept your normal password from other programs; it needs an app p
 1. Open [myaccount.google.com/security](https://myaccount.google.com/security) and turn on
    **2-Step Verification** if it's off (app passwords need it).
 2. Open [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords), type a
-   name such as `Hermes` and press **Create**.
+   name such as `HermitShell` and press **Create**.
 3. Copy the 16-letter password Google shows. It is only shown once. Spaces in it don't matter.
 4. On `/admin` under **Email server** enter:
 
@@ -57,10 +57,10 @@ Gmail doesn't accept your normal password from other programs; it needs an app p
    | Password | the app password |
 
 5. Press **Save email server**, then **Send a test email**. The result shows on the page after
-   Hermes' next check (within about 5 minutes).
+   HermitShell's next check (within about 5 minutes).
 
 A personal Gmail account can send to about 500 recipients a day, far more than the reports need.
-Consider a separate Gmail account for Hermes, so the app password can't reach your main inbox.
+Consider a separate Gmail account for HermitShell, so the app password can't reach your main inbox.
 Revoke the app password on the same page if it ever leaks; changing your Google password also
 revokes it.
 

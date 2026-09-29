@@ -53,6 +53,8 @@ describe("invite sign-up", () => {
     const form = await (await worker.fetch(new Request(`${BASE}/join?i=${id}`), env)).text();
     expect(form).toContain('enctype="multipart/form-data"');
     expect(form).toContain('href="/privacy"');
+    expect(form).toContain("HermitShell checks job boards");
+    expect(form).not.toContain("Hermes");
     expect((await worker.fetch(joinForm(id, { cv_text: CV_TEXT }), env)).status).toBe(200);
     expect(keysWith(env, "invite:")).toEqual([]);
     expect((await worker.fetch(joinForm(id, { cv_text: CV_TEXT }), env)).status).toBe(410);
@@ -127,7 +129,7 @@ describe("admin gateway", () => {
     expect(res.headers.get("Set-Cookie")).toMatch(/HttpOnly; Secure; SameSite=Strict/);
     const { body } = await dashboard(env, cookie);
     expect(body).toContain("Invite someone");
-    expect(body).toContain("Hermes has not reported any profiles yet");
+    expect(body).toContain("HermitShell has not reported any profiles yet");
   });
 
   it("locks an address out after five wrong passwords", async () => {
@@ -216,7 +218,7 @@ describe("admin gateway", () => {
     expect(keysWith(env, "event:sam-lee:")).toEqual([]);
     expect(keysWith(env, "flag:events:sam-lee")).toEqual([]);
     expect(keysWith(env, "event:_:")).toHaveLength(1);
-    expect(body).toContain("Hermes&#39; .env fc-...0001");
+    expect(body).toContain("HermitShell&#39;s .env fc-...0001");
     expect((await adminAction(env, cookie, csrf, { action: "api_keys", keys: "bad key!" })).headers.get("Location")).toBe("/admin?done=badkey#keys");
     await adminAction(env, cookie, csrf, { action: "api_keys", keys: "fc-one11111, fc-two22222" });
     await adminAction(env, cookie, csrf, { action: "api_keys_clear" });
@@ -230,7 +232,7 @@ describe("admin gateway", () => {
       { action: "api_keys", u: undefined, key: undefined, firecrawl: ["fc-one11111", "fc-two22222"], clear: undefined },
       { action: "api_keys", u: undefined, key: undefined, firecrawl: undefined, clear: ["firecrawl"] },
     ]);
-    expect((await dashboard(env, cookie)).body).toContain("Waiting for Hermes");
+    expect((await dashboard(env, cookie)).body).toContain("Waiting for HermitShell");
   });
 
   it("signs out", async () => {
@@ -242,7 +244,7 @@ describe("admin gateway", () => {
   });
 });
 
-describe("Hermes API", () => {
+describe("HermitShell API", () => {
   it("needs the API token", async () => {
     const env = testEnv();
     for (const path of ["/api/queue", "/api/file?k=cvfile:x"]) {

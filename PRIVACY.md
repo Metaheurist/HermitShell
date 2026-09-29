@@ -1,6 +1,6 @@
 # How your data is handled
 
-This is the notice shown to people invited to receive job reports from a HermitShell (Hermes)
+This is the notice shown to people invited to receive job reports from a HermitShell
 server. The feedback Worker serves the same text at `/privacy`, linked from the sign-up form, the
 welcome email and the unsubscribe page. Operators: it describes the defaults; if you change them
 (retention days, encryption, backups), update this file and
@@ -9,7 +9,7 @@ out is in [docs/configuration.md](docs/configuration.md#data-protection).
 
 ## Who runs this
 
-These reports come from a Hermes server run by the person who invited you. They decide how it is
+These reports come from a HermitShell server run by the person who invited you. They decide how it is
 set up and are the one to contact: reply to any report with a question or request.
 
 ## What is kept
@@ -25,10 +25,10 @@ on the sign-up form and can withdraw at any time with the unsubscribe link.
 
 ## Where
 
-Your CV and details are read on the Hermes server, by an AI model running on that server, not a
+Your CV and details are read on the HermitShell server, by an AI model running on that server, not a
 cloud AI service. This page, the sign-up form and the email buttons run on Cloudflare Workers,
-where what you send waits only until Hermes collects it (at most 30 days); the operator's admin
-page there lists your name and email address until Hermes next reports that you have left. Job
+where what you send waits only until HermitShell collects it (at most 30 days); the operator's admin
+page there lists your name and email address until HermitShell next reports that you have left. Job
 searches send job titles and a location to web search services, never your CV or contact details.
 Emails go through the operator's email provider.
 
@@ -40,7 +40,7 @@ for about two months (14 daily and 8 weekly copies), then deleted.
 
 ## How it is protected
 
-Every connection uses HTTPS. On the server your files are readable only by Hermes' account and,
+Every connection uses HTTPS. On the server your files are readable only by HermitShell's account and,
 when the operator has turned encryption on, your CV, profile, letters and CVs are encrypted
 (AES-256-GCM), as are the backups. Email buttons are signed and stop working after 90 days.
 

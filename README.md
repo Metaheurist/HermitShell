@@ -185,4 +185,4 @@ Two GitHub Actions workflows run on every push and pull request:
 
 Nothing in this repo contains credentials. `.gitignore` excludes `.env`, `job_profile.md`,
 `cv_keywords.json` and `state/`, and the feedback Worker's own `.gitignore` excludes
-`wrangler.local.jsonc` and `.dev.vars`. Keep your filled-in copies on the Hermes host only.
+`wrangler.local.jsonc` and `.dev.vars`. Keep your filled-in copies on the HermitShell host only.

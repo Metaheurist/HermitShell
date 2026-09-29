@@ -27,7 +27,7 @@ With a Cloudflare API token, setup is short. The wizard asks for:
 4. your timezone and, if you like, the email server;
 5. the run times.
 
-It then prints the Worker's `/admin` address. Everything else is done there, once Hermes has connected
+It then prints the Worker's `/admin` address. Everything else is done there, once HermitShell has connected
 (a few minutes): the email server, web search keys ([how to get them](api-keys.md)), your CV and
 the job search. The page's checklist shows what's left.
 

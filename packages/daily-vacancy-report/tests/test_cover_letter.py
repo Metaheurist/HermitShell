@@ -124,6 +124,7 @@ def test_email_lists_the_job_and_attachment():
     for part in ("Cover letter - Sam - AI Engineer.pdf", "Belfast", "8/10", "Your note: short", "View job"):
         assert part in body
     assert "https://example.com/job/1" in text and PARAGRAPHS[-1] in text
+    assert "HermitShell fit" in body and "Hermes" not in body + text
 
 
 # --------------------------------------------------------------------------- pipeline

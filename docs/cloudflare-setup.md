@@ -12,7 +12,7 @@ What the wizard does with the token:
 2. Finds or creates the KV namespace `vacancy-feedback-FEEDBACK`.
 3. Uploads the Worker (`packages/daily-vacancy-report/feedback-worker/src`) and turns on its
    `https://vacancy-feedback.<subdomain>.workers.dev` address.
-4. Stores the Worker secrets: the link-signing secret and API token it generated for Hermes, and
+4. Stores the Worker secrets: the link-signing secret and API token it generated for HermitShell, and
    the `/admin` username and password you type in. Secrets already on the Worker are kept.
 5. Optionally puts `/admin` behind [Cloudflare Access](#protect-admin-with-cloudflare-access), so an
    emailed one-time code is needed before the password page.
@@ -110,7 +110,7 @@ Changing the admin password signs everyone out of `/admin`.
 
 [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) asks for a
 one-time code sent to an allowed email address before `/admin` shows its password form. Buttons,
-sign-up links and the Hermes API are not affected.
+sign-up links and the HermitShell API are not affected.
 
 1. Once, in the dashboard, open **Zero Trust** and pick a team name (your
    `<team>.cloudflareaccess.com` address) and the **Free** plan (up to 50 users). Cloudflare may ask

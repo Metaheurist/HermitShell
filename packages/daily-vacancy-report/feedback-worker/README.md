@@ -17,13 +17,13 @@ missing-skill tags) without opening any port on your server.
 - Links are signed over every field plus the send day (`d`) and expire after 90 days.
 - `/admin` (password in the `ADMIN_PASSWORD` secret, optional `ADMIN_USER`; optionally behind
   Cloudflare Access with `ACCESS_AUD` and `ACCESS_TEAM_DOMAIN`) creates single-use invite
-  links, lists the profiles Hermes reports and queues changes: crawler keys, pause, resume, delete.
-- `/join?i=<invite>` is the sign-up form with the CV upload; the CV is kept raw in KV until Hermes
-  collects it through `/api/queue`, `/api/file` and `/api/queue/ack`. Hermes reports its profiles
+  links, lists the profiles HermitShell reports and queues changes: crawler keys, pause, resume, delete.
+- `/join?i=<invite>` is the sign-up form with the CV upload; the CV is kept raw in KV until HermitShell
+  collects it through `/api/queue`, `/api/file` and `/api/queue/ack`. HermitShell reports its profiles
   with `POST /api/status`.
 
 Source: `src/index.js` (buttons, routing), `src/join.js` (invites, sign-up), `src/admin.js` (admin
-page, Hermes API), `src/lib.js` (signing, pages). It fits in the Cloudflare free plan (Workers and KV);
+page, HermitShell API), `src/lib.js` (signing, pages). It fits in the Cloudflare free plan (Workers and KV);
 polling reads flag keys instead of listing KV, which the free plan limits to 1,000 lists a day.
 
 ## Setup

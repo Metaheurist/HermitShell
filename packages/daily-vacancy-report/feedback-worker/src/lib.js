@@ -141,7 +141,7 @@ export async function deleteAndUnflag(env, ids, prefix, flag) {
   if (ids.length && !(await env.FEEDBACK.list({ prefix, limit: 1 })).keys.length) await env.FEEDBACK.delete(flag);
 }
 
-// An extra profile that unsubscribes or is deleted: its answers not yet collected by Hermes are dropped.
+// An extra profile that unsubscribes or is deleted: its answers not yet collected by HermitShell are dropped.
 export async function purgeProfileEvents(env, profile) {
   if (!profile) return;
   let cursor;

@@ -1,5 +1,5 @@
 // Settings on the admin dashboard: the setup checklist, the email server, the web search API keys and each
-// profile's page (details, job search, CV). Forms open prefilled from the last status Hermes reported; saving
+// profile's page (details, job search, CV). Forms open prefilled from the last status HermitShell reported; saving
 // only queues the change, which profiles.py validates again and applies within about 5 minutes.
 
 import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem } from "./join.js";
@@ -50,8 +50,8 @@ export function checklist(status) {
   const email = status.email || {};
   const keys = status.keys || {};
   const items = [
-    [Boolean(status.updated), "Hermes is connected",
-      "Hermes has not reported yet. It checks in every few minutes once the vacancy-profiles job runs."],
+    [Boolean(status.updated), "HermitShell is connected",
+      "HermitShell has not reported yet. It checks in every few minutes once the vacancy-profiles job runs."],
     [email.source && email.source !== "none" && email.password_set, "Email server set",
       '<a href="#email">Set the email server</a> so reports can be sent.'],
     [email.last_test?.ok === true, "Test email received",
@@ -59,9 +59,9 @@ export function checklist(status) {
     [Object.values(keys).some((k) => k && k.source && k.source !== "none"), "Web search key set",
       '<a href="#keys">Add a web search key</a> (Firecrawl, Tavily or Scrapfly; all have free plans).'],
     [owner?.has_cv, "Your CV uploaded",
-      owner ? `<a href="/admin/profile?u=owner#cv">Upload your CV</a> so jobs can be rated against it.` : "Upload your CV once Hermes has connected."],
+      owner ? `<a href="/admin/profile?u=owner#cv">Upload your CV</a> so jobs can be rated against it.` : "Upload your CV once HermitShell has connected."],
     [(owner?.job?.titles || []).length > 0, "Job search set",
-      owner ? `<a href="/admin/profile?u=owner#job">Choose the job titles and location</a> to search for.` : "Set the job search once Hermes has connected."],
+      owner ? `<a href="/admin/profile?u=owner#job">Choose the job titles and location</a> to search for.` : "Set the job search once HermitShell has connected."],
   ];
   const todo = items.filter(([ok]) => !ok);
   if (!todo.length) return '<p class="muted">Setup complete.</p>';
@@ -71,14 +71,14 @@ export function checklist(status) {
 
 export function problems(status) {
   const recent = (status.problems || []).slice(-5);
-  return recent.length ? `<div class="warn"><b>Hermes could not apply:</b><ul>${recent.map((p) =>
+  return recent.length ? `<div class="warn"><b>HermitShell could not apply:</b><ul>${recent.map((p) =>
     `<li>${esc(p.what)}: ${esc(p.error)} <span class="muted">(${esc(when(p.at))})</span></li>`).join("")}</ul></div>` : "";
 }
 
 export function emailSection(status, csrf) {
   const e = status.email || {};
   const owner = ownerOf(status);
-  const now = e.source === "dashboard" ? "set here" : e.source === "env" ? "from Hermes' .env" : "not set";
+  const now = e.source === "dashboard" ? "set here" : e.source === "env" ? "from HermitShell's .env" : "not set";
   const test = e.last_test ? (e.last_test.ok ? `worked, sent to ${e.last_test.to} ${when(e.last_test.at)}`
     : `failed ${when(e.last_test.at)}: ${e.last_test.error}`) : "none yet";
   return `<h2 id="email">Email server</h2>
@@ -104,7 +104,7 @@ export function keysSection(status, csrf) {
   const keys = status.keys || {};
   const rows = Object.entries(PROVIDERS).map(([name, info]) => {
     const k = keys[name] || {};
-    const now = k.source === "dashboard" ? `set here ${k.hint || ""}` : k.source === "env" ? `Hermes' .env ${k.hint || ""}` : "none";
+    const now = k.source === "dashboard" ? `set here ${k.hint || ""}` : k.source === "env" ? `HermitShell's .env ${k.hint || ""}` : "none";
     const extra = name === "firecrawl" && k.backups ? `, plus ${k.backups} backup key${k.backups === 1 ? "" : "s"}` : "";
     return `<tr><td><b>${info.label}</b><div class="muted"><a href="${info.signup}" rel="noopener">get a key</a></div></td>
 <td class="muted">${esc(now + extra)}</td><td>${k.source === "dashboard" ? button(csrf, "api_keys_clear", "Use the .env key", { provider: name }) : ""}</td></tr>`;
@@ -132,13 +132,13 @@ function boxes(name, options, current) {
 export function profilePage(status, pid, csrf, { done = "", queued = [] } = {}) {
   const p = (status.profiles || []).find((x) => x.id === pid);
   if (!p) {
-    return page("Profile not found", '<p>Hermes has not reported this profile. <a href="/admin">Back to profiles</a></p>', { status: 404 });
+    return page("Profile not found", '<p>HermitShell has not reported this profile. <a href="/admin">Back to profiles</a></p>', { status: 404 });
   }
   const d = p.details || { name: p.name, email: p.email };
   const j = p.job || {};
   const waiting = queued.filter((q) => q.endsWith(` for ${pid}`));
   return page(p.owner ? "Your profile" : p.name, `<p><a href="/admin">&larr; All profiles</a></p>
-${done ? `<p style="color:#047857">${esc(done)}</p>` : ""}${waiting.length ? `<p class="muted">Waiting for Hermes: ${esc(waiting.join("; "))}.</p>` : ""}
+${done ? `<p style="color:#047857">${esc(done)}</p>` : ""}${waiting.length ? `<p class="muted">Waiting for HermitShell: ${esc(waiting.join("; "))}.</p>` : ""}
 <h2 id="details">Details</h2>
 <form method="post" action="/admin/action">${hidden({ csrf, action: "profile", section: "details", u: pid })}
 <div class="grid2"><div><label for="d_name">Name</label><input id="d_name" name="name" value="${esc(d.name)}" required maxlength="80"></div>
@@ -164,7 +164,7 @@ ${done ? `<p style="color:#047857">${esc(done)}</p>` : ""}${waiting.length ? `<p
 <button>Save job search</button></form>
 
 <h2 id="cv">CV</h2>
-<p class="muted">${p.has_cv ? `Hermes has a CV${p.cv_updated ? ` (updated ${esc(when(p.cv_updated))})` : ""}. A new one replaces it and rebuilds the skills and profile the jobs are rated against.` : "No CV yet: jobs can't be rated until one is uploaded."}</p>
+<p class="muted">${p.has_cv ? `HermitShell has a CV${p.cv_updated ? ` (updated ${esc(when(p.cv_updated))})` : ""}. A new one replaces it and rebuilds the skills and profile the jobs are rated against.` : "No CV yet: jobs can't be rated until one is uploaded."}</p>
 <form method="post" action="/admin/cv" enctype="multipart/form-data">${hidden({ csrf, u: pid })}
 <label for="cv">CV file (PDF, Word .docx or text, up to 5 MB)</label><input id="cv" name="cv" type="file" accept=".pdf,.docx,.txt,.md">
 <label for="cv_text">Or paste the CV</label><textarea id="cv_text" name="cv_text" maxlength="${MAX_CV_TEXT}"></textarea>
@@ -236,7 +236,7 @@ export function settingsItem(act, form) {
   return null;
 }
 
-// POST /admin/cv: a CV uploaded for a profile, stored like a sign-up's until Hermes collects it.
+// POST /admin/cv: a CV uploaded for a profile, stored like a sign-up's until HermitShell collects it.
 export async function cvUpload(request, env, s) {
   const form = await limitedForm(request, MAX_CV_FORM_BYTES);
   if (!form) return page("CV too large", '<p>The CV file is larger than 5 MB. <a href="/admin">Back</a></p>', { status: 413 });
@@ -267,5 +267,5 @@ export const SETTINGS_DONE = {
   cvsize: "The CV file is larger than 5 MB.",
   cvtype: "The CV must be a PDF, a Word .docx file or a text file.",
   cvmissing: "Upload a CV file or paste the CV (at least a few lines).",
-  cvqueued: "CV uploaded. Hermes reads it and rebuilds the profile within about 10 minutes, then emails a summary.",
+  cvqueued: "CV uploaded. HermitShell reads it and rebuilds the profile within about 10 minutes, then emails a summary.",
 };

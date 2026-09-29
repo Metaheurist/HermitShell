@@ -1,11 +1,11 @@
 // Invite-only sign-up: /join?i=<invite id> shows a form for a new profile with a CV upload.
-// The answers and the CV wait in KV until Hermes collects them from /api/queue.
+// The answers and the CV wait in KV until HermitShell collects them from /api/queue.
 
 import { esc, limitedForm, newId, page, setFlag, text } from "./lib.js";
 
 export const INVITE_DAYS = 7;
 export const QUEUE_TTL_SECONDS = 60 * 60 * 24 * 30;
-// Queue items carrying passwords or API keys expire sooner if Hermes never collects them.
+// Queue items carrying passwords or API keys expire sooner if HermitShell never collects them.
 export const SECRET_TTL_SECONDS = 60 * 60 * 24 * 2;
 export const MAX_CV_BYTES = 5 * 1024 * 1024;
 const MAX_FORM_BYTES = MAX_CV_BYTES + 256 * 1024;
@@ -68,7 +68,7 @@ export function cvKind(file, bytes) {
 function form(inviteId, values = {}, error = "") {
   const v = (k) => esc(values[k] || "");
   return page("Join the Daily Vacancy Report", `${error ? `<p style="color:#b91c1c">${esc(error)}</p>` : ""}
-<p>Hermes checks job boards every day and emails you the roles that match your CV, with a fit score and the skills each one asks for.</p>
+<p>HermitShell checks job boards every day and emails you the roles that match your CV, with a fit score and the skills each one asks for.</p>
 <form method="post" action="/join?i=${esc(inviteId)}" enctype="multipart/form-data">
 <input type="hidden" name="i" value="${esc(inviteId)}">
 <label for="name">Full name</label><input id="name" name="name" required maxlength="80" value="${v("name")}" autocomplete="name">
@@ -78,7 +78,7 @@ function form(inviteId, values = {}, error = "") {
 <label for="roles">Roles you are looking for</label><textarea id="roles" name="roles" required maxlength="300" placeholder="For example: data analyst or BI developer, hybrid or remote">${v("roles")}</textarea>
 <label for="cv">Your CV (PDF, Word .docx or text, up to 5 MB)</label><input id="cv" name="cv" type="file" accept=".pdf,.docx,.txt,.md">
 <label for="cv_text">Or paste your CV (used if the file cannot be read)</label><textarea id="cv_text" name="cv_text" maxlength="${MAX_CV_TEXT}">${v("cv_text")}</textarea>
-<label class="check"><input type="checkbox" name="consent" value="yes" required> <span>I agree that Hermes keeps my CV and details on its server to match jobs for me, as described in <a href="/privacy" target="_blank" rel="noopener">how your data is handled</a>. Every report has an unsubscribe link that deletes them.</span></label>
+<label class="check"><input type="checkbox" name="consent" value="yes" required> <span>I agree that HermitShell keeps my CV and details on its server to match jobs for me, as described in <a href="/privacy" target="_blank" rel="noopener">how your data is handled</a>. Every report has an unsubscribe link that deletes them.</span></label>
 <button type="submit">Create my profile</button></form>`);
 }
 
@@ -103,7 +103,7 @@ export async function handleJoin(request, env) {
   const retry = (message) => form(invite.id, values, message);
   if (!values.name || !values.roles) return retry("Please fill in your name and the roles you are looking for.");
   if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(values.email)) return retry("Please enter a valid email address.");
-  if (data.get("consent") !== "yes") return retry("Please tick the box to agree to Hermes keeping your CV.");
+  if (data.get("consent") !== "yes") return retry("Please tick the box to agree to HermitShell keeping your CV.");
 
   const file = data.get("cv");
   let cv = null;
@@ -119,6 +119,6 @@ export async function handleJoin(request, env) {
 
   await env.FEEDBACK.delete(`invite:${invite.id}`);
   await queueItem(env, { type: "signup", invite: invite.id, note: invite.note, ...values, cv });
-  return page("Thanks, you're in", `<p>Thanks ${esc(values.name)}. Hermes is setting up your profile from your CV and will email
+  return page("Thanks, you're in", `<p>Thanks ${esc(values.name)}. HermitShell is setting up your profile from your CV and will email
 ${esc(values.email)} when it is ready. Your first report arrives with the next daily run.</p><p>You can close this tab.</p>`);
 }

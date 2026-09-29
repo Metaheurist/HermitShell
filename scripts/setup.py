@@ -558,7 +558,7 @@ class Wizard:
         """With the Worker deployed, email, keys, the CV and the job search are set on its /admin page; only the
         timezone (for the schedules) is needed here, and the email server if you'd rather type it now."""
         self.heading("Timezone and, optionally, email")
-        self.say("Your web search keys, CV and job search are set on the Worker's /admin page once Hermes has\n"
+        self.say("Your web search keys, CV and job search are set on the Worker's /admin page once HermitShell has\n"
                  "connected (a few minutes after setup). docs/api-keys.md shows how to get each key.")
         shared = {s.key: s for s in parse_example(REPO / ".env.example")}
         self.run_settings([shared["HERMES_TIMEZONE"]])
@@ -1266,7 +1266,7 @@ class Wizard:
                 self.health_check(runner, scripts)
         self.heading("Done")
         if on_dashboard:
-            self.say(f"{BOLD}Finish setting up at {self.value('JOB_FEEDBACK_URL')}/admin{RESET} once Hermes has "
+            self.say(f"{BOLD}Finish setting up at {self.value('JOB_FEEDBACK_URL')}/admin{RESET} once HermitShell has "
                      "connected (a few minutes):\n  " + ("" if self.smtp_set() else "the email server, ")
                      + "your web search keys, your CV and the job search. The page's checklist shows what's left.")
         self.say(f"Settings: {home / '.env'}\nRe-run `python3 scripts/setup.py` to change anything, "

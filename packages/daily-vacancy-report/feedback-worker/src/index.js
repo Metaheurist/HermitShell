@@ -2,10 +2,10 @@
 //
 // Email buttons link to GET /f with a signed token. The link only shows a confirmation page, so
 // mail scanners that open every link cannot record answers; pressing Confirm POSTs the answer,
-// which is kept in Workers KV (30 days) until Hermes fetches it from GET /events and deletes it
+// which is kept in Workers KV (30 days) until HermitShell fetches it from GET /events and deletes it
 // with POST /ack. Secrets: JOB_FEEDBACK_SECRET (link signing) and JOB_FEEDBACK_API_TOKEN (API).
-// A confirmed "cover_letter" answer is a request: Hermes' cover_letter.py polls every few minutes,
-// writes the letter on the Hermes server and emails it as a PDF. "add_skill" links carry the job's
+// A confirmed "cover_letter" answer is a request: HermitShell's cover_letter.py polls every few minutes,
+// writes the letter on the HermitShell server and emails it as a PDF. "add_skill" links carry the job's
 // missing skills (signed, parameter s); the ones you tick, plus any you type, join your skills pool.
 // Links for extra profiles carry the profile id (signed, parameter u); "unsubscribe" removes one.
 // Every link also carries its issue day (signed, parameter d) and stops working after LINK_DAYS.
@@ -42,9 +42,9 @@ const PLACEHOLDERS = {
   unsubscribe: "Anything we could do better? (optional)",
 };
 const SAVED_MESSAGES = {
-  cover_letter: "Hermes is writing your cover letter. It arrives by email, as a PDF, within about 10 minutes.",
-  tailored_cv: "Hermes is tailoring your CV to this job. It arrives by email, as a PDF, within about 10 minutes.",
-  add_skill: "Hermes counts these as on your CV from its next run, for ratings and cover letters.",
+  cover_letter: "HermitShell is writing your cover letter. It arrives by email, as a PDF, within about 10 minutes.",
+  tailored_cv: "HermitShell is tailoring your CV to this job. It arrives by email, as a PDF, within about 10 minutes.",
+  add_skill: "HermitShell counts these as on your CV from its next run, for ratings and cover letters.",
 };
 const EVENT_TTL_SECONDS = 60 * 60 * 24 * 30;
 const MAX_TITLE = 120;
@@ -79,7 +79,7 @@ function expired(p) {
   return today() - Number(p.d) > LINK_DAYS;
 }
 
-// Links of deleted profiles stop working once Hermes has reported its profiles at least once.
+// Links of deleted profiles stop working once HermitShell has reported its profiles at least once.
 async function profileGone(env, u) {
   if (!u) return false;
   const status = await env.FEEDBACK.get("status:profiles", "json");
@@ -100,8 +100,8 @@ function skillPage(p, hidden) {
 
 function unsubscribePage(p, hidden) {
   const effect = p.j === "profile-pause"
-    ? "Hermes stops sending these reports. Your profile is kept on the server and can be switched back on there."
-    : "Hermes stops sending these reports and deletes this profile, its CV and its history from the server, " +
+    ? "HermitShell stops sending these reports. Your profile is kept on the server and can be switched back on there."
+    : "HermitShell stops sending these reports and deletes this profile, its CV and its history from the server, " +
       'removes your name and email from its logs, and emails you a confirmation. <a href="/privacy">How your data is handled</a>.';
   return page("Unsubscribe", `<p>Stop the Daily Vacancy Report for <b>${esc(p.n || "this profile")}</b>?</p><p>${effect}</p>
 <form method="post" action="/f">${hidden}
@@ -118,7 +118,7 @@ function confirmPage(p) {
   if (p.a === "unsubscribe") return unsubscribePage(p, hidden);
   const placeholder = PLACEHOLDERS[p.a] || "Anything worth remembering (optional)";
   const label = p.a === "cover_letter" ? "Guidance for the letter (optional)"
-    : p.a === "tailored_cv" ? "Guidance for the CV (optional)" : "Note for Hermes (optional)";
+    : p.a === "tailored_cv" ? "Guidance for the CV (optional)" : "Note for HermitShell (optional)";
   return page(ACTIONS[p.a], `<p>${esc(p.n || "This job")}</p>
 <form method="post" action="/f">${hidden}
 <label for="r">${label}</label>
@@ -147,8 +147,8 @@ async function saveAnswer(form, env) {
     await queueItem(env, { type: "unsubscribe", u: p.u, reason: p.r });
     if (p.u) await purgeProfileEvents(env, p.u);
     const after = p.u
-      ? "Hermes deletes your profile, CV and history within about 5 minutes and emails you when it is done."
-      : `${esc(p.n || "This profile")} gets no more reports once Hermes applies it, within about 5 minutes.`;
+      ? "HermitShell deletes your profile, CV and history within about 5 minutes and emails you when it is done."
+      : `${esc(p.n || "This profile")} gets no more reports once HermitShell applies it, within about 5 minutes.`;
     return page("Unsubscribed", `<p>Done. ${after}</p><p>You can close this tab.</p>`);
   }
   const at = Date.now();
@@ -169,7 +169,7 @@ async function saveAnswer(form, env) {
   event.id = `${eventPrefix(p.u)}${p.t}:${answer.slice(0, 12)}`;
   await env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });
   await setFlag(env, eventFlag(p.u), EVENT_TTL_SECONDS);
-  const next = SAVED_MESSAGES[p.a] || "Hermes picks this up on its next run.";
+  const next = SAVED_MESSAGES[p.a] || "HermitShell picks this up on its next run.";
   return page("Saved", `<p>${saved}</p>
 <p>${esc(next)} You can close this tab.</p>`);
 }
