@@ -5,7 +5,13 @@ The "Cover letter" and "Tailored CV" buttons on a job card are signed links to t
 Once you confirm (optionally adding a note such as "mention my Azure work"), the Worker queues the
 request. This script, run every few minutes by `hermes cron`, fetches the queue, writes the letter
 (or tailors the CV, see tailored_cv.py) with Hermes' model from your CV and the job listing, lays it
-out as an A4 PDF and emails it to you with the job details. Your CV never leaves the HermitShell server.
+out as an A4 PDF and emails it to you with the job details. Your CV itself never leaves the HermitShell server.
+
+The finished PDF is also sent to the Worker, which keeps it encrypted for COVER_LETTER_KEEP_DAYS (default 7) so
+it can be downloaded from the dashboard's list of jobs sent or from the email button. Within that time a request
+for the same job with no new guidance sends the one already made instead of writing another; "Regenerate" asks
+for a new one. Requests from the dashboard are kept for download and not emailed. COVER_LETTER_KEEP_DAYS=0
+keeps them on this server only, and every request writes a new one.
 
     python3 cover_letter.py                         # fetch requests from the Worker and send them
     python3 cover_letter.py --job KEY [--note ...]  # write a letter for a tracked job now
@@ -21,6 +27,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import math
 import os
 import re
 import smtplib
@@ -36,7 +43,7 @@ import hermes_common as hc
 import profiles
 import tailored_cv
 from hermes_common import EMAIL_HEAD, STATE_DIR, connect_model, env, env_int, load_env_file, log, ollama_chat
-from job_tracker import REQUEST_ACTIONS, Tracker, skills_text, sync_feedback
+from job_tracker import REQUEST_ACTIONS, Tracker, secure_base, skills_text, sync_feedback
 from letter_pdf import cv_pdf, letter_pdf
 
 hc.LOG_TAG = "cover_letter"
@@ -52,6 +59,8 @@ WRITING_FILE = STATE_DIR / profiles.WRITING_NAME
 FULL_SYNC_FILE = STATE_DIR / "feedback_full_sync"
 FULL_SYNC_EVERY = 3600
 MAX_LISTING_CHARS = 5000
+MAX_KEEP_DAYS = 30
+DAY = 86400
 C_BG, C_CARD, C_INK, C_MUTED, C_ACCENT = "#eef1f7", "#ffffff", "#0f172a", "#64748b", "#4f46e5"
 
 LETTER_SCHEMA = {
@@ -259,8 +268,28 @@ def email_bodies(job: dict, paragraphs: list[str], filename: str, note: str,
 
 # --------------------------------------------------------------------------- run
 
+def file_name(text: str) -> str:
+    return re.sub(r'[\\/:*?"<>|]+', "", text)[:120] + ".pdf"
+
+
+def save_doc(folder: Path, job: dict, pdf: bytes, filename: str, preview: list[str]) -> Path:
+    """The PDF, and beside it the name and preview its email uses, so it can be sent again without the model."""
+    when = datetime.now(ZoneInfo(env("HERMES_TIMEZONE", "UTC") or "UTC"))
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"{when:%Y-%m-%d}-{slug(employer(job))}-{slug(job_title(job))}.pdf"
+    hc.write_private(path, pdf)
+    hc.write_private(path.with_suffix(".json"), json.dumps({"filename": filename, "preview": preview}).encode())
+    return path
+
+
+def email_doc(kind: str, job: dict, pdf: bytes, filename: str, preview: list[str], note: str) -> None:
+    subject, body, text = email_bodies(job, preview, filename, note, kind=kind)
+    hc.send_email(subject, body, text, env("COVER_LETTER_FROM_NAME", "HermitShell cover letters") or "HermitShell",
+                  attachments=[(filename, pdf, "application/pdf")])
+
+
 def make_letter(tracker: Tracker, key: str, note: str, model_info: tuple[str, str, int | None],
-                dry_run: bool) -> Path:
+                dry_run: bool, send: bool = True) -> Path:
     job = tracker.job(key)
     if not job:
         raise LookupError(f"job {key} is not in the tracker")
@@ -271,19 +300,15 @@ def make_letter(tracker: Tracker, key: str, note: str, model_info: tuple[str, st
     paragraphs = write_letter(*model_info, job, profile, listing_text(job), note)
     when = datetime.now(ZoneInfo(env("HERMES_TIMEZONE", "UTC") or "UTC"))
     pdf = build_pdf(job, name, paragraphs, when)
-    LETTER_DIR.mkdir(parents=True, exist_ok=True)
-    path = LETTER_DIR / f"{when:%Y-%m-%d}-{slug(employer(job))}-{slug(job_title(job))}.pdf"
-    hc.write_private(path, pdf)
-    if not dry_run:
-        filename = re.sub(r'[\\/:*?"<>|]+', "", f"Cover letter - {name or 'Candidate'} - {job_title(job)}")[:120] + ".pdf"
-        subject, body, text = email_bodies(job, paragraphs, filename, note)
-        hc.send_email(subject, body, text, env("COVER_LETTER_FROM_NAME", "HermitShell cover letters") or "HermitShell",
-                      attachments=[(filename, pdf, "application/pdf")])
+    filename = file_name(f"Cover letter - {name or 'Candidate'} - {job_title(job)}")
+    path = save_doc(LETTER_DIR, job, pdf, filename, paragraphs)
+    if send and not dry_run:
+        email_doc("cover_letter", job, pdf, filename, paragraphs, note)
     return path
 
 
 def make_cv(tracker: Tracker, key: str, note: str, model_info: tuple[str, str, int | None],
-            dry_run: bool) -> Path:
+            dry_run: bool, send: bool = True) -> Path:
     job = tracker.job(key)
     if not job:
         raise LookupError(f"job {key} is not in the tracker")
@@ -292,20 +317,76 @@ def make_cv(tracker: Tracker, key: str, note: str, model_info: tuple[str, str, i
     master |= {"name": name, "contact": env("COVER_LETTER_CONTACT", "") or ""}
     cv = tailored_cv.tailored_cv(master, job, listing_text(job), note, model_info)
     pdf = cv_pdf(cv, title=f"CV - {name} - {job_title(job)}")
-    when = datetime.now(ZoneInfo(env("HERMES_TIMEZONE", "UTC") or "UTC"))
-    CV_DIR.mkdir(parents=True, exist_ok=True)
-    path = CV_DIR / f"{when:%Y-%m-%d}-{slug(employer(job))}-{slug(job_title(job))}.pdf"
-    hc.write_private(path, pdf)
-    if not dry_run:
-        filename = re.sub(r'[\\/:*?"<>|]+', "", f"CV - {name} - {job_title(job)}")[:120] + ".pdf"
-        preview = [p for p in (cv["headline"], cv["summary"], "Skills: " + ", ".join(cv["skills"])) if p]
-        subject, body, text = email_bodies(job, preview, filename, note, kind="tailored_cv")
-        hc.send_email(subject, body, text, env("COVER_LETTER_FROM_NAME", "HermitShell cover letters") or "HermitShell",
-                      attachments=[(filename, pdf, "application/pdf")])
+    filename = file_name(f"CV - {name} - {job_title(job)}")
+    preview = [p for p in (cv["headline"], cv["summary"], "Skills: " + ", ".join(cv["skills"])) if p]
+    path = save_doc(CV_DIR, job, pdf, filename, preview)
+    if send and not dry_run:
+        email_doc("tailored_cv", job, pdf, filename, preview, note)
     return path
 
 
 MAKERS = {"cover_letter": make_letter, "tailored_cv": make_cv}
+
+
+# --------------------------------------------------------------------------- made before, kept for download
+
+def keep_days() -> int:
+    """How long a finished letter or CV is reused and kept on the Worker for download; 0 turns both off."""
+    return max(0, min(env_int("COVER_LETTER_KEEP_DAYS", 7), MAX_KEEP_DAYS))
+
+
+def doc_dir(kind: str) -> Path:
+    return LETTER_DIR if kind == "cover_letter" else CV_DIR
+
+
+def recent_doc(tracker: Tracker, kind: str, key: str, now: float | None = None) -> tuple[Path, float] | None:
+    """The letter or CV made for this job within keep_days() and when it was made, if its file is still on disk."""
+    days = keep_days()
+    found = tracker.recent_doc(key, kind, (now or time.time()) - days * DAY) if days else None
+    name = Path(str(found["file"])).name if found else ""
+    path = doc_dir(kind) / name if name.endswith(".pdf") else None
+    return (path, found["at"]) if path and path.is_file() else None
+
+
+def days_left(made: float, now: float | None = None) -> int:
+    """Whole days (at least 1) until a document made at `made` is past keep_days()."""
+    return max(1, math.ceil((made + keep_days() * DAY - (now or time.time())) / DAY))
+
+
+def doc_info(path: Path, kind: str, job: dict) -> tuple[str, list[str]]:
+    try:
+        info = json.loads(hc.read_private_text(path.with_suffix(".json")))
+    except (OSError, ValueError):
+        info = {}
+    info = info if isinstance(info, dict) else {}
+    preview = [str(p) for p in info.get("preview", []) if isinstance(p, str)] if isinstance(info.get("preview"), list) else []
+    return str(info.get("filename") or file_name(f"{KIND_LABELS[kind]} - {job_title(job)}")), preview
+
+
+def upload_doc(kind: str, key: str, path: Path, filename: str, days: int | None = None) -> str:
+    """Send a finished PDF to the Worker to keep for download for `days` (default keep_days()); returns a problem
+    to log, or ""."""
+    base, token = secure_base(env("JOB_FEEDBACK_URL", "") or ""), env("JOB_FEEDBACK_API_TOKEN", "")
+    if not (keep_days() and base and token):
+        return ""
+    days = min(days or keep_days(), keep_days())
+    params = {"u": env("JOB_PROFILE_ID", "") or profiles.OWNER, "j": key, "k": kind, "days": str(days), "name": filename}
+    try:
+        requests.post(f"{base}/api/doc", params=params, data=hc.read_private(path), timeout=30,
+                      headers={"Authorization": f"Bearer {token}", "Content-Type": "application/pdf"}).raise_for_status()
+    except (requests.RequestException, OSError, RuntimeError) as exc:
+        return f"could not keep {path.name} on the Worker for download: {exc.__class__.__name__}"
+    return ""
+
+
+def send_again(tracker: Tracker, kind: str, key: str, path: Path, note: str, send: bool, dry_run: bool) -> None:
+    """Email a letter or CV made before, as it was, instead of writing a new one."""
+    job = tracker.job(key)
+    if not job:
+        raise LookupError(f"job {key} is not in the tracker")
+    if send and not dry_run:
+        filename, preview = doc_info(path, kind, job)
+        email_doc(kind, job, hc.read_private(path), filename, preview, note)
 
 
 def process_pending(tracker: Tracker, model_info_factory, dry_run: bool = False) -> list[str]:
@@ -314,7 +395,7 @@ def process_pending(tracker: Tracker, model_info_factory, dry_run: bool = False)
     if not pending:
         return []
     profiles.tasks_changed()
-    model_info = model_info_factory()
+    model: list = []
     lines = []
     for kind, req in pending:
         what = KIND_LABELS[kind]
@@ -323,10 +404,18 @@ def process_pending(tracker: Tracker, model_info_factory, dry_run: bool = False)
         if tracker.letter_cancelled(req["event_id"]):
             lines.append(f"{what} for {label} was cancelled from the dashboard")
             continue
+        flags, note = set((req.get("flags") or "").split(",")), req.get("reason") or ""
+        send = "quiet" not in flags
         profiles.write_json(WRITING_FILE, {"event_id": req["event_id"], "pid": os.getpid(), "at": time.time()})
         profiles.tasks_changed()
         try:
-            path = MAKERS[kind](tracker, req["key"], req.get("reason") or "", model_info, dry_run)
+            earlier = None if note or "fresh" in flags else recent_doc(tracker, kind, req["key"])
+            if earlier:
+                path = earlier[0]
+                send_again(tracker, kind, req["key"], path, note, send, dry_run)
+            else:
+                model = model or [model_info_factory()]
+                path = MAKERS[kind](tracker, req["key"], note, model[0], dry_run, send=send)
         except LookupError as exc:
             tracker.mark_letter(req["event_id"], req["key"], "error", str(exc), max_attempts=1)
             lines.append(f"{what} skipped for {label}: {exc}")
@@ -340,7 +429,11 @@ def process_pending(tracker: Tracker, model_info_factory, dry_run: bool = False)
             WRITING_FILE.unlink(missing_ok=True)
         if not dry_run:
             tracker.mark_letter(req["event_id"], req["key"], "sent", file=path.name)
-        lines.append(f"{what} {'saved' if dry_run else 'sent'} for {label}: {path.name}")
+            days = days_left(earlier[1]) if earlier else None
+            if problem := upload_doc(kind, req["key"], path, doc_info(path, kind, job)[0], days):
+                log(problem)
+        done = "saved" if dry_run else "sent" if send else "made for download"
+        lines.append(f"{what} {done} for {label}: {path.name}" + (" (the one made earlier)" if earlier else ""))
     profiles.tasks_changed()
     return lines
 

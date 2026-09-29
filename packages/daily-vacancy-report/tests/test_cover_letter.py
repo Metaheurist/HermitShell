@@ -3,6 +3,7 @@
 import json
 import re
 import sys
+import time
 import zlib
 from pathlib import Path
 
@@ -196,6 +197,113 @@ def test_open_requests_list_both_kinds_with_the_job(setup):
     tracker.mark_letter("e1", "k1", "sent")
     assert tracker.cancel_letter("e2") and tracker.letter_cancelled("e2") and not tracker.cancel_letter("e3")
     assert tracker.open_requests() == [] and tracker.pending_letters(action="tailored_cv") == []
+
+
+@pytest.fixture
+def kept(setup, tmp_path, monkeypatch):
+    """A letter already made for k1, and the Worker uploads recorded instead of sent."""
+    tracker, sent = setup
+    monkeypatch.setattr(cover_letter, "CV_DIR", tmp_path / "cvs")
+    monkeypatch.setenv("JOB_FEEDBACK_URL", "https://fb.example.org")
+    monkeypatch.setenv("JOB_FEEDBACK_API_TOKEN", "tok")
+    monkeypatch.delenv("COVER_LETTER_KEEP_DAYS", raising=False)
+    monkeypatch.delenv("JOB_PROFILE_ID", raising=False)
+    uploads = []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr(cover_letter.requests, "post",
+                        lambda url, params, data, timeout, headers: uploads.append((url, params, data, headers)) or Response())
+    written = []
+    monkeypatch.setattr(cover_letter, "write_letter",
+                        lambda host, model, ctx, job, profile, listing, note: written.append(note) or PARAGRAPHS)
+    tracker.upsert_job("k1", JOB, emailed=True)
+    tracker.add_event("e0", "k1", "cover_letter")
+    cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    sent.clear(), uploads.clear(), written.clear()
+    yield tracker, sent, uploads, written
+
+
+def test_a_letter_made_recently_is_sent_again_without_the_model(kept):
+    tracker, sent, uploads, written = kept
+    tracker.add_event("e1", "k1", "cover_letter")
+    lines = cover_letter.process_pending(tracker, lambda: pytest.fail("no model needed"))
+    assert lines == [lines[0]] and lines[0].endswith("(the one made earlier)") and "sent for AI Engineer" in lines[0]
+    (subject, [(filename, pdf, _)]), = sent
+    assert filename == "Cover letter - Sam Taylor - AI Engineer.pdf" and pdf.startswith(b"%PDF") and written == []
+    assert len(list(cover_letter.LETTER_DIR.glob("*.pdf"))) == 1
+    assert uploads[0][1]["days"] == "7" and tracker.pending_letters() == []
+
+
+def test_fresh_requests_and_notes_write_a_new_letter(kept):
+    tracker, sent, uploads, written = kept
+    tracker.add_event("e1", "k1", "cover_letter", flags="fresh")
+    tracker.add_event("e2", "k1", "cover_letter", reason="shorter please", at=time.time() + 1)
+    lines = cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    assert written == ["", "shorter please"] and len(sent) == 2
+    assert not any("made earlier" in line for line in lines)
+
+
+def test_dashboard_requests_are_kept_for_download_and_not_emailed(kept):
+    tracker, sent, uploads, written = kept
+    tracker.add_event("e1", "k1", "cover_letter", flags="quiet,fresh")
+    lines = cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    assert sent == [] and written == [""] and lines[0].startswith("Cover letter made for download for AI Engineer")
+    url, params, data, headers = uploads[0]
+    assert url == "https://fb.example.org/api/doc" and data.startswith(b"%PDF")
+    assert params == {"u": "owner", "j": "k1", "k": "cover_letter", "days": "7",
+                      "name": "Cover letter - Sam Taylor - AI Engineer.pdf"}
+    assert headers == {"Authorization": "Bearer tok", "Content-Type": "application/pdf"}
+
+
+def test_a_reused_letter_is_kept_only_for_the_rest_of_its_days(kept):
+    tracker, sent, uploads, written = kept
+    tracker.db.execute("UPDATE letters SET at = ?", (time.time() - 5.5 * cover_letter.DAY,))
+    tracker.add_event("e1", "k1", "cover_letter", flags="quiet")
+    cover_letter.process_pending(tracker, lambda: pytest.fail("no model needed"))
+    assert uploads[0][1]["days"] == "2" and sent == []
+    tracker.db.execute("UPDATE letters SET at = ?", (time.time() - 8 * cover_letter.DAY,))
+    tracker.add_event("e2", "k1", "cover_letter", flags="quiet", at=time.time() + 1)
+    cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    assert written == [""] and uploads[-1][1]["days"] == "7"
+
+
+def test_keep_days_zero_turns_off_reuse_and_the_upload(kept, monkeypatch):
+    tracker, sent, uploads, written = kept
+    monkeypatch.setenv("COVER_LETTER_KEEP_DAYS", "0")
+    tracker.add_event("e1", "k1", "cover_letter")
+    cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    assert written == [""] and uploads == [] and len(sent) == 1
+    monkeypatch.setenv("COVER_LETTER_KEEP_DAYS", "400")
+    assert cover_letter.keep_days() == cover_letter.MAX_KEEP_DAYS
+
+
+def test_uploads_send_the_plain_pdf_even_when_files_are_encrypted(kept, monkeypatch):
+    tracker, sent, uploads, written = kept
+    monkeypatch.setenv(cover_letter.hc.DATA_KEY_ENV, cover_letter.hc.new_data_key())
+    monkeypatch.setenv("JOB_PROFILE_ID", "sam-lee-456789")
+    tracker.add_event("e1", "k1", "cover_letter", flags="fresh")
+    cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    newest = max(cover_letter.LETTER_DIR.glob("*.pdf"), key=lambda p: p.stat().st_mtime)
+    assert not newest.read_bytes().startswith(b"%PDF") and uploads[0][2].startswith(b"%PDF")
+    assert uploads[0][1]["u"] == "sam-lee-456789"
+    assert cover_letter.doc_info(newest, "cover_letter", JOB) == ("Cover letter - Sam Taylor - AI Engineer.pdf", PARAGRAPHS)
+
+
+def test_a_failed_upload_is_logged_and_the_letter_still_counts_as_sent(kept, monkeypatch):
+    tracker, sent, uploads, written = kept
+    logged = []
+    monkeypatch.setattr(cover_letter, "log", logged.append)
+
+    def down(*args, **kwargs):
+        raise cover_letter.requests.ConnectionError("worker down")
+    monkeypatch.setattr(cover_letter.requests, "post", down)
+    tracker.add_event("e1", "k1", "cover_letter", flags="fresh")
+    cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    assert tracker.pending_letters() == [] and len(sent) == 1
+    assert logged == [logged[0]] and logged[0].endswith("for download: ConnectionError")
 
 
 def test_process_pending_retries_failures_and_skips_unknown_jobs(setup, monkeypatch):

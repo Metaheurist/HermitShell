@@ -109,8 +109,47 @@ def test_the_jobs_sent_are_listed_newest_first_with_their_answer(tmp_path):
     assert [j["title"] for j in sent] == ["Data Engineer", "Analyst"]
     assert sent[0] == {"title": "Data Engineer", "employer": "Northwind", "day": "2026-09-29", "fit": 9, "location": "York",
                        "mode": "Hybrid", "salary": "£55,000", "source": "reed.co.uk",
-                       "url": "https://jobs.example.com/secret-link", "answer": "applied"}
+                       "url": "https://jobs.example.com/secret-link", "answer": "applied", "key": "new", "more": {}}
     assert sent[1]["answer"] == "" and sent[1]["employer"] == "Contoso" and sent[1]["day"] == "2026-09-26"
+
+
+def test_each_job_sent_carries_the_details_its_email_card_showed(tmp_path):
+    card = {**job("Data Engineer", 9, employer="Northwind", company="Contoso Recruitment"),
+            "reasoning": "Strong Python and SQL overlap.", "about": "Build pipelines.", "company_profile": "Energy supplier",
+            "employer_site": "https://northwind.example", "employment_type": "Permanent", "seniority": "Senior",
+            "published": "2 days ago", "closing_date": "2026-10-15", "confidence": 85, "coverage": 70,
+            "matched": ["Python", "SQL", "Python", "x" * 200], "gaps": ["Azure"], "listing": "Full advert text"}
+    with tracker(tmp_path) as t:
+        t.upsert_job("https://jobs.example.com/1", card, True, NOW)
+        t.upsert_job("x" * 301, job("Long key", 5), True, NOW - 60)
+    sent = profile_stats.collect(tmp_path / "job_tracker.db", LONDON, NOW)["sent"]
+    more = sent[0]["more"]
+    assert sent[0]["key"] == "https://jobs.example.com/1" and sent[1]["key"] == ""
+    assert more["company"] == "Contoso Recruitment" and more["type"] == "Permanent" and more["seniority"] == "Senior"
+    assert more["reasoning"] == "Strong Python and SQL overlap." and more["about"] == "Build pipelines."
+    assert more["profile"] == "Energy supplier" and more["site"] == "https://northwind.example"
+    assert more["matched"] == ["Python", "SQL", "x" * profile_stats.MAX_NAME] and more["gaps"] == ["Azure"]
+    assert "Full advert text" not in json.dumps(sent)
+
+
+def test_job_details_are_capped_and_drop_bad_values(tmp_path):
+    card = {**job("Engineer", 7, employer="Northwind"), "reasoning": "r" * 2000, "about": "a" * 2000,
+            "employer_site": "javascript:alert(1)", "confidence": 900, "coverage": -4, "closing_date": "soon",
+            "matched": [f"skill {i}" for i in range(40)], "gaps": "not a list"}
+    with tracker(tmp_path) as t:
+        t.upsert_job("k", card, True, NOW)
+    more = profile_stats.collect(tmp_path / "job_tracker.db", LONDON, NOW)["sent"][0]["more"]
+    assert len(more["reasoning"]) == profile_stats.MAX_REASON and len(more["about"]) == profile_stats.MAX_ABOUT
+    assert len(more["matched"]) == profile_stats.MAX_SKILLS
+    for dropped in ("site", "confidence", "coverage", "closing", "gaps"):
+        assert dropped not in more
+
+
+def test_redact_removes_contact_details_and_private_words_but_keeps_dates_and_salaries():
+    text = "Sam Lee (sam.lee@example.co.uk, +44 7700 900123) fits; closes 2026-10-15, pays 30,000 - 35,000"
+    out = profile_stats.redact(text, ("sam lee", "", "ab"))
+    assert "Sam Lee" not in out and "example.co.uk" not in out and "7700" not in out
+    assert out.count(profile_stats.REMOVED) == 3 and "2026-10-15" in out and "30,000 - 35,000" in out
 
 
 def test_the_jobs_sent_are_capped_and_only_keep_web_links(tmp_path, monkeypatch):

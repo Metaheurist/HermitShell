@@ -4,9 +4,10 @@
 collect() returns one row of counts per day (in HERMES_TIMEZONE) for the last STATS_DAYS days, in the order of
 FIELDS, and for each of the dashboard's time ranges the employers, sources, match scores, work modes and best
 matches of the jobs sent. `sent` lists the jobs sent in the last SENT_DAYS days, newest first, with the advert's
-link and the last button pressed on each. profiles.py sends it to the feedback Worker, which draws the charts and
-the dashboard's list of jobs sent. Notes typed on the buttons' confirmation pages and contact details are not
-included.
+link, the last button pressed on each and, under "more", the details its email card showed (why it was rated a
+fit, the skills matched and missing, the company). profiles.py sends it to the feedback Worker, which draws the
+charts and the dashboard's list of jobs sent. Notes typed on the buttons' confirmation pages and the listing text
+are not included, and email addresses, phone numbers and the profile's name and email are removed from the rest.
 
     python3 profile_stats.py [DB]     # print the stats of a tracker (default: the owner's)
 """
@@ -38,8 +39,16 @@ MAX_TITLE = 90
 SENT_DAYS = 90
 SENT_MAX = 150
 MAX_URL = 500
+MAX_KEY = 300
+MAX_REASON = 600
+MAX_ABOUT = 400
+MAX_SKILLS = 12
+MAX_GAPS = 6
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]+")
 _URL = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+_EMAIL = re.compile(r"[^\s@<>()\[\],;:\"']+@[^\s@<>()\[\],;:\"']+\.[a-z]{2,}", re.IGNORECASE)
+_PHONE = re.compile(r"\+?\d[\d\s().-]{7,}\d")
+REMOVED = "[removed]"
 
 
 def _clean(text, limit: int) -> str:
@@ -92,8 +101,57 @@ def _mode(details: str | None) -> str:
     return _detail(details, "work_mode", 20)
 
 
-def collect(db: Path, tz: ZoneInfo, now: float | None = None) -> dict:
-    """A profile's stats; a missing tracker gives empty stats. Only reads the database."""
+def _number(details: str | None, name: str) -> int | None:
+    try:
+        value = json.loads(details or "{}").get(name)
+    except (ValueError, AttributeError):
+        return None
+    return value if isinstance(value, int) and 0 <= value <= 100 else None
+
+
+def _skills(packed: str | None, limit: int) -> list[str]:
+    try:
+        items = json.loads(packed or "[]")
+    except ValueError:
+        return []
+    found = [_clean(s, MAX_NAME) for s in items if isinstance(s, str)] if isinstance(items, list) else []
+    return [s for s in dict.fromkeys(found) if s][:limit]
+
+
+def redact(text: str, private: tuple[str, ...] = ()) -> str:
+    """`text` without email addresses, phone numbers (nine digits or more) or any of the `private` words."""
+    text = _EMAIL.sub(REMOVED, text)
+    text = _PHONE.sub(lambda m: REMOVED if sum(c.isdigit() for c in m.group()) >= 9 else m.group(), text)
+    words = {" ".join(str(p or "").split()) for p in private}
+    for word in sorted((w for w in words if len(w) >= 3), key=len, reverse=True):
+        text = re.sub(re.escape(word), REMOVED, text, flags=re.IGNORECASE)
+    return text
+
+
+def _more(r: sqlite3.Row, private: tuple[str, ...] = ()) -> dict:
+    """What the job's email card showed beyond its title line, with contact details and the profile's `private`
+    words removed from the free text; empty values are left out."""
+    details = r["details"]
+    advertiser = _clean(r["company"], MAX_NAME)
+    more = {
+        "company": advertiser if r["employer"] and advertiser != _clean(r["employer"], MAX_NAME) else "",
+        "type": _detail(details, "employment_type", 40), "seniority": _detail(details, "seniority", 40),
+        "published": _detail(details, "published", 30),
+        "closing": r["closing"] if re.fullmatch(r"\d{4}-\d{2}-\d{2}", r["closing"] or "") else "",
+        "confidence": r["confidence"] if isinstance(r["confidence"], int) and 0 <= r["confidence"] <= 100 else None,
+        "coverage": _number(details, "coverage"),
+        "reasoning": redact(_detail(details, "reasoning", MAX_REASON), private),
+        "about": redact(_detail(details, "about", MAX_ABOUT), private),
+        "profile": redact(_detail(details, "company_profile", 120), private),
+        "site": _url(_detail(details, "employer_site" if r["employer"] else "company_site", MAX_URL)),
+        "matched": _skills(r["matched"], MAX_SKILLS), "gaps": _skills(r["gaps"], MAX_GAPS),
+    }
+    return {k: v for k, v in more.items() if v not in ("", None, [])}
+
+
+def collect(db: Path, tz: ZoneInfo, now: float | None = None, private: tuple[str, ...] = ()) -> dict:
+    """A profile's stats; a missing tracker gives empty stats. Only reads the database. `private` words (the
+    profile's name and email) are removed from the job details."""
     now = now or time.time()
     today = datetime.fromtimestamp(now, tz).date()
     first = today - timedelta(days=STATS_DAYS - 1)
@@ -111,7 +169,8 @@ def collect(db: Path, tz: ZoneInfo, now: float | None = None) -> dict:
     try:
         con.execute("PRAGMA query_only = ON")
         jobs = con.execute("SELECT key, first_seen, fit, emailed, company, employer, source, title, year_low, salary, "
-                           "url, details FROM jobs WHERE first_seen >= ?", (start,)).fetchall()
+                           "url, details, confidence, closing, matched, gaps FROM jobs WHERE first_seen >= ?",
+                           (start,)).fetchall()
         events = con.execute("SELECT action, at FROM events WHERE at >= ?", (start,)).fetchall()
         runs = con.execute("SELECT at, sources FROM runs WHERE at >= ?", (start,)).fetchall()
         marks = ",".join("?" * len(STATUSES))
@@ -166,11 +225,11 @@ def collect(db: Path, tz: ZoneInfo, now: float | None = None) -> dict:
         cutoff = today - timedelta(days=r - 1)
         stats["ranges"][str(r)] = _range([j for j in sent if j["d"] >= cutoff], [j for j in rated if j["d"] >= cutoff])
     stats["pipeline"].update(Counter(answers.values()))
-    stats["sent"] = _sent_list(sent, answers, today - timedelta(days=SENT_DAYS - 1))
+    stats["sent"] = _sent_list(sent, answers, today - timedelta(days=SENT_DAYS - 1), private)
     return stats
 
 
-def _sent_list(sent: list[dict], answers: dict, cutoff: date) -> list[dict]:
+def _sent_list(sent: list[dict], answers: dict, cutoff: date, private: tuple[str, ...] = ()) -> list[dict]:
     recent = sorted((j for j in sent if j["d"] >= cutoff), key=lambda j: -j["first_seen"])[:SENT_MAX]
     out = []
     for j in recent:
@@ -179,7 +238,9 @@ def _sent_list(sent: list[dict], answers: dict, cutoff: date) -> list[dict]:
                     "fit": j["fit"] if isinstance(j["fit"], int) and 0 <= j["fit"] <= 10 else None,
                     "location": _detail(r["details"], "location", MAX_NAME), "mode": j["mode"],
                     "salary": _clean(r["salary"], 40) or _detail(r["details"], "salary", 40),
-                    "source": j["source"], "url": _url(r["url"]), "answer": answers.get(r["key"], "")})
+                    "source": j["source"], "url": _url(r["url"]), "answer": answers.get(r["key"], ""),
+                    "key": r["key"] if len(r["key"] or "") <= MAX_KEY and not _CONTROL.search(r["key"]) else "",
+                    "more": _more(r, private)})
     return out
 
 

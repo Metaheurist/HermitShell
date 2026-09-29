@@ -1041,13 +1041,18 @@ def push_stats(api: Api, now_for: str = "") -> None:
     sent = read_json(marker, {})
     sent = sent if isinstance(sent, dict) else {}
     tz, now = ZoneInfo(timezone_name()), time.time()
-    ids = [p["id"] for p in all_profiles()]
-    for pid in ids:
+    people = all_profiles()
+    ids = [p["id"] for p in people]
+    for person in people:
+        pid = person["id"]
         last = sent.get(pid) if isinstance(sent.get(pid), dict) else {}
         if pid != now_for and now - last.get("at", 0) < STATS_EVERY:
             continue
+        private = (person.get("name", ""), person.get("email", ""))
+        if person.get("owner"):
+            private += (env("COVER_LETTER_NAME"), env("ALERT_EMAIL"))
         try:
-            data = profile_stats.collect(tracker_file(pid), tz, now)
+            data = profile_stats.collect(tracker_file(pid), tz, now, private)
         except (sqlite3.Error, OSError, ValueError) as exc:
             log(f"Could not read the stats of {pid}: {exc.__class__.__name__}")
             continue
@@ -1604,8 +1609,10 @@ def letter_tasks(pid: str) -> list[dict]:
     writing = read_json(writing_marker(pid), {})
     busy = writing.get("event_id") if isinstance(writing, dict) and _alive(_pid(writing.get("pid"))) else ""
     found = [{"id": f"letter:{pid}:{r['event_id']}", "kind": r["action"], "u": pid,
-              "state": "running" if r["event_id"] == busy else "waiting", "at": _ms(r["at"]), "trigger": "email",
-              "title": str(r["title"] or "")[:120], "employer": str(r["employer"] or "")[:80], "retry": r["attempts"] > 0}
+              "state": "running" if r["event_id"] == busy else "waiting", "at": _ms(r["at"]),
+              "trigger": "dashboard" if "quiet" in (r["flags"] or "").split(",") else "email",
+              "title": str(r["title"] or "")[:120], "employer": str(r["employer"] or "")[:80], "retry": r["attempts"] > 0,
+              "j": str(r["key"] or "")[:300]}
              for r in rows]
     return sorted(found, key=lambda t: t["state"] != "running")
 

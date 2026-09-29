@@ -136,9 +136,18 @@ CREATE TABLE IF NOT EXISTS letters (
 );
 CREATE TABLE IF NOT EXISTS skills (skill TEXT PRIMARY KEY COLLATE NOCASE, key TEXT, at REAL);
 """
-# Listing details kept for cover letters (added after the first release, hence not in CREATE TABLE).
+# Listing details kept for cover letters and the dashboard's list of jobs sent (added after the first release,
+# hence not in CREATE TABLE).
 DETAIL_FIELDS = ("location", "employment_type", "work_mode", "seniority", "salary", "reasoning", "about",
-                 "company_profile", "company_site", "listing")
+                 "company_profile", "company_site", "listing", "coverage", "published", "employer_site")
+# How a letter or CV request was made: "fresh" asks for a new one even if one was made recently, "quiet" (from
+# the dashboard) keeps it for download instead of emailing it.
+REQUEST_FLAGS = ("fresh", "quiet")
+
+
+def clean_flags(flags) -> str:
+    given = flags.split(",") if isinstance(flags, str) else flags or []
+    return ",".join(f for f in REQUEST_FLAGS if f in given)
 
 
 class Tracker:
@@ -153,6 +162,9 @@ class Tracker:
         self.db.executescript(SCHEMA)
         if "details" not in {r["name"] for r in self.db.execute("PRAGMA table_info(jobs)")}:
             self.db.execute("ALTER TABLE jobs ADD COLUMN details TEXT")
+            self.db.commit()
+        if "flags" not in {r["name"] for r in self.db.execute("PRAGMA table_info(events)")}:
+            self.db.execute("ALTER TABLE events ADD COLUMN flags TEXT DEFAULT ''")
             self.db.commit()
 
     def close(self) -> None:
@@ -204,7 +216,7 @@ class Tracker:
     # ------------------------------------------------------------------ events
 
     def add_event(self, event_id: str, key: str, action: str, reason: str = "", at: float | None = None,
-                  skills: list[str] | None = None) -> bool:
+                  skills: list[str] | None = None, flags: str = "") -> bool:
         if action not in ACTIONS or not key:
             return False
         if action == "add_skill":
@@ -216,10 +228,10 @@ class Tracker:
         # The Worker's event ids repeat when the same answer is given again: a status answer then becomes the
         # latest one again, while a repeated letter/CV request or skill list is ignored.
         cur = self.db.execute(
-            "INSERT INTO events (id, key, action, reason, at) VALUES (?, ?, ?, ?, ?) "
+            "INSERT INTO events (id, key, action, reason, at, flags) VALUES (?, ?, ?, ?, ?, ?) "
             f"ON CONFLICT(id) DO UPDATE SET at = excluded.at WHERE excluded.action IN ({_STATUS_SQL}) "
             "AND excluded.at > events.at",
-            (event_id, key, action, (reason or "")[:300], at))
+            (event_id, key, action, (reason or "")[:300], at, clean_flags(flags) if action in REQUEST_ACTIONS else ""))
         if cur.rowcount == 1 and action == "add_skill":
             self.db.executemany("INSERT OR IGNORE INTO skills (skill, key, at) VALUES (?, ?, ?)",
                                 [(s, key, at) for s in skills])
@@ -284,7 +296,8 @@ class Tracker:
         """Cover letter (or tailored CV) requests not yet sent, oldest first, with the note given on the
         confirmation page."""
         rows = self.db.execute(
-            """SELECT e.id AS event_id, e.key, e.reason, e.at, coalesce(l.attempts, 0) AS attempts
+            """SELECT e.id AS event_id, e.key, e.reason, e.at, coalesce(e.flags, '') AS flags,
+                      coalesce(l.attempts, 0) AS attempts
                FROM events e LEFT JOIN letters l ON l.event_id = e.id
                WHERE e.action = ? AND coalesce(l.status, '') NOT IN ('sent', 'failed', 'cancelled')
                ORDER BY e.at""", (action,)).fetchall()
@@ -295,7 +308,8 @@ class Tracker:
         employer: the dashboard's task list."""
         marks = ",".join("?" * len(REQUEST_ACTIONS))
         rows = self.db.execute(
-            f"""SELECT e.id AS event_id, e.key, e.action, e.at, coalesce(l.attempts, 0) AS attempts,
+            f"""SELECT e.id AS event_id, e.key, e.action, e.at, coalesce(e.flags, '') AS flags,
+                      coalesce(l.attempts, 0) AS attempts,
                       j.title, coalesce(nullif(j.employer, ''), j.company) AS employer
                FROM events e LEFT JOIN letters l ON l.event_id = e.id LEFT JOIN jobs j ON j.key = e.key
                WHERE e.action IN ({marks}) AND coalesce(l.status, '') NOT IN ('sent', 'failed', 'cancelled')
@@ -314,6 +328,15 @@ class Tracker:
                ON CONFLICT(event_id) DO UPDATE SET status='cancelled', at=excluded.at""", (event_id, row["key"], time.time()))
         self.db.commit()
         return True
+
+    def recent_doc(self, key: str, action: str, since: float) -> dict | None:
+        """The newest cover letter or tailored CV made for a job since `since`: its file name and when it was first
+        made (sending it again later does not make it newer)."""
+        row = self.db.execute(
+            """SELECT l.file, min(l.at) AS at FROM letters l JOIN events e ON e.id = l.event_id
+               WHERE l.key = ? AND e.action = ? AND l.status = 'sent' AND coalesce(l.file, '') != ''
+               GROUP BY l.file HAVING min(l.at) >= ? ORDER BY max(l.at) DESC LIMIT 1""", (key, action, since)).fetchone()
+        return dict(row) if row else None
 
     def letter_cancelled(self, event_id: str) -> bool:
         row = self.db.execute("SELECT status FROM letters WHERE event_id = ?", (event_id,)).fetchone()
@@ -418,8 +441,9 @@ def sync_feedback(tracker: Tracker, base_url: str, api_token: str, ack: bool = T
             at = float(ev.get("at") or 0) / 1000 or None
         except (TypeError, ValueError):
             at = None
+        flags = [f for f, on in (("fresh", ev.get("fresh")), ("quiet", ev.get("via") == "dashboard")) if on]
         saved += tracker.add_event(event_id, str(ev.get("j") or ""), str(ev.get("a") or ""),
-                                   str(ev.get("r") or ""), at, skills)
+                                   str(ev.get("r") or ""), at, skills, ",".join(flags))
         ids.append(event_id)
     if ack and ids:
         try:

@@ -170,20 +170,47 @@ def test_a_profiles_own_crawler_key_is_owner_only(tmp_path, monkeypatch):
     assert (profiles.PROFILES_DIR / "sam-lee" / "secrets.json").stat().st_mode & 0o777 == 0o600
 
 
+def test_letters_are_kept_on_the_worker_only_over_https_with_the_api_token(tmp_path, monkeypatch):
+    import cover_letter
+    pdf = tmp_path / "letter.pdf"
+    hc.write_private(pdf, b"%PDF-1.4 private letter")
+    posts = []
+    ok = type("Response", (), {"raise_for_status": lambda self: None})()
+    monkeypatch.setattr(cover_letter.requests, "post", lambda url, **kw: posts.append((url, kw)) or ok)
+    monkeypatch.delenv("COVER_LETTER_KEEP_DAYS", raising=False)
+    for url, token in (("http://fb.example.org", "tok"), ("https://fb.example.org", ""), ("", "tok"), ("ftp://x", "tok")):
+        monkeypatch.setenv("JOB_FEEDBACK_URL", url)
+        monkeypatch.setenv("JOB_FEEDBACK_API_TOKEN", token)
+        assert cover_letter.upload_doc("cover_letter", "k1", pdf, "Letter.pdf") == ""
+    assert posts == []
+    monkeypatch.setenv("JOB_FEEDBACK_URL", "https://fb.example.org/")
+    monkeypatch.setenv("JOB_FEEDBACK_API_TOKEN", "tok")
+    monkeypatch.setenv("COVER_LETTER_NAME", "Sam Lee")
+    assert cover_letter.upload_doc("cover_letter", "k1", pdf, "Letter.pdf", days=99) == ""
+    (url, kw), = posts
+    assert url == "https://fb.example.org/api/doc" and kw["headers"]["Authorization"] == "Bearer tok"
+    assert set(kw["params"]) == {"u", "j", "k", "days", "name"} and kw["params"]["days"] == "7"
+    assert "tok" not in str(kw["params"]) and "Sam Lee" not in str(kw["params"])
+
+
 def test_stats_sent_to_the_worker_hold_no_notes_or_contact_details(tmp_path, monkeypatch):
     monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
     monkeypatch.setattr(profiles, "STATE_DIR", tmp_path / "state")
+    monkeypatch.setenv("COVER_LETTER_NAME", "Sam Lee")
+    monkeypatch.setenv("ALERT_EMAIL", "owner.alerts@example.org")
     profiles.write_json(profiles.PROFILES_DIR / "owner" / "profile.json", {"id": "owner", "owner": True})
     with Tracker(tmp_path / "state" / "job_tracker.db") as tracker:
         tracker.upsert_job("k1", {"title": "Engineer", "fit": 8, "employer": "Northwind", "url": "https://jobs.example.com/private",
-                                  "reasoning": "Candidate Sam Lee, sam@example.com", "listing": "Call 07700 900123"}, True)
+                                  "reasoning": "Candidate SAM LEE, sam@example.com, 07700 900 123, owner.alerts@example.org",
+                                  "about": "Apply to jobs@northwind.example", "listing": "Call 07700 900123"}, True)
         tracker.add_event("e1", "k1", "not_for_me", "my manager is there, text me on 07700 900123")
     sent = []
     profiles.push_stats(type("Api", (), {"stats": lambda self, pid, data: sent.append((pid, data))})())
     text = str(sent)
     assert sent and sent[0][0] == "owner"
-    for private in ("sam@example.com", "Sam Lee", "07700", "manager"):
+    for private in ("sam@example.com", "SAM LEE", "Sam Lee", "07700", "manager", "owner.alerts", "jobs@northwind", "Call"):
         assert private not in text
+    assert sent[0][1]["sent"][0]["more"]["reasoning"].startswith("Candidate [removed]")
     assert text.count("jobs.example.com") == 1 and sent[0][1]["sent"][0]["url"] == "https://jobs.example.com/private"
 
 

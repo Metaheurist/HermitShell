@@ -339,6 +339,36 @@ def test_sync_feedback_saves_then_acknowledges(tracker, monkeypatch):
     assert calls["get"][-1][2] == {"u": "sam-lee", "full": "1"}
 
 
+def test_request_flags_are_kept_only_for_letters_and_cvs(tracker):
+    assert job_tracker.clean_flags("quiet,evil,fresh") == "fresh,quiet" and job_tracker.clean_flags(None) == ""
+    tracker.add_event("e1", "k1", "cover_letter", flags=["quiet", "fresh", "x"])
+    tracker.add_event("e2", "k1", "applied", flags="quiet")
+    assert tracker.pending_letters()[0]["flags"] == "fresh,quiet"
+    assert tracker.db.execute("SELECT flags FROM events WHERE id = 'e2'").fetchone()[0] == ""
+
+
+def test_recent_doc_is_the_newest_file_dated_from_when_it_was_first_made(tracker):
+    for event_id, file, at in [("e1", "old.pdf", 100), ("e2", "new.pdf", 200), ("e3", "new.pdf", 900)]:
+        tracker.add_event(event_id, "k1", "cover_letter", at=at)
+        tracker.mark_letter(event_id, "k1", "sent", file=file)
+        tracker.db.execute("UPDATE letters SET at = ? WHERE event_id = ?", (at, event_id))
+    tracker.add_event("e4", "k1", "tailored_cv", at=300)
+    tracker.mark_letter("e4", "k1", "error", "timeout")
+    assert tracker.recent_doc("k1", "cover_letter", 150) == {"file": "new.pdf", "at": 200}
+    assert tracker.recent_doc("k1", "cover_letter", 250) is None
+    assert tracker.recent_doc("k1", "tailored_cv", 0) is None and tracker.recent_doc("k2", "cover_letter", 0) is None
+
+
+def test_sync_feedback_keeps_how_a_request_was_made(tracker, monkeypatch):
+    events = [{"id": "event:1:a", "j": "k1", "a": "cover_letter", "r": "", "at": 1, "fresh": 1},
+              {"id": "event:1:b", "j": "k1", "a": "tailored_cv", "r": "", "at": 2, "via": "dashboard"},
+              {"id": "event:1:c", "j": "k1", "a": "tailored_cv", "r": "", "at": 3, "via": "elsewhere", "fresh": 0}]
+    monkeypatch.setattr(job_tracker.requests, "get", lambda *a, **k: FakeResponse({"events": events}))
+    assert sync_feedback(tracker, "https://fb.example.workers.dev", "tok", ack=False) == (3, None)
+    flags = {r["event_id"]: r["flags"] for r in tracker.open_requests()}
+    assert flags == {"event:1:a": "fresh", "event:1:b": "quiet", "event:1:c": ""}
+
+
 def test_sync_feedback_reports_errors(tracker, monkeypatch):
     monkeypatch.setattr(job_tracker.requests, "get", lambda *a, **k: FakeResponse(status=401))
     assert sync_feedback(tracker, "https://fb.example.workers.dev", "bad") == \
