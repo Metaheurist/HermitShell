@@ -14,7 +14,7 @@
 import { handleAdmin, handleApi } from "./admin.js";
 import { handleJoin, queueItem } from "./join.js";
 import {
-  CONTROL_RE, LINK_DAYS, authorised, deleteAndUnflag, esc, eventFlag, eventPrefix, json, limitedForm, limitedJson,
+  CONTROL_RE, LINK_DAYS, authorised, deleteAndUnflag, esc, eventFlag, eventPrefix, favicon, json, limitedForm, limitedJson,
   listFlagged, page, purgeProfileEvents, safeEqual, setFlag, sha256Hex, sign, text, today,
 } from "./lib.js";
 import { privacyPage } from "./privacy.js";
@@ -213,6 +213,7 @@ async function route(request, env, ctx) {
     return json({ deleted: ids.length });
   }
 
+  if ((url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") && request.method === "GET") return favicon();
   if (url.pathname === "/privacy") return privacyPage();
   if (url.pathname === "/join") return handleJoin(request, env);
   if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return handleAdmin(request, env, ctx);

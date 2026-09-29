@@ -305,7 +305,7 @@ describe("feedback worker", () => {
     const body = await res.text();
     expect(body).toContain("@keyframes rise");
     expect(body).toMatch(/@media \(prefers-reduced-motion:reduce\)\{\*,\*::before,\*::after\{animation:none!important/);
-    expect(body).not.toMatch(/<script|<link|@import|url\(/);
+    expect(body.replace('<link rel="icon" href="/favicon.svg" type="image/svg+xml">', "")).not.toMatch(/<script|<link|@import|url\(/);
     expect(res.headers.get("Content-Security-Policy")).not.toContain("script-src");
   });
 

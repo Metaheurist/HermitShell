@@ -32,7 +32,27 @@ describe("security headers", () => {
         expect(csp).toContain("default-src 'none'");
         expect(csp).toContain("frame-ancestors 'none'");
         expect(csp).not.toContain("script-src");
+        expect(csp).toContain("img-src 'self';");
       }
+    }
+  });
+
+  it("serves the tab icon as a script-free SVG, linked from every page and loadable only from the Worker", async () => {
+    const env = testEnv(ADMIN);
+    for (const path of ["/favicon.svg", "/favicon.ico"]) {
+      const res = await get(path, env);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toBe("image/svg+xml");
+      expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+      expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
+      expect(res.headers.get("Cache-Control")).toBe("public, max-age=86400");
+      const svg = await res.text();
+      expect(svg).toMatch(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+      expect(svg).not.toMatch(/<script|on\w+=|href=|<foreignObject/i);
+    }
+    expect((await worker.fetch(new Request(`${BASE}/favicon.svg`, { method: "POST" }), env)).status).toBe(404);
+    for (const path of ["/admin", "/privacy", "/join?i=bad"]) {
+      expect(await (await get(path, env)).text(), path).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml">');
     }
   });
 });

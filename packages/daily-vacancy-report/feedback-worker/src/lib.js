@@ -8,7 +8,24 @@ export const SECURITY_HEADERS = {
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
 };
-export const CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'";
+export const CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; form-action 'self'; frame-ancestors 'none'";
+
+// The tab icon: the brand's gradient square (as next to "HermitShell" on every page) with a white shell spiral.
+export const FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
+<rect width="64" height="64" rx="18" fill="url(#g)"/><path d="M33 48c-9 0-15-7-15-15s6-14 14-14 13 6 13 12-4.5 10-10 10-8.5-3.5-8.5-7.5 3-6.5 6.5-6.5 4.5 2.2 4.5 4.5"
+fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+export function favicon() {
+  return new Response(FAVICON, {
+    headers: {
+      "Content-Type": "image/svg+xml",
+      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+      ...SECURITY_HEADERS,
+      "Cache-Control": "public, max-age=86400",
+    },
+  });
+}
 export const DAY_MS = 86400000;
 // Links in emails stop working after this many days.
 export const LINK_DAYS = 90;
@@ -255,7 +272,7 @@ export function note(text, kind = "ok") {
 export function page(heading, body, { status = 200, wide = false, headers = {}, before = "" } = {}) {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>${esc(heading)}</title><style>${STYLE}</style></head><body>${before}<main${wide ? ' class="wide"' : ""}>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><title>${esc(heading)}</title><style>${STYLE}</style></head><body>${before}<main${wide ? ' class="wide"' : ""}>
 <div class="eyebrow">HermitShell</div><h1>${esc(heading)}</h1>${body}</main></body></html>`;
   return new Response(html, {
     status,
