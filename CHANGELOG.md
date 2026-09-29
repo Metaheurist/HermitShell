@@ -8,6 +8,41 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **HermitShell runs on its own, on any Linux server.** It no longer needs Hermes: it has its own scheduler
+  and reads its model from its own settings, and can be deployed three ways
+  ([installation](docs/installation.md)):
+  - **Container.** A new `Dockerfile` and [`docker-compose.yml`](docker-compose.yml) run it read-only, as uid
+    10000 with no Linux capabilities, with every setting and all data in one volume (`/data`). On each start
+    it installs the image's scripts into `/data/scripts` (personal files untouched), adds the standard
+    schedule the first time and runs the scheduler; `docker exec hermitshell /app/entrypoint.sh setup`,
+    `doctor` and `worker` run the wizard, the health check and the Worker deploy. Its health check fails
+    when the scheduler stops checking in.
+  - **Service.** `sudo sh scripts/install-service.sh` installs it into `/opt/hermitshell` for a new
+    `hermitshell` account and keeps the scheduler running as a hardened systemd service (or from cron
+    where there is no systemd).
+  - **Files only.** `install.sh` into any folder (`HERMITSHELL_HOME`), then `scheduler.py run` or
+    `scheduler.py tick` from cron.
+- **Its own scheduler, `scheduler.py`.** Runs each script on a cron expression in `HERMES_TIMEZONE` (daylight
+  saving included), from `cron/jobs.json`; each run's output goes to `cron/output/<job id>/`. A job still
+  running when it's next due is skipped, a run missed while HermitShell was stopped is started late if it
+  was due within `HERMITSHELL_CATCHUP_MINUTES` (30), and a run is stopped after `HERMITSHELL_JOB_TIMEOUT`
+  seconds (6 hours). `list`, `create`, `edit`, `pause`, `resume`, `remove` and `start` manage jobs;
+  `defaults` adds the packages' standard schedule (the new `packages/daily-vacancy-report/jobs.json`);
+  `import FILE --map /opt/data=/data` takes over the jobs of a Hermes install, with their folders, times
+  and paused state. Jobs only run `.py` scripts from the scripts folder, in folders inside the home.
+  `profiles.py` creates, moves, pauses and removes each recruit's report job through it, and `doctor.py`
+  checks it (jobs, failed runs, whether it's running; `--fix` adds the standard schedule).
+- **The image is built and published by GitHub.** A new [Image workflow](.github/workflows/image.yml)
+  builds it on every push and pull request, starts it with an empty data folder and checks the scheduler
+  comes up healthy with the standard jobs, scans it with Trivy (fixable critical CVEs fail) and, on `main`
+  and version tags, publishes it for amd64 and arm64 to `ghcr.io/metaheurist/hermitshell`.
+- **Servers update themselves.** `scripts/host/install-updater.sh` installs `hermitshell-update.timer`, which
+  every 10 minutes pulls the image and, only when there's a new one, recreates the container with the same
+  settings and data. The server asks the registry, so no port, key or deploy access is needed.
+- **Settings for the model:** `OLLAMA_NUM_CTX` sets the context size for `OLLAMA_MODEL`. Ollama is also
+  looked for at `http://host.docker.internal:11434` (published on the Docker host), after `OLLAMA_HOST`,
+  `OLLAMA_FALLBACK_HOST` and `http://ollama:11434`.
+
 - **Dashboard users and roles.** A new **Users and roles** tab (`/admin/users`, admins only) adds
   people who can sign in to `/admin`, each with a name, username, password and the **Admin** or
   **Recruiter** role (or both). **Add user**, **Edit** and **Delete** use CSS-only windows; passwords
@@ -463,6 +498,24 @@ using [Semantic Versioning](https://semver.org/).
   `tech_digest.py`, its settings and its cron job; nothing is deleted from the server.
 
 ### Changed (breaking)
+
+- **HermitShell no longer runs inside Hermes.** Its jobs move from `hermes cron` to its own scheduler, and the
+  model comes from `OLLAMA_MODEL`, `OLLAMA_HOST` and `OLLAMA_NUM_CTX` instead of Hermes' `config.yaml` (which
+  is still read as a fallback when it's in the home folder). [Moving from Hermes](docs/installation.md#moving-from-hermes)
+  takes an install out, keeping every setting, profile and history; settings keep their `HERMES_` names, so
+  `HERMES_DATA_KEY` and the rest need no change. `HERMITSHELL_HOME` names the home folder (`HERMES_HOME` is
+  still read), the setup wizard's `--hermes-home` is now `--home` (the old name still works), and it runs
+  commands in the `hermitshell` container (user `hermitshell`, home `/data`) instead of `hermes-agent`.
+- **Nightly backups are named `hermitshell-<date>.tar.gz.enc`** and hold `.env`, the schedule (`cron/`) and the
+  scripts folder with its state; Hermes' own files (`config.yaml`, `SOUL.md`, memories) are no longer backed
+  up. Older `hermes-*` backups are still listed, rotated and restorable.
+- **The host watchdog is `hermitshell-ollama-watchdog`.** `install-watchdog.sh` replaces the old
+  `hermes-ollama-watchdog` units, installs into `/opt/hermitshell-host` by default and writes the hardware
+  report into the `hermitshell` container. Settings go in `/etc/default/hermitshell-ollama-watchdog` as
+  `HERMITSHELL_CONTAINER`, `HERMITSHELL_USER` and `HERMITSHELL_STATE`; the old file and `HERMES_*` names are
+  still read.
+- The dashboard status HermitShell sends says `scheduler` (was `hermes_jobs`) and each report's `job` (was
+  `hermes_job`); the Worker reads both, so it works with servers not yet updated.
 
 - **Job titles are one setting, `JOB_TARGET_TITLES`** (`||`-separated), set from the
   dashboard's profile page or the wizard; changing them rebuilds the web search queries and the

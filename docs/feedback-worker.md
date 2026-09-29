@@ -141,27 +141,27 @@ python3 scripts/setup.py daily-vacancy-report
 ```
 
 Paste the Worker URL when asked about feedback buttons. The wizard generates
-`JOB_FEEDBACK_SECRET` and `JOB_FEEDBACK_API_TOKEN`, saves them to `$HERMES_HOME/.env` and, if
+`JOB_FEEDBACK_SECRET` and `JOB_FEEDBACK_API_TOKEN`, saves them to `.env` in HermitShell's home and, if
 `npx` is available where the wizard runs, offers to pipe them straight into
 `wrangler secret put` so they are never shown on screen. If wrangler isn't available there, the
 wizard prints commands like these to run from the `feedback-worker` folder on the machine you
 deployed from. They read the values from `.env` and pipe them, so they are never displayed:
 
 ```sh
-sed -n 's/^JOB_FEEDBACK_SECRET=//p' /path/to/hermes/.env | npx wrangler secret put JOB_FEEDBACK_SECRET
-sed -n 's/^JOB_FEEDBACK_API_TOKEN=//p' /path/to/hermes/.env | npx wrangler secret put JOB_FEEDBACK_API_TOKEN
+sed -n 's/^JOB_FEEDBACK_SECRET=//p' /opt/hermitshell/data/.env | npx wrangler secret put JOB_FEEDBACK_SECRET
+sed -n 's/^JOB_FEEDBACK_API_TOKEN=//p' /opt/hermitshell/data/.env | npx wrangler secret put JOB_FEEDBACK_API_TOKEN
 ```
 
 Add `--config wrangler.local.jsonc` if you deployed with a local config.
 
 ### By hand
 
-Generate two values and add them to `$HERMES_HOME/.env` (keep the file at mode 600):
+Generate two values and add them to `$HERMITSHELL_HOME/.env` (keep the file at mode 600):
 
 ```sh
-python3 -c "import secrets; print('JOB_FEEDBACK_SECRET=' + secrets.token_urlsafe(32))" >> "$HERMES_HOME/.env"
-python3 -c "import secrets; print('JOB_FEEDBACK_API_TOKEN=' + secrets.token_urlsafe(32))" >> "$HERMES_HOME/.env"
-echo 'JOB_FEEDBACK_URL=https://vacancy-feedback.<subdomain>.workers.dev' >> "$HERMES_HOME/.env"
+python3 -c "import secrets; print('JOB_FEEDBACK_SECRET=' + secrets.token_urlsafe(32))" >> "$HERMITSHELL_HOME/.env"
+python3 -c "import secrets; print('JOB_FEEDBACK_API_TOKEN=' + secrets.token_urlsafe(32))" >> "$HERMITSHELL_HOME/.env"
+echo 'JOB_FEEDBACK_URL=https://vacancy-feedback.<subdomain>.workers.dev' >> "$HERMITSHELL_HOME/.env"
 ```
 
 Then copy the two secrets to the Worker with the `sed ... | npx wrangler secret put` commands
@@ -190,8 +190,8 @@ The next email has buttons under each job. Press one, confirm, and the following
 | TLS or handshake errors right after the first deploy | A new `workers.dev` subdomain takes a few minutes to get its certificate. Wait and retry. |
 | No buttons in the email | `JOB_FEEDBACK_URL` or `JOB_FEEDBACK_SECRET` is empty in `.env`. |
 | Answers never arrive | Check requests with `npx wrangler tail`, or the Workers Observability MCP / dashboard logs. |
-| No cover letter email | Check `hermes cron list` for `vacancy-cover-letters` and its output in `cron/output/`; run `python3 cover_letter.py` by hand to see errors. |
-| No daily report for someone you invited | Check `hermes cron list` for their `vacancy-report-<id>` job and its output in `cron/output/`; `python3 profiles.py report <id>` runs it by hand. A report sent with **Send jobs now** logs to `state/profiles/runs.log`. |
+| No cover letter email | Check `python3 scheduler.py list` for `vacancy-cover-letters` and its output in `cron/output/`; run `python3 cover_letter.py` by hand to see errors. |
+| No daily report for someone you invited | Check `python3 scheduler.py list` for their `vacancy-report-<id>` job and its output in `cron/output/`; `python3 profiles.py report <id>` runs it by hand. A report sent with **Send jobs now** logs to `state/profiles/runs.log`. |
 
 Answers wait in KV until HermitShell fetches them, so a server that is off for a few days loses
 nothing (up to 30 days).
@@ -205,8 +205,8 @@ nothing (up to 30 days).
 Cover letter button ──> Worker (confirm) ──> KV ──> cover_letter.py every 5 min ──> email + PDF
 ```
 
-1. `cover_letter.py`, a `hermes cron` job, fetches the request from the Worker within 5 minutes.
-2. Hermes' model writes the letter from `job_profile.md` (plus `COVER_LETTER_CV_FILE` if set),
+1. `cover_letter.py`, a scheduled job, fetches the request from the Worker within 5 minutes.
+2. The model writes the letter from `job_profile.md` (plus `COVER_LETTER_CV_FILE` if set),
    the listing saved when the job was rated, and your note. It is told to use only facts from
    your CV. Letters that are too short or contain placeholders are rejected and retried.
 3. The letter is laid out as an A4 PDF with real, selectable text (`letter_pdf.py`, no extra
@@ -249,12 +249,12 @@ COVER_LETTER_CONTACT=Belfast · sam@example.com · 07700 900000
 The wizard schedules the job; by hand:
 
 ```sh
-hermes cron create "*/5 * * * *" "Cover letter requests" \
-    --name vacancy-cover-letters --script cover_letter.py --no-agent --deliver local
+python3 scheduler.py create "*/5 * * * *" "Cover letter requests" \
+    --name vacancy-cover-letters --script cover_letter.py
 python3 cover_letter.py --job <tracker key> --dry-run   # try one without email
 ```
 
-The job prints nothing when there is nothing to do, so Hermes records it as a silent run.
+The job prints nothing when there is nothing to do, so its runs leave no output file.
 
 ## Adding missing skills
 
@@ -301,8 +301,8 @@ from the Worker's admin page; HermitShell applies the changes, since the Worker 
 2. Schedule `profiles.py` (the wizard does this):
 
    ```sh
-   hermes cron create "*/5 * * * *" "Vacancy profiles" \
-       --name vacancy-profiles --script profiles.py --no-agent --deliver local
+   python3 scheduler.py create "*/5 * * * *" "Extra profiles" \
+       --name vacancy-profiles --script profiles.py
    ```
 
    Each run syncs, then makes sure the **live link** is up: a background `profiles.py listen`
@@ -342,14 +342,14 @@ from the Worker's admin page; HermitShell applies the changes, since the Worker 
 *The sign-up form and the welcome email. The other states are in
 [screenshots.md](screenshots.md#sign-up-page).*
 
-From then on each recruit has their own daily report: a Hermes cron job named
+From then on each recruit has their own daily report: a scheduled job named
 `vacancy-report-<id>` that `profiles.py` creates with the recruit, running `profile_report.py`
 from their folder. It is paused while the recruit is and removed when they are deleted, so
-`hermes cron list` shows every recruit's report, when it runs next and whether its last run worked,
+`python3 scheduler.py list` shows every recruit's report, when it last ran and whether it worked,
 and one recruit's slow or failed run doesn't hold up the others. A new recruit's report starts 15
 minutes after the latest one (yours is the setup's `job_scanner.py` job); change any recruit's time
 on their page. Weekly roll-ups and cover letters still run for each active recruit once your own
-run has finished. Outside Hermes' scheduler (no `cron/jobs.json`), your daily run runs everyone's
+run has finished. Without the scheduler (no `cron/jobs.json`), your daily run runs everyone's
 reports one after the other instead. Each recruit keeps their own seen jobs, tracker, feedback buttons
 and skills pool. They share your region, sources and model settings, and every
 model request (ratings, cover letters, CVs, sign-ups, for all recruits) waits in one shared queue,
@@ -492,10 +492,10 @@ button; **Send jobs now** and the CV's **Upload CV** have their own.
   employment types, work location and whether to hide agency adverts that don't name the
   employer. Saving rebuilds the web search queries and the title filter when the titles or
   location change.
-- **Daily report**: the time (in `HERMES_TIMEZONE`) and days (every day, or weekdays) Hermes sends
-  this recruit's report. HermitShell moves the recruit's Hermes job, or for you the setup's
+- **Daily report**: the time (in `HERMES_TIMEZONE`) and days (every day, or weekdays) HermitShell sends
+  this recruit's report. HermitShell moves the recruit's scheduled job, or for you the setup's
   `job_scanner.py` job, when it applies the save; until then the dashboard says the time is moving.
-  A schedule set by hand with `hermes cron edit` shows here too, and a cron expression that isn't a
+  A schedule set by hand with `scheduler.py edit` shows here too, and a cron expression that isn't a
   plain time leaves the box empty until you pick one.
 - **Send jobs now**: see below.
 - **CV**: upload a PDF, Word or text file, or paste it. HermitShell reads it, rebuilds the profile and

@@ -422,7 +422,7 @@ HermitShell hasn't collected them.
 | Status box | Under the tabs: **Up to date**, **Waiting for HermitShell** while a save is queued (it checks again by itself), **Applied by HermitShell**, **Scanning for jobs since…** while a report runs, or why a change couldn't be applied |
 | Details | Name, the email address reports go to, phone and home town (for cover letters) |
 | Job search | Job titles (up to 8), region or city (used in web searches), country from a list, towns, remote elsewhere, seniority, minimum salary (empty = none) and currency, employment types, work location, hiding unnamed agency adverts |
-| Daily report | The time and days (every day or weekdays) Hermes sends this profile's report; each profile's report is its own Hermes cron job |
+| Daily report | The time and days (every day or weekdays) HermitShell sends this profile's report; each profile's report is its own scheduled job |
 | **Save changes** | One button for details, job search and report time; only the fields you changed are sent |
 | **Send jobs now** | Runs the report now instead of at the daily time ([more](feedback-worker.md#send-jobs-now)) |
 | CV + **Upload CV** | A new CV file or pasted text; HermitShell rebuilds the profile and skills from it and emails a summary |
@@ -518,6 +518,6 @@ python3 scripts/screenshots/make.py                 # rewrites docs/images/{emai
 python3 scripts/screenshots/make.py --chrome /usr/bin/chromium --out /tmp/shots
 ```
 
-`make.py` renders the emails and PDFs with fictional data in a temporary Hermes home (your own
+`make.py` renders the emails and PDFs with fictional data in a temporary HermitShell home (your own
 `.env` and state are never read), `worker_pages.mjs` runs the Worker in memory to produce each
 page, and headless Chrome takes 2x screenshots trimmed to the content.

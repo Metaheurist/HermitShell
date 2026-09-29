@@ -1,7 +1,7 @@
 # Accounts and API keys
 
 Everything HermitShell uses has a free plan. You need an email account to send from, one web search
-key, and Ollama on the Hermes machine. Cloudflare is optional but gives you the buttons, the sign-up
+key, and Ollama where HermitShell can reach it. Cloudflare is optional but gives you the buttons, the sign-up
 links and the `/admin` dashboard where all of the keys below can be entered.
 
 | Service | Needed? | What for | Free plan (checked September 2026) | Where it goes |
@@ -16,7 +16,7 @@ links and the `/admin` dashboard where all of the keys below can be entered.
 Free plans change: check each pricing page before relying on the numbers. Keys and passwords typed
 on `/admin` wait in the Worker only until HermitShell picks them up (within minutes; they expire after
 two days if HermitShell is off). HermitShell then keeps them
-in `state/dashboard.json`, readable only by the Hermes account like `.env`. The dashboard only ever
+in `state/dashboard.json`, readable only by HermitShell's account like `.env`. The dashboard only ever
 shows their last four characters.
 
 ## How much a run uses
@@ -103,8 +103,8 @@ optional.
 ## Ollama
 
 Ollama runs the model on your own machine, so CVs never go to a cloud AI service. The setup
-wizard sets it up: when no Ollama server answers and Hermes runs in Docker, it starts an
-`ollama/ollama` container next to Hermes (with the GPU when there is one) and downloads the model.
+wizard sets it up: when no Ollama server answers and Docker is there, it starts an
+`ollama/ollama` container next to HermitShell (with the GPU when there is one) and downloads the model.
 To do it by hand, see [Check the prerequisites](installation.md#3-check-the-prerequisites).
 
 The default model, `qwen3:4b-instruct-2507-q4_K_M`, is about 2.5 GB and runs on a CPU; about 8 GB
@@ -113,7 +113,7 @@ carefully (set `OLLAMA_MODEL`, then run `python3 doctor.py --fix`).
 
 ## Keys in .env instead
 
-Everything above can also go in `$HERMES_HOME/.env`, for example when there's no Cloudflare
+Everything above can also go in HermitShell's `.env`, for example when there's no Cloudflare
 Worker: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `FIRECRAWL_API_KEY`,
 `FIRECRAWL_BACKUP_KEYS`, `TAVILY_API_KEY` and `SCRAPFLY_API_KEY`
 ([all settings](configuration.md)). Values saved on `/admin` take priority over `.env`; each

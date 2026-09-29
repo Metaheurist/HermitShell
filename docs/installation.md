@@ -1,27 +1,122 @@
 # Installation
 
-HermitShell is a set of plain Python scripts that Hermes runs on a schedule. Installing it
-means three things:
+HermitShell is a set of plain Python scripts with its own scheduler (`scheduler.py`), which runs each script on
+its cron schedule. It needs Python 3.10 or newer, an [Ollama](https://ollama.com) server with a model, and
+somewhere to keep its settings and data: its **home** folder (`HERMITSHELL_HOME`). There are three ways to run
+it:
 
-1. Copying the scripts and the shared `hermes_common.py` into `$HERMES_HOME/scripts`.
-2. Making sure its prerequisites are there: Python packages, Ollama with a model, a data key.
-3. Giving it settings.
-4. Registering the cron jobs.
+| Way | Home | Kept running by | Updates |
+| --- | --- | --- | --- |
+| [Container](#run-it-as-a-container) (recommended) | `/data` in the container, a folder of your choice on the host | Docker (`restart: unless-stopped`) | Automatic: the server pulls each new image ([updater](#keep-the-container-up-to-date)) |
+| [Service](#run-it-as-a-service-without-a-container) on any Linux server | `/opt/hermitshell` | systemd, or cron where there is no systemd | `git pull` and re-run the installer |
+| [Files only](#manual-installation) | any folder | you: `scheduler.py run`, or `scheduler.py tick` from cron | re-run the installer |
 
-The setup wizard does all four. The manual steps below explain what it does, in case you want
-to do it by hand.
+Each way then uses the same [setup wizard](#setup-wizard) for settings, the profile and run times.
+
+## Run it as a container
+
+Every push to `main` builds the image, tests it and publishes it for amd64 and arm64 as
+`ghcr.io/metaheurist/hermitshell` ([the workflow](../.github/workflows/image.yml)). On the Docker host:
+
+```sh
+sudo mkdir -p /opt/hermitshell/data
+sudo chown 10000:10000 /opt/hermitshell/data         # the container's user
+cd /opt/hermitshell
+sudo curl -fsSLO https://raw.githubusercontent.com/Metaheurist/HermitShell/main/docker-compose.yml
+sudo docker compose up -d
+```
+
+On its first start the container copies the scripts into `data/scripts`, adds the standard schedule (daily
+report, weekly roll-up, cover letters, extra profiles, nightly maintenance) and starts the scheduler. Then enter
+your settings with the wizard, inside the container:
+
+```sh
+sudo docker exec -it hermitshell /app/entrypoint.sh setup
+```
+
+[`docker-compose.yml`](../docker-compose.yml) runs the container read-only, with no Linux capabilities and as
+uid 10000. Its settings, from the environment or a `.env` file next to it:
+
+| Setting | Default | |
+| --- | --- | --- |
+| `HERMITSHELL_DATA` | `./data` | Host folder for settings and data, owned by 10000:10000 |
+| `HERMITSHELL_IMAGE` | `ghcr.io/metaheurist/hermitshell:latest` | A version tag (`:1.2`) pins it |
+| `TZ` | `UTC` | The container clock; schedules use `HERMES_TIMEZONE` from `data/.env` |
+
+Ollama can run anywhere the container reaches: on the Docker host (`OLLAMA_HOST=http://host.docker.internal:11434`,
+already mapped in the compose file), in a container named `ollama` on the same network (`http://ollama:11434`)
+or on another machine. The wizard finds it, or starts one with the GPU ([details](#use-the-gpu)).
+
+Everyday commands:
+
+```sh
+docker logs -f hermitshell                                              # the scheduler's log
+docker exec hermitshell python3 scheduler.py list                       # jobs, last run and result
+docker exec hermitshell python3 scheduler.py start daily-vacancy-report # run a job now
+docker exec hermitshell /app/entrypoint.sh doctor                       # health check
+docker exec hermitshell python3 job_scanner.py --dry-run --limit 3      # a test report, not emailed
+```
+
+Each run's output is in `data/cron/output/<job id>/`. The container's health check fails when the scheduler
+stops checking in, so `docker ps` shows it as unhealthy.
+
+### Keep the container up to date
+
+The updater checks the registry every 10 minutes and, only when there's a new image, recreates the container
+on it with the same settings and data. Nothing reaches in from outside: no open port, key or deploy access.
+
+```sh
+git clone https://github.com/Metaheurist/HermitShell.git && cd HermitShell
+sudo sh scripts/host/install-updater.sh /opt/hermitshell/docker-compose.yml
+journalctl -u hermitshell-update -n 20
+```
+
+It copies [`hermitshell-update.sh`](../scripts/host/hermitshell-update.sh) to `/opt/hermitshell-host` (a second
+argument picks another folder; it must be root-owned and not mounted into any container, since systemd runs it
+as root) and enables `hermitshell-update.timer`. To update by hand: `docker compose pull && docker compose up -d`.
+
+### Build it yourself
+
+```sh
+docker build -t hermitshell .
+HERMITSHELL_IMAGE=hermitshell docker compose up -d
+```
+
+## Run it as a service (without a container)
+
+On any Linux server with Python 3.10 or newer, as root:
+
+```sh
+git clone https://github.com/Metaheurist/HermitShell.git && cd HermitShell
+sudo sh scripts/install-service.sh
+```
+
+[`install-service.sh`](../scripts/install-service.sh) creates a `hermitshell` system account, installs the scripts
+into `/opt/hermitshell` (mode 700), installs the Python packages they need into `scripts/.deps`, adds the
+standard schedule and keeps the scheduler running as the `hermitshell` systemd service (hardened: read-only
+system, private `/tmp`, writes only to its home). Without systemd it starts `scheduler.py tick` every minute from
+the account's crontab instead. `HERMITSHELL_HOME`, `HERMITSHELL_USER` and `PYTHON` change the defaults.
+
+It prints the wizard command to run next. Afterwards:
+
+```sh
+journalctl -u hermitshell -f
+sudo -u hermitshell sh -c 'cd /opt/hermitshell/scripts && python3 scheduler.py list'
+```
+
+To update, `git pull` and run `install-service.sh` again: settings and data are kept and the service restarts
+on the new code.
 
 ## Setup wizard
 
 ```sh
-git clone https://github.com/Metaheurist/HermitShell.git
-cd HermitShell
-python3 scripts/setup.py                  # local Hermes, or inside the container
-sudo python3 scripts/setup.py --hermes-home /path/to/hermes/data   # from a Docker host
+docker exec -it hermitshell /app/entrypoint.sh setup     # the container
+python3 scripts/setup.py                                 # anywhere else, from a clone of the repo
+sudo python3 scripts/setup.py --home /opt/hermitshell/data   # on the Docker host, into the container's data
 ```
 
 With a Cloudflare API token, setup is short. The wizard asks for:
-1. the Hermes home, and installs the prerequisites (steps 1 and 2 below);
+1. the HermitShell home, and installs the prerequisites (steps 2 and 3 of the [manual installation](#manual-installation));
 2. the Cloudflare account ID and token, and deploys the Worker;
 3. the `/admin` username and password;
 4. your timezone and, if you like, the email server;
@@ -33,16 +128,14 @@ the job search. The page's checklist shows what's left.
 
 Without a token, or with `--advanced`, the wizard asks everything itself, in this order:
 
-1. **Hermes home.** Then it runs `install.sh` to copy the job finder in. Run as
-   root on a Docker host, it gives the files the same owner as the Hermes home directory (the
-   official image uses `10000:10000`).
-2. **Prerequisites.** Runs [`doctor.py --fix`](#3-check-the-prerequisites) in Hermes' own Python to
-   install any missing packages. If no Ollama server answers and Hermes runs in Docker, it offers to
-   start an `ollama/ollama` container on the Hermes container's network (reusing an existing
-   `ollama` container, and putting Hermes on a `hermes-net` network if it's only on Docker's default
-   bridge) and sets `OLLAMA_HOST`. It gives Ollama every GPU it finds ([details](#use-the-gpu)):
-   NVIDIA with its device nodes, AMD with the ROCm image, and one Ollama per GPU when there are
-   several. It warns when an existing `ollama` container can't see the GPU. Then it
+1. **HermitShell home.** Then it runs `install.sh` to copy the scripts in. Run as root, it gives the files the
+   same owner as the home folder (the container uses `10000:10000`).
+2. **Prerequisites.** Runs [`doctor.py --fix`](#3-check-the-prerequisites) to install any missing packages. If
+   no Ollama server answers and Docker is there, it offers to start an `ollama/ollama` container on the
+   HermitShell container's network (reusing an existing `ollama` container, and putting HermitShell on a
+   `hermitshell-net` network if it's only on Docker's default bridge) and sets `OLLAMA_HOST`. It gives Ollama
+   every GPU it finds ([details](#use-the-gpu)): NVIDIA with its device nodes, AMD with the ROCm image, and one
+   Ollama per GPU when there are several. It warns when an existing `ollama` container can't see the GPU. Then it
    asks which model to use and downloads it, showing progress, and runs `autofit.py --calibrate`
    to measure how much of the model fits on the GPU. `--no-prereqs` skips this step.
 3. **Shared settings.** SMTP server, login and recipient, then Firecrawl (plus backup keys),
@@ -80,24 +173,23 @@ Without a token, or with `--advanced`, the wizard asks everything itself, in thi
 8. **Run times:** `07:00` runs daily,
    `weekdays 07:30` runs Monday to Friday, `sunday 18:00` once a week, and a cron expression or
    `-` (don't schedule) also work. The vacancy report also asks when to send its weekly roll-up
-   (default `sunday 18:00`). Times use Hermes' timezone (`timezone:` in `config.yaml`).
+   (default `sunday 18:00`). Times are in `HERMES_TIMEZONE`.
 9. **Review.** Every change is listed (secrets masked) before anything is written. `.env` is
-   backed up to `.env.bak-<timestamp>`, updated in place (other Hermes settings are left
-   alone) and kept at mode 600.
-10. **Schedules.** Creates or updates the `hermes cron` jobs with the run times you chose. If
-   Hermes isn't reachable from where the wizard runs, it prints the commands to run instead.
+   backed up to `.env.bak-<timestamp>`, updated in place (other settings are left alone) and kept at mode 600.
+10. **Schedules.** Creates or updates the scheduler's jobs with the run times you chose. If
+   HermitShell isn't installed where the wizard runs, it prints the `scheduler.py` commands to run instead.
 11. **Test.** Sends a test email when the email server is set, and offers a dry run (not when the
    rest of the setup happens on `/admin`).
 12. **Health check.** Runs `doctor.py` once more and lists anything still missing, with the fix.
 
-The wizard finds Hermes by itself. It uses the `hermes` command when it's on your PATH;
-otherwise it runs commands in the `hermes-agent` container with `docker exec` (change this with
-`--container`, `--container-home` and `--container-user`).
+The wizard runs the scripts in the `hermitshell` container with `docker exec` when that container is running on
+this machine, and directly otherwise (change this with `--container`, `--container-home` and `--container-user`).
 
 Useful options:
 
 | Option | Effect |
 | --- | --- |
+| `--home DIR` | The HermitShell home (default: `HERMITSHELL_HOME`, `/data` in the container, else `~/.hermitshell`) |
 | `--advanced` | Ask for every setting, not just the essentials |
 | `--dry-run` | Show what would change; write and run nothing |
 | `--no-install` / `--no-cron` | Skip copying files / the schedule step |
@@ -128,63 +220,61 @@ SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY=sunday 18:00
 
 ## Manual installation
 
-The same steps by hand.
+The same steps by hand, for a folder of your choice.
 
-### 1. Find your Hermes home
+### 1. Choose a home
 
-| Setup | `HERMES_HOME` | Scripts directory |
-| --- | --- | --- |
-| Official Docker image | `/opt/data` (inside the container) | `/opt/data/scripts` |
-| Local install | `~/.hermes` | `~/.hermes/scripts` |
+Everything lives under one folder, `HERMITSHELL_HOME`:
 
-With Docker, `/opt/data` is normally a bind mount, so you can also install from the host into
-the mounted directory.
+```
+.env                       settings (mode 600)
+cron/jobs.json             the schedule
+cron/output/<job id>/      each run's output
+scripts/                   the scripts, your profile, cv_keywords.json
+scripts/state/             reports, the job tracker, profiles, cover letters
+backups/nightly/           encrypted nightly backups
+```
 
 ### 2. Copy the files
 
 ```sh
 git clone https://github.com/Metaheurist/HermitShell.git
 cd HermitShell
-HERMES_HOME=/opt/data ./scripts/install.sh daily-vacancy-report
+HERMITSHELL_HOME=/srv/hermitshell ./scripts/install.sh daily-vacancy-report
 ```
 
 The installer does the following:
 
-- Copies `common/hermes_common.py`, `common/autofit.py` and `common/doctor.py` plus the job finder's scripts, example
-  files and icons flat into `$HERMES_HOME/scripts`.
-- Renames the package's `.env.example` to `daily-vacancy-report.env.example`, so it doesn't
-  collide with the shared one.
+- Copies `common/hermes_common.py`, `common/autofit.py`, `common/doctor.py` and `common/scheduler.py` plus the
+  job finder's scripts, example files and icons flat into `$HERMITSHELL_HOME/scripts`.
+- Renames the package's `.env.example` to `daily-vacancy-report.env.example` and its `jobs.json` (the standard
+  schedule) to `daily-vacancy-report.jobs.json`, so they don't collide with other packages'.
 - Strips Windows line endings.
 - Never overwrites your real `job_profile.md`, `cv_keywords.json` or `.env`.
 
-If you install from the Docker host, set the owner to the container user:
-
-```sh
-sudo HERMES_OWNER=10000:10000 HERMES_HOME=/path/to/hermes/data ./scripts/install.sh daily-vacancy-report
-```
+`HERMITSHELL_OWNER=uid:gid` sets the owner of the copied files when you install as root for another user.
 
 #### Without the installer
 
 Copy these files into the scripts directory yourself:
 
-- `common/hermes_common.py`, `common/autofit.py` and `common/doctor.py`
+- `common/hermes_common.py`, `common/autofit.py`, `common/doctor.py` and `common/scheduler.py`
 - Everything in `packages/daily-vacancy-report/` except the README, `tests/` and `feedback-worker/`.
   From `icons/` only the PNGs are needed at runtime.
 
 ### 3. Check the prerequisites
 
-`doctor.py` checks everything the scripts need and, with `--fix`, sets up what it can. Run it in
-Hermes' own Python:
+`doctor.py` checks everything the scripts need and, with `--fix`, sets up what it can:
 
 ```sh
-docker exec -u hermes -w /opt/data/scripts hermes-agent python3 doctor.py --fix
+cd $HERMITSHELL_HOME/scripts && python3 doctor.py --fix
 ```
 
 | Check | What `--fix` does |
 | --- | --- |
-| Python 3.10 or newer | Nothing (the official image has 3.13) |
-| Packages: `requests`, `cryptography`, optional `pillow` and `pyyaml` ([requirements.txt](../requirements.txt)) | Installs missing or too-old ones with pip, or with uv when Hermes' Python has no pip (the official image), into `scripts/.deps/pyX.Y`. That folder is on the data volume, so it survives container updates, and `hermes_common.py` puts it on the import path |
-| Hermes' `config.yaml` and the `hermes` command | Nothing; tells you what's missing |
+| Python 3.10 or newer | Nothing (the container has 3.13) |
+| Packages: `requests`, `cryptography`, optional `pillow` and `pyyaml` ([requirements.txt](../requirements.txt)) | Installs missing or too-old ones with pip, or with uv when Python has no pip, into `scripts/.deps/pyX.Y`, which `hermes_common.py` puts on the import path |
+| The scheduler: its jobs, failed runs, and whether it is running | Adds the standard jobs when there are none |
 | Ollama answers, with the model the scripts will use | Downloads the model through Ollama's API (`JOB_SCANNER_MODEL`, else `OLLAMA_MODEL`, else `qwen3:4b-instruct-2507-q4_K_M`, about 2.5 GB). `--no-pull` skips it, `--model NAME` picks another |
 | `.env` is owner-only, `HERMES_DATA_KEY` works, SMTP and a web search key are set | Makes `.env` owner-only and generates the data key when none is set, but never when encrypted files already exist (a new key can't open them) |
 | The feedback Worker answers, free disk space | Nothing |
@@ -192,15 +282,15 @@ docker exec -u hermes -w /opt/data/scripts hermes-agent python3 doctor.py --fix
 It exits with 1 when a check fails; `--only packages,ollama` runs some checks and `--json`
 prints the results for other tools. The wizard runs it for you.
 
-No Ollama yet? On a Docker host, start it next to Hermes (the wizard offers to do this):
+No Ollama yet? On a Docker host, start it next to HermitShell (the wizard offers to do this):
 
 ```sh
-docker run -d --name ollama --restart unless-stopped --network <hermes network> \
+docker run -d --name ollama --restart unless-stopped -p 11434:11434 \
     -v ollama:/root/.ollama ollama/ollama
 ```
 
-`docker inspect hermes-agent --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'`
-shows the network name. The scripts find it at `http://ollama:11434` (`OLLAMA_HOST`).
+The container then finds it at `http://host.docker.internal:11434` and a service at `http://localhost:11434`
+(`OLLAMA_HOST`).
 
 #### Use the GPU
 
@@ -211,7 +301,7 @@ Ollama only uses a GPU that its container can see. The wizard sets this up for y
   take the GPU away from the running container (Ollama then falls back to the CPU without saying so):
 
   ```sh
-  docker run -d --name ollama --restart unless-stopped --network <hermes network> --gpus all \
+  docker run -d --name ollama --restart unless-stopped -p 11434:11434 --gpus all \
       --device /dev/nvidia0 --device /dev/nvidiactl --device /dev/nvidia-uvm --device /dev/nvidia-uvm-tools \
       -e OLLAMA_FLASH_ATTENTION=1 -e OLLAMA_KV_CACHE_TYPE=q8_0 -v ollama:/root/.ollama ollama/ollama
   ```
@@ -223,27 +313,27 @@ Ollama only uses a GPU that its container can see. The wizard sets this up for y
   on) and lists them in `OLLAMA_HOSTS`, so job ratings run on all of them at once.
 
 Then install the host watchdog. It runs every 2 minutes as root, reports the CPU, memory and GPUs to
-[autofit](configuration.md#autofit-gpu-cpu-and-context-chosen-for-you), and restarts an Ollama
-container that has lost its GPU. It restarts a container at most once every 20 minutes and 6 times a day:
+[autofit](configuration.md#autofit-gpu-cpu-and-context-chosen-for-you) in the `hermitshell` container, and
+restarts an Ollama container that has lost its GPU. It restarts a container at most once every 20 minutes and
+6 times a day:
 
 ```sh
-sudo sh scripts/host/install-watchdog.sh /opt/hermitshell
-journalctl -u hermes-ollama-watchdog -n 20
+sudo sh scripts/host/install-watchdog.sh /opt/hermitshell-host
+journalctl -u hermitshell-ollama-watchdog -n 20
 ```
 
 The folder must be owned by root and not mounted into any container. Settings (container names,
-restart limits) go in `/etc/default/hermes-ollama-watchdog`; the list is at the top of
+restart limits) go in `/etc/default/hermitshell-ollama-watchdog`; the list is at the top of
 [`ollama-watchdog.sh`](../scripts/host/ollama-watchdog.sh).
 
 Check where the model runs with `docker exec ollama nvidia-smi -L` and `python3 doctor.py`.
 
 ### 4. Configure
 
-Add settings to `$HERMES_HOME/.env`, the same file Hermes reads, or pass them as container
-environment variables:
+Add settings to `$HERMITSHELL_HOME/.env`, or pass them as environment variables:
 
 ```sh
-# shared: SMTP + at least one web search key
+# shared: SMTP, at least one web search key, Ollama
 cat .env.example                                  # copy what you need
 # the job finder, all optional
 cat packages/daily-vacancy-report/.env.example
@@ -254,26 +344,26 @@ The settings the wizard asks about in its guided steps are, for the vacancy repo
 `JOB_EMPLOYMENT_TYPES`, `JOB_WORK_MODES`, `JOB_MIN_SALARY`, `JOB_SALARY_CURRENCY`,
 `JOB_HIDE_UNNAMED_AGENCY`, `JOB_TARGET_TITLES`, the `CLOUDFLARE_*` and the `JOB_FEEDBACK_*`
 values. The feedback buttons need a small Cloudflare Worker: `python3 scripts/cloudflare_worker.py`
-deploys it with a token ([cloudflare-setup.md](cloudflare-setup.md)), and
-[feedback-worker.md](feedback-worker.md) covers deploying it by hand and setting the secrets.
+(in the container, `/app/entrypoint.sh worker`) deploys it with a token ([cloudflare-setup.md](cloudflare-setup.md)),
+and [feedback-worker.md](feedback-worker.md) covers deploying it by hand and setting the secrets.
 
 See [configuration.md](configuration.md) for how settings are resolved.
 
 The vacancy report also needs your profile:
 
 ```sh
-cd $HERMES_HOME/scripts
+cd $HERMITSHELL_HOME/scripts
 cp job_profile.example.md job_profile.md
 cp cv_keywords.example.json cv_keywords.json
 ```
 
 ### 5. Test
 
-Run the scripts as the same user Hermes uses. In Docker, that means:
+Run the scripts as the user that owns the home. In the container:
 
 ```sh
-docker exec -u hermes -w /opt/data hermes-agent python3 scripts/job_scanner.py --test-email
-docker exec -u hermes -w /opt/data hermes-agent python3 scripts/job_scanner.py --dry-run --limit 3
+docker exec hermitshell python3 job_scanner.py --test-email
+docker exec hermitshell python3 job_scanner.py --dry-run --limit 3
 ```
 
 Dry runs write the email HTML to `scripts/state/*_last.html`. Copy that file along with the
@@ -282,34 +372,67 @@ should look like the ones in [screenshots.md](screenshots.md#test-emails).
 
 ### 6. Schedule
 
+`python3 scheduler.py defaults` adds the standard schedule. To choose the times yourself:
+
 ```sh
-docker exec -u hermes -w /opt/data hermes-agent hermes cron create "0 7 * * *" "Daily vacancy report" \
-    --name daily-vacancy-report --script job_scanner.py --no-agent --deliver local
-docker exec -u hermes -w /opt/data hermes-agent hermes cron create "0 18 * * 0" "Weekly vacancy roll-up" \
-    --name weekly-vacancy-report --script job_weekly.py --no-agent --deliver local
-docker exec -u hermes -w /opt/data hermes-agent hermes cron create "*/5 * * * *" "Cover letter requests" \
-    --name vacancy-cover-letters --script cover_letter.py --no-agent --deliver local
-docker exec -u hermes -w /opt/data hermes-agent hermes cron create "*/5 * * * *" "Vacancy profiles" \
-    --name vacancy-profiles --script profiles.py --no-agent --deliver local
-docker exec -u hermes -w /opt/data hermes-agent hermes cron create "30 3 * * *" "Nightly maintenance" \
-    --name vacancy-maintenance --script maintenance.py --no-agent --deliver local
-docker exec -u hermes -w /opt/data hermes-agent hermes cron list
+cd $HERMITSHELL_HOME/scripts
+python3 scheduler.py create "0 7 * * *" "Daily vacancy report" --name daily-vacancy-report --script job_scanner.py
+python3 scheduler.py create "0 18 * * 0" "Weekly vacancy roll-up" --name weekly-vacancy-report --script job_weekly.py
+python3 scheduler.py create "*/5 * * * *" "Cover letter requests" --name vacancy-cover-letters --script cover_letter.py
+python3 scheduler.py create "*/5 * * * *" "Extra profiles" --name vacancy-profiles --script profiles.py
+python3 scheduler.py create "30 3 * * *" "Nightly maintenance" --name vacancy-maintenance --script maintenance.py
+python3 scheduler.py list
 ```
 
+Then keep it running: `python3 scheduler.py run` (a service does this for you), or add
+`* * * * * cd $HERMITSHELL_HOME/scripts && python3 scheduler.py tick` to the user's crontab.
+
 - The first argument is a standard cron expression: `30 7 * * *` is 07:30 every day,
-  `0 8 * * 1-5` is 08:00 on weekdays, `0 18 * * 0` is 18:00 on Sundays.
-- `--script` takes a script name only, no arguments, so the weekly roll-up runs `job_weekly.py`
-  (the same as `job_scanner.py --weekly`).
-- `--no-agent` runs the script directly without an LLM turn.
+  `0 8 * * 1-5` is 08:00 on weekdays, `0 18 * * 0` is 18:00 on Sundays. Times are in `HERMES_TIMEZONE`
+  (default UTC), daylight saving included.
+- `--script` takes a script name in the scripts folder only, no arguments, so the weekly roll-up runs
+  `job_weekly.py` (the same as `job_scanner.py --weekly`).
+- `edit ID --schedule "..."`, `pause ID`, `resume ID`, `remove ID` and `start ID` (run now) change jobs; the
+  dashboard changes the report times the same way.
+- A job still running when it is next due is skipped. A run missed while HermitShell was stopped is started
+  late if it was due in the last `HERMITSHELL_CATCHUP_MINUTES` (30); a run is stopped after
+  `HERMITSHELL_JOB_TIMEOUT` seconds (6 hours).
 - Nightly maintenance deletes old data, encrypts and backs up; set `HERMES_DATA_KEY` first
-  (`python3 scripts/maintenance.py --new-key`) so the backups are encrypted. See
+  (`python3 maintenance.py --new-key`) so the backups are encrypted. See
   [data protection](configuration.md#data-protection).
-- `--deliver local` keeps the script's one-line summary in Hermes' cron log. The email is the
-  real delivery.
-- Schedules use Hermes' timezone (`timezone:` in `config.yaml`); without it, the container
-  clock, usually UTC.
+
+## Moving from Hermes
+
+Version 0.1.0 ran inside [Hermes](https://github.com/NousResearch/hermes-agent) and used its cron. To move
+an install out of Hermes into the container, keeping every setting, profile and history:
+
+1. Stop HermitShell's jobs in Hermes, so nothing runs twice: `hermes cron pause <id>` for each of them
+   (`hermes cron list` shows them).
+2. Create the container's data folder as above and copy in, from Hermes' data folder: `.env` (keep the
+   HermitShell settings; Hermes-only keys can go) and `scripts/` (your profile, `cv_keywords.json`, `state/`).
+   Scripts of your own that aren't HermitShell's can stay behind. Put the model and host from Hermes'
+   `config.yaml` into `.env` as `OLLAMA_MODEL`, `OLLAMA_HOST` and, if it sets one, `OLLAMA_NUM_CTX`. Keep
+   `HERMES_DATA_KEY` exactly as it was: it opens the encrypted files.
+3. Start the container, then take over the jobs, moving the folders of per-profile jobs:
+
+   ```sh
+   docker cp /path/to/hermes/data/cron/jobs.json hermitshell:/tmp/hermes-jobs.json
+   docker exec hermitshell python3 scheduler.py import /tmp/hermes-jobs.json --map /opt/data=/data
+   docker exec hermitshell python3 scheduler.py list
+   ```
+
+   Only jobs whose script is installed are taken, with their names, times and paused state.
+4. Check with `docker exec hermitshell /app/entrypoint.sh doctor`, then remove the old jobs from Hermes
+   (`hermes cron remove <id>`) and HermitShell's files from Hermes' scripts folder.
+5. Re-point the host watchdog: `sudo sh scripts/host/install-watchdog.sh /opt/hermitshell-host` replaces the
+   old `hermes-ollama-watchdog` units.
+
+The settings keep their `HERMES_` names (`HERMES_DATA_KEY`, `HERMES_TIMEZONE` and so on), so nothing in `.env`
+needs renaming. Backups made before the move (`hermes-*.tar.gz.enc`) are still listed, rotated and restorable.
 
 ## Updating
 
-Pull the repo and re-run the wizard (or just the installer). Your `.env`, profiles and `state/`
-are left alone, and settings added in the new version appear as questions.
+The container updates itself when the [updater](#keep-the-container-up-to-date) is installed; otherwise
+`docker compose pull && docker compose up -d`. For the service, `git pull` and run `install-service.sh` again;
+for files only, re-run the installer. Your `.env`, profiles and `state/` are left alone, and re-running the
+wizard asks about settings added in the new version.

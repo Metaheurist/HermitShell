@@ -1,6 +1,6 @@
 # Daily Vacancy Report
 
-A Hermes cron package that searches for jobs matching your CV. The model Hermes already uses
+A HermitShell package that searches for jobs matching your CV. Your local model (Ollama)
 rates each one, and you get a scored, logo-rich HTML email that renders properly in Gmail's
 light and dark modes.
 
@@ -26,7 +26,7 @@ light and dark modes.
    Jobs that don't state a type or mode are kept. Optionally drops jobs advertising clearly less
    than your minimum salary (day and hourly rates are converted) and jobs whose closing date has
    passed.
-4. **Rate.** Hermes' model scores each job 0-10 against `job_profile.md`, with a confidence value,
+4. **Rate.** The model scores each job 0-10 against `job_profile.md`, with a confidence value,
    matched CV keywords, gaps, the closing date and a short reason. For agency adverts it also
    identifies the real employer. Seniority comes from the title, or from the model's reading of
    the listing when the title doesn't say. Scores of 8 or more get a second, stricter look and the
@@ -50,7 +50,7 @@ light and dark modes.
 
    What each part of the card means: [docs/screenshots.md](../../docs/screenshots.md#a-job-card).
 7. **Cover letters.** Pressing **Cover letter** gets you a tailored A4 PDF letter by email within
-   about 5 minutes, written by Hermes' model from your profile and the listing
+   about 5 minutes, written by the model from your profile and the listing
    ([how it works](../../docs/feedback-worker.md#cover-letters)). **Tailored CV** works the same
    way and sends your CV reordered and reworded for that job. Each one is kept for 7 days
    (`COVER_LETTER_KEEP_DAYS`): pressing the button again offers the same PDF to download instead of
@@ -61,7 +61,7 @@ light and dark modes.
    `state/job_tracker.db`: best jobs of the week, applications and replies, common gaps, who's
    hiring and source health ([screenshot](../../docs/images/emails/weekly.png)).
 9. **Extra profiles.** Invite other people from the feedback Worker's `/admin` page; they upload a
-   CV and get their own daily report (their own Hermes cron job, at a time you set on the
+   CV and get their own daily report (their own scheduled job, at a time you set on the
    dashboard), buttons, cover letters and roll-up. **Send jobs now** on the dashboard runs anyone's
    report at once. Each row's little chart opens that person's jobs, answers and applications as
    charts over 7 days to 12 months ([screenshot](../../docs/images/worker/admin-stats.png)), and its
@@ -79,35 +79,37 @@ definitely ruled out; ratings that fail are retried on the next runs, up to 4 at
 
 | File | Purpose |
 | --- | --- |
-| `job_scanner.py` | Entry point run by the daily cron job |
-| `job_weekly.py` | Weekly roll-up email and shared email blocks; entry point for the weekly cron job |
+| `job_scanner.py` | Entry point run by the daily scheduled job |
+| `job_weekly.py` | Weekly roll-up email and shared email blocks; entry point for the weekly job |
 | `job_extras.py` | Salary and closing-date parsing, title screening, second opinions, repost and agency grouping |
 | `job_tracker.py` | `state/job_tracker.db` (jobs, feedback, reminders, runs, cover letter requests) and the feedback Worker sync |
-| `cover_letter.py` | Cover letter requests: writes each letter with the model and emails it as a PDF; entry point for the 5-minute cron job |
+| `cover_letter.py` | Cover letter requests: writes each letter with the model and emails it as a PDF; entry point for the 5-minute job |
 | `letter_pdf.py` | Dependency-free A4 PDF writer for the letters |
-| `profiles.py` | Extra profiles: sign-ups from the Worker become profiles built from the CV, unsubscribes, admin changes, each profile's Hermes report job, Send jobs now; entry point for the 5-minute cron job |
-| `profile_report.py` | One extra profile's daily report: the script of its `vacancy-report-<id>` Hermes job |
+| `profiles.py` | Extra profiles: sign-ups from the Worker become profiles built from the CV, unsubscribes, admin changes, each profile's report job, Send jobs now; entry point for the 5-minute job |
+| `profile_report.py` | One extra profile's daily report: the script of its `vacancy-report-<id>` job |
 | `profile_stats.py` | A profile's daily counts, top lists and recent jobs sent from its tracker, for the dashboard's stats and jobs sent pages |
 | `maintenance.py` | Nightly retention, encryption of older files, file permissions and encrypted backups; `--restore`, `--decrypt`, `--new-key` ([data protection](../../docs/configuration.md#data-protection)) |
 | `cv_text.py` | Dependency-free text extraction from PDF, Word .docx and text CVs |
 | `icons/` | Button icons: Lucide SVG sources in `icons/src`, PNGs built by `icons/build_icons.py` |
 | `companies.py` | Employer website, logo and profile lookup with caching |
-| `feedback-worker/` | Optional Cloudflare Worker for the feedback buttons ([guide](../../docs/feedback-worker.md)); not installed into Hermes |
+| `feedback-worker/` | Optional Cloudflare Worker for the feedback buttons ([guide](../../docs/feedback-worker.md)); deployed to Cloudflare, not installed on the server |
+| `jobs.json` | The standard schedule, added when HermitShell first starts (`scheduler.py defaults`) |
 | `tests/` | Unit tests (`python -m pytest packages/daily-vacancy-report/tests`) |
 | `job_profile.example.md` | Template for your candidate profile (copy to `job_profile.md`) |
 | `cv_keywords.example.json` | Template for skills to match and gaps to flag (copy to `cv_keywords.json`) |
 | `.env.example` | Every package setting with its default |
 | `examples/northern-ireland.env` | Complete regional example including nijobs.com and BT postcodes |
 
-It also needs `hermes_common.py` from [`common/`](../../common) in the same directory, which the
-installer handles.
+It also needs `hermes_common.py`, `autofit.py` and `scheduler.py` from [`common/`](../../common) in the same
+directory, which the installer and the container handle.
 
 ## Install
 
-The quickest way is the setup wizard, run from the repository root:
+The quickest way is the container ([installation](../../docs/installation.md#run-it-as-a-container)), which
+installs this package and its schedule, then the setup wizard:
 
 ```sh
-python3 scripts/setup.py daily-vacancy-report
+docker exec -it hermitshell /app/entrypoint.sh setup      # or, from the repository: python3 scripts/setup.py
 ```
 
 It asks for your email and API keys, then:
@@ -125,20 +127,20 @@ It asks for your email and API keys, then:
   roll-up goes out (default `sunday 18:00`), and how often to check for cover letter requests
   (default every 5 minutes).
 
-It then writes `job_profile.md` and `cv_keywords.json`, schedules the cron job
+It then writes `job_profile.md` and `cv_keywords.json`, schedules the jobs
 and sends a test email. See [the installation guide](../../docs/installation.md#setup-wizard).
 
-To install by hand instead, on the machine (or inside the container) running Hermes:
+To install by hand instead, into a HermitShell home of your choice:
 
 ```sh
-HERMES_HOME=/opt/data ./scripts/install.sh daily-vacancy-report
-cd /opt/data/scripts
+HERMITSHELL_HOME=/srv/hermitshell ./scripts/install.sh daily-vacancy-report
+cd /srv/hermitshell/scripts
 cp job_profile.example.md job_profile.md        # then describe yourself
 cp cv_keywords.example.json cv_keywords.json    # then list your skills
 ```
 
 Add the shared settings from the root [`.env.example`](../../.env.example) (SMTP plus at least
-one search provider key) to `$HERMES_HOME/.env`. Then add any settings from this package's
+one search provider key) to `$HERMITSHELL_HOME/.env`. Then add any settings from this package's
 `.env.example` that you want to change.
 
 ### Try it
@@ -154,39 +156,35 @@ A dry run writes the rendered email to `state/job_scanner_last.html` and the raw
 
 ### Schedule it
 
-The wizard does this for you. By hand:
+The container, the service installer and the wizard do this for you. By hand, `python3 scheduler.py defaults`
+adds the standard schedule from [`jobs.json`](jobs.json), or choose the times:
 
 ```sh
-hermes cron create "0 7 * * *" "Daily Vacancy Report" \
-    --name daily-vacancy-report --script job_scanner.py --no-agent --deliver local
-hermes cron create "0 18 * * 0" "Weekly vacancy roll-up" \
-    --name weekly-vacancy-report --script job_weekly.py --no-agent --deliver local
-hermes cron create "*/5 * * * *" "Cover letter requests" \
-    --name vacancy-cover-letters --script cover_letter.py --no-agent --deliver local
-hermes cron create "*/5 * * * *" "Vacancy profiles" \
-    --name vacancy-profiles --script profiles.py --no-agent --deliver local
-hermes cron create "30 3 * * *" "Nightly maintenance" \
-    --name vacancy-maintenance --script maintenance.py --no-agent --deliver local
-hermes cron list
+python3 scheduler.py create "0 7 * * *" "Daily Vacancy Report" --name daily-vacancy-report --script job_scanner.py
+python3 scheduler.py create "0 18 * * 0" "Weekly vacancy roll-up" --name weekly-vacancy-report --script job_weekly.py
+python3 scheduler.py create "*/5 * * * *" "Cover letter requests" --name vacancy-cover-letters --script cover_letter.py
+python3 scheduler.py create "*/5 * * * *" "Extra profiles" --name vacancy-profiles --script profiles.py
+python3 scheduler.py create "30 3 * * *" "Nightly maintenance" --name vacancy-maintenance --script maintenance.py
+python3 scheduler.py list
+python3 scheduler.py run          # keep it running (the container and the service do this)
 ```
 
 ### Backups and restores
 
-`maintenance.py` backs everything up each night into `$HERMES_HOME/backups/nightly` (or
+`maintenance.py` backs everything up each night into `$HERMITSHELL_HOME/backups/nightly` (or
 `HERMES_BACKUP_DIR`), encrypted with `HERMES_DATA_KEY`:
 
 ```sh
 python3 maintenance.py --list-backups
-python3 maintenance.py --restore ../backups/nightly/hermes-20260501-033000.tar.gz.enc --to /tmp/restore
+python3 maintenance.py --restore ../backups/nightly/hermitshell-20260501-033000.tar.gz.enc --to /tmp/restore
 python3 maintenance.py --decrypt state/profiles/<id>/cv.txt     # print one encrypted file
 ```
 
 A restore unpacks into an empty folder; copy back what you need. Without the key the backups
 can't be opened, so keep a copy of it in a password manager.
 
-Cron times use Hermes' timezone (`timezone:` in `config.yaml`); without one that is usually UTC.
-Use `0 7 * * 1-5` for weekdays only. Cron jobs can't pass arguments to a script, which is why the
-weekly roll-up has its own entry point, `job_weekly.py`.
+Schedule times are in `HERMES_TIMEZONE` (default UTC). Use `0 7 * * 1-5` for weekdays only. Scheduled jobs
+can't pass arguments to a script, which is why the weekly roll-up has its own entry point, `job_weekly.py`.
 
 ## Command-line options
 
@@ -203,7 +201,7 @@ weekly roll-up has its own entry point, `job_weekly.py`.
 
 ## Configuration
 
-Every option is an environment variable (or a line in `$HERMES_HOME/.env`). See
+Every option is an environment variable (or a line in `$HERMITSHELL_HOME/.env`). See
 [`.env.example`](.env.example) for the full list with defaults. The most important ones are:
 
 - **`JOB_REGION_NAME`, `JOB_REGION_PLACES`, `JOB_REGION_REGEX`.** Restrict results to one region.

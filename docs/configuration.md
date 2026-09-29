@@ -14,19 +14,22 @@ When they conflict, higher entries in this list win:
 
 1. **Process environment.** For example, container `environment:` entries in
    `docker-compose.yml`. This is the recommended place for secrets.
-2. **`$HERMES_HOME/.env`.** Loaded by `hermes_common` when a package starts. Lines are
+2. **`.env` in HermitShell's home** (`HERMITSHELL_HOME`: `/data` in the container, `/opt/hermitshell` for
+   the service). Loaded by `hermes_common` each time a script starts, so a change applies from the next run. Lines are
    `KEY=value`; blank values are ignored, and values may be wrapped in single or double quotes.
 3. **Built-in defaults.** These are neutral: no region, UTC, generic titles.
 
 Regexes are read literally, so write `\b` rather than `\\b`.
 
-The model, Ollama host and context size come from Hermes' own `$HERMES_HOME/config.yaml` (the
-`model:` block), so the job finder automatically uses whatever model Hermes uses. Resolution order:
+The model, Ollama host and context size come from `OLLAMA_MODEL`, `OLLAMA_HOST` and `OLLAMA_NUM_CTX`. (An
+install moved out of Hermes that still has Hermes' `config.yaml` in its home falls back to its `model:` block.)
+Resolution order:
 
 | Setting | Order |
 | --- | --- |
-| Model | `JOB_SCANNER_MODEL` (or `COVER_LETTER_MODEL`) → `config.yaml model.default` → `OLLAMA_MODEL` → `qwen3:4b-instruct-2507-q4_K_M` |
-| Host | `config.yaml model.base_url` → `OLLAMA_HOST` (`http://ollama:11434`) → `OLLAMA_FALLBACK_HOST` (`http://localhost:11434`) |
+| Model | `JOB_SCANNER_MODEL` (or `COVER_LETTER_MODEL`) → `OLLAMA_MODEL` → `qwen3:4b-instruct-2507-q4_K_M` |
+| Host | `OLLAMA_HOST` → `OLLAMA_FALLBACK_HOST` (`http://localhost:11434`) → `http://ollama:11434` (a container named `ollama`) → `http://host.docker.internal:11434` (Ollama on the Docker host) |
+| Context | `OLLAMA_NUM_CTX` for `OLLAMA_MODEL`, else chosen by [autofit](#autofit-gpu-cpu-and-context-chosen-for-you) |
 
 The first host that responds and has one of the candidate models is used.
 
@@ -40,15 +43,15 @@ had to wait log `Waited 42s for the model (shared queue)`.
 ### Autofit: GPU, CPU and context chosen for you
 
 `autofit.py` picks where and how each model request runs, and keeps adjusting as it learns.
-It's on by default (`HERMES_AUTOFIT=off` turns it off and sends Hermes' settings unchanged).
+It's on by default (`HERMES_AUTOFIT=off` turns it off and sends the model settings unchanged).
 
 - **Hardware.** It knows the machine's CPU cores and threads, memory and GPUs (NVIDIA and AMD).
   In Docker the scripts can't see the host's GPUs, so the
   [host watchdog](installation.md#use-the-gpu) reports them in `state/hardware.json` every 2 minutes.
-- **Context that fits the GPU.** A job rating needs a few thousand tokens, not Hermes' full chat
+- **Context that fits the GPU.** A job rating needs a few thousand tokens, not a chat model's full
   context. Each request gets the smallest of 8k, 16k, 32k or 64k tokens that holds it. Autofit
   then learns from Ollama how much memory the model takes at each size and how much of it fits on
-  the GPU. It keeps Hermes' own context when that fits too, so Ollama doesn't reload the model.
+  the GPU. It keeps `OLLAMA_NUM_CTX` when that fits too, so Ollama doesn't reload the model.
   On a 4 GB card this moves a 4B model from mostly CPU to about 94% GPU, roughly twice as fast.
 - **All cores.** Ollama uses one thread per physical core by default. When the model runs mostly
   on the CPU and the CPU has hyper-threading, autofit times both settings on real requests
@@ -67,8 +70,8 @@ It's on by default (`HERMES_AUTOFIT=off` turns it off and sends Hermes' settings
 See what it chose, and check it against real loads:
 
 ```sh
-docker exec -u hermes -w /opt/data/scripts hermes-agent python3 autofit.py              # what it knows
-docker exec -u hermes -w /opt/data/scripts hermes-agent python3 autofit.py --calibrate  # load each size once
+docker exec hermitshell python3 autofit.py              # what it knows
+docker exec hermitshell python3 autofit.py --calibrate  # load each size once
 ```
 
 `doctor.py` also says where the model runs, for example `qwen3:4b: loaded at 8192 context, 94% on
@@ -91,18 +94,21 @@ Full template: [`.env.example`](../.env.example).
 | `WEB_SEARCH_ORDER` | `firecrawl,tavily` | Search provider priority |
 | `WEB_SCRAPE_ORDER` | `firecrawl,scrapfly,tavily` | Scrape provider priority |
 | `SCRAPFLY_COUNTRY` | none | Scrapfly proxy country (two-letter code) for geo-blocked sites |
-| `OLLAMA_HOST` / `OLLAMA_FALLBACK_HOST` / `OLLAMA_MODEL` | see above | Model fallbacks |
+| `OLLAMA_HOST` / `OLLAMA_FALLBACK_HOST` / `OLLAMA_MODEL` | see above | The Ollama server and model |
+| `OLLAMA_NUM_CTX` | autofit | Context size (tokens) for `OLLAMA_MODEL` |
 | `HERMES_MODEL_CONCURRENCY` | `auto` | Model requests allowed at once across all scripts and profiles; the rest queue. `auto` = one per working Ollama instance |
 | `OLLAMA_HOSTS` | none | Extra Ollama servers, comma-separated (`http://ollama-gpu1:11435`). Only `http(s)://host:port`, no logins or paths |
-| `HERMES_AUTOFIT` | `auto` | `off` sends Hermes' model settings unchanged, with no context, GPU or thread tuning. See [Autofit](#autofit-gpu-cpu-and-context-chosen-for-you) |
+| `HERMES_AUTOFIT` | `auto` | `off` sends the model settings unchanged, with no context, GPU or thread tuning. See [Autofit](#autofit-gpu-cpu-and-context-chosen-for-you) |
 | `HERMES_AUTOFIT_THREADS` | automatic | Fixed CPU threads per model request (`num_thread`), instead of timing both settings |
-| `HERMES_TIMEZONE` | `UTC` | IANA timezone for dates shown in emails |
+| `HERMES_TIMEZONE` | `UTC` | IANA timezone for dates shown in emails and for the schedules |
 | `HERMES_STATE_DIR` | `<scripts>/state` | Seen-state, caches and last reports |
-| `HERMES_HOME` | parent of the scripts directory | Where `.env` and `config.yaml` are read from. Environment only |
+| `HERMITSHELL_HOME` | parent of the scripts directory | HermitShell's home: `.env`, the schedule, backups. `/data` in the container. Environment only (`HERMES_HOME` is still read) |
+| `HERMITSHELL_JOB_TIMEOUT` | `21600` | Seconds a scheduled run may take before it is stopped |
+| `HERMITSHELL_CATCHUP_MINUTES` | `30` | A run missed while HermitShell was stopped is started late if it was due within this many minutes |
 | `HERMES_DATA_KEY` | none (the wizard generates one) | Encrypts CVs, profiles, letters and backups. See [Data protection](#data-protection) |
 | `HERMES_RETENTION_DAYS` | `365` | Jobs, answers, letters and tailored CVs untouched this long are deleted. `0` = keep forever |
 | `HERMES_LOG_RETENTION_DAYS` | `90` | Logs and scheduled-job output older than this are deleted. `0` = keep forever |
-| `HERMES_BACKUP_DIR` | `$HERMES_HOME/backups/nightly` | Where the nightly backups go. Point it at a second disk or a mounted share for an off-machine copy |
+| `HERMES_BACKUP_DIR` | `<home>/backups/nightly` | Where the nightly backups go. Point it at a second disk or a mounted share for an off-machine copy |
 | `HERMES_BACKUP_KEEP_DAILY` / `HERMES_BACKUP_KEEP_WEEKLY` | `14` / `8` | Newest backups kept, plus the newest of each week for this many more weeks |
 
 ## Job finder settings
@@ -161,9 +167,10 @@ agent, or with wrangler) is covered in [feedback-worker.md](feedback-worker.md).
 
 ### Schedules
 
-Run times aren't `.env` settings: they are `hermes cron` jobs. The wizard asks for the report's run
-time (`07:30`, `weekdays 08:00`, `sunday 18:00` or a cron expression) and creates or updates
-the job. There are four more jobs: the weekly roll-up (`job_weekly.py`, default Sunday
+Run times aren't `.env` settings: they are jobs in HermitShell's scheduler (`cron/jobs.json`, managed with
+`python3 scheduler.py`; see [schedule](installation.md#6-schedule)). The container and the service add the standard
+jobs on first start. The wizard asks for the report's run time (`07:30`, `weekdays 08:00`, `sunday 18:00` or a
+cron expression) and creates or updates the job. Times are in `HERMES_TIMEZONE`. There are four more jobs: the weekly roll-up (`job_weekly.py`, default Sunday
 18:00), the cover letter and tailored CV requests check (`cover_letter.py`) and the profiles
 check (`profiles.py`, which also watches for dashboard changes between runs), both every 5
 minutes and silent when idle, and nightly maintenance
@@ -186,22 +193,22 @@ This is how it is carried out:
 - **Encryption at rest.** With `HERMES_DATA_KEY` set, each profile's `profile.json`,
   `settings.json`, `cv.txt`, `job_profile.md` and `cv_keywords.json`, the tailored-CV cache and
   every cover letter and tailored CV are written encrypted (AES-256-GCM, via the `cryptography`
-  package that Hermes already bundles). Files written before the key was set are encrypted by the
+  package, in the container image). Files written before the key was set are encrypted by the
   next maintenance run. Your own `job_profile.md` and `cv_keywords.json` in the scripts folder stay
   plain so you can edit them, as does the tracker database. The uploaded CV file is deleted once its
   text is read.
 - **The key.** The wizard generates it (or run `python3 maintenance.py --new-key`) and writes it to
   `.env`. Keep a copy in a password manager: without it the encrypted files and backups can't be
   read. Don't change it once set; `maintenance.py --decrypt FILE` opens a single file.
-- **Permissions.** The scripts create files readable by Hermes' account only, and maintenance
+- **Permissions.** The scripts create files readable by HermitShell's account only, and maintenance
   resets everything under `state/`, the profiles folder and the backups to `0600`/`0700`.
 - **Retention.** Maintenance deletes tracker jobs with no sighting, answer or letter for
   `HERMES_RETENTION_DAYS` (with their answers), older cover letters and tailored CVs, and logs and
   scheduled-job output older than `HERMES_LOG_RETENTION_DAYS`. Deleted database rows are
   overwritten and the file compacted. The skills you added are kept.
-- **Backups.** Every night `.env`, `config.yaml`, `SOUL.md`, memories, cron jobs and the scripts
-  folder with its state go into one encrypted archive in `HERMES_BACKUP_DIR`, rotated to 14 daily
-  and 8 weekly copies. Keep [a second copy](#a-second-copy-of-the-backups) on another disk.
+- **Backups.** Every night `.env`, the schedule (`cron/`) and the scripts folder with its state go into one
+  encrypted archive (`hermitshell-<date>.tar.gz.enc`) in `HERMES_BACKUP_DIR`, rotated to 14 daily and 8 weekly
+  copies (archives from an install inside Hermes, `hermes-*`, are rotated with them). Keep [a second copy](#a-second-copy-of-the-backups) on another disk.
   Restore with `python3 maintenance.py --restore FILE --to EMPTY_DIR`, then copy back
   what you need.
 - **Unsubscribe and deletion.** An extra profile's unsubscribe link, or Delete on `/admin`,
@@ -213,47 +220,47 @@ This is how it is carried out:
 ### A second copy of the backups
 
 Backups on the same disk as HermitShell don't survive that disk failing. Check with
-`df -h /path/to/hermes/data` and compare it with your other disks: on many NAS systems the apps
+`df -h /opt/hermitshell/data` and compare it with your other disks: on many NAS systems the apps
 live on the small system SSD while the RAID or data disks are mounted elsewhere.
 
 In Docker, `HERMES_BACKUP_DIR` is a path inside the container, so pointing it at another disk means
-adding a volume to the Hermes container. A host timer that copies the finished archives needs no
+adding a volume to the container. A host timer that copies the finished archives needs no
 change to the container, and the container can't touch the copies. As root on the host (adjust the
 two paths):
 
 ```sh
-cat > /usr/local/sbin/hermes-backup-mirror <<'EOF'
+cat > /usr/local/sbin/hermitshell-backup-mirror <<'EOF'
 #!/bin/sh
 set -eu
-SRC=/path/to/hermes/data/backups/nightly
-DST=/mnt/second-disk/hermes-backups
+SRC=/opt/hermitshell/data/backups/nightly
+DST=/mnt/second-disk/hermitshell-backups
 mkdir -p "$DST" && chmod 700 "$DST"
 rsync -rt --ignore-existing --include='*.enc' --exclude='*' "$SRC/" "$DST/"
 # Prune copies older than 120 days, but only while 14 newer ones exist.
 if [ "$(find "$DST" -name '*.enc' -mtime -120 | wc -l)" -ge 14 ]; then find "$DST" -name '*.enc' -mtime +120 -delete; fi
 EOF
-chmod 700 /usr/local/sbin/hermes-backup-mirror
-printf '[Service]\nType=oneshot\nExecStart=/usr/local/sbin/hermes-backup-mirror\n' \
-  > /etc/systemd/system/hermes-backup-mirror.service
+chmod 700 /usr/local/sbin/hermitshell-backup-mirror
+printf '[Service]\nType=oneshot\nExecStart=/usr/local/sbin/hermitshell-backup-mirror\n' \
+  > /etc/systemd/system/hermitshell-backup-mirror.service
 printf '[Timer]\nOnCalendar=*-*-* 04:15:00\nPersistent=true\n[Install]\nWantedBy=timers.target\n' \
-  > /etc/systemd/system/hermes-backup-mirror.timer
-systemctl daemon-reload && systemctl enable --now hermes-backup-mirror.timer
+  > /etc/systemd/system/hermitshell-backup-mirror.timer
+systemctl daemon-reload && systemctl enable --now hermitshell-backup-mirror.timer
 ```
 
 It runs after the 03:30 maintenance job, never deletes a copy because the source lost it, and
 copies only the encrypted archives. On an immutable system where `/usr` is read-only, keep the
-script next to the Hermes folder instead (outside the folder mounted into the container). For a
+script next to the data folder instead (outside the folder mounted into the container). For a
 copy off the machine, point `DST` at a mounted share or add an `rclone copy` to the script. Keep
 the data key somewhere else, such as a password manager: a backup stored with its key protects
 nothing.
 
 If the host shares its disks over SMB (common on NAS systems), anyone with that login can read
-`.env` and the backups, so give the share a strong password or leave the Hermes folder out of it.
+`.env` and the backups, so give the share a strong password or leave HermitShell's folder out of it.
 
 ## Keeping secrets safe
 
-- Prefer container environment variables for keys and passwords, and keep `$HERMES_HOME/.env`
-  readable only by the Hermes user (`chmod 600`). The nightly backup includes `.env`, which is
+- Prefer container environment variables for keys and passwords, and keep `.env` in HermitShell's home
+  readable only by its user (`chmod 600`; `doctor.py --fix` does this). The nightly backup includes `.env`, which is
   one more reason to keep `HERMES_DATA_KEY` set.
 - Never commit a filled-in `.env`, `job_profile.md` or `cv_keywords.json`. The repo's
   `.gitignore` already excludes them.

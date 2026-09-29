@@ -2,11 +2,11 @@
 
 [![CI](https://github.com/Metaheurist/HermitShell/actions/workflows/ci.yml/badge.svg)](https://github.com/Metaheurist/HermitShell/actions/workflows/ci.yml)
 [![Security](https://github.com/Metaheurist/HermitShell/actions/workflows/security.yml/badge.svg)](https://github.com/Metaheurist/HermitShell/actions/workflows/security.yml)
+[![Image](https://github.com/Metaheurist/HermitShell/actions/workflows/image.yml/badge.svg)](https://github.com/Metaheurist/HermitShell/actions/workflows/image.yml)
 
-A self-hosted job-finder automation platform for [Hermes Agent](https://github.com/NousResearch/hermes-agent).
-Every morning it searches the web for jobs in your region, has the model Hermes is already
-configured with (Ollama by default) score each one against your CV, and emails you the best
-matches. Buttons in the email teach it what you like, write cover letters and tailored CVs on
+A self-hosted job-finder automation platform that runs on any Linux server, as a container or a service.
+Every morning it searches the web for jobs in your region, has a local model (Ollama) score each one against
+your CV, and emails you the best matches. Buttons in the email teach it what you like, write cover letters and tailored CVs on
 request, and remind you to follow up. One server can run it for other people too, each with
 their own CV, searches and reports.
 
@@ -49,17 +49,26 @@ Every email, PDF and page, with what each part does: [docs/screenshots.md](docs/
 
 ## Quick start
 
-On the machine or container running Hermes (for the official Docker image, `HERMES_HOME` is
-`/opt/data`):
+As a container, on any Docker host (the image is built and published by
+[GitHub Actions](.github/workflows/image.yml) on every push):
 
 ```sh
-git clone https://github.com/Metaheurist/HermitShell.git
-cd HermitShell
-python3 scripts/setup.py
+sudo mkdir -p /opt/hermitshell/data && sudo chown 10000:10000 /opt/hermitshell/data
+cd /opt/hermitshell
+sudo curl -fsSLO https://raw.githubusercontent.com/Metaheurist/HermitShell/main/docker-compose.yml
+sudo docker compose up -d
+sudo docker exec -it hermitshell /app/entrypoint.sh setup
 ```
 
-The setup wizard installs the job finder, sets up what it runs on (missing Python packages, an
-Ollama container next to Hermes if there's no Ollama yet, and the model). Then:
+Or as a service on any Linux server with Python 3.10+, without Docker:
+
+```sh
+git clone https://github.com/Metaheurist/HermitShell.git && cd HermitShell
+sudo sh scripts/install-service.sh
+```
+
+Either way HermitShell runs its own scheduler, so nothing else is needed. The setup wizard sets up what it runs
+on (missing Python packages, an Ollama container if there's no Ollama yet, and the model). Then:
 
 - **With a free Cloudflare account** (recommended): paste its account ID and an API token
   ([how](docs/cloudflare-setup.md)). The wizard deploys the feedback Worker, then asks for:
@@ -79,17 +88,18 @@ Ollama container next to Hermes if there's no Ollama yet, and the model). Then:
 
   `--advanced` also asks for every other setting.
 
-Keys are typed without being shown and are only ever displayed masked. It finishes with the cron
-jobs, a test email when the email server is set, and a health check.
+Keys are typed without being shown and are only ever displayed masked. It finishes with the
+schedules, a test email when the email server is set, and a health check.
 
-Settings are saved to `$HERMES_HOME/.env`, which is backed up first. Re-run the wizard any time;
-your current values are offered as the defaults. On a Docker host, point it at the bind-mounted
-data directory (`sudo python3 scripts/setup.py --hermes-home /path/to/hermes/data`). It runs
-`hermes` commands inside the `hermes-agent` container automatically.
+Settings are saved to `.env` in HermitShell's home (`/data` in the container, `/opt/hermitshell` for the
+service), which is backed up first. Re-run the wizard any time; your current values are offered as the
+defaults. The container keeps itself up to date with
+[`install-updater.sh`](docs/installation.md#keep-the-container-up-to-date), which pulls each new image.
 
-Prefer to do it by hand? Run `./scripts/install.sh daily-vacancy-report`, copy settings from
-[`.env.example`](.env.example) and the package's `.env.example` into `$HERMES_HOME/.env`, and
-follow the [package README](packages/daily-vacancy-report).
+Prefer to do it by hand? Run `HERMITSHELL_HOME=/srv/hermitshell ./scripts/install.sh daily-vacancy-report`,
+copy settings from [`.env.example`](.env.example) and the package's `.env.example` into its `.env`, and
+start `scheduler.py run` ([manual installation](docs/installation.md#manual-installation)). Moving an install
+out of Hermes is covered in [docs/installation.md](docs/installation.md#moving-from-hermes).
 
 Details are in [docs/installation.md](docs/installation.md) and
 [docs/configuration.md](docs/configuration.md). The feedback Worker has its own guides:
@@ -102,34 +112,42 @@ it by hand with wrangler or the Cloudflare MCP.
 ```
 common/hermes_common.py    shared plumbing: .env loading, model discovery, web providers, SMTP, encryption
 common/autofit.py          picks GPU or CPU, context size, threads and Ollama server per model request
-common/doctor.py           checks and sets up prerequisites: packages, Ollama and its model, data key
-common/tests/              unit tests for the shared library and the doctor
+common/doctor.py           checks and sets up prerequisites: packages, scheduler, Ollama and its model, data key
+common/scheduler.py        runs each script on its cron schedule (the service, or a tick from cron)
+common/tests/              unit tests for the shared library, the scheduler and the doctor
 packages/daily-vacancy-report/
                            the job finder: report, weekly roll-up, cover letters, tailored CVs, profiles
 packages/daily-vacancy-report/feedback-worker/
-                           Cloudflare Worker for the buttons, /admin and sign-ups (not copied into Hermes)
+                           Cloudflare Worker for the buttons, /admin and sign-ups (deployed to Cloudflare)
 scripts/setup.py           interactive wizard: install, API keys, job search, profile, Worker, schedules
 scripts/cloudflare_worker.py
                            deploys or updates the Worker with a Cloudflare API token
 scripts/tests/             unit tests for the wizard, the Worker deploy and the .env.example files
-scripts/install.sh         copies common + the package flat into $HERMES_HOME/scripts
-scripts/host/              Docker host watchdog (systemd): reports the GPUs, restarts an Ollama that lost one
+scripts/install.sh         copies common + the package flat into $HERMITSHELL_HOME/scripts
+scripts/install-service.sh installs it as a systemd service (or cron) on any Linux server
+scripts/host/              host units: the image updater, and a watchdog that reports the GPUs and restarts
+                           an Ollama that lost one
+Dockerfile, docker/        the container image and its entry point
+docker-compose.yml         runs the image with its data in ./data
 scripts/screenshots/       regenerates the documentation screenshots from fictional data
 tests/security/            security tests: hostile input, encryption, backups, file permissions
 requirements.txt           run-time Python packages (requirements-dev.txt adds the test tools)
-.github/workflows/         CI (lint, tests, Worker build) and Security (secrets, security tests,
-                           Bandit, CVEs, CodeQL)
+.github/workflows/         CI (lint, tests, Worker build), Security (secrets, security tests, Bandit,
+                           CVEs, CodeQL) and Image (build, smoke test, scan, publish to GHCR)
 docs/                      installation, configuration, accounts and API keys, Cloudflare, feedback
                            Worker, email rendering, web providers, screenshots
 ```
 
-The scripts are installed flat next to `hermes_common.py`, because Hermes cron jobs run a single
-script from `$HERMES_HOME/scripts`.
+The scripts are installed flat next to `hermes_common.py` in `$HERMITSHELL_HOME/scripts`, and each scheduled
+job runs one of them.
 
 ## Under the hood
 
-- **Uses Hermes' own model.** Reads `model.default`, `model.base_url` and `ollama_num_ctx` from
-  `$HERMES_HOME/config.yaml`, with an override for the job finder.
+- **Its own scheduler.** `scheduler.py` runs each script on its cron schedule in your timezone, skips a job
+  that is still running, catches up a run missed while it was stopped, and stops runaway runs. The dashboard
+  sets each person's report time through it.
+- **Runs anywhere.** One image for amd64 and arm64, read-only and unprivileged, updated by the server itself;
+  or a hardened systemd service on any Linux server.
 - **Fits the model to the machine.** Autofit gives each request the context it needs, keeps as
   much of the model on the GPU as fits, uses every CPU thread when that's faster, and spreads job
   ratings over every Ollama server. It steps down when memory runs out and back up when it's safe.
@@ -144,7 +162,7 @@ script from `$HERMES_HOME/scripts`.
   [docs/email-rendering.md](docs/email-rendering.md).
 - **Stateful.** It remembers what it already sent, so you never get the same job twice.
 - **Data protection.** CVs, profiles and letters are encrypted at rest (AES-256-GCM,
-  `HERMES_DATA_KEY`) and readable by Hermes' account only; a nightly job deletes data past its
+  `HERMES_DATA_KEY`) and readable by HermitShell's account only; a nightly job deletes data past its
   retention period and writes rotated, encrypted backups; unsubscribing deletes a person's data,
   scrubs them from the logs and confirms by email. What invited people are told is in
   [PRIVACY.md](PRIVACY.md); how it works is in
@@ -154,13 +172,13 @@ script from `$HERMES_HOME/scripts`.
 
 ## Requirements
 
-- Hermes Agent with `hermes cron`, and Python 3.10+ (the official image has both).
-- The `requests` and `cryptography` packages (both bundled with Hermes). `pillow` is optional and
+- Docker, or Linux with Python 3.10+ (the container has everything else).
+- Without the container: the `requests` and `cryptography` packages. `pillow` is optional and
   gives round company logos; `pyyaml` is optional. [`requirements.txt`](requirements.txt) lists
   them, and `doctor.py --fix` installs any that are missing
   ([prerequisites](docs/installation.md#3-check-the-prerequisites)).
 - An Ollama model. A 4B instruct model such as `qwen3:4b-instruct-2507` works well on a CPU. The
-  wizard can start an Ollama container next to Hermes and download the model for you.
+  wizard can start an Ollama container and download the model for you.
 - An SMTP account, such as a Gmail App Password.
 - An API key for at least one of [Firecrawl](https://firecrawl.dev),
   [Tavily](https://tavily.com) or [Scrapfly](https://scrapfly.io). All three have free tiers.
@@ -182,12 +200,13 @@ python -m pytest common/tests packages/*/tests scripts/tests tests/security
 cd packages/daily-vacancy-report/feedback-worker && npm ci && npm test
 ```
 
-Two GitHub Actions workflows run on every push and pull request:
+Three GitHub Actions workflows run on every push and pull request:
 
 | Workflow | Jobs |
 | --- | --- |
 | [CI](.github/workflows/ci.yml) | Ruff lint; a compile check on Python 3.10; unit tests for the shared library, the job finder and the setup wizard, each on Python 3.10 and 3.12; the feedback Worker's Vitest tests and a `wrangler deploy --dry-run` build check; and a final "All CI checks passed" job to use as a required check |
 | [Security](.github/workflows/security.yml) | Gitleaks secret scan of the full history; the security test suites ([`tests/security`](tests/security) for hostile input, encryption, backups and file permissions; the Worker's `test/security.test.js` for headers, escaping, authentication, CSRF and size limits); Bandit static analysis of the Python code; CVE audits of the Python packages (`pip-audit`) and the Worker's npm packages (`npm audit`, high and critical fail); dependency review on pull requests; CodeQL code scanning of the Python, JavaScript and workflow files. It also runs every Monday, so newly published CVEs are reported even when nothing has changed |
+| [Image](.github/workflows/image.yml) | Builds the container image, starts it with an empty data folder and checks the scheduler comes up healthy with the standard jobs and every package imports, scans it with Trivy (fixable critical CVEs fail), then on `main` and version tags publishes it for amd64 and arm64 to `ghcr.io/metaheurist/hermitshell` |
 
 ## Security
 

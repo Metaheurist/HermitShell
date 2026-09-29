@@ -1,8 +1,8 @@
-# What the HermitShell scripts need at run time, in Hermes' Python. The official Hermes image already
-# has all of them; `python3 doctor.py --fix` installs any that are missing into scripts/.deps.
+# What the HermitShell scripts need at run time (Python 3.10 or newer). The container image has all of
+# them; elsewhere `python3 doctor.py --fix` installs any that are missing into scripts/.deps.
 # Keep in step with REQUIREMENTS in common/doctor.py.
 requests>=2.32
 cryptography>=44
-# Optional: round company logos, and reading Hermes' config.yaml with a real YAML parser.
+# Optional: round company logos, and reading an older install's config.yaml with a real YAML parser.
 pillow>=10.4
 pyyaml>=6.0

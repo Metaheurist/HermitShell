@@ -71,7 +71,7 @@ CV, web search keys and (if you skipped it) the email server are set on `/admin`
 everything first and the Worker last.
 
 After you confirm the review, it deploys the Worker and prints its address. The account ID, token,
-Worker name and Access emails are saved in `$HERMES_HOME/.env` (mode 600); the admin password is
+Worker name and Access emails are saved in `.env` in HermitShell's home (mode 600); the admin password is
 only stored on the Worker.
 
 Unattended installs put the same values in the answers file:
@@ -93,7 +93,8 @@ python3 scripts/setup.py --non-interactive --answers answers.env
 After updating HermitShell (`git pull`), upload the new Worker code with the saved settings:
 
 ```sh
-python3 scripts/cloudflare_worker.py                      # add --hermes-home /path if needed
+python3 scripts/cloudflare_worker.py                      # add --home /path if needed
+docker exec hermitshell /app/entrypoint.sh worker         # the same, in the container
 ```
 
 The same command changes the admin password (piped, so it never lands in your shell history) or adds
@@ -143,7 +144,7 @@ messages, so holding it all day isn't billed as time; see
 
 ## Keeping the token safe
 
-- The token is stored only in `$HERMES_HOME/.env` (mode 600) and never printed; the review screen
+- The token is stored only in HermitShell's `.env` (mode 600) and never printed; the review screen
   shows `****` and the last four characters.
 - Dashboard settings can't change `CLOUDFLARE_*` values; only the wizard or `.env` can.
 - If the token may have leaked (pasted into a chat, a screenshot, a shared file), roll it in the

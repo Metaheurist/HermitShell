@@ -49,7 +49,7 @@ npx wrangler secret put ADMIN_PASSWORD          # optional: turns on /admin for 
 npx wrangler deploy
 ```
 
-Then set these in `$HERMES_HOME/.env`:
+Then set these in HermitShell's `.env` (`$HERMITSHELL_HOME/.env`):
 
 ```bash
 JOB_FEEDBACK_URL=https://vacancy-feedback.<your-subdomain>.workers.dev
