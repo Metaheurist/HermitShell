@@ -51,34 +51,45 @@ def clean_skill(text: str) -> str:
 
 # --------------------------------------------------------------------------- signed links
 
-def sign(secret: str, key: str, action: str, title: str, skills: str = "") -> str:
-    """HMAC-SHA256 over key, action, title and any skill list (first 32 hex chars); the Worker checks the same."""
-    msg = (f"{key}\n{action}\n{title}" + (f"\n{skills}" if skills else "")).encode("utf-8")
+def sign(secret: str, key: str, action: str, title: str, skills: str = "", profile: str = "") -> str:
+    """HMAC-SHA256 over key, action, title, any skill list and any profile id (first 32 hex chars); the Worker
+    checks the same."""
+    msg = (f"{key}\n{action}\n{title}" + (f"\n{skills}" if skills else "")
+           + (f"\nu={profile}" if profile else "")).encode("utf-8")
     return hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()[:32]
 
 
-def action_link(base_url: str, secret: str, key: str, action: str, title: str) -> str:
-    title = title[:120]
-    query = urlencode({"j": key, "a": action, "n": title, "t": sign(secret, key, action, title)})
-    return f"{base_url.rstrip('/')}/f?{query}"
+def _link(base_url: str, params: dict[str, str], secret: str, profile: str) -> str:
+    params = {**params, **({"u": profile} if profile else {})}
+    params["t"] = sign(secret, params["j"], params["a"], params["n"], params.get("s", ""), profile)
+    return f"{base_url.rstrip('/')}/f?{urlencode(params)}"
+
+
+def action_link(base_url: str, secret: str, key: str, action: str, title: str, profile: str = "") -> str:
+    return _link(base_url, {"j": key, "a": action, "n": title[:120]}, secret, profile)
 
 
 def card_links(base_url: str, secret: str, key: str, title: str,
-               actions: tuple[str, ...] = CARD_ACTIONS) -> dict[str, str]:
+               actions: tuple[str, ...] = CARD_ACTIONS, profile: str = "") -> dict[str, str]:
     if not (base_url and secret):
         return {}
-    return {a: action_link(base_url, secret, key, a, title) for a in actions}
+    return {a: action_link(base_url, secret, key, a, title, profile) for a in actions}
 
 
-def skill_link(base_url: str, secret: str, key: str, title: str, skills: list[str]) -> str:
+def skill_link(base_url: str, secret: str, key: str, title: str, skills: list[str], profile: str = "") -> str:
     """Signed link to the Worker page that adds a job's missing skills to your pool (append &p=<skill> to tick one)."""
     skills = [s for s in dict.fromkeys(clean_skill(s) for s in skills) if s][:MAX_SKILLS]
     if not (base_url and secret and skills):
         return ""
-    title, packed = title[:120], "|".join(skills)
-    query = urlencode({"j": key, "a": "add_skill", "n": title, "s": packed,
-                       "t": sign(secret, key, "add_skill", title, packed)})
-    return f"{base_url.rstrip('/')}/f?{query}"
+    return _link(base_url, {"j": key, "a": "add_skill", "n": title[:120], "s": "|".join(skills)}, secret, profile)
+
+
+def unsubscribe_link(base_url: str, secret: str, name: str, profile: str = "") -> str:
+    """Report footer link: deletes an extra profile, or only pauses the owner's reports (no profile id)."""
+    if not (base_url and secret):
+        return ""
+    return _link(base_url, {"j": "profile" if profile else "profile-pause", "a": "unsubscribe", "n": name[:120]},
+                 secret, profile)
 
 
 # --------------------------------------------------------------------------- store
@@ -283,8 +294,9 @@ class Tracker:
 # --------------------------------------------------------------------------- feedback sync
 
 def sync_feedback(tracker: Tracker, base_url: str, api_token: str, ack: bool = True,
-                  timeout: int = 20) -> tuple[int, str | None]:
-    """Fetch confirmed answers from the feedback Worker, store them, then acknowledge them.
+                  timeout: int = 20, profile: str = "", full: bool = False) -> tuple[int, str | None]:
+    """Fetch confirmed answers (for one profile; "" is the owner) from the feedback Worker, store them, then
+    acknowledge them. full=True makes the Worker list KV even when its "something is waiting" flag is unset.
 
     Returns (answers saved, error message or None). Safe to call every run.
     """
@@ -292,8 +304,9 @@ def sync_feedback(tracker: Tracker, base_url: str, api_token: str, ack: bool = T
         return 0, None
     headers = {"Authorization": f"Bearer {api_token}"}
     base = base_url.rstrip("/")
+    params = {k: v for k, v in (("u", profile), ("full", "1" if full else "")) if v}
     try:
-        resp = requests.get(f"{base}/events", headers=headers, timeout=timeout)
+        resp = requests.get(f"{base}/events", headers=headers, params=params, timeout=timeout)
         resp.raise_for_status()
         events = resp.json().get("events", [])
     except (requests.RequestException, ValueError) as exc:

@@ -46,12 +46,16 @@ light and dark modes.
    jobs you applied to come back in a follow-up section after 7 and 14 days, and tapping a
    missing-skill tag adds skills you have to your skills pool
    ([how it works](../../docs/feedback-worker.md#adding-missing-skills)).
-8. **Cover letters.** Pressing **Cover letter** gets you a tailored A4 PDF letter by email within
+7. **Cover letters.** Pressing **Cover letter** gets you a tailored A4 PDF letter by email within
    about 5 minutes, written by Hermes' model from your profile and the listing
    ([how it works](../../docs/feedback-worker.md#cover-letters)).
-7. **Weekly roll-up.** `job_weekly.py` (or `job_scanner.py --weekly`) emails a Sunday summary from
+8. **Weekly roll-up.** `job_weekly.py` (or `job_scanner.py --weekly`) emails a Sunday summary from
    `state/job_tracker.db`: best jobs of the week, applications and replies, common gaps, who's
    hiring and source health.
+9. **Extra profiles.** Invite other people from the feedback Worker's `/admin` page; they upload a
+   CV and get their own daily report, buttons, cover letters and roll-up, run after yours. Every
+   report has an **Unsubscribe** link that deletes their profile (or pauses yours)
+   ([how it works](../../docs/feedback-worker.md#extra-profiles-and-the-admin-page)).
 
 It only emails when there are new matches or follow-ups due, unless
 `JOB_SCANNER_EMAIL_WHEN_EMPTY=1` is set. A job is only marked as seen once it has been rated or
@@ -67,6 +71,8 @@ definitely ruled out; ratings that fail are retried on the next runs, up to 4 at
 | `job_tracker.py` | `state/job_tracker.db` (jobs, feedback, reminders, runs, cover letter requests) and the feedback Worker sync |
 | `cover_letter.py` | Cover letter requests: writes each letter with the model and emails it as a PDF; entry point for the 5-minute cron job |
 | `letter_pdf.py` | Dependency-free A4 PDF writer for the letters |
+| `profiles.py` | Extra profiles: sign-ups from the Worker become profiles built from the CV, unsubscribes, admin changes, per-profile runs; entry point for the 5-minute cron job |
+| `cv_text.py` | Dependency-free text extraction from PDF, Word .docx and text CVs |
 | `icons/` | Button icons: Lucide SVG sources in `icons/src`, PNGs built by `icons/build_icons.py` |
 | `companies.py` | Employer website, logo and profile lookup with caching |
 | `indeed_mcp.py` | Indeed job search and job details through Hermes' Indeed MCP connection |
@@ -178,6 +184,8 @@ hermes cron create "0 18 * * 0" "Weekly vacancy roll-up" \
     --name weekly-vacancy-report --script job_weekly.py --no-agent --deliver local
 hermes cron create "*/5 * * * *" "Cover letter requests" \
     --name vacancy-cover-letters --script cover_letter.py --no-agent --deliver local
+hermes cron create "*/5 * * * *" "Vacancy profiles" \
+    --name vacancy-profiles --script profiles.py --no-agent --deliver local
 hermes cron list
 ```
 

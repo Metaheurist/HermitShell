@@ -56,7 +56,12 @@ PACKAGES = {
                        {"id": "letters", "title": "Cover letter requests", "script": "cover_letter.py",
                         "cron": "vacancy-cover-letters", "schedule": "*/5 * * * *",
                         "intro": "Checks the feedback Worker for Cover letter button presses and emails each "
-                                 "letter as a PDF. Needs the feedback Worker; runs silently when idle."}],
+                                 "letter as a PDF. Needs the feedback Worker; runs silently when idle."},
+                       {"id": "profiles", "title": "Extra profiles", "script": "profiles.py",
+                        "cron": "vacancy-profiles", "schedule": "*/5 * * * *",
+                        "intro": "Adds people you invite from the feedback Worker's /admin page (their CV becomes "
+                                 "their own daily report), applies unsubscribes and admin changes. Needs the "
+                                 "feedback Worker; runs silently when idle."}],
     },
     "news-digest": {
         "title": "News Digest", "script": "news_digest.py", "cron": "news-digest",

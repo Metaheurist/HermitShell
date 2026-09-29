@@ -7,6 +7,14 @@
 // A confirmed "cover_letter" answer is a request: Hermes' cover_letter.py polls every few minutes,
 // writes the letter on the Hermes server and emails it as a PDF. "add_skill" links carry the job's
 // missing skills (signed, parameter s); the ones you tick, plus any you type, join your skills pool.
+// Links for extra profiles carry the profile id (signed, parameter u); "unsubscribe" removes one.
+// Invite sign-ups (/join) and the admin gateway (/admin) are in join.js and admin.js.
+
+import { handleAdmin, handleApi } from "./admin.js";
+import { handleJoin, queueItem } from "./join.js";
+import { SECURITY_HEADERS, authorised, deleteAndUnflag, esc, json, listFlagged, page, safeEqual, sign } from "./lib.js";
+
+export { sign } from "./lib.js";
 
 export const ACTIONS = {
   interested: "Interested",
@@ -17,12 +25,14 @@ export const ACTIONS = {
   good_match: "Good match",
   cover_letter: "Generate cover letter",
   add_skill: "Add to my skills",
+  unsubscribe: "Unsubscribe",
 };
 const PLACEHOLDERS = {
   not_for_me: "Why not? For example: too senior, needs travel, wrong tech stack",
   rejected: "Anything they said (optional)",
   good_match: "What makes it a good match? For example: right stack, great location",
   cover_letter: "Anything to emphasise? For example: mention my Azure work, keep it under a page",
+  unsubscribe: "Anything we could do better? (optional)",
 };
 const SAVED_MESSAGES = {
   cover_letter: "Hermes is writing your cover letter. It arrives by email, as a PDF, within about 10 minutes.",
@@ -33,15 +43,7 @@ const MAX_TITLE = 120;
 const MAX_REASON = 300;
 const MAX_SKILL = 60;
 const MAX_SKILLS = 12;
-const encoder = new TextEncoder();
-
-export async function sign(secret, key, action, title, skills = "") {
-  const cryptoKey = await crypto.subtle.importKey(
-    "raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const message = `${key}\n${action}\n${title}` + (skills ? `\n${skills}` : "");
-  const mac = await crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(message));
-  return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 32);
-}
+const PROFILE_RE = /^[a-z0-9-]{1,40}$/;
 
 export function cleanSkill(text) {
   return String(text ?? "").replace(/[^\p{L}\p{N}_ .+#/&()-]/gu, "").split(/\s+/).filter(Boolean).join(" ")
@@ -52,67 +54,13 @@ function skillList(packed) {
   return [...new Set(String(packed || "").split("|").map(cleanSkill).filter(Boolean))].slice(0, MAX_SKILLS);
 }
 
-function safeEqual(a, b) {
-  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
 async function validLink(env, p) {
   if (!env.JOB_FEEDBACK_SECRET || !ACTIONS[p.a] || !p.j || p.j.length > 300 || (p.n || "").length > MAX_TITLE ||
-      (p.s || "").length > (MAX_SKILL + 1) * MAX_SKILLS || (p.a === "add_skill") !== Boolean(p.s)) {
+      (p.s || "").length > (MAX_SKILL + 1) * MAX_SKILLS || (p.a === "add_skill") !== Boolean(p.s) ||
+      (p.u && !PROFILE_RE.test(p.u))) {
     return false;
   }
-  return safeEqual(p.t || "", await sign(env.JOB_FEEDBACK_SECRET, p.j, p.a, p.n || "", p.s || ""));
-}
-
-function authorised(request, env) {
-  const header = request.headers.get("Authorization") || "";
-  return Boolean(env.JOB_FEEDBACK_API_TOKEN) && safeEqual(header, `Bearer ${env.JOB_FEEDBACK_API_TOKEN}`);
-}
-
-function esc(text) {
-  return String(text ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-}
-
-const SECURITY_HEADERS = {
-  "Cache-Control": "no-store",
-  "X-Robots-Tag": "noindex, nofollow",
-  "Referrer-Policy": "no-referrer",
-  "X-Content-Type-Options": "nosniff",
-};
-
-function page(heading, body, status = 200) {
-  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>${esc(heading)}</title>
-<style>
-body{margin:0;background:#eef1f7;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a}
-main{max-width:460px;margin:48px auto;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:28px}
-.eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#4f46e5;font-weight:700}
-h1{font-size:22px;margin:8px 0 6px}p{color:#475569;line-height:1.5}
-textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:10px;padding:10px;font:inherit;min-height:80px}
-input[type=text],input:not([type]){width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:10px;padding:10px;font:inherit;margin-top:6px}
-.skill{display:block;margin:0 0 10px;padding:10px 12px;border:1px solid #fde68a;background:#fffbeb;border-radius:10px;color:#92400e;font-weight:600;cursor:pointer}
-.skill input{margin-right:8px}
-button{margin-top:14px;background:#4f46e5;color:#fff;border:0;border-radius:10px;padding:12px 20px;font-size:15px;font-weight:600;cursor:pointer}
-</style></head><body><main><div class="eyebrow">Daily Vacancy Report</div><h1>${esc(heading)}</h1>${body}</main></body></html>`;
-  return new Response(html, {
-    status,
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
-      ...SECURITY_HEADERS,
-    },
-  });
-}
-
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json", ...SECURITY_HEADERS },
-  });
+  return safeEqual(p.t || "", await sign(env.JOB_FEEDBACK_SECRET, p.j, p.a, p.n || "", p.s || "", p.u || ""));
 }
 
 function skillPage(p, hidden) {
@@ -127,10 +75,23 @@ function skillPage(p, hidden) {
 <p style="font-size:13px">Nothing is saved until you press Confirm.</p>`);
 }
 
+function unsubscribePage(p, hidden) {
+  const effect = p.j === "profile-pause"
+    ? "Hermes stops sending these reports. Your profile is kept on the server and can be switched back on there."
+    : "Hermes stops sending these reports and deletes this profile, its CV and its history from the server.";
+  return page("Unsubscribe", `<p>Stop the Daily Vacancy Report for <b>${esc(p.n || "this profile")}</b>?</p><p>${effect}</p>
+<form method="post" action="/f">${hidden}
+<label for="r">Feedback (optional)</label>
+<textarea id="r" name="r" maxlength="${MAX_REASON}" placeholder="${esc(PLACEHOLDERS.unsubscribe)}"></textarea>
+<button type="submit" class="danger">Confirm: unsubscribe</button></form>
+<p style="font-size:13px">Nothing changes until you press Confirm.</p>`);
+}
+
 function confirmPage(p) {
-  const hidden = ["j", "a", "n", "s", "t"].filter((k) => p[k])
+  const hidden = ["j", "a", "n", "s", "u", "t"].filter((k) => p[k])
     .map((k) => `<input type="hidden" name="${k}" value="${esc(p[k])}">`).join("");
   if (p.a === "add_skill") return skillPage(p, hidden);
+  if (p.a === "unsubscribe") return unsubscribePage(p, hidden);
   const placeholder = PLACEHOLDERS[p.a] || "Anything worth remembering (optional)";
   const label = p.a === "cover_letter" ? "Guidance for the letter (optional)" : "Note for Hermes (optional)";
   return page(ACTIONS[p.a], `<p>${esc(p.n || "This job")}</p>
@@ -141,7 +102,36 @@ function confirmPage(p) {
 <p style="font-size:13px">Nothing is saved until you press Confirm.</p>`);
 }
 
-const INVALID_LINK = ["Link not valid", "<p>This feedback link is incomplete or has been changed. Use the button in the email again.</p>", 403];
+const INVALID_LINK = ["Link not valid", "<p>This feedback link is incomplete or has been changed. Use the button in the email again.</p>", { status: 403 }];
+
+async function saveAnswer(form, env) {
+  const p = Object.fromEntries(["j", "a", "n", "s", "u", "t", "r", "o"].map((k) => [k, String(form.get(k) ?? "")]));
+  if (!(await validLink(env, p))) return page(...INVALID_LINK);
+  if (p.a === "unsubscribe") {
+    await queueItem(env, { type: "unsubscribe", u: p.u, reason: p.r.slice(0, MAX_REASON) });
+    return page("Unsubscribed", `<p>Done: ${esc(p.n || "this profile")} gets no more reports once Hermes applies it,
+within about 5 minutes.</p><p>You can close this tab.</p>`);
+  }
+  const at = Date.now();
+  const id = `event:${at}:${crypto.randomUUID()}`;
+  const event = { id, j: p.j, a: p.a, r: p.r.slice(0, MAX_REASON), at, ...(p.u ? { u: p.u } : {}) };
+  let saved = `${esc(ACTIONS[p.a])}: ${esc(p.n || "this job")}.`;
+  if (p.a === "add_skill") {
+    const offered = new Set(skillList(p.s));
+    const ticked = form.getAll("k").map(cleanSkill).filter((s) => offered.has(s));
+    const typed = p.o.slice(0, MAX_REASON).split(",").map(cleanSkill).filter(Boolean);
+    event.skills = [...new Set([...ticked, ...typed])].slice(0, MAX_SKILLS);
+    if (!event.skills.length) {
+      return page("Nothing selected", "<p>Tick at least one skill or type one in. Use your browser's Back button to try again.</p>", { status: 400 });
+    }
+    saved = `Added to your skills: ${esc(event.skills.join(", "))}.`;
+  }
+  await env.FEEDBACK.put(id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });
+  await env.FEEDBACK.put("flag:events", "1", { expirationTtl: EVENT_TTL_SECONDS });
+  const next = SAVED_MESSAGES[p.a] || "Hermes picks this up on its next run.";
+  return page("Saved", `<p>${saved}</p>
+<p>${esc(next)} You can close this tab.</p>`);
+}
 
 export default {
   async fetch(request, env) {
@@ -152,36 +142,14 @@ export default {
         const p = Object.fromEntries(url.searchParams);
         return (await validLink(env, p)) ? confirmPage(p) : page(...INVALID_LINK);
       }
-      if (request.method === "POST") {
-        const form = await request.formData();
-        const p = Object.fromEntries(["j", "a", "n", "s", "t", "r", "o"].map((k) => [k, String(form.get(k) ?? "")]));
-        if (!(await validLink(env, p))) return page(...INVALID_LINK);
-        const at = Date.now();
-        const id = `event:${at}:${crypto.randomUUID()}`;
-        const event = { id, j: p.j, a: p.a, r: p.r.slice(0, MAX_REASON), at };
-        let saved = `${esc(ACTIONS[p.a])}: ${esc(p.n || "this job")}.`;
-        if (p.a === "add_skill") {
-          const offered = new Set(skillList(p.s));
-          const ticked = form.getAll("k").map(cleanSkill).filter((s) => offered.has(s));
-          const typed = p.o.slice(0, MAX_REASON).split(",").map(cleanSkill).filter(Boolean);
-          event.skills = [...new Set([...ticked, ...typed])].slice(0, MAX_SKILLS);
-          if (!event.skills.length) {
-            return page("Nothing selected", "<p>Tick at least one skill or type one in. Use your browser's Back button to try again.</p>", 400);
-          }
-          saved = `Added to your skills: ${esc(event.skills.join(", "))}.`;
-        }
-        await env.FEEDBACK.put(id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });
-        const next = SAVED_MESSAGES[p.a] || "Hermes picks this up on its next run.";
-        return page("Saved", `<p>${saved}</p>
-<p>${esc(next)} You can close this tab.</p>`);
-      }
+      if (request.method === "POST") return saveAnswer(await request.formData(), env);
       return new Response("Method not allowed", { status: 405, headers: { Allow: "GET, POST" } });
     }
 
     if (url.pathname === "/events" && request.method === "GET") {
       if (!authorised(request, env)) return json({ error: "unauthorised" }, 401);
-      const listed = await env.FEEDBACK.list({ prefix: "event:", limit: 1000 });
-      const events = (await Promise.all(listed.keys.map((k) => env.FEEDBACK.get(k.name, "json")))).filter(Boolean);
+      const profile = url.searchParams.get("u") || "";
+      const events = (await listFlagged(env, request, "event:", "flag:events", 1000)).filter((e) => (e.u || "") === profile);
       return json({ events });
     }
 
@@ -191,9 +159,13 @@ export default {
       const ids = (Array.isArray(body.ids) ? body.ids : [])
         .filter((id) => typeof id === "string" && id.startsWith("event:"))
         .slice(0, 1000);
-      await Promise.all(ids.map((id) => env.FEEDBACK.delete(id)));
+      await deleteAndUnflag(env, ids, "event:", "flag:events");
       return json({ deleted: ids.length });
     }
+
+    if (url.pathname === "/join") return handleJoin(request, env);
+    if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return handleAdmin(request, env);
+    if (url.pathname.startsWith("/api/")) return handleApi(request, env);
 
     if (url.pathname === "/") {
       return new Response("Daily Vacancy Report feedback endpoint.", {

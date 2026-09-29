@@ -32,6 +32,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 import hermes_common as hc
+import profiles
 from hermes_common import EMAIL_HEAD, STATE_DIR, connect_model, env, env_int, load_env_file, log, ollama_chat
 from job_tracker import Tracker, skills_text, sync_feedback
 from letter_pdf import letter_pdf
@@ -315,6 +316,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="save the PDF but send no email")
     args = parser.parse_args(argv)
     load_env_file()
+    profiles.use_profile_keys()
+    if not args.job:
+        profiles.spawn_others("cover_letter.py", ["--dry-run"] if args.dry_run else [])
 
     def model_info():
         return connect_model("COVER_LETTER_MODEL" if env("COVER_LETTER_MODEL") else "JOB_SCANNER_MODEL")
@@ -329,7 +333,8 @@ def main(argv: list[str] | None = None) -> int:
             if not lock.held:
                 return 0
             _, error = sync_feedback(tracker, env("JOB_FEEDBACK_URL", "") or "",
-                                     env("JOB_FEEDBACK_API_TOKEN", "") or "", ack=not args.dry_run)
+                                     env("JOB_FEEDBACK_API_TOKEN", "") or "", ack=not args.dry_run,
+                                     profile=env("JOB_PROFILE_ID", "") or "")
             if error:
                 log(error)
             lines = process_pending(tracker, model_info, args.dry_run)

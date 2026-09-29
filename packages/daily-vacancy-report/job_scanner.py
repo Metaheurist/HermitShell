@@ -32,6 +32,7 @@ import json
 import os
 import re
 import smtplib
+import sys
 import time
 from datetime import datetime
 from html.parser import HTMLParser
@@ -43,6 +44,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 import hermes_common as hc
+import profiles
 from companies import LOGO_DIR, Companies
 from companies import norm as company_key
 from hermes_common import (BROWSER_HEADERS, EMAIL_HEAD, STATE_DIR, WebClient, connect_model, env,
@@ -52,9 +54,9 @@ from indeed_mcp import IndeedMCP
 from job_extras import (below_min_salary, closing_date, combined_level, days_left, group_agency_posts,
                         parse_salary, rating_failed, repost_key, second_opinion, triage_titles)
 from job_tracker import (ACTIONS, FOLLOWUP_ACTIONS, Tracker, card_links, prompt_examples, skill_link, skills_text,
-                         sync_feedback)
+                         sync_feedback, unsubscribe_link)
 from job_weekly import (ICON_DIR, card_action_bar, build_weekly, closing_pill, followup_section, followup_text,
-                        source_banner, weekly_when)
+                        source_banner, unsubscribe_footer, weekly_when)
 
 hc.LOG_TAG = "job_radar"
 SEEN_FILE = STATE_DIR / "job_scanner_seen.json"
@@ -981,6 +983,7 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, pr
     CV keyword match = share of the technologies named in the listing that appear on your CV.
     {penalty_note} {verify_note}{feedback_note}
   </div>
+  {unsubscribe_footer(stats.get("unsubscribe", ""), not env("JOB_PROFILE_ID"))}
 </td></tr>
 </table></td></tr></table></body></html>"""
 
@@ -1015,10 +1018,15 @@ def build_text(jobs: list[dict], summary: str, followups: str = "") -> str:
 
 # --------------------------------------------------------------------------- main
 
+def report_unsubscribe_link() -> str:
+    return unsubscribe_link(env("JOB_FEEDBACK_URL", "") or "", env("JOB_FEEDBACK_SECRET", "") or "",
+                            CFG.candidate if CFG.candidate != "the candidate" else "you", env("JOB_PROFILE_ID", "") or "")
+
+
 def send_weekly(tracker: Tracker, tz: ZoneInfo, dry_run: bool) -> int:
     now = time.time()
     subject, html_body, text = build_weekly(tracker.week(now - 7 * 86400), weekly_when(tz), CFG.title,
-                                            CFG.region or "Job radar", now)
+                                            CFG.region or "Job radar", now, report_unsubscribe_link())
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     (STATE_DIR / "job_scanner_weekly.html").write_text(html_body, encoding="utf-8")
     if dry_run:
@@ -1073,9 +1081,13 @@ def main() -> int:
     args = parser.parse_args()
 
     load_env_file()
+    profiles.use_profile_keys()
     CFG = load_settings()
     tz = ZoneInfo(CFG.timezone)
     when = datetime.now(tz).strftime("%A %d %B %Y, %H:%M %Z")
+    profile_id = env("JOB_PROFILE_ID", "") or ""
+    if not (args.test_email or args.skills or args.remove_skill):
+        profiles.spawn_others("job_scanner.py", sys.argv[1:])
 
     if args.test_email:
         stats = {"when": when, "shown": 0, "strong": 0, "avg_fit": "-", "scanned": 0, "min_score": 0,
@@ -1092,13 +1104,18 @@ def main() -> int:
         print(f"Removed {args.remove_skill}." if removed else f"{args.remove_skill} is not in your added skills.")
         return 0 if removed else 1
     fb_url, fb_secret = env("JOB_FEEDBACK_URL", ""), env("JOB_FEEDBACK_SECRET", "")
-    synced, fb_error = sync_feedback(tracker, fb_url, env("JOB_FEEDBACK_API_TOKEN", ""), ack=not args.dry_run)
+    synced, fb_error = sync_feedback(tracker, fb_url, env("JOB_FEEDBACK_API_TOKEN", ""), ack=not args.dry_run,
+                                     profile=profile_id, full=not args.skills)
     if synced:
         log(f"synced {synced} feedback answers from the feedback Worker")
     if fb_error:
         log(fb_error)
     if args.skills:
         print("\n".join(tracker.skills()) or "No skills added from the email yet.")
+        return 0
+    if profiles.owner_paused():
+        print("Your reports are paused (unsubscribe link or /admin); other profiles still run. "
+              "Resume with: python3 profiles.py --resume owner")
         return 0
     if args.weekly:
         return send_weekly(tracker, tz, args.dry_run)
@@ -1338,12 +1355,12 @@ def main() -> int:
     maybe = urgent_first([r for r in results if r["fit"] < 7])
     results = top + maybe
     for r in results:
-        r["actions"] = card_links(fb_url, fb_secret, r["key"], r["title"])
-        r["skill_link"] = skill_link(fb_url, fb_secret, r["key"], r["title"], r["gaps"])
+        r["actions"] = card_links(fb_url, fb_secret, r["key"], r["title"], profile=profile_id)
+        r["skill_link"] = skill_link(fb_url, fb_secret, r["key"], r["title"], r["gaps"], profile_id)
 
     followups = tracker.followups(now)
     followups_html = followup_section(
-        followups, lambda item: card_links(fb_url, fb_secret, item["key"], item["title"], FOLLOWUP_ACTIONS))
+        followups, lambda item: card_links(fb_url, fb_secret, item["key"], item["title"], FOLLOWUP_ACTIONS, profile_id))
     problems = source_problems(health, fb_error)
 
     summary = hermes_summary(host, model, num_ctx, results)
@@ -1354,12 +1371,13 @@ def main() -> int:
         "excluded_type": excluded_type, "below_min": below_min, "model": model,
         "min_salary": min_salary, "salary_currency": salary_currency, "excluded_salary": excluded_salary,
         "excluded_closed": excluded_closed, "reposts": reposts, "grouped": grouped, "verify_from": verify_from,
-        "feedback": bool(fb_url and fb_secret),
+        "feedback": bool(fb_url and fb_secret), "unsubscribe": report_unsubscribe_link(),
         "sources": ", ".join(f"{name} {info['found']}" for name, info in health.items()) or "none",
         "web_usage": web.usage() + (f", Indeed MCP {indeed.calls} calls" if indeed and indeed.calls else ""),
     }
     html_body = fitted_html(top, maybe, stats, summary, problems, followups_html)
-    text_body = build_text(results, summary, followup_text(followups))
+    text_body = build_text(results, summary, followup_text(followups)) + \
+        (f"\n\nUnsubscribe: {stats['unsubscribe']}" if stats["unsubscribe"] else "")
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     LAST_REPORT.write_text(preview_html(html_body), encoding="utf-8")
     LAST_RESULTS.write_text(json.dumps({"generated": when, "model": model, "summary": summary, "sources": health,

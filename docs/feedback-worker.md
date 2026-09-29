@@ -31,7 +31,9 @@ email button ──> Worker /f (confirm page) ──> KV ──> Hermes GET /eve
 - **Nothing is saved on click.** Opening a link only shows a confirmation page (with an
   optional note). Mail scanners that open every link can't record answers; only pressing
   **Confirm** saves one.
-- **Private API.** `/events` and `/ack` need `Authorization: Bearer <JOB_FEEDBACK_API_TOKEN>`.
+- **Private API.** `/events`, `/ack` and `/api/*` need `Authorization: Bearer <JOB_FEEDBACK_API_TOKEN>`.
+- **Password-protected admin page.** `/admin` is off until you set `ADMIN_PASSWORD`; see
+  [Extra profiles](#extra-profiles-and-the-admin-page).
 - **Short-lived data.** Answers are deleted once Hermes has saved them, and expire after 30 days
   in any case. Only the job key, action, optional note and time are stored.
 - **No secrets in git.** The two secrets live only in Hermes' `.env` and in the Worker's
@@ -227,6 +229,85 @@ never changed. To review or undo:
 python3 job_scanner.py --skills                   # list the skills you added
 python3 job_scanner.py --remove-skill "Kubernetes"
 ```
+
+## Extra profiles and the admin page
+
+One Hermes can send reports to other people too, each built from their own CV. You manage them
+from the Worker's admin page; Hermes applies the changes, since the Worker can't reach your server.
+
+```
+/admin (you) ──> invite link ──> /join (them: details + CV) ──> KV ──> profiles.py every 5 min
+```
+
+1. Set an admin password on the Worker (and optionally a username; the default is `admin`). Pipe
+   it in so it never lands in your shell history, e.g. from a password manager's CLI:
+
+   ```sh
+   <print-password-command> | npx wrangler secret put ADMIN_PASSWORD --config wrangler.local.jsonc
+   echo admin | npx wrangler secret put ADMIN_USER --config wrangler.local.jsonc   # optional
+   ```
+
+2. Schedule `profiles.py` (the wizard does this):
+
+   ```sh
+   hermes cron create "*/5 * * * *" "Vacancy profiles" \
+       --name vacancy-profiles --script profiles.py --no-agent --deliver local
+   ```
+
+3. Open `https://vacancy-feedback.<subdomain>.workers.dev/admin`, sign in and press
+   **Create invite link**. Each link works once and expires after 7 days; send it to the person.
+   (`python3 profiles.py --invite "note"` makes one from the server too.)
+4. They fill in their name, email, optional phone and town, the roles they want, and upload a CV
+   (PDF, Word .docx or text, up to 5 MB) or paste it. The CV waits in KV, deleted once Hermes has it.
+5. Within 5 minutes `profiles.py` downloads it, reads the text (`cv_text.py`, no extra packages;
+   scanned image-only PDFs can't be read, so the pasted text is used instead), and asks Hermes'
+   model for a summary, job titles, skills and gaps. From those it writes the person's
+   `job_profile.md`, `cv_keywords.json` and search settings under `state/profiles/<id>/`, emails
+   them a welcome message listing what it will search for, and emails you a note.
+
+From then on every daily report, weekly roll-up and cover letter run also runs for each active
+profile, one after the other once your own run has finished, with their own seen jobs, tracker,
+feedback buttons and skills pool. They share your region, sources and model settings. Signing up
+again with the same email replaces the CV and rebuilds the profile.
+
+You are the `owner` profile: your `.env`, `job_profile.md` and `cv_keywords.json` stay exactly as
+they are. `profiles.py` registers you on its first run.
+
+### The admin page
+
+- **Profiles**: everyone Hermes reports, with status and last report. Pause, resume or delete
+  (deleting removes their CV and history from your server; the owner can't be deleted).
+- **Crawler keys**: give a profile its own Firecrawl key (it then uses only that key), or leave
+  it on the global key. **Global crawler key** replaces the keys in `.env` for everyone without
+  their own, you included; **Go back to the .env keys** undoes it. Keys are stored on the Hermes
+  server (`state/profiles/`, mode 600) and shown only as `fc-...1234`.
+- **Invites**: create, see and revoke unused links.
+
+Changes wait in KV and are applied by `profiles.py` within 5 minutes ("Waiting for Hermes" shows
+what is pending). Sign-in: five wrong passwords lock that address out for 15 minutes; sessions
+last 12 hours in an HttpOnly, SameSite=Strict cookie and every form carries a CSRF token.
+Changing `ADMIN_PASSWORD` signs everyone out.
+
+From the server:
+
+```sh
+python3 profiles.py --list
+python3 profiles.py --pause <id>     # or --resume, --delete
+```
+
+### Unsubscribe
+
+Every daily report and weekly roll-up ends with an **Unsubscribe** link (signed like the buttons,
+with a confirmation page). For an extra profile it deletes the profile, CV and history at the next
+`profiles.py` run and tells you; for the owner it only pauses your own reports (the others keep
+running) until you resume from `/admin` or with `profiles.py --resume owner`.
+
+### Free-plan limits
+
+Workers KV's free plan allows 1,000 list operations a day. Polling (`/events` every 5 minutes for
+cover letters, `/api/queue` for profiles) reads a small flag key instead of listing, and only lists
+when something is waiting, plus an hourly and a daily full check. Status reports from Hermes are
+only written when something changed or once an hour.
 
 ## Removing it
 

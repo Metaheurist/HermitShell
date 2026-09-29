@@ -1,35 +1,15 @@
 import { describe, expect, it } from "vitest";
 import worker, { sign } from "../src/index.js";
+import { BASE, testEnv, valuesWith } from "./helpers.js";
 
-// Same value as KNOWN_SIGNATURE in packages/daily-vacancy-report/tests/test_vacancy_report.py.
+// Same values as the KNOWN_*SIGNATURE constants in packages/daily-vacancy-report/tests/test_vacancy_report.py.
 const KNOWN_SIGNATURE = "7a1921b9bd33f759be1489d932b2a57f";
 const KNOWN_SKILL_SIGNATURE = "2852e1bfe92031fafbd79fffc07522f5";
-const BASE = "https://vacancy-feedback.example.workers.dev";
+const KNOWN_PROFILE_SIGNATURE = "4cab135492aab3ae0e242e623e497477";
 
-function memoryKV() {
-  const store = new Map();
-  return {
-    store,
-    async put(key, value) { store.set(key, value); },
-    async get(key, type) {
-      const value = store.get(key);
-      if (value == null) return null;
-      return type === "json" ? JSON.parse(value) : value;
-    },
-    async list({ prefix }) {
-      return { keys: [...store.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name })) };
-    },
-    async delete(key) { store.delete(key); },
-  };
-}
-
-function testEnv() {
-  return { FEEDBACK: memoryKV(), JOB_FEEDBACK_SECRET: "test-secret", JOB_FEEDBACK_API_TOKEN: "api-token" };
-}
-
-async function link(action = "applied", key = "nijobs:123", title = "AI Engineer") {
-  const t = await sign("test-secret", key, action, title);
-  return { j: key, a: action, n: title, t };
+async function link(action = "applied", key = "nijobs:123", title = "AI Engineer", profile = "") {
+  const t = await sign("test-secret", key, action, title, "", profile);
+  return { j: key, a: action, n: title, t, ...(profile ? { u: profile } : {}) };
 }
 
 async function skillLink(skills = "Kubernetes|Terraform|Go") {
@@ -92,7 +72,7 @@ describe("feedback worker", () => {
     const env = testEnv();
     const res = await worker.fetch(formRequest({ ...(await link("good_match")), r: "" }), env);
     expect(await res.text()).toContain("Good match: AI Engineer");
-    expect(env.FEEDBACK.store.size).toBe(1);
+    expect(valuesWith(env, "event:")).toHaveLength(1);
   });
 
   it("signs skill lists exactly like the Python scanner", async () => {
@@ -157,6 +137,68 @@ describe("feedback worker", () => {
       method: "POST", headers: auth, body: JSON.stringify({ ids: [events[0].id, "not-an-event"] }),
     });
     expect(await (await worker.fetch(ack, env)).json()).toEqual({ deleted: 1 });
-    expect(env.FEEDBACK.store.size).toBe(1);
+    expect(valuesWith(env, "event:")).toHaveLength(1);
+    expect(env.FEEDBACK.store.has("flag:events")).toBe(true);
+  });
+
+  it("answers polls from a flag without listing KV, and clears it once everything is acknowledged", async () => {
+    const env = testEnv();
+    let lists = 0;
+    const list = env.FEEDBACK.list;
+    env.FEEDBACK.list = (...args) => { lists += 1; return list(...args); };
+    const auth = { headers: { Authorization: "Bearer api-token" } };
+    await env.FEEDBACK.put("event:1:old", JSON.stringify({ id: "event:1:old", j: "nijobs:1", a: "applied" }));
+    expect((await (await worker.fetch(new Request(`${BASE}/events`, auth), env)).json()).events).toEqual([]);
+    expect(lists).toBe(0);
+    const { events } = await (await worker.fetch(new Request(`${BASE}/events?full=1`, auth), env)).json();
+    expect(events).toHaveLength(1);
+    await worker.fetch(formRequest({ ...(await link("applied")), r: "" }), env);
+    const flagged = await (await worker.fetch(new Request(`${BASE}/events`, auth), env)).json();
+    const ids = flagged.events.map((e) => e.id);
+    expect(ids).toHaveLength(2);
+    await worker.fetch(new Request(`${BASE}/ack`, { method: "POST", ...auth, body: JSON.stringify({ ids }) }), env);
+    expect(env.FEEDBACK.store.size).toBe(0);
+  });
+
+  it("signs profile links exactly like the Python scanner", async () => {
+    expect(await sign("test-secret", "nijobs:123", "applied", "AI Engineer", "", "sam-lee")).toBe(KNOWN_PROFILE_SIGNATURE);
+  });
+
+  it("keeps each profile's answers apart and rejects a swapped profile id", async () => {
+    const env = testEnv();
+    const auth = { headers: { Authorization: "Bearer api-token" } };
+    await worker.fetch(formRequest({ ...(await link("applied")), r: "" }), env);
+    await worker.fetch(formRequest({ ...(await link("interested", "nijobs:9", "Analyst", "sam-lee")), r: "" }), env);
+    const swapped = { ...(await link("applied", "nijobs:9", "Analyst", "sam-lee")), u: "alex-kim" };
+    expect((await worker.fetch(formRequest({ ...swapped, r: "" }), env)).status).toBe(403);
+    const bad = { ...(await link("applied")), u: "Not Valid!" };
+    expect((await worker.fetch(new Request(`${BASE}/f?${new URLSearchParams(bad)}`), env)).status).toBe(403);
+    const owner = await (await worker.fetch(new Request(`${BASE}/events`, auth), env)).json();
+    expect(owner.events.map((e) => e.a)).toEqual(["applied"]);
+    const sam = await (await worker.fetch(new Request(`${BASE}/events?u=sam-lee`, auth), env)).json();
+    expect(sam.events).toMatchObject([{ a: "interested", u: "sam-lee" }]);
+  });
+
+  it("asks before unsubscribing and queues the removal for Hermes", async () => {
+    const env = testEnv();
+    const params = await link("unsubscribe", "profile", "Sam Lee", "sam-lee");
+    const confirm = await worker.fetch(new Request(`${BASE}/f?${new URLSearchParams(params)}`), env);
+    const body = await confirm.text();
+    expect(body).toContain("deletes this profile");
+    expect(body).toContain("Confirm: unsubscribe");
+    expect(env.FEEDBACK.store.size).toBe(0);
+    const res = await worker.fetch(formRequest({ ...params, r: "found a job" }), env);
+    expect(await res.text()).toContain("gets no more reports");
+    expect(valuesWith(env, "queue:")).toMatchObject([{ type: "unsubscribe", u: "sam-lee", reason: "found a job" }]);
+    expect(valuesWith(env, "event:")).toEqual([]);
+  });
+
+  it("only pauses when the owner unsubscribes", async () => {
+    const env = testEnv();
+    const params = await link("unsubscribe", "profile-pause", "Your reports");
+    const body = await (await worker.fetch(new Request(`${BASE}/f?${new URLSearchParams(params)}`), env)).text();
+    expect(body).toContain("profile is kept");
+    await worker.fetch(formRequest({ ...params, r: "" }), env);
+    expect(valuesWith(env, "queue:")).toMatchObject([{ type: "unsubscribe", u: "" }]);
   });
 });

@@ -17,11 +17,12 @@ import job_tracker  # noqa: E402
 from job_extras import (below_min_salary, closing_date, combined_level, days_left,  # noqa: E402
                         group_agency_posts, parse_salary, rating_failed, repost_key)
 from job_tracker import (Tracker, action_link, card_links, prompt_examples, sign, skill_link,  # noqa: E402
-                         skills_text, sync_feedback)
+                         skills_text, sync_feedback, unsubscribe_link)
 
-# The feedback Worker's test suite checks the same value (feedback-worker/test/worker.test.js).
+# The feedback Worker's test suite checks the same values (feedback-worker/test/worker.test.js).
 KNOWN_SIGNATURE = "7a1921b9bd33f759be1489d932b2a57f"
 KNOWN_SKILL_SIGNATURE = "2852e1bfe92031fafbd79fffc07522f5"
+KNOWN_PROFILE_SIGNATURE = "4cab135492aab3ae0e242e623e497477"
 
 
 # --------------------------------------------------------------------------- salary
@@ -139,6 +140,35 @@ def test_skill_link_signs_the_skill_list_like_the_worker():
     assert sign("test-secret", "nijobs:123", "add_skill", "AI Engineer", "Kubernetes|Terraform|Go") == \
         KNOWN_SKILL_SIGNATURE
     assert skill_link("https://x", "s", "k", "t", []) == "" and skill_link("", "s", "k", "t", ["Go"]) == ""
+
+
+def test_profile_links_carry_the_signed_profile_id():
+    assert sign("test-secret", "nijobs:123", "applied", "AI Engineer", "", "sam-lee") == KNOWN_PROFILE_SIGNATURE
+    link = action_link("https://fb.example.workers.dev", "test-secret", "nijobs:123", "applied", "AI Engineer", "sam-lee")
+    assert link.endswith(f"&u=sam-lee&t={KNOWN_PROFILE_SIGNATURE}")
+    owner = action_link("https://fb.example.workers.dev", "test-secret", "nijobs:123", "applied", "AI Engineer")
+    assert "u=" not in owner and owner.endswith(f"t={KNOWN_SIGNATURE}")
+    assert "&u=sam-lee&" in skill_link("https://x", "test-secret", "k", "t", ["Go"], "sam-lee")
+
+
+def test_unsubscribe_links_delete_profiles_and_pause_the_owner():
+    extra = unsubscribe_link("https://x", "test-secret", "Sam Lee", "sam-lee")
+    assert "j=profile&a=unsubscribe&n=Sam+Lee&u=sam-lee&t=" in extra
+    assert extra.endswith(sign("test-secret", "profile", "unsubscribe", "Sam Lee", "", "sam-lee"))
+    owner = unsubscribe_link("https://x", "test-secret", "Alex Morgan")
+    assert "j=profile-pause" in owner and "u=" not in owner
+    assert unsubscribe_link("", "test-secret", "Sam") == ""
+
+
+def test_report_footers_offer_unsubscribe():
+    from job_weekly import build_weekly, unsubscribe_footer
+
+    assert "deletes your profile" in unsubscribe_footer("https://x/f?j=profile&amp")
+    assert "pauses your reports" in unsubscribe_footer("https://x/f?j=profile-pause", paused_only=True)
+    assert unsubscribe_footer("") == ""
+    data = {"jobs": [], "events": [], "runs": [], "applications": []}
+    _, page, plain = build_weekly(data, "this week", "Job radar", "Weekly", time.time(), "https://x/f?j=profile-pause&u=")
+    assert "Unsubscribe</a> (pauses your reports" in page and plain.endswith("Unsubscribe: https://x/f?j=profile-pause&u=")
 
 
 # --------------------------------------------------------------------------- tracker
@@ -270,16 +300,17 @@ def test_sync_feedback_saves_then_acknowledges(tracker, monkeypatch):
     events = [{"id": "event:1:a", "j": "k1", "a": "applied", "r": "", "at": 1_790_000_000_000},
               {"id": "event:2:b", "j": "k2", "a": "not_for_me", "r": "remote only", "at": 1_790_000_100_000}]
     monkeypatch.setattr(job_tracker.requests, "get",
-                        lambda url, headers, timeout: calls.setdefault("get", (url, headers)) and
-                        FakeResponse({"events": events}))
+                        lambda url, headers, params, timeout: calls.setdefault("get", []).append((url, headers, params))
+                        or FakeResponse({"events": events}))
     monkeypatch.setattr(job_tracker.requests, "post",
                         lambda url, headers, json, timeout: calls.setdefault("ack", (url, json)) and FakeResponse())
     saved, error = sync_feedback(tracker, "https://fb.example.workers.dev/", "tok")
     assert (saved, error) == (2, None)
-    assert calls["get"] == ("https://fb.example.workers.dev/events", {"Authorization": "Bearer tok"})
+    assert calls["get"] == [("https://fb.example.workers.dev/events", {"Authorization": "Bearer tok"}, {})]
     assert calls["ack"] == ("https://fb.example.workers.dev/ack", {"ids": ["event:1:a", "event:2:b"]})
     assert tracker.latest_action("k2") == "not_for_me"
-    assert sync_feedback(tracker, "https://fb.example.workers.dev", "tok")[0] == 0
+    assert sync_feedback(tracker, "https://fb.example.workers.dev", "tok", profile="sam-lee", full=True)[0] == 0
+    assert calls["get"][-1][2] == {"u": "sam-lee", "full": "1"}
 
 
 def test_sync_feedback_reports_errors(tracker, monkeypatch):

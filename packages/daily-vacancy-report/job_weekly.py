@@ -194,8 +194,19 @@ STATUS_LABELS = {"applied": "Waiting", "heard_back": "Heard back", "rejected": "
                  "interested": "Interested", "not_for_me": "Not for me"}
 
 
-def build_weekly(data: dict, when: str, title: str, eyebrow: str, now: float) -> tuple[str, str, str]:
-    """(subject, html, text) for the weekly roll-up."""
+def unsubscribe_footer(link: str, paused_only: bool = False) -> str:
+    """Last line of every report: the Worker link that stops these emails (after a confirmation page)."""
+    if not link:
+        return ""
+    effect = "pauses your reports" if paused_only else "deletes your profile, CV and history"
+    return (f'<div style="font-size:12px;color:{C_MUTED};line-height:1.6;padding:10px 6px 0;text-align:center">'
+            f'Not useful any more? <a href="{esc(link)}" style="color:{C_MUTED};text-decoration:underline">Unsubscribe</a>'
+            f' ({effect}; you confirm first).</div>')
+
+
+def build_weekly(data: dict, when: str, title: str, eyebrow: str, now: float,
+                 unsubscribe: str = "") -> tuple[str, str, str]:
+    """(subject, html, text) for the weekly roll-up; `unsubscribe` is the footer's unsubscribe link."""
     s = weekly_summary(data)
     spread_rows = "".join(_bar(k, v, max(1, s["rated"]), c) for (k, v), c in
                           zip(s["spread"].items(), ("#059669", "#0d9488", "#d97706", "#dc2626")))
@@ -240,6 +251,7 @@ def build_weekly(data: dict, when: str, title: str, eyebrow: str, now: float) ->
   {_card("Fit scores this week", f'<table width="100%" cellpadding="0" cellspacing="0">{spread_rows}</table>')}
   {_card("Source health", f'<table width="100%" cellpadding="0" cellspacing="0">{health}</table>'
          f'<div style="font-size:12px;color:{C_MUTED};margin-top:8px">{s["runs"]} daily runs recorded this week.</div>')}
+  {unsubscribe_footer(unsubscribe, "j=profile-pause" in unsubscribe)}
 </td></tr>
 </table></td></tr></table></body></html>"""
     text = "\n".join([
@@ -251,6 +263,7 @@ def build_weekly(data: dict, when: str, title: str, eyebrow: str, now: float) ->
                                for a in s["applications"]],
         "", "Common gaps: " + (", ".join(f"{g} ({c})" for g, c in s["gaps"]) or "none"),
         "", "Sources: " + (", ".join(f"{n} {i['found']} found" for n, i in s["sources"].items()) or "no runs"),
+        *(["", f"Unsubscribe: {unsubscribe}"] if unsubscribe else []),
     ])
     subject = f"{title}: your week ({s['rated']} rated, {s['applied_week']} applied)"
     return subject, body, text

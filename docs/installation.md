@@ -222,6 +222,8 @@ docker exec -u hermes -w /opt/data hermes-agent hermes cron create "0 18 * * 0" 
     --name weekly-vacancy-report --script job_weekly.py --no-agent --deliver local
 docker exec -u hermes -w /opt/data hermes-agent hermes cron create "*/5 * * * *" "Cover letter requests" \
     --name vacancy-cover-letters --script cover_letter.py --no-agent --deliver local
+docker exec -u hermes -w /opt/data hermes-agent hermes cron create "*/5 * * * *" "Vacancy profiles" \
+    --name vacancy-profiles --script profiles.py --no-agent --deliver local
 docker exec -u hermes -w /opt/data hermes-agent hermes cron create "0 12 * * *" "News Digest" \
     --name news-digest --script news_digest.py --no-agent --deliver local
 docker exec -u hermes -w /opt/data hermes-agent hermes cron list

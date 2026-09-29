@@ -8,6 +8,24 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Extra vacancy profiles.** One Hermes can now send reports to other people:
+  - The feedback Worker has a password-protected `/admin` page (`ADMIN_PASSWORD` secret, optional
+    `ADMIN_USER`; lockout after five wrong passwords, 12-hour HttpOnly session, CSRF tokens) that
+    creates single-use invite links (7 days), lists profiles, and queues crawler-key changes (a
+    profile's own Firecrawl key, or a global one replacing `.env`'s), pause, resume and delete.
+  - `/join` is the invite's sign-up form: name, email, phone, town, wanted roles and a CV upload
+    (PDF, .docx or text, up to 5 MB, type checked) or pasted CV.
+  - `profiles.py` (new cron job `vacancy-profiles`, every 5 minutes, added by the wizard) collects
+    sign-ups, reads the CV with the new dependency-free `cv_text.py`, has Hermes' model build the
+    profile, keywords and searches under `state/profiles/<id>/`, and emails the person and you.
+    You are the `owner` profile with your files unchanged.
+  - Daily reports, weekly roll-ups and cover letters run for every active profile after yours,
+    each with its own state, signed buttons (profile id in the link) and skills pool.
+  - Every report ends with an **Unsubscribe** link: it deletes an extra profile with its CV and
+    history, or pauses the owner's own reports.
+  - Worker polling reads flag keys instead of listing KV, keeping within the free plan's 1,000
+    list operations a day.
+
 - **Vacancy report feedback buttons** (optional):
   - Next to **View job**, each card gets **I applied**, round thumbs up (**Good match**) and
     thumbs down (**Not for me**) buttons, **Interested** and **Cover letter**, all with

@@ -12,8 +12,17 @@ missing-skill tags) without opening any port on your server.
 - Pressing **Confirm** saves the answer in Workers KV for up to 30 days.
 - On its next run the scanner calls `GET /events`, stores the answers in `job_tracker.db`, then calls
   `POST /ack` to delete them from KV. Both API calls need `Authorization: Bearer <JOB_FEEDBACK_API_TOKEN>`.
+- Links for extra profiles carry the profile id in `u` (covered by the signature); `/events?u=<id>`
+  returns only that profile's answers. `a=unsubscribe` asks for confirmation, then queues the removal.
+- `/admin` (password in the `ADMIN_PASSWORD` secret, optional `ADMIN_USER`) creates single-use invite
+  links, lists the profiles Hermes reports and queues changes: crawler keys, pause, resume, delete.
+- `/join?i=<invite>` is the sign-up form with the CV upload; the CV is kept raw in KV until Hermes
+  collects it through `/api/queue`, `/api/file` and `/api/queue/ack`. Hermes reports its profiles
+  with `POST /api/status`.
 
-It fits in the Cloudflare free plan (Workers and KV).
+Source: `src/index.js` (buttons, routing), `src/join.js` (invites, sign-up), `src/admin.js` (admin
+page, Hermes API), `src/lib.js` (signing, pages). It fits in the Cloudflare free plan (Workers and KV);
+polling reads flag keys instead of listing KV, which the free plan limits to 1,000 lists a day.
 
 ## Setup
 
@@ -26,6 +35,7 @@ npx wrangler login
 npx wrangler kv namespace create FEEDBACK      # copy the id into wrangler.jsonc
 npx wrangler secret put JOB_FEEDBACK_SECRET     # paste the same value you put in .env
 npx wrangler secret put JOB_FEEDBACK_API_TOKEN  # paste the same value you put in .env
+npx wrangler secret put ADMIN_PASSWORD          # optional: turns on /admin for extra profiles
 npx wrangler deploy
 ```
 
@@ -44,5 +54,5 @@ npm test
 ```
 
 The tests run the Worker against an in-memory KV and check the signature format shared with
-`job_tracker.py`, that opening a link saves nothing, that changed links are refused, and that the
-API needs the token.
+`job_tracker.py`, that opening a link saves nothing, that changed links are refused, that the
+API needs the token, and the invite, sign-up, admin (lockout, CSRF, sessions) and unsubscribe flows.
