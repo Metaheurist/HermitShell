@@ -465,6 +465,37 @@ checking every 30 seconds (from HermitShell's status report only, with no KV lis
 minutes. A second press while a scan is running does nothing. A profile without a CV has no button;
 HermitShell refuses the request and says so under **HermitShell could not apply**.
 
+#### Tasks
+
+The **Tasks** button next to the search shows a spinning ring while something is running and, in its
+corner, how many tasks there are. It opens a window listing everything HermitShell is doing or has
+waiting, whoever started it:
+
+<img src="images/worker/admin-tasks.png" alt="The Tasks window with a running report, a cover letter being written and requests waiting" width="720">
+
+- **Running**: daily reports and reports sent now, with their stage and, while jobs are rated, how
+  many of how many (`job_scanner.py` reports its progress to `profiles.py`, which pushes it with the
+  status about once a minute), and the cover letter or tailored CV being written.
+- **Waiting**: cover letter and tailored CV requests queued on the server, email-button requests
+  the Worker is holding until HermitShell collects them (kept in KV as `tasks:requests`, removed when
+  acknowledged), and dashboard changes, sign-ups and resume requests in the queue.
+- Each row says where it came from: scheduled, from the dashboard, an email button, the sign-up form
+  or an unsubscribe link.
+
+**Stop** or **Cancel** on a row (`POST /admin/tasks`, CSRF-checked):
+
+- A queued change or held request is deleted from KV straight away.
+- A running report, or a request already on the server, is queued as a `cancel` for HermitShell. It
+  checks the task id and the profile, then stops the report's scan (its whole process group, only
+  if it is still running `job_scanner.py`) and records no report for that day, or marks the request
+  cancelled in the tracker (`letters.status = 'cancelled'`) and stops its writer. The row shows
+  **Stopping…** meanwhile.
+- Answers to the email buttons are not tasks and can't be removed here.
+
+The window has no JavaScript: its list is a frame (`/admin/tasks`, only embeddable by the dashboard)
+that reloads every 5 seconds for 2 minutes, then every 15 seconds for 9 more, then stops; with
+nothing running, every 20 seconds for 10 minutes. Reopen the window to start again.
+
 #### Stats
 
 Each dashboard row has a **Stats** button showing a small line of the jobs sent each day this week
@@ -571,7 +602,11 @@ seconds between runs (about 5,200 reads and requests a day) and only syncs when 
 changes, so an item that keeps failing is retried by the next run rather than listed every 15
 seconds. Admin pages also skip the listing when the flag says the queue is empty. Status reports
 from HermitShell are only written when something changed or every 15 minutes (at most 96 of the
-1,000 writes a day), plus two per report (when it starts and when it ends). Each profile's stats
+1,000 writes a day), plus two per report (when it starts and when it ends), about one a minute for
+a report's progress while it runs (a 20-minute scan adds about 20), and one per cover letter or
+tailored CV as it starts and finishes. An
+email-button request adds one write when it arrives and one when HermitShell collects it. The
+Tasks window only lists the queue when its flag says something is waiting. Each profile's stats
 are written only when they changed, at most every 30 minutes, plus once after each report (in
 practice a few writes per profile a day). If the Durable Object allowance ever ran out, saves still work and
 HermitShell falls back to polling.

@@ -295,7 +295,8 @@ deleted ([data protection](configuration.md#data-protection)).
 
 | Control | What it does |
 | --- | --- |
-| Status line | **HermitShell is connected** (green dot) while its live link is up, so changes reach it within seconds, then when it last reported its profiles. Without the link: when HermitShell last checked in, with the time in your timezone (`HERMES_TIMEZONE`). Also lists changes still **Waiting for HermitShell**. A warning appears above it if HermitShell hasn't checked in for 45 minutes |
+| Status line | **HermitShell is connected** (green dot) while its live link is up, so changes reach it within seconds, then when it last reported its profiles. Without the link: when HermitShell last checked in, with the time in your timezone (`HERMES_TIMEZONE`). Also says how many changes are still **Waiting for HermitShell**, which opens **Tasks**. A warning appears above it if HermitShell hasn't checked in for 45 minutes |
+| **Tasks** (spinning ring + number) | Opens the [task list](#tasks): everything HermitShell is doing or has waiting. The ring turns while something runs and the number in the corner says how many tasks there are |
 | Search (magnifying glass) | Slides out a search box. Type part of a name, email, place, status (**paused**, **scanning**, **no cv**) or crawler and press Enter: only the profiles with every word are listed, with **1 of 3 profiles** above the table. **&times;** shows everyone again |
 | **pending** (orange) | Someone who has sent the invite form. They stay in the table, with when they signed up and what they're looking for, while HermitShell reads their CV, then the row becomes their profile |
 | Profile, Status | Name, email and start date, **no CV** when there is none yet; owner, active or paused; **scanning now** while a report runs; time of the last report and the daily report time |
@@ -332,6 +333,21 @@ deleted ([data protection](configuration.md#data-protection)).
 The checklist stays until HermitShell has connected, the email server is set and a test worked, a web
 search key is in, and your CV and job search are set. **HermitShell could not apply** lists changes
 HermitShell rejected in the last day, with the reason.
+
+### Tasks
+
+<img src="images/worker/admin-tasks.png" alt="The Tasks window: a daily report rating jobs 14 of 25, a cover letter being written, and requests waiting" width="760">
+
+| Part | What it shows |
+| --- | --- |
+| Running tasks (spinning icon) | A daily report or one sent now, with its stage (**Searching job boards and the web**, **Rating jobs**, **Writing the email**…), **14 of 25** and a bar while jobs are rated; a cover letter or tailored CV being written, with the job and employer |
+| Waiting tasks (clock) | Requests queued behind the one being made, dashboard changes, sign-ups and resume requests HermitShell hasn't picked up yet, and email-button requests it hasn't fetched |
+| Chips | Where the task came from: **scheduled**, **from the dashboard**, **email button**, **sign-up form** or **unsubscribe link** |
+| **Stop** | Stops a running report (nothing is emailed and it runs again at its next time) or the letter being written. The row says **Stopping…** until HermitShell confirms |
+| **Cancel** | Drops a waiting task. An email-button request is removed before HermitShell sees it, or skipped if it already has it |
+
+The list refreshes by itself while the window is open. Answers to the email buttons (Interested,
+Applied…) are never listed and can't be cancelled here.
 
 ### Global settings
 

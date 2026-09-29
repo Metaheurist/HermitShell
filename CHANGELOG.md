@@ -8,6 +8,18 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A task list on the dashboard, with Stop and Cancel.** A **Tasks** button next to the search has a
+  spinning ring while something runs and the number of tasks in its corner. It opens a window, CSS
+  only with no JavaScript, listing everything HermitShell is doing or has waiting: daily reports and
+  reports sent now (with their stage and "14 of 25" while jobs are rated), cover letters and tailored
+  CVs being written or queued, email-button requests not yet collected, and queued dashboard changes,
+  sign-ups and resume requests, each tagged with where it came from. **Stop** ends a running report
+  (its scan's process group, with no report recorded for that day) or the letter being written;
+  **Cancel** drops a waiting task. HermitShell checks every cancel against the task id and profile,
+  and only signals a process still running the expected script. The list refreshes itself while open.
+  - `job_scanner.py` reports its stage and progress; `profiles.py` pushes it with the status about once
+    a minute during a report, and sends the task list in its status.
+  - Cancelled requests are kept in the tracker as `cancelled` and never retried.
 - **Profile search on the dashboard.** An animated magnifying glass above the profiles table slides out a
   search box, with CSS only and no JavaScript. Enter lists the profiles whose name, email, id, place,
   status or crawler contain every word (`/admin?q=`, up to 60 characters). It shows how many profiles
@@ -380,6 +392,8 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The dashboard's status line counts waiting changes** ("Waiting for HermitShell: 2 changes") and opens
+  the task list, instead of listing each one.
 - **Shorter email footers.**
   - The vacancy report footer is now three short lines. **Filters** shows the area, job types, minimum
     fit and salary floor. **Skipped** shows only the filters that removed jobs, with their counts.

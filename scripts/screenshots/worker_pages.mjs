@@ -133,6 +133,14 @@ const STATUS = {
     scrapfly: { source: "none", hint: "" } },
   problems: [],
   timezone: "Europe/London",
+  tasks: [
+    { id: "report:sam-lee", kind: "report", u: "sam-lee", state: "running", at: now - 4 * 60000, trigger: "schedule",
+      stage: "Rating jobs", done: 14, total: 25, expected: 18 * 60000 },
+    { id: "letter:owner:event:_:5f0c2a9e1b7d4c3a8e6f0b2d4a6c8e1f:1a2b3c4d5e6f", kind: "cover_letter", u: "owner", state: "running",
+      at: now - 90000, trigger: "email", title: "Data Engineer (Python, Airflow)", employer: "Northwind Traders", retry: false },
+    { id: "letter:owner:event:_:7d1e3b5c9a2f4e6d8c0b1a3e5d7f9c2b:6f5e4d3c2b1a", kind: "tailored_cv", u: "owner", state: "waiting",
+      at: now - 60000, trigger: "email", title: "Analytics Engineer (dbt, Snowflake)", employer: "Contoso", retry: false },
+  ],
 };
 await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: STATUS });
 
@@ -197,7 +205,13 @@ const csrf = dashboard.match(/name="csrf" value="([^"]+)"/)[1];
 await call("/api/invite", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: { note: "Taylor, former colleague" } });
 await save("admin-invite-link", await admin("/admin/action", { method: "POST", form: { csrf, action: "invite", note: "Casey from the course" } }));
 await admin("/admin/action", { method: "POST", form: { csrf, action: "resume", u: "jordan-patel" } });
+await call("/f", { method: "POST", form: { ...(await link("tailored_cv", "BI Developer at Fabrikam", { profile: "sam-lee" })), r: "" } });
 await save("admin-dashboard", await admin("/admin?done=queued"));
+// The Tasks modal, open, with its self-refreshing list inlined (opened as files, pages get no #tasks fragment).
+const tasksList = (await (await admin("/admin/tasks")).text()).replace(/<meta http-equiv="refresh"[^>]*>/, "");
+const withTasks = (await (await admin("/admin")).text()).replace("</head>", "<style>#tasks{display:grid}</style></head>")
+  .replace('src="/admin/tasks" loading="lazy"', `srcdoc="${tasksList.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"`);
+await save("admin-tasks", new Response(withTasks));
 await save("admin-dashboard-search", await admin("/admin?q=york"));
 // Opened as a file, the page cannot be given the #key-jordan-patel fragment that opens its key modal.
 const withModal = (await (await admin("/admin")).text()).replace("</head>", "<style>#key-jordan-patel{display:grid}</style></head>");
