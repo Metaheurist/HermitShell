@@ -33,7 +33,7 @@ MODEL_REPLY = {
 class FakeApi:
     def __init__(self, items=None, files=None):
         self.items, self.files = list(items or []), dict(files or {})
-        self.acked, self.statuses, self.fulls = [], [], []
+        self.acked, self.statuses, self.fulls, self.pushed = [], [], [], []
 
     def queue(self, full=False):
         self.fulls.append(full)
@@ -48,6 +48,9 @@ class FakeApi:
 
     def status(self, payload):
         self.statuses.append(payload)
+
+    def stats(self, pid, data):
+        self.pushed.append((pid, data))
 
     def flag(self):
         if getattr(self, "flags", None):
@@ -818,6 +821,75 @@ def test_a_hermes_job_runs_the_report_of_the_folder_it_starts_in(home, monkeypat
     assert profiles.main(["report", "--now", "owner"]) == 0 and ran[-1] == ("owner", True)
     monkeypatch.chdir(home[0])
     assert profiles.main(["report"]) == 2 and len(ran) == 2
+
+
+def _rate_a_job(pid, at):
+    from job_tracker import Tracker
+    with Tracker(profiles.tracker_file(pid)) as tracker:
+        tracker.upsert_job(f"job-{at}", {"title": "Data Analyst", "fit": 8, "employer": "Contoso"}, True, at)
+
+
+def test_stats_go_to_the_worker_when_they_change_and_go_with_the_profile(home, monkeypatch):
+    clock = [1_790_000_000.0]
+    monkeypatch.setattr(profiles.time, "time", lambda: clock[0])
+    api = FakeApi([signup()])
+    profiles.sync(api)
+    pid = "sam-lee-456789"
+    assert sorted(p for p, _ in api.pushed) == ["owner", pid]
+    assert all(data["days"] == {} and data["v"] == 1 for _, data in api.pushed)
+
+    api.pushed.clear()
+    _rate_a_job(pid, clock[0])
+    profiles.push_stats(api)
+    assert api.pushed == []
+    profiles.push_stats(api, now_for=pid)
+    assert [p for p, _ in api.pushed] == [pid]
+    assert sum(row[profiles.profile_stats.FIELDS.index("sent")] for row in api.pushed[0][1]["days"].values()) == 1
+
+    api.pushed.clear()
+    clock[0] += profiles.STATS_EVERY + 1
+    profiles.push_stats(api)
+    assert api.pushed == []
+    _rate_a_job("owner", clock[0])
+    profiles.push_stats(api)
+    assert [p for p, _ in api.pushed] == ["owner"]
+
+    deleting = FakeApi([{"id": "queue:2:a", "type": "admin", "action": "delete", "u": pid}])
+    profiles.sync(deleting)
+    assert deleting.pushed == [(pid, None)]
+    assert pid not in json.loads((profiles.PROFILES_DIR / ".stats.json").read_text())
+
+
+def test_a_finished_report_sends_its_stats_at_once(home, monkeypatch):
+    api = FakeApi()
+    monkeypatch.setattr(profiles, "api_from_env", lambda: api)
+    profiles.sync(FakeApi([signup()]))
+    pid = "sam-lee-456789"
+    profiles.push_stats(api)
+    api.pushed.clear()
+
+    def runner(cmd, env, cwd, timeout):
+        _rate_a_job(pid, profiles.time.time())
+        return subprocess.CompletedProcess(cmd, 0)
+
+    assert profiles.run_report(pid, now=True, runner=runner) == 0
+    assert [p for p, _ in api.pushed] == [pid]
+
+
+def test_stats_that_cannot_be_read_or_sent_are_retried_later(home, monkeypatch, capsys):
+    class Down(FakeApi):
+        def stats(self, pid, data):
+            raise requests.ConnectionError("down")
+
+    profiles.ensure_owner()
+    profiles.tracker_file("owner").parent.mkdir(parents=True, exist_ok=True)
+    profiles.tracker_file("owner").write_bytes(b"not a database")
+    profiles.push_stats(FakeApi())
+    assert "Could not read the stats of owner" in capsys.readouterr().err
+    profiles.tracker_file("owner").unlink()
+    profiles.push_stats(Down())
+    assert "Could not send the stats of owner" in capsys.readouterr().err
+    assert json.loads((profiles.PROFILES_DIR / ".stats.json").read_text()) == {}
 
 
 def test_term_regex_keeps_symbols():

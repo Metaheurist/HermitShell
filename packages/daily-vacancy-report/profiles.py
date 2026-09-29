@@ -8,7 +8,8 @@ script collects them, reads the CV, has Hermes' model turn it into a profile and
 Each extra profile lives in state/profiles/<id>/ and gets the same daily report, buttons, cover letters,
 tailored CVs and weekly roll-up; the unsubscribe link in its reports deletes it. Its daily report is its own
 Hermes cron job (vacancy-report-<id>, running profile_report.py), kept in step with the profile by this script;
-the dashboard sets its time and can send any profile's report at once.
+the dashboard sets its time and can send any profile's report at once. Each profile's stats (profile_stats.py)
+go to the Worker when they change, for the dashboard's stats page.
 Dashboard changes (email server, API keys, job search settings, new CVs, pause, resume, delete) arrive the
 same way; passwords and keys stay in the Worker only until this script collects them. The Worker never
 reaches this server: a background listener started by the cron run holds a WebSocket out to the Worker (the live
@@ -32,6 +33,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import time
@@ -44,6 +46,7 @@ import requests
 import cv_text
 import hermes_common as hc
 import job_settings
+import profile_stats
 from hermes_common import EMAIL_HEAD, STATE_DIR, connect_model, email_header, env, load_env_file, log, ollama_chat
 from job_settings import slug, term_regex
 from job_tracker import unsubscribe_link
@@ -71,6 +74,9 @@ HOST_RE = re.compile(r"^[A-Za-z0-9.-]{3,120}$")
 QUEUE_ATTEMPTS = 5
 FULL_LIST_EVERY = 3600
 STATUS_EVERY = 900
+# Each changed profile's stats are sent at most this often (the free plan allows 1,000 KV writes a day), and at
+# once when its report finishes.
+STATS_EVERY = 1800
 # The cron job runs every 5 minutes and Hermes skips a run while the last one is still going, so each run
 # watches for dashboard changes until comfortably before the next (counted from when the run started).
 WATCH_SECONDS = 250
@@ -637,6 +643,10 @@ class Api:
     def status(self, payload: dict) -> None:
         self.call("POST", "/api/status", json=payload)
 
+    def stats(self, pid: str, data: dict | None) -> None:
+        """A profile's stats page numbers; None removes them."""
+        self.call("POST", "/api/stats", json={"u": pid, "stats": data})
+
     def invite(self, note: str) -> dict:
         return self.call("POST", "/api/invite", json={"note": note})
 
@@ -993,7 +1003,47 @@ def timezone_name() -> str:
     return name or "UTC"
 
 
-def push_status(api: Api, force: bool = False) -> None:
+def tracker_file(pid: str) -> Path:
+    return STATE_DIR / "job_tracker.db" if pid == OWNER else profile_dir(pid) / "state" / "job_tracker.db"
+
+
+def push_stats(api: Api, now_for: str = "") -> None:
+    """Send each profile's stats when they have changed, at most every STATS_EVERY seconds per profile (at once
+    for `now_for`), and remove those of deleted profiles."""
+    marker = PROFILES_DIR / ".stats.json"
+    sent = read_json(marker, {})
+    sent = sent if isinstance(sent, dict) else {}
+    tz, now = ZoneInfo(timezone_name()), time.time()
+    ids = [p["id"] for p in all_profiles()]
+    for pid in ids:
+        last = sent.get(pid) if isinstance(sent.get(pid), dict) else {}
+        if pid != now_for and now - last.get("at", 0) < STATS_EVERY:
+            continue
+        try:
+            data = profile_stats.collect(tracker_file(pid), tz, now)
+        except (sqlite3.Error, OSError, ValueError) as exc:
+            log(f"Could not read the stats of {pid}: {exc.__class__.__name__}")
+            continue
+        digest = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+        if last.get("digest") == digest:
+            continue
+        try:
+            api.stats(pid, data)
+        except requests.RequestException as exc:
+            log(f"Could not send the stats of {pid} to the Worker: {exc.__class__.__name__}")
+            break
+        sent[pid] = {"digest": digest, "at": now}
+    for pid in [p for p in sent if p not in ids]:
+        try:
+            api.stats(pid, None)
+        except requests.RequestException:
+            break
+        sent.pop(pid)
+    write_json(marker, sent)
+
+
+def push_status(api: Api, force: bool = False, stats_for: str = "") -> None:
+    push_stats(api, stats_for)
     payload = status_payload()
     digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
     marker = PROFILES_DIR / ".status"
@@ -1373,7 +1423,7 @@ def reported(pid: str, run) -> int:
         fresh["last_run"] = time.time()
         save(fresh)
     if api:
-        push_status(api)
+        push_status(api, stats_for=pid)
     return code
 
 

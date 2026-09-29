@@ -144,6 +144,22 @@ def test_a_report_job_only_runs_for_a_folder_inside_the_profiles_folder(tmp_path
     assert profiles.profile_from_cwd() == ""
 
 
+def test_stats_sent_to_the_worker_hold_no_notes_links_or_contact_details(tmp_path, monkeypatch):
+    monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
+    monkeypatch.setattr(profiles, "STATE_DIR", tmp_path / "state")
+    profiles.write_json(profiles.PROFILES_DIR / "owner" / "profile.json", {"id": "owner", "owner": True})
+    with Tracker(tmp_path / "state" / "job_tracker.db") as tracker:
+        tracker.upsert_job("k1", {"title": "Engineer", "fit": 8, "employer": "Northwind", "url": "https://jobs.example.com/private",
+                                  "reasoning": "Candidate Sam Lee, sam@example.com", "listing": "Call 07700 900123"}, True)
+        tracker.add_event("e1", "k1", "not_for_me", "my manager is there, text me on 07700 900123")
+    sent = []
+    profiles.push_stats(type("Api", (), {"stats": lambda self, pid, data: sent.append((pid, data))})())
+    text = str(sent)
+    assert sent and sent[0][0] == "owner"
+    for private in ("jobs.example.com", "sam@example.com", "Sam Lee", "07700", "manager"):
+        assert private not in text
+
+
 def test_log_scrubbing_treats_names_as_text_not_patterns(tmp_path, monkeypatch):
     monkeypatch.setattr(hc, "HERMES_HOME", tmp_path)
     monkeypatch.setattr(profiles, "STATE_DIR", tmp_path / "state")
