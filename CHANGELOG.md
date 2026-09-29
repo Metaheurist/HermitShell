@@ -8,6 +8,22 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Send jobs now, and a Hermes job for every profile's daily report.**
+  - **Send jobs now**, on the dashboard and on each profile's page, runs that profile's report
+    straight away. HermitShell starts it within seconds over the live link, in the background
+    (`profiles.py report --now <id>`), and the email arrives when the scan finishes, even if
+    nothing new turned up. It works for a paused profile too, as a one-off.
+  - Each person you invite now gets their own Hermes cron job, `vacancy-report-<id>`, running the
+    new `profile_report.py` from their profile folder. Before, their reports ran one after the
+    other in a background process started by your run. `profiles.py` keeps the jobs in step with
+    the profiles: it creates a job with the profile, pauses it while the profile is paused and
+    removes it with the profile. So `hermes cron list` shows every report, and one person's slow or
+    failed run no longer holds up the others. New jobs start 15 minutes apart after yours. Without
+    Hermes' scheduler, your run still runs everyone's reports.
+  - A **Daily report** time (every day or weekdays) on each profile's page moves that profile's
+    Hermes job, yours included. The dashboard shows every profile's report time.
+  - While any report runs, the dashboard shows **scanning now**, and the profile page's status box
+    says when it started, until it finishes.
 - **A live link between HermitShell and the Worker, free.** The dashboard said "Last update: 8
   minutes ago" even though HermitShell was checking every 15 seconds, and a save could still take
   a while to arrive. Now:

@@ -59,9 +59,10 @@ light and dark modes.
    `state/job_tracker.db`: best jobs of the week, applications and replies, common gaps, who's
    hiring and source health ([screenshot](../../docs/images/emails/weekly.png)).
 9. **Extra profiles.** Invite other people from the feedback Worker's `/admin` page; they upload a
-   CV and get their own daily report, buttons, cover letters and roll-up, run after yours. Every
-   report has an **Unsubscribe** link that deletes their profile (or pauses yours)
-   ([how it works](../../docs/feedback-worker.md#extra-profiles-and-the-admin-page)).
+   CV and get their own daily report (their own Hermes cron job, at a time you set on the
+   dashboard), buttons, cover letters and roll-up. **Send jobs now** on the dashboard runs anyone's
+   report at once. Every report has an **Unsubscribe** link that deletes their profile (or pauses
+   yours) ([how it works](../../docs/feedback-worker.md#extra-profiles-and-the-admin-page)).
 
 It only emails when there are new matches or follow-ups due, unless
 `JOB_SCANNER_EMAIL_WHEN_EMPTY=1` is set. A job is only marked as seen once it has been rated or
@@ -77,7 +78,8 @@ definitely ruled out; ratings that fail are retried on the next runs, up to 4 at
 | `job_tracker.py` | `state/job_tracker.db` (jobs, feedback, reminders, runs, cover letter requests) and the feedback Worker sync |
 | `cover_letter.py` | Cover letter requests: writes each letter with the model and emails it as a PDF; entry point for the 5-minute cron job |
 | `letter_pdf.py` | Dependency-free A4 PDF writer for the letters |
-| `profiles.py` | Extra profiles: sign-ups from the Worker become profiles built from the CV, unsubscribes, admin changes, per-profile runs; entry point for the 5-minute cron job |
+| `profiles.py` | Extra profiles: sign-ups from the Worker become profiles built from the CV, unsubscribes, admin changes, each profile's Hermes report job, Send jobs now; entry point for the 5-minute cron job |
+| `profile_report.py` | One extra profile's daily report: the script of its `vacancy-report-<id>` Hermes job |
 | `maintenance.py` | Nightly retention, encryption of older files, file permissions and encrypted backups; `--restore`, `--decrypt`, `--new-key` ([data protection](../../docs/configuration.md#data-protection)) |
 | `cv_text.py` | Dependency-free text extraction from PDF, Word .docx and text CVs |
 | `icons/` | Button icons: Lucide SVG sources in `icons/src`, PNGs built by `icons/build_icons.py` |

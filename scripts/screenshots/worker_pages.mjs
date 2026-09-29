@@ -113,15 +113,19 @@ const STATUS = {
   profiles: [
     { id: "owner", name: "Alex Morgan", email: "alex.morgan@example.com", status: "active", owner: true, crawler: "global",
       has_cv: true, created: now - 60 * day, last_run: now - 3 * 3600000, cv_updated: now - 20 * day,
-      details: { name: "Alex Morgan", email: "alex.morgan@example.com", phone: "07700 900123", location: "Salford" }, job: JOB },
+      details: { name: "Alex Morgan", email: "alex.morgan@example.com", phone: "07700 900123", location: "Salford" }, job: JOB,
+      report: { time: "08:00", days: "daily", schedule: "0 8 * * *", hermes_job: true, pending: false } },
     { id: "sam-lee", name: "Sam Lee", email: "sam.lee@example.com", status: "active", crawler: "own", key_hint: "fc-...9d2a",
-      has_cv: true, created: now - 12 * day, last_run: now - 3 * 3600000,
+      has_cv: true, created: now - 12 * day, last_run: now - 3 * 3600000, scanning: now - 4 * 60000,
       details: { name: "Sam Lee", email: "sam.lee@example.com", phone: "", location: "York" },
-      job: { ...JOB, titles: ["Data Analyst", "BI Developer"], region: "North Yorkshire", places: ["York", "Harrogate"] } },
+      job: { ...JOB, titles: ["Data Analyst", "BI Developer"], region: "North Yorkshire", places: ["York", "Harrogate"] },
+      report: { time: "08:15", days: "weekdays", schedule: "15 8 * * 1-5", hermes_job: true, pending: false } },
     { id: "jordan-patel", name: "Jordan Patel", email: "jordan.patel@example.net", status: "paused", crawler: "global",
       has_cv: true, created: now - 30 * day, last_run: now - 9 * day,
-      details: { name: "Jordan Patel", email: "jordan.patel@example.net", phone: "", location: "Leeds" }, job: JOB },
+      details: { name: "Jordan Patel", email: "jordan.patel@example.net", phone: "", location: "Leeds" }, job: JOB,
+      report: { time: "08:30", days: "daily", schedule: "30 8 * * *", hermes_job: true, pending: false } },
   ],
+  hermes_jobs: true,
   email: { host: "smtp.gmail.com", port: "587", user: "alex.morgan@example.com", from: "", password_set: true,
     source: "dashboard", last_test: { at: now - 2 * day, ok: true, to: "alex.morgan@example.com", error: "" } },
   keys: { firecrawl: { source: "env", hint: "fc-...41b7", backups: 1 }, tavily: { source: "dashboard", hint: "tvly...8c1e" },
@@ -159,6 +163,7 @@ await save("admin-invite-link", await admin("/admin/action", { method: "POST", f
 await admin("/admin/action", { method: "POST", form: { csrf, action: "resume", u: "jordan-patel" } });
 await save("admin-dashboard", await admin("/admin?done=queued"));
 await save("admin-profile", await framed(await admin("/admin/profile?u=owner"), admin));
+await save("admin-profile-scanning", await framed(await admin("/admin/profile?u=sam-lee"), admin));
 await save("admin-settings", await admin("/admin/settings"));
 
 // A fresh install: HermitShell has connected, nothing else is set yet.
@@ -182,7 +187,7 @@ async function profileForm(u) {
   const v = JSON.parse(base);
   const form = new URLSearchParams({ csrf, action: "profile", u, base, name: v.name, email: v.email, phone: v.phone,
     location: v.location, titles: v.titles.join("\n"), region: v.region, places: v.places.join(", "), country: v.country,
-    level: v.level, min_salary: v.min_salary, currency: v.currency });
+    level: v.level, min_salary: v.min_salary, currency: v.currency, report_time: v.report_time, report_days: v.report_days });
   v.types.forEach((t) => form.append("types", t));
   v.modes.forEach((m) => form.append("modes", m));
   if (v.remote_anywhere) form.append("remote_anywhere", "1");

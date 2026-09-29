@@ -184,6 +184,7 @@ The next email has buttons under each job. Press one, confirm, and the following
 | No buttons in the email | `JOB_FEEDBACK_URL` or `JOB_FEEDBACK_SECRET` is empty in `.env`. |
 | Answers never arrive | Check requests with `npx wrangler tail`, or the Workers Observability MCP / dashboard logs. |
 | No cover letter email | Check `hermes cron list` for `vacancy-cover-letters` and its output in `cron/output/`; run `python3 cover_letter.py` by hand to see errors. |
+| No daily report for someone you invited | Check `hermes cron list` for their `vacancy-report-<id>` job and its output in `cron/output/`; `python3 profiles.py report <id>` runs it by hand. A report sent with **Send jobs now** logs to `state/profiles/runs.log`. |
 
 Answers wait in KV until HermitShell fetches them, so a server that is off for a few days loses
 nothing (up to 30 days).
@@ -315,9 +316,16 @@ from the Worker's admin page; HermitShell applies the changes, since the Worker 
 *The sign-up form and the welcome email. The other states are in
 [screenshots.md](screenshots.md#sign-up-page).*
 
-From then on every daily report, weekly roll-up and cover letter run also runs for each active
-profile, one after the other once your own run has finished, with their own seen jobs, tracker,
-feedback buttons and skills pool. They share your region, sources and model settings, and every
+From then on each profile has its own daily report: a Hermes cron job named
+`vacancy-report-<id>` that `profiles.py` creates with the profile, running `profile_report.py`
+from the profile's folder. It is paused while the profile is and removed when it is deleted, so
+`hermes cron list` shows every profile's report, when it runs next and whether its last run worked,
+and one profile's slow or failed run doesn't hold up the others. A new profile's report starts 15
+minutes after the latest one (yours is the setup's `job_scanner.py` job); change any profile's time
+on its page. Weekly roll-ups and cover letters still run for each active profile once your own
+run has finished. Outside Hermes' scheduler (no `cron/jobs.json`), your daily run runs everyone's
+reports one after the other instead. Each profile keeps its own seen jobs, tracker, feedback buttons
+and skills pool. They share your region, sources and model settings, and every
 model request (ratings, cover letters, CVs, sign-ups, for all profiles) waits in one shared queue,
 so the model only ever gets one request at a time; see
 [configuration](configuration.md#where-settings-come-from). A sign-up
@@ -350,8 +358,11 @@ whole tool shares).
   to its form.
 - **HermitShell could not apply**: changes HermitShell rejected in the last day (a mistyped SMTP server,
   for example), with the reason.
-- **Profiles**: everyone HermitShell reports, with status, last report and a **no CV** tag when there
-  is none yet. **Manage** opens that profile's page (details, job search and CV). Pause, resume or delete
+- **Profiles**: everyone HermitShell reports, with status, last report, daily report time and a
+  **no CV** tag when there is none yet. **Send jobs now** runs that profile's report straight away
+  (see [Send jobs now](#send-jobs-now)); while a report is running, daily or sent now, the row says
+  **scanning now** instead. **Manage** opens that profile's page (details, job search, report time
+  and CV). Pause, resume or delete
   (deleting removes their CV and history from your server, their answers still waiting in KV and
   their name and email from the logs; the owner can't be deleted).
 - **Crawler**: give a profile its own Firecrawl key (it then uses only that key), or leave it on
@@ -387,8 +398,8 @@ them.
 <img src="images/worker/admin-profile.png" alt="A profile's settings page" width="720">
 
 **Back to profiles** stays in the top-left corner while you scroll. Each box has a short hint
-under it. Details and job search are one form with one **Save changes** button; the CV has its own
-**Upload CV**.
+under it. Details, job search and the daily report time are one form with one **Save changes**
+button; **Send jobs now** and the CV's **Upload CV** have their own.
 
 - **Details**: name, the email address their reports go to, phone and home town (shown on cover
   letters). For you, the address is `ALERT_EMAIL`.
@@ -398,6 +409,12 @@ under it. Details and job search are one form with one **Save changes** button; 
   employment types, work location and whether to hide agency adverts that don't name the
   employer. Saving rebuilds the web search queries and the title filter when the titles or
   location change.
+- **Daily report**: the time (in `HERMES_TIMEZONE`) and days (every day, or weekdays) Hermes sends
+  this profile's report. HermitShell moves the profile's Hermes job, or for you the setup's
+  `job_scanner.py` job, when it applies the save; until then the dashboard says the time is moving.
+  A schedule set by hand with `hermes cron edit` shows here too, and a cron expression that isn't a
+  plain time leaves the box empty until you pick one.
+- **Send jobs now**: see below.
 - **CV**: upload a PDF, Word or text file, or paste it. HermitShell reads it, rebuilds the profile and
   skills the jobs are rated against, and emails a summary. Your previous `job_profile.md` and
   `cv_keywords.json` are kept as `.bak` copies.
@@ -417,8 +434,26 @@ without the link. Meanwhile:
   changes are kept. If they changed the *same* field, nothing is saved: the page comes back with
   your version still in the form and a list of each clashing field with both values. **Save
   changes** again keeps yours.
-- A save with nothing changed says so and queues nothing. A bad email address or an empty name
-  shows the page again with what you typed.
+- A save with nothing changed says so and queues nothing. A bad email address, an empty name or a
+  missing report time shows the page again with what you typed.
+
+#### Send jobs now
+
+**Send jobs now**, on the dashboard and on each profile's page, runs that profile's report straight
+away instead of waiting for its daily time. HermitShell gets the request over the live link within
+seconds and starts the scan in the background (`profiles.py report --now <id>`, logged to
+`state/profiles/runs.log`), so other dashboard changes keep being applied while it runs. The email
+arrives when the scan finishes, usually 10 to 20 minutes later, and it is sent even when nothing
+new turned up (like `JOB_SCANNER_EMAIL_WHEN_EMPTY=1`), so you know it ran. Jobs already sent in an
+earlier report aren't repeated. It works for a paused profile too, as a one-off.
+
+<img src="images/worker/admin-profile-scanning.png" alt="A profile's page while its report is running" width="720">
+
+While any report is running, daily or sent now, the dashboard row shows **scanning now**, the
+button becomes **Scanning…**, and the profile page's status box says when the scan started,
+checking every 30 seconds (from HermitShell's status report only, with no KV listing) for up to 40
+minutes. A second press while a scan is running does nothing. A profile without a CV has no button;
+HermitShell refuses the request and says so under **HermitShell could not apply**.
 
 Every control is described in [screenshots.md](screenshots.md#profiles).
 
@@ -490,7 +525,7 @@ seconds between runs (about 5,200 reads and requests a day) and only syncs when 
 changes, so an item that keeps failing is retried by the next run rather than listed every 15
 seconds. Admin pages also skip the listing when the flag says the queue is empty. Status reports
 from HermitShell are only written when something changed or every 15 minutes (at most 96 of the
-1,000 writes a day). If the Durable Object allowance ever ran out, saves still work and
+1,000 writes a day), plus two per report (when it starts and when it ends). If the Durable Object allowance ever ran out, saves still work and
 HermitShell falls back to polling.
 
 ## Removing it

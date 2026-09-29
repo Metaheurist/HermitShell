@@ -292,8 +292,9 @@ deleted ([data protection](configuration.md#data-protection)).
 | Control | What it does |
 | --- | --- |
 | Status line | **HermitShell is connected** (green dot) while its live link is up, so changes reach it within seconds, then when it last reported its profiles. Without the link: when HermitShell last checked in, with the time in your timezone (`HERMES_TIMEZONE`). Also lists changes still **Waiting for HermitShell**. A warning appears above it if HermitShell hasn't checked in for 45 minutes |
-| Profile, Status | Name, email and start date, **no CV** when there is none yet; owner, active or paused; time of the last report |
-| **Manage** | Opens [that profile's page](#a-profiles-page): details, job search and CV |
+| Profile, Status | Name, email and start date, **no CV** when there is none yet; owner, active or paused; **scanning now** while a report runs; time of the last report and the daily report time |
+| **Send jobs now** | Runs that profile's report straight away and emails it when the scan finishes, even if nothing new turned up. Shows **Scanning…** while a report runs; missing without a CV |
+| **Manage** | Opens [that profile's page](#a-profiles-page): details, job search, report time and CV |
 | Crawler: **Their Firecrawl key** + **Save** | Gives that profile its own Firecrawl key, used instead of the global one |
 | **Use global key** | Takes a profile back to the global key |
 | **Pause** / **Resume** | Stops or restarts that profile's reports |
@@ -340,10 +341,12 @@ HermitShell hasn't collected them.
 | Section | What it sets |
 | --- | --- |
 | **Back to profiles** | Floats in the top-left corner while you scroll |
-| Status box | Under the tabs: **Up to date**, **Waiting for HermitShell** while a save is queued (it checks again by itself), **Applied by HermitShell**, or why a change couldn't be applied |
+| Status box | Under the tabs: **Up to date**, **Waiting for HermitShell** while a save is queued (it checks again by itself), **Applied by HermitShell**, **Scanning for jobs since…** while a report runs, or why a change couldn't be applied |
 | Details | Name, the email address reports go to, phone and home town (for cover letters) |
 | Job search | Job titles (up to 8), region or city (used in web searches), country from a list, towns, remote elsewhere, seniority, minimum salary (empty = none) and currency, employment types, work location, hiding unnamed agency adverts |
-| **Save changes** | One button for details and job search; only the fields you changed are sent |
+| Daily report | The time and days (every day or weekdays) Hermes sends this profile's report; each profile's report is its own Hermes cron job |
+| **Save changes** | One button for details, job search and report time; only the fields you changed are sent |
+| **Send jobs now** | Runs the report now instead of at the daily time ([more](feedback-worker.md#send-jobs-now)) |
 | CV + **Upload CV** | A new CV file or pasted text; HermitShell rebuilds the profile and skills from it and emails a summary |
 
 <table><tr><th>Just saved</th><th>Someone else changed the same field</th></tr>
@@ -355,6 +358,11 @@ for HermitShell over what it last reported) and the status box follows it until 
 someone else changed the same field since you opened the page, nothing is saved: the box lists each
 clashing field with both values and your version stays in the form, so **Save changes** again keeps
 yours. Changes to different fields are both kept.
+
+<img src="images/worker/admin-profile-scanning.png" alt="A profile's page while its report is running" width="380">
+
+*While a report runs (here after **Send jobs now**), the status box says when the scan started and
+the button waits until it has finished.*
 
 ## Regenerating these images
 

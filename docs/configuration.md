@@ -130,6 +130,12 @@ minutes and silent when idle, and nightly maintenance
 `SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY`, `SCHEDULE_DAILY_VACANCY_REPORT_LETTERS`,
 `SCHEDULE_DAILY_VACANCY_REPORT_PROFILES` and `SCHEDULE_DAILY_VACANCY_REPORT_MAINTENANCE`.
 
+Each person you invite gets one more job, `vacancy-report-<id>`, created, paused and removed with
+their profile by `profiles.py`; it runs `profile_report.py` from their profile folder. The
+dashboard's **Daily report** box sets any profile's time, yours included (it moves the wizard's
+job), and **Send jobs now** runs a report at once
+([feedback-worker.md](feedback-worker.md#send-jobs-now)).
+
 ## Data protection
 
 What the people you invite are told is in [PRIVACY.md](../PRIVACY.md) (the Worker serves the same
