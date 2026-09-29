@@ -220,6 +220,39 @@ describe("authentication", () => {
     expect(big.status).toBe(413);
   });
 
+  it("keeps the jobs sent behind a session, escapes them and only links to web adverts", async () => {
+    const env = testEnv(ADMIN);
+    const api = { Authorization: "Bearer api-token" };
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "sam-lee", name: HOSTILE, has_cv: true }] }));
+    const today = new Date().toISOString().slice(0, 10);
+    const job = (url, extra = {}) => ({ title: HOSTILE, employer: HOSTILE, location: HOSTILE, mode: HOSTILE, salary: HOSTILE,
+      source: HOSTILE, fit: 9, day: today, url, answer: HOSTILE, ...extra });
+    const sent = [job("javascript:alert(1)"), job("data:text/html,<script>x</script>"), job('https://jobs.example.com/a" onmouseover="x'),
+      job("https://jobs.example.com/ok?id=1&ref=2"), job("//evil.example/x"), job(`https://jobs.example.com/${"a".repeat(600)}`)];
+    const put = (stats) => worker.fetch(new Request(`${BASE}/api/stats`, { method: "POST", headers: api, body: JSON.stringify({ u: "sam-lee", stats }) }), env);
+    for (const bad of [{ days: {}, sent: "x" }, { days: {}, sent: [1] }, { days: {}, sent: [[]] }, { days: {}, sent: new Array(201).fill({ title: "x" }) }]) {
+      expect((await put(bad)).status).toBe(400);
+    }
+    expect((await put({ days: {}, sent })).status).toBe(200);
+    const anonymous = await (await get("/admin/sent?u=sam-lee", env)).text();
+    expect(anonymous).toContain("Admin sign-in");
+    expect(anonymous).not.toContain("jobs.example.com");
+    const cookie = await signIn(env, "203.0.113.7");
+    for (const q of ["r=7", "r=<script>", "a=<script>", "r=90&a=applied"]) {
+      const res = await get(`/admin/sent?u=sam-lee&${q.replace(/<script>/g, encodeURIComponent("<script>"))}`, env, { Cookie: cookie });
+      expect(res.headers.get("Content-Security-Policy")).not.toContain("script-src");
+      const body = await res.text();
+      expect(body, q).not.toContain("<script>");
+      expect(body, q).not.toContain("<img src=x");
+    }
+    const body = await (await get("/admin/sent?u=sam-lee&r=7", env, { Cookie: cookie })).text();
+    const hrefs = [...body.matchAll(/href="([^"]*)" target="_blank"/g)].map((m) => m[1]);
+    expect(hrefs).toEqual(["https://jobs.example.com/ok?id=1&amp;ref=2"]);
+    expect(body).toContain('rel="noopener noreferrer nofollow"');
+    expect(body).not.toMatch(/href="(javascript|data):/);
+    expect((await get("/admin/sent?u=..%2Fowner", env, { Cookie: cookie })).status).toBe(404);
+  });
+
   it("only queues a crawler key from the modal with a session and its CSRF token, and never shows it back", async () => {
     const env = testEnv(ADMIN);
     await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [

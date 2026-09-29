@@ -6,7 +6,9 @@
 import { ago, esc, page } from "./lib.js";
 
 export const STATS_URL = "/admin/stats";
+export const SENT_URL = "/admin/sent";
 export const MAX_STATS_BYTES = 150 * 1024;
+const MAX_SENT = 200;
 // Same order as FIELDS in profile_stats.py.
 export const FIELDS = ["scanned", "rated", "sent", "fit_sum", "fit_n", "strong", "runs", "interested", "good_match",
   "not_for_me", "applied", "heard_back", "rejected", "cover_letter", "tailored_cv", "add_skill"];
@@ -27,7 +29,9 @@ export function validStats(s) {
   return entries.length <= 800 && entries.every(([k, v]) => DATE_RE.test(k) && Array.isArray(v) && v.length <= 40 &&
     v.every((n) => typeof n === "number" && Number.isFinite(n))) &&
     (s.ranges == null || (typeof s.ranges === "object" && !Array.isArray(s.ranges))) &&
-    (s.pipeline == null || (typeof s.pipeline === "object" && !Array.isArray(s.pipeline)));
+    (s.pipeline == null || (typeof s.pipeline === "object" && !Array.isArray(s.pipeline))) &&
+    (s.sent == null || (Array.isArray(s.sent) && s.sent.length <= MAX_SENT &&
+      s.sent.every((j) => j && typeof j === "object" && !Array.isArray(j))));
 }
 
 // ------------------------------------------------------------------------- numbers
@@ -309,13 +313,82 @@ function rangeTabs(pid, range) {
     `<a href="${STATS_URL}?u=${esc(pid)}&amp;r=${r}"${Number(r) === range ? ' class="on" aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
 }
 
-// The dashboard row's link: this week's jobs sent as a sparkline and a number.
+// The dashboard row's two buttons: this week's jobs sent as a sparkline (the stats page) and a number (the jobs).
 export function statsLink(p, stats, timeZone) {
   const href = `${STATS_URL}?u=${esc(p.id)}`;
   if (!stats) return `<a class="statlink" href="${href}">${icon("chart")}Stats</a>`;
   const days = dayList(zonedToday(timeZone), 7);
   const week = totals(stats, days);
-  return `<a class="statlink" href="${href}" title="Stats. The line: jobs sent each day this week">${sparkline(days.map((d) => totals(stats, [d]).sent), { width: 56, height: 20, cls: "mini" })}<b>${compact(week.sent)}</b> sent</a>`;
+  return `<span class="statpair"><a class="statlink" href="${href}" title="Stats and charts. The line: jobs sent each day this week" aria-label="Stats and charts">${sparkline(days.map((d) => totals(stats, [d]).sent), { width: 56, height: 20, cls: "mini" })}</a><a class="statlink" href="${SENT_URL}?u=${esc(p.id)}&amp;r=7" title="The jobs sent this week"><b>${compact(week.sent)}</b> sent</a></span>`;
+}
+
+// ------------------------------------------------------------------------- the jobs sent (/admin/sent)
+
+export const SENT_RANGES = { 7: "7 days", 30: "30 days", 90: "90 days" };
+const ANSWER_LABELS = Object.fromEntries(ANSWERS.map(([k, label, color]) => [k, [label, color]]));
+const LINK_RE = /^https?:\/\/[^\s"'<>]+$/i;
+const cut = (v, n) => String(v ?? "").slice(0, n);
+
+function sentJobs(stats) {
+  return (Array.isArray(stats?.sent) ? stats.sent : []).filter((j) => j && typeof j === "object" && j.title && DATE_RE.test(j.day || ""))
+    .slice(0, MAX_SENT);
+}
+
+function sentTabs(pid, range, answer) {
+  const a = answer ? `&amp;a=${esc(answer)}` : "";
+  return `<nav class="tabs" aria-label="Time range">${Object.entries(SENT_RANGES).map(([r, label]) =>
+    `<a href="${SENT_URL}?u=${esc(pid)}&amp;r=${r}${a}"${Number(r) === range ? ' class="on" aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
+}
+
+function answerFilter(pid, range, answer, jobs) {
+  const counts = { "": jobs.length, none: jobs.filter((j) => !ANSWER_LABELS[j.answer]).length };
+  for (const [k] of ANSWERS) counts[k] = jobs.filter((j) => j.answer === k).length;
+  const options = [["", "All"], ["none", "No answer yet"], ...ANSWERS.map(([k, label]) => [k, label])]
+    .filter(([k]) => k === "" || counts[k] || k === answer);
+  return `<nav class="answers" aria-label="Filter by answer">${options.map(([k, label]) =>
+    `<a href="${SENT_URL}?u=${esc(pid)}&amp;r=${range}${k ? `&amp;a=${k}` : ""}"${k === answer ? ' class="on" aria-current="page"' : ""}>${esc(label)} <b>${counts[k]}</b></a>`).join("")}</nav>`;
+}
+
+function sentRow(j, i) {
+  const fit = Number.isInteger(j.fit) && j.fit >= 0 && j.fit <= 10 ? j.fit : null;
+  const color = fit >= 8 ? "#10b981" : fit >= 7 ? "#84cc16" : fit >= 5 ? "#f59e0b" : "#94a3b8";
+  const title = esc(cut(j.title, 90));
+  const url = typeof j.url === "string" && j.url.length <= 500 && LINK_RE.test(j.url) ? j.url : "";
+  const heading = url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer nofollow">${title}</a>` : title;
+  const meta = [j.employer, j.location, j.mode, j.salary].map((v) => cut(v, 60).trim()).filter(Boolean).map(esc).join(" &middot; ");
+  const [label, tone] = ANSWER_LABELS[j.answer] || [];
+  const badge = label ? `<span class="answer" style="--a:${tone}">${esc(label)}</span>` : "";
+  const source = j.source ? `<span class="source">${esc(cut(j.source, 60))}</span>` : "";
+  return `<li style="animation-delay:${Math.min(i, 12) * 35}ms">${fit === null ? '<span class="nofit">&ndash;</span>' : ring(fit, 10, { size: 40, color, label: String(fit) })}
+<div class="job"><b>${heading}</b><span class="muted">${meta}</span></div><div class="tags">${badge}${source}</div></li>`;
+}
+
+export function sentPage(status, stats, pid, rangeParam, answerParam) {
+  const p = (status.profiles || []).find((x) => x.id === pid);
+  const back = { wide: true, before: '<a class="back" href="/admin">&larr; Back to profiles</a>' };
+  if (!p) return page("Profile not found", '<p>HermitShell has not reported this profile. <a href="/admin">Back to profiles</a></p>', { status: 404 });
+  const range = SENT_RANGES[rangeParam] ? Number(rangeParam) : DEFAULT_RANGE;
+  const answer = answerParam === "none" || ANSWER_LABELS[answerParam] ? answerParam : "";
+  const heading = p.owner ? "Jobs sent to you" : `Jobs sent to ${p.name || "this profile"}`;
+  const links = `<a class="small" href="${STATS_URL}?u=${esc(pid)}">Stats</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage profile</a>`;
+  const first = dayList(zonedToday(status.timezone), range)[0];
+  const inRange = sentJobs(stats).filter((j) => j.day >= first);
+  const shown = inRange.filter((j) => !answer || (answer === "none" ? !ANSWER_LABELS[j.answer] : j.answer === answer));
+  const byDay = [];
+  for (const j of shown) {
+    if (byDay.at(-1)?.day !== j.day) byDay.push({ day: j.day, jobs: [] });
+    byDay.at(-1).jobs.push(j);
+  }
+  const updated = stats?.updated ? `Updated ${esc(ago(stats.updated))} &middot; ` : "";
+  const empty = !stats ? "HermitShell sends the list within a few minutes of its next check-in, and after every report."
+    : inRange.length ? "No job sent in this period has that answer." : "No jobs were sent in this period.";
+  const body = byDay.length ? byDay.map((g) => `<section class="sentday"><h3>${weekday(g.day)} ${shortDay(g.day)}<span>${g.jobs.length} job${g.jobs.length === 1 ? "" : "s"}</span></h3>
+<ul class="sentlist">${g.jobs.map(sentRow).join("")}</ul></section>`).join("")
+    : `<div class="nostats">${icon("mail", "hero")}<p><b>Nothing to show.</b> ${empty}</p></div>`;
+  return page(heading, `<style>${STYLE}${SENT_STYLE}</style>
+<div class="statbar">${sentTabs(pid, range, answer)}<span class="muted">${updated}${links}</span></div>
+${inRange.length ? answerFilter(pid, range, answer, inRange) : ""}${body}
+<p class="muted small">Links open the advert. Notes typed on the buttons are never shown here.</p>`, back);
 }
 
 export function statsPage(status, stats, pid, rangeParam) {
@@ -324,7 +397,7 @@ export function statsPage(status, stats, pid, rangeParam) {
   if (!p) return page("Profile not found", '<p>HermitShell has not reported this profile. <a href="/admin">Back to profiles</a></p>', { status: 404 });
   const range = RANGES[rangeParam] ? Number(rangeParam) : DEFAULT_RANGE;
   const heading = p.owner ? "Your stats" : `${p.name || "Profile"}: stats`;
-  const manage = `<a class="small" href="/admin/profile?u=${esc(pid)}">Manage profile</a>`;
+  const manage = `<a class="small" href="${SENT_URL}?u=${esc(pid)}&amp;r=${range === 365 ? 90 : range}">Jobs sent</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage profile</a>`;
   if (!stats) {
     return page(heading, `<style>${STYLE}</style>${rangeTabs(pid, range)}
 <div class="nostats">${icon("radar", "hero")}<p><b>No stats yet.</b> HermitShell sends them within a few minutes of its next check-in, and after every report.</p>${manage}</div>`, back);
@@ -447,11 +520,40 @@ svg .g2{animation-delay:.25s}svg .g3{animation-delay:.5s}
 @media (max-width:760px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.donut{grid-template-columns:1fr;justify-items:center}}
 `;
 
+const SENT_STYLE = `
+nav.answers{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 18px}
+nav.answers a{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:99px;border:1px solid var(--line);background:#fff;
+font-size:13px;font-weight:650;color:var(--text);text-decoration:none;transition:background .15s,border-color .15s,color .15s}
+nav.answers a b{font-size:11.5px;color:var(--muted);background:#f1f3f9;border-radius:99px;padding:1px 7px}
+nav.answers a:hover{border-color:#c7cbf5;background:#f7f7ff}
+nav.answers a.on{background:var(--soft);border-color:#c7cbf5;color:var(--brand-ink)}nav.answers a.on b{background:#fff;color:var(--brand-ink)}
+.sentday{margin:0 0 18px}
+.sentday h3{display:flex;align-items:baseline;gap:10px;margin:0 0 8px;font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:750}
+.sentday h3 span{letter-spacing:0;text-transform:none;font-weight:600;color:#94a3b8}
+.sentlist{list-style:none;padding:0;margin:0;display:grid;gap:8px}
+.sentlist li{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:14px;align-items:center;padding:12px 16px;background:#fff;
+border:1px solid var(--line);border-radius:16px;animation:rise .45s var(--ease) both;transition:transform .15s var(--ease),box-shadow .15s}
+.sentlist li:hover{transform:translateY(-2px);box-shadow:0 14px 26px -20px rgba(30,27,75,.45)}
+.sentlist .job{display:grid;gap:3px;min-width:0}
+.sentlist .job b{font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+.sentlist .job b a{color:inherit;text-decoration:none}.sentlist .job b a:hover{color:var(--brand-ink);text-decoration:underline}
+.sentlist .job .muted{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sentlist .tags{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.answer{font-size:11.5px;font-weight:750;padding:3px 10px;border-radius:99px;color:var(--a);background:color-mix(in srgb,var(--a) 13%,#fff);white-space:nowrap}
+.source{font-size:11.5px;color:#94a3b8;white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis}
+.nofit{width:40px;height:40px;display:grid;place-items:center;border-radius:50%;background:#f1f3f9;color:var(--muted);font-weight:700}
+@media (max-width:640px){.sentlist li{grid-template-columns:40px minmax(0,1fr)}.sentlist .tags{grid-column:2;flex-direction:row;align-items:center}}
+`;
+
 // The dashboard's Stats links; added to the shared page style.
 export const LINK_STYLE = `
 a.statlink{display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:4px 10px 4px 6px;border-radius:10px;background:var(--soft);white-space:nowrap;
 color:var(--brand-ink);font-size:12.5px;font-weight:650;text-decoration:none;transition:transform .15s var(--ease),background .15s}
 a.statlink:hover{background:#e2e5ff;transform:translateY(-1px)}
+.statpair{display:inline-flex;align-items:stretch;gap:2px;margin-top:6px}
+.statpair a.statlink{margin-top:0;border-radius:4px}
+.statpair a.statlink:first-child{border-radius:10px 4px 4px 10px;padding:4px 7px}
+.statpair a.statlink:last-child{border-radius:4px 10px 10px 4px;padding:4px 10px 4px 8px}
 a.statlink svg{width:18px;height:18px}a.statlink svg.mini{width:56px;height:20px}
 a.statlink .line{fill:none;stroke:#6366f1;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;
 animation:draw 1.4s var(--ease) both .25s}

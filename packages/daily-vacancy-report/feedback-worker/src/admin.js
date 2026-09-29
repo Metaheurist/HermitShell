@@ -20,7 +20,7 @@ import {
 } from "./settings.js";
 import { CRAWLERS, KEY_STYLE, crawlerCell, keyModal } from "./keys.js";
 import { SEARCH_STYLE, matchesProfile, noMatch, searchBar, searchQuery } from "./search.js";
-import { LINK_STYLE, MAX_STATS_BYTES, STATS_URL, statsLink, statsPage, validStats } from "./stats.js";
+import { LINK_STYLE, MAX_STATS_BYTES, SENT_URL, STATS_URL, sentPage, statsLink, statsPage, validStats } from "./stats.js";
 import { TASKS_STYLE, TASKS_URL, cancelTask, requests, taskRows, tasksButton, tasksModal, tasksPage } from "./tasks.js";
 
 const SESSION_SECONDS = 12 * 3600;
@@ -357,6 +357,13 @@ export async function handleAdmin(request, env, ctx) {
     if (!PROFILE_RE.test(u)) return text("Not found", 404);
     const [current, stats] = await Promise.all([status(env), env.FEEDBACK.get(`stats:${u}`, "json")]);
     return statsPage(current, stats, u, url.searchParams.get("r"));
+  }
+  if (path === SENT_URL && request.method === "GET") {
+    const url = new URL(request.url);
+    const u = url.searchParams.get("u") || "";
+    if (!PROFILE_RE.test(u)) return text("Not found", 404);
+    const [current, stats] = await Promise.all([status(env), env.FEEDBACK.get(`stats:${u}`, "json")]);
+    return sentPage(current, stats, u, url.searchParams.get("r"), url.searchParams.get("a"));
   }
   if (path === STATUS_URL && request.method === "GET") {
     const url = new URL(request.url);

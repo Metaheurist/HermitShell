@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import worker from "../src/index.js";
-import { FIELDS, statsPage, totals, validStats, windowFor, zonedToday } from "../src/stats.js";
+import { FIELDS, sentPage, statsPage, totals, validStats, windowFor, zonedToday } from "../src/stats.js";
 import { BASE, keysWith, testEnv } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
@@ -36,6 +36,16 @@ function sample() {
         best: [{ title: "Data Engineer <img src=x>", employer: "Fabrikam", fit: 9, day: daysAgo(3) }] },
     },
     pipeline: { applied: 2, heard_back: 1, rejected: 1, interested: 3 },
+    sent: [
+      { title: "Data Engineer", employer: "Northwind", location: "York", mode: "Hybrid", salary: "£55,000", fit: 9, day: daysAgo(0),
+        source: "reed.co.uk", url: "https://jobs.example.com/1", answer: "applied" },
+      { title: "Analytics Engineer", employer: "Contoso", location: "Leeds", mode: "Remote", salary: "", fit: 7, day: daysAgo(0),
+        source: "web search", url: "", answer: "" },
+      { title: "BI Developer", employer: "Fabrikam", location: "", mode: "", salary: "", fit: null, day: daysAgo(3),
+        source: "", url: "https://jobs.example.com/3", answer: "not_for_me" },
+      { title: "Data Analyst", employer: "Tailspin Toys", location: "Hull", mode: "", salary: "", fit: 6, day: daysAgo(40),
+        source: "", url: "https://jobs.example.com/4", answer: "interested" },
+    ],
   };
 }
 
@@ -126,6 +136,47 @@ describe("stats page", () => {
   });
 });
 
+describe("jobs sent page", () => {
+  it("lists the jobs sent in the range, newest day first, with their score, details, answer and advert link", async () => {
+    const body = await sentPage(STATUS, sample(), "sam-lee", "7", null).text();
+    expect(body).toContain("Jobs sent to Sam Lee");
+    expect(body).toContain('aria-current="page">7 days');
+    expect(body.indexOf("Data Engineer")).toBeLessThan(body.indexOf("BI Developer"));
+    expect(body).not.toContain("Data Analyst");
+    expect(body).toContain('<a href="https://jobs.example.com/1" target="_blank" rel="noopener noreferrer nofollow">Data Engineer</a>');
+    expect(body).toContain("<b>Analytics Engineer</b>");
+    expect(body).toContain("Northwind &middot; York &middot; Hybrid &middot; £55,000");
+    expect(body).toMatch(/class="answer"[^>]*>Applied</);
+    expect(body).toMatch(/2 jobs<\/span>/);
+    expect(body).toContain(">All <b>3</b>");
+    expect(body).toContain(">No answer yet <b>1</b>");
+    expect(body).toContain('href="/admin/stats?u=sam-lee"');
+    expect(body).toContain('href="/admin/profile?u=sam-lee"');
+  });
+
+  it("filters by answer, keeps the filter across ranges and says when nothing matches", async () => {
+    const applied = await sentPage(STATUS, sample(), "owner", "30", "applied").text();
+    expect(applied).toContain("Jobs sent to you");
+    expect(applied).toContain("Data Engineer");
+    expect(applied).not.toContain("Analytics Engineer");
+    expect(applied).toContain('href="/admin/sent?u=owner&amp;r=90&amp;a=applied"');
+    const none = await sentPage(STATUS, sample(), "owner", "30", "none").text();
+    expect(none).toContain("Analytics Engineer");
+    expect(none).not.toContain(">Data Engineer<");
+    const nothing = await sentPage(STATUS, sample(), "owner", "7", "heard_back").text();
+    expect(nothing).toContain("No job sent in this period has that answer.");
+    const odd = await sentPage(STATUS, sample(), "owner", "365", "bogus").text();
+    expect(odd).toContain('aria-current="page">30 days');
+    expect(odd).toContain(">All <b>3</b>");
+  });
+
+  it("explains an empty list and 404s for an unknown profile", async () => {
+    expect(await sentPage(STATUS, null, "sam-lee", "7").text()).toContain("HermitShell sends the list");
+    expect(await sentPage(STATUS, { days: {} }, "sam-lee", "7").text()).toContain("No jobs were sent in this period.");
+    expect(sentPage(STATUS, sample(), "casey-quinn", "7").status).toBe(404);
+  });
+});
+
 describe("stats from HermitShell", () => {
   it("stores and removes a profile's stats and shows them behind the dashboard's Stats link", async () => {
     const { env, get } = await setup();
@@ -133,9 +184,15 @@ describe("stats from HermitShell", () => {
     expect(JSON.parse(env.FEEDBACK.store.get("stats:owner")).updated).toBeGreaterThan(0);
     const dashboard = (await get("/admin")).body;
     expect(dashboard).toContain('href="/admin/stats?u=owner"');
-    expect(dashboard).toMatch(/<b>6<\/b> sent<\/a>/);
+    expect(dashboard).toMatch(/<a class="statlink" href="\/admin\/sent\?u=owner&amp;r=7"[^>]*><b>6<\/b> sent<\/a>/);
+    expect(dashboard).toMatch(/<a class="statlink" href="\/admin\/stats\?u=owner"[^>]*><svg class="mini"/);
     expect(dashboard).toContain('href="/admin/stats?u=sam-lee"');
-    expect((await get("/admin/stats?u=owner&r=7")).body).toContain("Your stats");
+    expect(dashboard).not.toContain('href="/admin/sent?u=sam-lee');
+    const stats = (await get("/admin/stats?u=owner&r=7")).body;
+    expect(stats).toContain("Your stats");
+    expect(stats).toContain('href="/admin/sent?u=owner&amp;r=7"');
+    expect((await get("/admin/sent?u=owner&r=7")).body).toContain("Jobs sent to you");
+    expect((await get("/admin/sent?u=../owner")).res.status).toBe(404);
     expect((await get("/admin/profile?u=owner")).body).toContain('href="/admin/stats?u=owner"');
     expect((await putStats(env, { u: "owner", stats: null })).status).toBe(200);
     expect(keysWith(env, "stats:")).toEqual([]);
@@ -152,7 +209,8 @@ describe("stats from HermitShell", () => {
     expect(validStats(sample())).toBe(true);
     expect(validStats({ days: {} })).toBe(true);
     for (const bad of [null, [], "x", { days: [] }, { days: { yesterday: [1] } }, { days: { "2026-09-29": ["1"] } },
-      { days: { "2026-09-29": [Infinity] } }, { days: { "2026-09-29": new Array(41).fill(0) } }, { ranges: [] }, { pipeline: [] }]) {
+      { days: { "2026-09-29": [Infinity] } }, { days: { "2026-09-29": new Array(41).fill(0) } }, { ranges: [] }, { pipeline: [] },
+      { sent: {} }, { sent: [null] }, { sent: ["job"] }, { sent: new Array(201).fill({}) }]) {
       expect(validStats(bad)).toBe(false);
     }
   });
