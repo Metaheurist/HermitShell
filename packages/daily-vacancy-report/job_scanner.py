@@ -46,7 +46,7 @@ import hermes_common as hc
 from companies import LOGO_DIR, Companies
 from companies import norm as company_key
 from hermes_common import (BROWSER_HEADERS, EMAIL_HEAD, STATE_DIR, WebClient, connect_model, env,
-                           env_bool, env_int, first_sentences, gmail_dark_safe, html_to_text, inline_images,
+                           email_header, env_bool, env_int, first_sentences, html_to_text, inline_images,
                            load_env_file, log, ollama_chat)
 from indeed_mcp import IndeedMCP
 from job_extras import (below_min_salary, closing_date, combined_level, days_left, group_agency_posts,
@@ -879,13 +879,6 @@ def job_card(job: dict, rank: int) -> str:
 </td></tr></table>"""
 
 
-def stat_tile(value, label: str) -> str:
-    return (f'<td width="25%" align="center" style="padding:6px">'
-            f'<div style="background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px 6px">'
-            f'<div style="font-size:24px;font-weight:800;color:#ffffff">{value}</div>'
-            f'<div style="font-size:11px;color:#c7d2fe;text-transform:uppercase;letter-spacing:.06em">{label}</div></div></td>')
-
-
 def section(title: str, subtitle: str, jobs: list[dict], start: int) -> str:
     if not jobs:
         return ""
@@ -969,15 +962,9 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, pr
 <body class="body" style="margin:0;padding:0;background:{C_BG};font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:{C_BG}"><tr><td align="center" style="padding:24px 12px">
 <table width="680" cellpadding="0" cellspacing="0" style="max-width:680px;width:100%">
-<tr><td style="background:#1e1b4b;background-image:linear-gradient(135deg,#0f172a 0%,#312e81 55%,#6d28d9 100%);border-radius:20px;padding:30px 28px">{gmail_dark_safe(f'''
-  <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#a5b4fc;font-weight:700">Hermes &middot; {esc(CFG.region or 'Job radar')}</div>
-  <div style="font-size:30px;font-weight:800;color:#ffffff;margin:6px 0 4px">{esc(CFG.title)}</div>
-  <div style="font-size:15px;color:#e0e7ff;font-weight:600">{esc(CFG.tagline)}</div>
-  <div style="font-size:13px;color:#c7d2fe;margin-top:4px">{esc(stats['when'])}</div>
-  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px"><tr>
-    {stat_tile(stats['shown'], 'Matches')}{stat_tile(stats['strong'], 'Fit 7+')}{stat_tile(stats['avg_fit'], 'Avg fit')}{stat_tile(stats['scanned'], 'Scanned')}
-  </tr></table>''')}
-</td></tr>
+{email_header(CFG.region or "Job radar", stats['when'], CFG.title, CFG.tagline,
+              [(stats['shown'], "Matches"), (stats['strong'], "Strong fits (7+)"),
+               (stats['avg_fit'], "Average fit"), (stats['scanned'], "Jobs scanned")], highlight=1)}
 <tr><td>
   {source_banner(problems or [])}
   {summary_block}

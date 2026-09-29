@@ -8,6 +8,7 @@ variables or $HERMES_HOME/.env; see docs/configuration.md.
 
 from __future__ import annotations
 
+import html
 import json
 import os
 import re
@@ -414,6 +415,32 @@ u + .body .gmail-difference { background:#000000; mix-blend-mode:difference; }
 def gmail_dark_safe(inner_html: str) -> str:
     """Wrap light-on-dark content (e.g. a gradient header) so it stays readable in Gmail dark mode."""
     return f'<div class="gmail-screen"><div class="gmail-difference">{inner_html}</div></div>'
+
+
+def email_header(eyebrow: str, meta: str, title: str, subtitle: str, stats: list[tuple[object, str]],
+                 highlight: int | None = None) -> str:
+    """Report header row: eyebrow and date, title, subtitle, then figures split by hairlines (plain text in)."""
+    def esc(text: object) -> str:
+        return html.escape(str(text), quote=True)
+
+    cells = "".join(
+        f'<td valign="top" width="{100 // len(stats)}%" style="padding-top:18px">'
+        f'<div style="{"border-left:1px solid #334155;padding-left:18px" if i else ""}">'
+        f'<div style="font-size:26px;line-height:32px;font-weight:700;letter-spacing:-.01em;'
+        f'color:{"#6ee7b7" if i == highlight else "#f8fafc"}">{esc(value)}</div>'
+        f'<div style="font-size:12px;line-height:18px;color:#94a3b8;margin-top:2px">{esc(label)}</div></div></td>'
+        for i, (value, label) in enumerate(stats))
+    inner = (
+        f'<table width="100%" cellpadding="0" cellspacing="0"><tr>'
+        f'<td style="font-size:13px;line-height:20px;font-weight:600;color:#a5b4fc">{esc(eyebrow)}</td>'
+        f'<td align="right" style="font-size:13px;line-height:20px;color:#94a3b8">{esc(meta)}</td></tr></table>'
+        f'<div style="font-size:28px;line-height:34px;font-weight:700;letter-spacing:-.02em;color:#f8fafc;'
+        f'margin-top:14px">{esc(title)}</div>'
+        f'<div style="font-size:15px;line-height:22px;color:#cbd5e1;margin-top:4px">{esc(subtitle)}</div>'
+        f'<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:22px;border-top:1px solid #334155">'
+        f'<tr>{cells}</tr></table>')
+    return (f'<tr><td style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:26px 28px 24px">'
+            f'{gmail_dark_safe(inner)}</td></tr>')
 
 
 # Gmail clips HTML over 102 KB ("[Message clipped]"), drops a whole <style> block over 8,192

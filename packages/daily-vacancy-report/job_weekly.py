@@ -15,7 +15,7 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from hermes_common import EMAIL_HEAD, gmail_dark_safe
+from hermes_common import EMAIL_HEAD, email_header
 from job_tracker import ACTIONS
 
 C_BG, C_CARD, C_INK, C_MUTED, C_ACCENT = "#eef1f7", "#ffffff", "#0f172a", "#64748b", "#4f46e5"
@@ -133,13 +133,6 @@ def followup_text(items: list[dict]) -> str:
 
 # --------------------------------------------------------------------------- weekly roll-up
 
-def _tile(value, label: str) -> str:
-    return (f'<td width="25%" align="center" style="padding:6px">'
-            f'<div style="background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px 6px">'
-            f'<div style="font-size:24px;font-weight:800;color:#ffffff">{value}</div>'
-            f'<div style="font-size:11px;color:#c7d2fe;text-transform:uppercase;letter-spacing:.06em">{label}</div></div></td>')
-
-
 def _card(title: str, body: str) -> str:
     return (f'<table width="100%" cellpadding="0" cellspacing="0" style="background:{C_CARD};border:1px solid #e2e8f0;'
             f'border-radius:16px;margin:18px 0 0"><tr><td style="padding:18px 22px">'
@@ -235,15 +228,9 @@ def build_weekly(data: dict, when: str, title: str, eyebrow: str, now: float) ->
 <body class="body" style="margin:0;padding:0;background:{C_BG};font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:{C_BG}"><tr><td align="center" style="padding:24px 12px">
 <table width="680" cellpadding="0" cellspacing="0" style="max-width:680px;width:100%">
-<tr><td style="background:#1e1b4b;background-image:linear-gradient(135deg,#0f172a 0%,#312e81 55%,#6d28d9 100%);border-radius:20px;padding:30px 28px">{gmail_dark_safe(f'''
-  <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#a5b4fc;font-weight:700">{esc(eyebrow)}</div>
-  <div style="font-size:30px;font-weight:800;color:#ffffff;margin:6px 0 4px">Your week in jobs</div>
-  <div style="font-size:15px;color:#e0e7ff;font-weight:600">{esc(title)} weekly roll-up</div>
-  <div style="font-size:13px;color:#c7d2fe;margin-top:4px">{esc(when)}</div>
-  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px"><tr>
-    {_tile(s['rated'], 'Rated')}{_tile(s['emailed'], 'Emailed')}{_tile(s['avg_fit'], 'Avg fit')}{_tile(s['applied_week'], 'Applied')}
-  </tr></table>''')}
-</td></tr>
+{email_header(eyebrow, when, "Your week in jobs", f"{title} weekly roll-up",
+              [(s['rated'], "Jobs rated"), (s['emailed'], "Emailed to you"), (s['avg_fit'], "Average fit"),
+               (s['applied_week'], "Applications")], highlight=3)}
 <tr><td>
   {_card("Best of the week", f'<table width="100%" cellpadding="0" cellspacing="0">{top}</table>')}
   {_card("Applications", f'<table width="100%" cellpadding="0" cellspacing="0">{apps}</table>'

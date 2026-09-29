@@ -30,6 +30,10 @@ using [Semantic Versioning](https://semver.org/).
   rewritten, and failed requests are retried up to 3 times. Settings:
   `COVER_LETTER_NAME`, `COVER_LETTER_CONTACT`, `COVER_LETTER_CV_FILE`, `COVER_LETTER_SIGN_OFF`,
   `COVER_LETTER_FROM_NAME` and `COVER_LETTER_MODEL`. `send_email()` now takes attachments.
+- **Cleaner report header.** The daily report and weekly roll-up share a new
+  `hermes_common.email_header()`: a solid slate panel with the region and date on one line, the
+  title and tagline, and the figures in a row split by hairlines (the key figure in green),
+  replacing the purple gradient and frosted tiles.
 - **Salary headline on job cards.** When a listing gives a salary it now appears under the
   company line in a green box with a banknote icon (`icons/icon-salary.png`), formatted from the
   parsed range, e.g. "£45,000 - £55,000 a year"; day and hourly rates add a yearly estimate. The

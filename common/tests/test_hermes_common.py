@@ -136,6 +136,15 @@ def test_html_to_text_keeps_structure_and_drops_scripts():
     assert hc.html_to_text(page) == "## Title\n\nHello world\n\n- first\n- second"
 
 
+def test_email_header_escapes_text_and_highlights_one_figure():
+    header = hc.email_header("Belfast & NI", "Monday", "Daily <Report>", "Roles", [(8, "Matches"), ("6.2", "Fit")],
+                             highlight=1)
+    assert header.startswith("<tr><td") and header.endswith("</td></tr>") and 'class="gmail-screen"' in header
+    assert "Belfast &amp; NI" in header and "Daily &lt;Report&gt;" in header and "gradient" not in header
+    assert header.count('width="50%"') == 2 and header.count("#6ee7b7") == 1
+    assert header.index("#6ee7b7") > header.index(">8<")
+
+
 def test_gmail_dark_safe_wraps_content_in_blend_layers():
     wrapped = hc.gmail_dark_safe("<b>hi</b>")
     assert wrapped.startswith('<div class="gmail-screen"><div class="gmail-difference">')
