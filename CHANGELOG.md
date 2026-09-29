@@ -8,6 +8,14 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A tidier Crawler column, with an Add key window.**
+  - A profile's row shows its crawler key only when it has one: the provider (Firecrawl or Tavily) and
+    the start and end of the key. The owner's row shows the global key, tagged **global**.
+  - Without a key, **Add key** opens a window, CSS only with no JavaScript, to pick Firecrawl or Tavily
+    and paste the key. **Change** and **Remove** replace the key or go back to the global keys.
+  - A profile's own key can now be a Tavily key. It's saved with its provider in the profile's
+    `secrets.json`; the older Firecrawl-only file still works.
+  - The status HermitShell sends has a new `provider` field for each profile.
 - **A stats page for every profile.**
   - A **Stats** button on each dashboard row, showing this week's jobs sent as a small line and a number,
     and on each profile's page, opens `/admin/stats`. It covers the last 7 days, 30 days, 90 days or 12
@@ -368,6 +376,8 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- A profile with its own crawler key now searches with only that key. Before, it could still fall back
+  to the global Tavily and Scrapfly keys and spend their credits.
 - Vacancy report cards show the three strongest matching skills in bold (the rest as one line),
   the biggest gap, "Salary not listed" when there's no salary, and the closing date.
 - `JOB_SCANNER_MAX_SCRAPE` now defaults to 25 (was 15).
@@ -386,6 +396,9 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Two dashboard changes saved in the same millisecond could reach HermitShell in the wrong order,
+  because the queue sorted them by a random id. The Worker now gives each change a later time than the
+  one before.
 - Jobs whose rating failed (model timeout or bad JSON) were marked as seen and never shown. They
   are now retried on the following runs, up to 4 attempts (`state/job_scanner_retry.json`).
   Only jobs that were rated or definitely ruled out are marked as seen.

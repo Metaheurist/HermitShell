@@ -26,8 +26,9 @@ One daily report uses about 20 to 40 Firecrawl credits: 4 searches plus up to
 data, company home pages) cost nothing. So one person's daily report fits in Firecrawl's free
 1,000 credits a month, and Tavily covers the days it runs out.
 
-For extra profiles, either give each person their own Firecrawl key (on `/admin`, in their row
-under **Crawler**; each person can make a free account), or add several global Firecrawl keys
+For extra profiles, either give each person their own Firecrawl or Tavily key (on `/admin`, **Add
+key** in their row under **Crawler**; each person can make a free account, and their searches then use
+only that key), or add several global Firecrawl keys
 separated by commas: HermitShell moves to the next key when one runs low. The footer of every report
 shows the credits each provider used.
 

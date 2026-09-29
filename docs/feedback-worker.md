@@ -365,8 +365,11 @@ whole tool shares).
   and CV) and **Stats** its [stats page](#stats). Pause, resume or delete
   (deleting removes their CV and history from your server, their answers still waiting in KV and
   their name and email from the logs; the owner can't be deleted).
-- **Crawler**: give a profile its own Firecrawl key (it then uses only that key), or leave it on
-  the global keys.
+- **Crawler**: a profile with its own key shows the provider and the start and end of the key; the
+  owner's row shows the global key. Without a key, **Add key** opens a window (CSS only, no
+  JavaScript) to pick Firecrawl or Tavily and paste the key. A profile with its own key searches with
+  only that key, so it never spends the global credits; **Remove** takes it back to the global keys.
+  Scrapfly isn't offered there because it can't search on its own.
 - **Invites**: create, see and revoke unused links.
 
 #### Global settings

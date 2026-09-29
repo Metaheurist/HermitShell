@@ -296,14 +296,17 @@ deleted ([data protection](configuration.md#data-protection)).
 | **Send jobs now** | Runs that profile's report straight away and emails it when the scan finishes, even if nothing new turned up. Shows **Scanning…** while a report runs; missing without a CV |
 | **Manage** | Opens [that profile's page](#a-profiles-page): details, job search, report time and CV |
 | **Stats** (line + number) | This week's jobs sent, day by day; opens [that profile's stats](#a-profiles-stats) |
-| Crawler: **Their Firecrawl key** + **Save** | Gives that profile its own Firecrawl key, used instead of the global one |
-| **Use global key** | Takes a profile back to the global key |
+| Crawler, with a key | The provider (Firecrawl or Tavily) and the start and end of the key, never the whole key. The owner's row shows the global key, tagged **global** |
+| Crawler: **Add key** | Only when the profile has no key: opens a window to pick Firecrawl or Tavily and paste the key. That profile then searches with only its own key. On the owner's row it sets the global key |
+| **Change** / **Remove** | Opens the same window to replace the key, or takes the profile back to the global keys. On the owner's row, **Change** opens [Global settings](#global-settings) |
 | **Pause** / **Resume** | Stops or restarts that profile's reports |
 | **Delete** (with the tick box) | Deletes an extra profile's CV and history from your server. The owner can't be deleted |
 | **Profiles** / **Global settings** tabs | Switch between the profiles and the [settings shared by the whole tool](#global-settings) |
 | Invite someone + **Create invite link** | Makes a one-time `/join` link; the note is only for you |
 | **Revoke** | Cancels an unused invite |
 | **Sign out** | Ends every admin session |
+
+<img src="images/worker/admin-key-modal.png" alt="The Add key window: Firecrawl or Tavily, and the API key" width="620">
 
 <table>
 <tr><th>Right after setup: the checklist</th><th>Before HermitShell has reported</th><th>New invite link</th></tr>

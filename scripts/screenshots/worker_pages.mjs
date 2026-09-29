@@ -113,16 +113,16 @@ const JOB = { titles: ["Data Engineer", "Analytics Engineer", "Python Developer"
 const STATUS = {
   profiles: [
     { id: "owner", name: "Alex Morgan", email: "alex.morgan@example.com", status: "active", owner: true, crawler: "global",
-      has_cv: true, created: now - 60 * day, last_run: now - 3 * 3600000, cv_updated: now - 20 * day,
+      provider: "firecrawl", key_hint: "fc-...41b7", has_cv: true, created: now - 60 * day, last_run: now - 3 * 3600000, cv_updated: now - 20 * day,
       details: { name: "Alex Morgan", email: "alex.morgan@example.com", phone: "07700 900123", location: "Salford" }, job: JOB,
       report: { time: "08:00", days: "daily", schedule: "0 8 * * *", hermes_job: true, pending: false } },
-    { id: "sam-lee", name: "Sam Lee", email: "sam.lee@example.com", status: "active", crawler: "own", key_hint: "fc-...9d2a",
+    { id: "sam-lee", name: "Sam Lee", email: "sam.lee@example.com", status: "active", crawler: "own", provider: "tavily", key_hint: "tvl...9d2a",
       has_cv: true, created: now - 12 * day, last_run: now - 3 * 3600000, scanning: now - 4 * 60000,
       details: { name: "Sam Lee", email: "sam.lee@example.com", phone: "", location: "York" },
       job: { ...JOB, titles: ["Data Analyst", "BI Developer"], region: "North Yorkshire", places: ["York", "Harrogate"] },
       report: { time: "08:15", days: "weekdays", schedule: "15 8 * * 1-5", hermes_job: true, pending: false } },
     { id: "jordan-patel", name: "Jordan Patel", email: "jordan.patel@example.net", status: "paused", crawler: "global",
-      has_cv: true, created: now - 30 * day, last_run: now - 9 * day,
+      provider: "", key_hint: "", has_cv: true, created: now - 30 * day, last_run: now - 9 * day,
       details: { name: "Jordan Patel", email: "jordan.patel@example.net", phone: "", location: "Leeds" }, job: JOB,
       report: { time: "08:30", days: "daily", schedule: "30 8 * * *", hermes_job: true, pending: false } },
   ],
@@ -198,6 +198,9 @@ await call("/api/invite", { method: "POST", headers: { Authorization: `Bearer ${
 await save("admin-invite-link", await admin("/admin/action", { method: "POST", form: { csrf, action: "invite", note: "Casey from the course" } }));
 await admin("/admin/action", { method: "POST", form: { csrf, action: "resume", u: "jordan-patel" } });
 await save("admin-dashboard", await admin("/admin?done=queued"));
+// Opened as a file, the page cannot be given the #key-jordan-patel fragment that opens its key modal.
+const withModal = (await (await admin("/admin")).text()).replace("</head>", "<style>#key-jordan-patel{display:grid}</style></head>");
+await save("admin-key-modal", new Response(withModal));
 await save("admin-profile", await framed(await admin("/admin/profile?u=owner"), admin));
 await save("admin-profile-scanning", await framed(await admin("/admin/profile?u=sam-lee"), admin));
 await save("admin-settings", await admin("/admin/settings"));
@@ -207,7 +210,7 @@ await save("admin-stats-new-profile", await admin("/admin/stats?u=sam-lee&r=7"))
 await save("admin-stats-empty", await admin("/admin/stats?u=jordan-patel"));
 
 // A fresh install: HermitShell has connected, nothing else is set yet.
-const fresh = { ...STATUS, profiles: [{ ...STATUS.profiles[0], has_cv: false, job: { ...JOB, titles: [], region: "", places: [] } }],
+const fresh = { ...STATUS, profiles: [{ ...STATUS.profiles[0], provider: "", key_hint: "", has_cv: false, job: { ...JOB, titles: [], region: "", places: [] } }],
   email: { host: "smtp.gmail.com", port: "587", user: "", from: "", password_set: false, source: "none", last_test: null },
   keys: { firecrawl: { source: "none", hint: "" }, tavily: { source: "none", hint: "" }, scrapfly: { source: "none", hint: "" } },
   problems: [{ at: now - 600000, what: "email", error: "invalid email server settings" }] };

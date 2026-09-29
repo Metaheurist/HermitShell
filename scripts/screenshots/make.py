@@ -375,8 +375,11 @@ def main() -> int:
                 760, 1100)
         for html in sorted((html_dir / "worker").glob("*.html")):
             capture(chrome, profile, html, args.out / "worker" / f"{html.stem}.png",
-                    1000 if html.stem.startswith(("admin-dashboard", "admin-profile", "admin-settings", "admin-stats")) else
-                    760 if html.stem == "privacy" else 600)
+                    1000 if html.stem.startswith(("admin-dashboard", "admin-profile", "admin-settings", "admin-stats",
+                                                  "admin-key")) else
+                    760 if html.stem == "privacy" else 600,
+                    # A modal covers the whole window, so the page cannot be trimmed to its content.
+                    720 if html.stem == "admin-key-modal" else None)
             print(f"worker/{html.stem}.png")
     return 0
 
