@@ -32,10 +32,47 @@ The first host that responds and has one of the candidate models is used.
 
 Every model request, from every script and every profile, joins one shared queue, so extra
 profiles, cover letters and sign-ups never pile up on Ollama at the same time. Requests run one at
-a time (`HERMES_MODEL_CONCURRENCY`) in arrival order, except that ones a person is waiting for
+a time per Ollama instance (`HERMES_MODEL_CONCURRENCY`) in arrival order, except that ones a person is waiting for
 (cover letters, tailored CVs, new profiles) go ahead of background job ratings. A running request
 is never interrupted, and a crashed script's place in the queue is freed automatically. Runs that
 had to wait log `Waited 42s for the model (shared queue)`.
+
+### Autofit: GPU, CPU and context chosen for you
+
+`autofit.py` picks where and how each model request runs, and keeps adjusting as it learns.
+It's on by default (`HERMES_AUTOFIT=off` turns it off and sends Hermes' settings unchanged).
+
+- **Hardware.** It knows the machine's CPU cores and threads, memory and GPUs (NVIDIA and AMD).
+  In Docker the scripts can't see the host's GPUs, so the
+  [host watchdog](installation.md#use-the-gpu) reports them in `state/hardware.json` every 2 minutes.
+- **Context that fits the GPU.** A job rating needs a few thousand tokens, not Hermes' full chat
+  context. Each request gets the smallest of 8k, 16k, 32k or 64k tokens that holds it. Autofit
+  then learns from Ollama how much memory the model takes at each size and how much of it fits on
+  the GPU. It keeps Hermes' own context when that fits too, so Ollama doesn't reload the model.
+  On a 4 GB card this moves a 4B model from mostly CPU to about 94% GPU, roughly twice as fast.
+- **All cores.** Ollama uses one thread per physical core by default. When the model runs mostly
+  on the CPU and the CPU has hyper-threading, autofit times both settings on real requests
+  and keeps the faster one.
+- **Several Ollama servers.** List extra ones in `OLLAMA_HOSTS` (the wizard does this for you when a
+  machine has more than one GPU). Each gets its own queue slot, so job ratings run in parallel and
+  are still listed in order. A server that fails rests for 30 seconds, then longer each time it
+  fails again, up to an hour. A server more than 4 times slower than the fastest is benched (a CPU
+  next to a GPU, for example), and tried again after an hour.
+- **Watchdog.** When Ollama runs out of memory, autofit steps down one level: a smaller context,
+  then fewer layers on the GPU, then CPU only. After 30 minutes and 5 good requests it steps back
+  up one level. When memory is low it uses the smallest context. When the host watchdog sees that
+  Ollama has lost the GPU, it restarts the container and autofit stops counting on the GPU until
+  it's back.
+
+See what it chose, and check it against real loads:
+
+```sh
+docker exec -u hermes -w /opt/data/scripts hermes-agent python3 autofit.py              # what it knows
+docker exec -u hermes -w /opt/data/scripts hermes-agent python3 autofit.py --calibrate  # load each size once
+```
+
+`doctor.py` also says where the model runs, for example `qwen3:4b: loaded at 8192 context, 94% on
+the GPU, the rest on the CPU`, and warns when a machine with a GPU runs the model on the CPU.
 
 ## Shared settings
 
@@ -55,7 +92,10 @@ Full template: [`.env.example`](../.env.example).
 | `WEB_SCRAPE_ORDER` | `firecrawl,scrapfly,tavily` | Scrape provider priority |
 | `SCRAPFLY_COUNTRY` | none | Scrapfly proxy country (two-letter code) for geo-blocked sites |
 | `OLLAMA_HOST` / `OLLAMA_FALLBACK_HOST` / `OLLAMA_MODEL` | see above | Model fallbacks |
-| `HERMES_MODEL_CONCURRENCY` | `1` | Model requests allowed at once across all scripts and profiles; the rest queue |
+| `HERMES_MODEL_CONCURRENCY` | `auto` | Model requests allowed at once across all scripts and profiles; the rest queue. `auto` = one per working Ollama instance |
+| `OLLAMA_HOSTS` | none | Extra Ollama servers, comma-separated (`http://ollama-gpu1:11435`). Only `http(s)://host:port`, no logins or paths |
+| `HERMES_AUTOFIT` | `auto` | `off` sends Hermes' model settings unchanged, with no context, GPU or thread tuning. See [Autofit](#autofit-gpu-cpu-and-context-chosen-for-you) |
+| `HERMES_AUTOFIT_THREADS` | automatic | Fixed CPU threads per model request (`num_thread`), instead of timing both settings |
 | `HERMES_TIMEZONE` | `UTC` | IANA timezone for dates shown in emails |
 | `HERMES_STATE_DIR` | `<scripts>/state` | Seen-state, caches and last reports |
 | `HERMES_HOME` | parent of the scripts directory | Where `.env` and `config.yaml` are read from. Environment only |

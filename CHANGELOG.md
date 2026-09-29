@@ -8,6 +8,32 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Autofit: the model runs where it's fastest.** A new `autofit.py` sizes each model request to
+  the machine. It uses the smallest context that holds the request (8k to 64k tokens). It learns
+  from Ollama how much of the model fits on the GPU at each size, so a 4 GB card runs a 4B model
+  about 94% on the GPU instead of mostly on the CPU, roughly twice as fast. When the model runs on
+  the CPU, it times one thread per core against every thread and keeps the faster setting. A
+  watchdog steps down when Ollama runs out of memory (smaller context, then fewer GPU layers, then
+  CPU only) and steps back up after 30 minutes of good requests. `python3 autofit.py` shows what it
+  chose; `--calibrate` loads each size once to measure it. `HERMES_AUTOFIT=off` turns it off. See
+  [configuration.md](docs/configuration.md#autofit-gpu-cpu-and-context-chosen-for-you).
+- **Several Ollama servers at once.** Extra servers in `OLLAMA_HOSTS` each get a slot in the shared
+  queue, and job ratings run in parallel across them, still listed in order.
+  `HERMES_MODEL_CONCURRENCY=auto` (the new default) allows one request per working server. A failing
+  server rests, for longer each time it fails again. A server more than 4 times slower than the fastest
+  is benched and retried after an hour.
+- **A host watchdog for the GPU.** `scripts/host/install-watchdog.sh` adds a systemd timer that runs
+  every 2 minutes as root. It reports the CPU, memory and GPUs to autofit, since the scripts' container
+  can't see them. It also restarts an Ollama container that has lost its GPU, which happens silently
+  after a `systemctl daemon-reload`, at most once every 20 minutes and 6 times a day. See
+  [installation.md](docs/installation.md#use-the-gpu).
+- **The wizard uses every GPU.** It detects NVIDIA and AMD GPUs and adds the NVIDIA device nodes. AMD
+  gets the ROCm image. With several GPUs it offers one Ollama per GPU. It turns on flash attention and
+  a q8_0 KV cache, warns when an existing Ollama container can't see the GPU, and calibrates autofit
+  after the model is downloaded.
+- **`doctor.py` says where the model runs** ("loaded at 8192 context, 94% on the GPU, the rest on the
+  CPU") and warns when a machine with a GPU runs the model on the CPU.
+
 - **A task list on the dashboard, with Stop and Cancel.** A **Tasks** button next to the search has a
   spinning ring while something runs and the number of tasks in its corner. It opens a window, CSS
   only with no JavaScript, listing everything HermitShell is doing or has waiting: daily reports and
@@ -392,6 +418,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Job ratings no longer use Hermes' full chat context.** A rating gets the context it needs, so
+  Ollama keeps more of the model on the GPU. Hermes' own context is still used when it fits as well.
+- **`HERMES_MODEL_CONCURRENCY` defaults to `auto`**: one request at a time per working Ollama
+  server, which is still one at a time with a single server.
 - **The dashboard's status line counts waiting changes** ("Waiting for HermitShell: 2 changes") and opens
   the task list, instead of listing each one.
 - **Shorter email footers.**

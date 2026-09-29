@@ -101,6 +101,7 @@ it by hand with wrangler or the Cloudflare MCP.
 
 ```
 common/hermes_common.py    shared plumbing: .env loading, model discovery, web providers, SMTP, encryption
+common/autofit.py          picks GPU or CPU, context size, threads and Ollama server per model request
 common/doctor.py           checks and sets up prerequisites: packages, Ollama and its model, data key
 common/tests/              unit tests for the shared library and the doctor
 packages/daily-vacancy-report/
@@ -112,6 +113,7 @@ scripts/cloudflare_worker.py
                            deploys or updates the Worker with a Cloudflare API token
 scripts/tests/             unit tests for the wizard, the Worker deploy and the .env.example files
 scripts/install.sh         copies common + the package flat into $HERMES_HOME/scripts
+scripts/host/              Docker host watchdog (systemd): reports the GPUs, restarts an Ollama that lost one
 scripts/screenshots/       regenerates the documentation screenshots from fictional data
 tests/security/            security tests: hostile input, encryption, backups, file permissions
 requirements.txt           run-time Python packages (requirements-dev.txt adds the test tools)
@@ -128,9 +130,13 @@ script from `$HERMES_HOME/scripts`.
 
 - **Uses Hermes' own model.** Reads `model.default`, `model.base_url` and `ollama_num_ctx` from
   `$HERMES_HOME/config.yaml`, with an override for the job finder.
+- **Fits the model to the machine.** Autofit gives each request the context it needs, keeps as
+  much of the model on the GPU as fits, uses every CPU thread when that's faster, and spreads job
+  ratings over every Ollama server. It steps down when memory runs out and back up when it's safe.
+  See [docs/configuration.md](docs/configuration.md#autofit-gpu-cpu-and-context-chosen-for-you).
 - **One model queue for everyone.** Every profile's ratings, cover letters, tailored CVs and
-  sign-ups share one queue, so the model gets one request at a time however many people you run
-  it for, with requests someone is waiting on served first.
+  sign-ups share one queue, so each Ollama server gets one request at a time however many people
+  you run it for, with requests someone is waiting on served first.
 - **Web provider failover.** Firecrawl comes first (with extra backup keys when credits run
   low), then Tavily and Scrapfly. See [docs/web-providers.md](docs/web-providers.md).
 - **Email that survives Gmail.** Table layout, inline CSS, PNG icons sent as inline attachments,

@@ -39,9 +39,12 @@ Without a token, or with `--advanced`, the wizard asks everything itself, in thi
 2. **Prerequisites.** Runs [`doctor.py --fix`](#3-check-the-prerequisites) in Hermes' own Python to
    install any missing packages. If no Ollama server answers and Hermes runs in Docker, it offers to
    start an `ollama/ollama` container on the Hermes container's network (reusing an existing
-   `ollama` container, using the GPU when `nvidia-smi` is present, and putting Hermes on a
-   `hermes-net` network if it's only on Docker's default bridge) and sets `OLLAMA_HOST`. Then it
-   asks which model to use and downloads it, showing progress. `--no-prereqs` skips this step.
+   `ollama` container, and putting Hermes on a `hermes-net` network if it's only on Docker's default
+   bridge) and sets `OLLAMA_HOST`. It gives Ollama every GPU it finds ([details](#use-the-gpu)):
+   NVIDIA with its device nodes, AMD with the ROCm image, and one Ollama per GPU when there are
+   several. It warns when an existing `ollama` container can't see the GPU. Then it
+   asks which model to use and downloads it, showing progress, and runs `autofit.py --calibrate`
+   to measure how much of the model fits on the GPU. `--no-prereqs` skips this step.
 3. **Shared settings.** SMTP server, login and recipient, then Firecrawl (plus backup keys),
    Tavily and Scrapfly API keys, and your timezone. Leave empty any key you don't have
    ([how to get each one, and the free limits](api-keys.md)). Secrets
@@ -147,7 +150,7 @@ HERMES_HOME=/opt/data ./scripts/install.sh daily-vacancy-report
 
 The installer does the following:
 
-- Copies `common/hermes_common.py` and `common/doctor.py` plus the job finder's scripts, example
+- Copies `common/hermes_common.py`, `common/autofit.py` and `common/doctor.py` plus the job finder's scripts, example
   files and icons flat into `$HERMES_HOME/scripts`.
 - Renames the package's `.env.example` to `daily-vacancy-report.env.example`, so it doesn't
   collide with the shared one.
@@ -164,7 +167,7 @@ sudo HERMES_OWNER=10000:10000 HERMES_HOME=/path/to/hermes/data ./scripts/install
 
 Copy these files into the scripts directory yourself:
 
-- `common/hermes_common.py` and `common/doctor.py`
+- `common/hermes_common.py`, `common/autofit.py` and `common/doctor.py`
 - Everything in `packages/daily-vacancy-report/` except the README, `tests/` and `feedback-worker/`.
   From `icons/` only the PNGs are needed at runtime.
 
@@ -198,6 +201,41 @@ docker run -d --name ollama --restart unless-stopped --network <hermes network> 
 
 `docker inspect hermes-agent --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'`
 shows the network name. The scripts find it at `http://ollama:11434` (`OLLAMA_HOST`).
+
+#### Use the GPU
+
+Ollama only uses a GPU that its container can see. The wizard sets this up for you. By hand:
+
+- **NVIDIA** (needs the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)):
+  add `--gpus all` and the device nodes, so a `systemctl daemon-reload` on the host can't silently
+  take the GPU away from the running container (Ollama then falls back to the CPU without saying so):
+
+  ```sh
+  docker run -d --name ollama --restart unless-stopped --network <hermes network> --gpus all \
+      --device /dev/nvidia0 --device /dev/nvidiactl --device /dev/nvidia-uvm --device /dev/nvidia-uvm-tools \
+      -e OLLAMA_FLASH_ATTENTION=1 -e OLLAMA_KV_CACHE_TYPE=q8_0 -v ollama:/root/.ollama ollama/ollama
+  ```
+
+  In Docker Compose, list the same paths under the service's `devices:`, next to
+  `deploy.resources.reservations.devices` with `driver: nvidia`.
+- **AMD**: use the `ollama/ollama:rocm` image with `--device /dev/kfd --device /dev/dri`.
+- **More than one GPU**: the wizard offers one Ollama per GPU (`ollama-gpu1` on port 11435, and so
+  on) and lists them in `OLLAMA_HOSTS`, so job ratings run on all of them at once.
+
+Then install the host watchdog. It runs every 2 minutes as root, reports the CPU, memory and GPUs to
+[autofit](configuration.md#autofit-gpu-cpu-and-context-chosen-for-you), and restarts an Ollama
+container that has lost its GPU. It restarts a container at most once every 20 minutes and 6 times a day:
+
+```sh
+sudo sh scripts/host/install-watchdog.sh /opt/hermitshell
+journalctl -u hermes-ollama-watchdog -n 20
+```
+
+The folder must be owned by root and not mounted into any container. Settings (container names,
+restart limits) go in `/etc/default/hermes-ollama-watchdog`; the list is at the top of
+[`ollama-watchdog.sh`](../scripts/host/ollama-watchdog.sh).
+
+Check where the model runs with `docker exec ollama nvidia-smi -L` and `python3 doctor.py`.
 
 ### 4. Configure
 
