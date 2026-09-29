@@ -4,7 +4,7 @@
 // and hovering a bar shows its numbers through the SVG <title>.
 
 import { DOC_STYLE, docActions, jobHash, validJobKey } from "./docs.js";
-import { BACK_TO_PROFILES, EXTERNAL_ICON, ago, esc, page } from "./lib.js";
+import { BACK_TO_RECRUITS, EXTERNAL_ICON, ago, esc, page } from "./lib.js";
 
 export const STATS_URL = "/admin/stats";
 export const SENT_URL = "/admin/sent";
@@ -433,18 +433,18 @@ const SENT_NOTES = {
 // made or sent).
 export async function sentPage(status, stats, pid, opts = {}) {
   const p = (status.profiles || []).find((x) => x.id === pid);
-  const back = { wide: true, before: BACK_TO_PROFILES };
-  if (!p) return page("Profile not found", '<p>HermitShell has not reported this profile. <a href="/admin">Back to profiles</a></p>', { status: 404 });
+  const back = { wide: true, before: BACK_TO_RECRUITS };
+  if (!p) return page("Recruit not found", '<p>HermitShell has not reported this recruit. <a href="/admin">Back to recruits</a></p>', { status: 404 });
   const range = SENT_RANGES[opts.range] ? Number(opts.range) : DEFAULT_RANGE;
   const answer = opts.answer === "none" || ANSWER_LABELS[opts.answer] ? opts.answer : "";
-  const heading = p.owner ? "Jobs sent to you" : `Jobs sent to ${p.name || "this profile"}`;
-  const links = `<a class="small" href="${STATS_URL}?u=${esc(pid)}">Stats</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage profile</a>`;
+  const heading = p.owner ? "Jobs sent to you" : `Jobs sent to ${p.name || "this recruit"}`;
+  const links = `<a class="small" href="${STATS_URL}?u=${esc(pid)}">Stats</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage recruit</a>`;
   const today = zonedToday(status.timezone);
   const first = dayList(today, range)[0];
   const inRange = sentJobs(Array.isArray(opts.sent) ? { sent: opts.sent } : stats).filter((j) => j.day >= first);
   const shown = inRange.filter((j) => !answer || (answer === "none" ? !ANSWER_LABELS[j.answer] : j.answer === answer));
   const open = /^[0-9a-f]{16}$/.test(opts.open || "") ? opts.open : "";
-  const recipient = p.owner ? "you" : cut(String(p.name || "").trim().split(/\s+/)[0], 40) || "this profile";
+  const recipient = p.owner ? "you" : cut(String(p.name || "").trim().split(/\s+/)[0], 40) || "this recruit";
   const ctx = { profile: pid, csrf: opts.csrf || "", docs: opts.docs || [], emailed: opts.emailed || [], recipient,
     pending: opts.pending || new Set(), today, open, back: `r=${range}${answer ? `&a=${answer}` : ""}` };
   const rows = await Promise.all(shown.map((j, i) => sentRow(j, i, ctx)));
@@ -465,17 +465,17 @@ export async function sentPage(status, stats, pid, opts = {}) {
 <div class="statbar">${sentTabs(pid, range, answer)}<span class="muted">${updated}${links}</span></div>
 ${inRange.length ? answerFilter(pid, range, answer, inRange) : ""}${body}
 <p class="muted small">Press a job for everything its email showed, the advert, and its cover letter and tailored CV. Letters and CVs made from
-here are kept to download for a few days and are not emailed; &ldquo;Email&rdquo; sends the job itself to ${p.owner ? "you" : "the profile"}, as its report card.
+here are kept to download for a few days and are not emailed; &ldquo;Email&rdquo; sends the job itself to ${p.owner ? "you" : "the recruit"}, as its report card.
 Notes typed on the buttons are never shown here.</p>`, { ...back, refresh: waiting ? 15 : 0 });
 }
 
 export function statsPage(status, stats, pid, rangeParam) {
   const p = (status.profiles || []).find((x) => x.id === pid);
-  const back = { wide: true, before: BACK_TO_PROFILES };
-  if (!p) return page("Profile not found", '<p>HermitShell has not reported this profile. <a href="/admin">Back to profiles</a></p>', { status: 404 });
+  const back = { wide: true, before: BACK_TO_RECRUITS };
+  if (!p) return page("Recruit not found", '<p>HermitShell has not reported this recruit. <a href="/admin">Back to recruits</a></p>', { status: 404 });
   const range = RANGES[rangeParam] ? Number(rangeParam) : DEFAULT_RANGE;
-  const heading = p.owner ? "Your stats" : `${p.name || "Profile"}: stats`;
-  const manage = `<a class="small" href="${SENT_URL}?u=${esc(pid)}&amp;r=${range === 365 ? 90 : range}">Jobs sent</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage profile</a>`;
+  const heading = p.owner ? "Your stats" : `${p.name || "Recruit"}: stats`;
+  const manage = `<a class="small" href="${SENT_URL}?u=${esc(pid)}&amp;r=${range === 365 ? 90 : range}">Jobs sent</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage recruit</a>`;
   if (!stats) {
     return page(heading, `<style>${STYLE}</style>${rangeTabs(pid, range)}
 <div class="nostats">${icon("radar", "hero")}<p><b>No stats yet.</b> HermitShell sends them within a few minutes of its next check-in, and after every report.</p>${manage}</div>`, back);

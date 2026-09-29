@@ -109,7 +109,7 @@ describe("presence on the dashboard", () => {
     HUB.state.acceptWebSocket(ws);
     const page = await dashboard(env);
     expect(page).toContain('<span class="live" aria-hidden="true"></span><b>HermitShell is connected</b>');
-    expect(page).toContain("Profiles last reported 8 minutes ago");
+    expect(page).toContain("Recruits last reported 8 minutes ago");
   });
 
   it("drops to the last check-in when the link has gone quiet", async () => {

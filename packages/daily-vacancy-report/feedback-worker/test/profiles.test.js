@@ -142,7 +142,7 @@ describe("admin gateway", () => {
     expect(res.headers.get("Set-Cookie")).toMatch(/HttpOnly; Secure; SameSite=Strict/);
     const { body } = await dashboard(env, cookie);
     expect(body).toContain("Invite someone");
-    expect(body).toContain("HermitShell has not reported any profiles yet");
+    expect(body).toContain("HermitShell has not reported any recruits yet");
   });
 
   it("locks an address out after five wrong passwords", async () => {

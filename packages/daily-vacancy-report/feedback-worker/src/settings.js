@@ -5,7 +5,7 @@
 
 import { COUNTRIES, countryCode } from "./countries.js";
 import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem } from "./join.js";
-import { BACK_TO_PROFILES, CSP, SECURITY_HEADERS, ago, esc, limitedForm, newId, note, page, redirect, safeEqual, when } from "./lib.js";
+import { BACK_TO_RECRUITS, CSP, SECURITY_HEADERS, ago, esc, limitedForm, newId, note, page, redirect, safeEqual, when } from "./lib.js";
 import { LINK_STYLE, STATS_URL, icon } from "./stats.js";
 
 export const LEVELS = ["junior", "mid", "senior", "lead", "any"];
@@ -50,7 +50,7 @@ function checked(on) {
 export const SETTINGS_URL = "/admin/settings";
 
 export function nav(active) {
-  const tabs = [["profiles", "/admin", "Profiles"], ["settings", SETTINGS_URL, "Global settings"]];
+  const tabs = [["profiles", "/admin", "Recruits"], ["settings", SETTINGS_URL, "Global settings"]];
   return `<nav class="tabs">${tabs.map(([id, href, label]) =>
     `<a href="${href}"${id === active ? ' class="on" aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
 }
@@ -146,8 +146,8 @@ export function settingsPage(status, csrf, { done = "", queued = [], queue = [] 
   const waiting = queued.filter((q) => /^(email|test email|api keys)$/.test(q));
   return page("Global settings", `${nav("settings")}
 ${done ? note(done) : ""}${waiting.length ? `<p class="muted">Waiting for HermitShell: ${esc(waiting.join("; "))}.</p>` : ""}
-<p class="muted">These apply to the whole of HermitShell and every profile. Where each person's reports go, their job search
-and CV are on their own page under <a href="/admin">Profiles</a>.</p>
+<p class="muted">These apply to the whole of HermitShell and every recruit. Where each person's reports go, their job search
+and CV are on their own page under <a href="/admin">Recruits</a>.</p>
 ${emailSection({ ...status, email: pendingEmail(status.email || {}, queue) }, csrf)}
 ${keysSection(status, csrf)}`, { wide: true });
 }
@@ -303,7 +303,7 @@ function shown(key, value) {
 }
 
 function conflictBox(conflicts, latest, mine) {
-  return `<div class="warn" id="conflict"><b>Someone else changed this profile while you were editing.</b>
+  return `<div class="warn" id="conflict"><b>Someone else changed this recruit while you were editing.</b>
 <p>Nothing has been saved yet. Your version is in the form below; Save again to keep it, or change these back:</p>
 <ul>${conflicts.map((k) => `<li><b>${esc(LABELS[k])}</b>: now <i>${esc(shown(k, latest[k]))}</i>, yours <i>${esc(shown(k, mine[k]))}</i></li>`).join("")}</ul></div>`;
 }
@@ -316,7 +316,7 @@ function reportHint(p, status) {
   const zone = status.timezone ? ` (${status.timezone})` : "";
   if (p.report?.pending) return `HermitShell moves the report to this time when it next checks in${zone}.`;
   if (status.hermes_jobs === false) return `Saved, but HermitShell isn't running under Hermes' scheduler, so its own schedule applies${zone}.`;
-  return `When Hermes sends ${p.owner ? "your" : "their"} report${zone}. Each profile's report is its own Hermes job.`;
+  return `When Hermes sends ${p.owner ? "your" : "their"} report${zone}. Each recruit's report is its own Hermes job.`;
 }
 
 // A report now, rather than at the daily time; the email follows when the scan finishes.
@@ -336,7 +336,7 @@ export function profilePage(status, pid, csrf,
   { done = "", error = "", queue = [], saving = false, draft = null, base = null, conflicts = [], code = 200 } = {}) {
   const p = (status.profiles || []).find((x) => x.id === pid);
   if (!p) {
-    return page("Profile not found", '<p>HermitShell has not reported this profile. <a href="/admin">Back to profiles</a></p>', { status: 404 });
+    return page("Recruit not found", '<p>HermitShell has not reported this recruit. <a href="/admin">Back to recruits</a></p>', { status: 404 });
   }
   const latest = latestValues(p, queue);
   const v = draft || latest;
@@ -378,7 +378,7 @@ ${sendSection(p, csrf, status.timezone)}
 <label for="cv">CV file</label><input id="cv" name="cv" type="file" accept=".pdf,.docx,.txt,.md">${hint("PDF, Word (.docx) or text, up to 5 MB.")}
 <label for="cv_text">Or paste the CV text</label><textarea id="cv_text" name="cv_text" maxlength="${MAX_CV_TEXT}"></textarea>
 <label for="roles">Roles you're after</label><input id="roles" name="roles" maxlength="300">${hint("Optional. Helps suggest job titles from the CV.")}
-<button>Upload CV</button></form>`, { wide: true, status: code, before: BACK_TO_PROFILES, headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` } });
+<button>Upload CV</button></form>`, { wide: true, status: code, before: BACK_TO_RECRUITS, headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` } });
 }
 
 const WAIT_FAST = 12; // checks 5 seconds apart, then
@@ -397,7 +397,7 @@ export function saveStatus(status, pid, queue, n) {
   if (mine.length) {
     refresh = n < WAIT_FAST ? 5 : n < WAIT_SLOW ? 20 : 0;
     const cv = mine.some((i) => i.action === "cv");
-    body = !refresh ? `Still waiting for HermitShell. <a href="/admin/profile?u=${esc(pid)}" target="_top">Reload</a> to check again; <a href="/admin" target="_top">Profiles</a> shows when it last reported.`
+    body = !refresh ? `Still waiting for HermitShell. <a href="/admin/profile?u=${esc(pid)}" target="_top">Reload</a> to check again; <a href="/admin" target="_top">Recruits</a> shows when it last reported.`
       : cv ? "Saved. HermitShell is reading the new CV; this takes a few minutes."
         : mine.every((i) => i.action === "send_now") ? "Starting the scan&hellip;"
           : "Saved. Waiting for HermitShell to apply it (a few seconds while it is connected)&hellip;";
@@ -485,7 +485,7 @@ export async function cvUpload(request, env, s) {
   if (!form) return page("CV too large", '<p>The CV file is larger than 5 MB. <a href="/admin">Back</a></p>', { status: 413 });
   if (!safeEqual(String(form.get("csrf") || ""), s.csrf)) return page("Expired form", "<p>Reload the admin page and try again.</p>", { status: 403 });
   const u = String(form.get("u") || "");
-  if (!PROFILE_RE.test(u)) return page("Unknown profile", "<p>Reload the admin page and try again.</p>", { status: 400 });
+  if (!PROFILE_RE.test(u)) return page("Unknown recruit", "<p>Reload the admin page and try again.</p>", { status: 400 });
   const back = (done) => redirect(`/admin/profile?u=${u}&done=${done}`);
   const file = form.get("cv");
   const cvText = String(form.get("cv_text") ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").trim().slice(0, MAX_CV_TEXT);
@@ -506,7 +506,7 @@ export async function cvUpload(request, env, s) {
 export const SETTINGS_DONE = {
   bademail: "Check the email settings: the server, port, username and addresses must be valid.",
   baddetails: "A name and a valid email address are needed.",
-  profile: "Unknown profile. Reload the admin page and try again.",
+  profile: "Unknown recruit. Reload the admin page and try again.",
   cvsize: "The CV file is larger than 5 MB.",
   cvtype: "The CV must be a PDF, a Word .docx file or a text file.",
   cvmissing: "Upload a CV file or paste the CV (at least a few lines).",

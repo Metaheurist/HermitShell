@@ -120,7 +120,9 @@ def test_signup_builds_a_profile_from_the_cv(home):
     assert welcome["to"] == "sam@example.com" and "Data Analyst" in welcome["html"]
     assert "a=unsubscribe" in welcome["html"] and f"u={pid}" in welcome["html"]
     assert "Unsubscribe</a> (deletes your profile and CV)" in welcome["html"] and ">Your data</a>" in welcome["html"]
-    assert owner_note["to"] == "owner@example.com" and "New profile: Sam Lee" in owner_note["subject"]
+    assert owner_note["to"] == "owner@example.com" and "New recruit: Sam Lee" in owner_note["subject"]
+    assert "Recruits" in owner_note["html"] and "Profiles" not in owner_note["html"]
+    assert '/admin" style="color:#4f46e5">Manage recruits</a>' in owner_note["html"]
     assert profiles.os.environ["ALERT_EMAIL"] == "owner@example.com"
     ids = [p["id"] for p in api.statuses[-1]["profiles"]]
     assert ids == ["owner", pid]

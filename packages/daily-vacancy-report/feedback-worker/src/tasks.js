@@ -50,8 +50,8 @@ export async function requests(env) {
 }
 
 const ADMIN_LABELS = {
-  send_now: "Send jobs now", pause: "Pause reports", resume: "Resume reports", delete: "Delete profile",
-  set_key: "Crawler key", use_global: "Use the global key", profile: "Profile changes", cv: "New CV",
+  send_now: "Send jobs now", pause: "Pause reports", resume: "Resume reports", delete: "Delete recruit",
+  set_key: "Crawler key", use_global: "Use the global key", profile: "Recruit changes", cv: "New CV",
   api_keys: "Global API keys", email: "Email settings", test_email: "Test email",
 };
 const KIND_LABELS = {

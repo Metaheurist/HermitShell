@@ -35,7 +35,7 @@ describe("pending sign-ups", () => {
     expect(row).not.toContain("cvfile");
     expect(row).not.toContain("Send jobs now");
     expect(body).not.toContain("Sign-up from Riley Chen");
-    expect(body).toContain('<span class="count">2 profiles</span>');
+    expect(body).toContain('<span class="count">2 recruits</span>');
     expect(body).not.toContain('id="key-"');
   });
 

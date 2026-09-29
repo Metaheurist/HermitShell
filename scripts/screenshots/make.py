@@ -267,7 +267,7 @@ def render_emails(out: Path) -> dict[str, str]:
              "skills": [{"name": s} for s in ["SQL", "Power BI", "Python", "Excel", "DAX", "Tableau", "Statistics"]]}
     profiles.send_welcome({"id": "sam-lee", "name": "Sam Lee", "email": "sam.lee@example.com"}, built, False)
     pages["welcome"] = sent.pop()
-    profiles.send_owner("New profile: Sam Lee", [
+    profiles.send_owner("New recruit: Sam Lee", [
         "Sam Lee <sam.lee@example.com> joined.", "Looking for: Data analyst or BI developer, hybrid",
         "Searching for: Data Analyst, BI Developer, Analytics Engineer",
         "Skills read from the CV: SQL, Power BI, Python, Excel, DAX, Tableau, Statistics"])

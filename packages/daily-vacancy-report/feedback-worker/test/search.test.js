@@ -28,9 +28,9 @@ const listed = (body) => PROFILES.map((p) => p.id).filter((id) => body.includes(
 describe("profile search", () => {
   it("shows the search button and the number of profiles", async () => {
     const body = await (await setup())();
-    expect(body).toContain('<label for="profile-search" class="searchbtn" title="Search profiles">');
+    expect(body).toContain('<label for="profile-search" class="searchbtn" title="Search recruits">');
     expect(body).toContain('<form class="search" method="get" action="/admin" role="search">');
-    expect(body).toContain('<span class="count">3 profiles</span>');
+    expect(body).toContain('<span class="count">3 recruits</span>');
     expect(body).toContain("form.search:focus-within #profile-search");
     expect(listed(body)).toEqual(["owner", "sam-lee", "jordan-patel"]);
   });
@@ -45,7 +45,7 @@ describe("profile search", () => {
     expect(listed(await get("?q=owner"))).toEqual(["owner"]);
     const some = await get("?q=example.com");
     expect(listed(some)).toEqual(["owner", "sam-lee"]);
-    expect(some).toContain('<span class="count">2 of 3 profiles</span>');
+    expect(some).toContain('<span class="count">2 of 3 recruits</span>');
     expect(some).toContain('<form class="search open"');
     expect(some).toContain('value="example.com"');
     expect(some).toContain('<a class="clear" href="/admin"');
@@ -60,14 +60,30 @@ describe("profile search", () => {
   it("says when nothing matches and links back to everyone", async () => {
     const body = await (await setup())("?q=nobody");
     expect(listed(body)).toEqual([]);
-    expect(body).toContain("No profile matches &ldquo;nobody&rdquo;");
+    expect(body).toContain("No recruit matches &ldquo;nobody&rdquo;");
     expect(body).toContain('<a href="/admin">Show everyone</a>');
   });
 
   it("hides the search until HermitShell has reported profiles", async () => {
     const body = await (await setup([]))();
     expect(body).not.toContain('class="searchbtn"');
-    expect(body).toContain("HermitShell has not reported any profiles yet.");
+    expect(body).toContain("HermitShell has not reported any recruits yet.");
+  });
+
+  it("calls the people on the dashboard recruits, on every admin page that names them", async () => {
+    const get = await setup();
+    const board = await get();
+    expect(board).toContain("<title>Recruits</title>");
+    expect(board).toContain('<a href="/admin" class="on" aria-current="page">Recruits</a>');
+    expect(board).toContain("<th>Recruit</th><th>Status</th>");
+    const manage = await get("/profile?u=sam-lee");
+    expect(manage).toContain("Back to recruits</a>");
+    expect(manage).toContain('<a href="/admin" class="on" aria-current="page">Recruits</a>');
+    expect(await get("/stats?u=sam-lee")).toContain("Manage recruit</a>");
+    const missing = await get("/profile?u=nobody");
+    expect(missing).toContain("<title>Recruit not found</title>");
+    expect(missing).toContain("Back to recruits</a>");
+    for (const page of [board, manage, missing]) expect(page).not.toMatch(/>\s*(Back to )?[Pp]rofiles\s*</);
   });
 
   it("tidies the query and matches on the words alone", () => {

@@ -370,7 +370,7 @@ describe("profile page", () => {
     const res = await act(first({ email: "sam.mine@example.com", location: "Leeds" }));
     expect(res.status).toBe(409);
     const body = await res.text();
-    expect(body).toContain("Someone else changed this profile while you were editing.");
+    expect(body).toContain("Someone else changed this recruit while you were editing.");
     expect(body).toContain("<b>Email for reports</b>: now <i>sam.other@example.com</i>, yours <i>sam.mine@example.com</i>");
     expect(body).toContain('value="sam.mine@example.com"');
     expect(body).toContain('value="Leeds"');
@@ -401,7 +401,7 @@ describe("profile page", () => {
     expect(body).toContain('<label for="min_salary">Minimum salary</label>');
     expect(body).toContain("Jobs that don&#39;t show a salary are always included.");
     expect(body).not.toContain("All profiles");
-    expect(body).toMatch(/<body><a class="back" href="\/admin"><svg [^>]*aria-hidden="true"><path [^>]*\/><\/svg>Back to profiles<\/a><main class="wide">/);
+    expect(body).toMatch(/<body><a class="back" href="\/admin"><svg [^>]*aria-hidden="true"><path [^>]*\/><\/svg>Back to recruits<\/a><main class="wide">/);
     expect(body).not.toMatch(/&larr;|[\u2190-\u21ff]/);
     expect((await get("/admin/profile?u=owner")).body).toContain('id="min_salary" name="min_salary" value=""');
     for (const min_salary of ["£45,000", "", "45k"]) await save(get, act, "owner", { min_salary });
@@ -447,7 +447,7 @@ describe("daily report and Send jobs now", () => {
     const { body } = await get("/admin/profile?u=sam-lee");
     expect(body).toContain('<input id="report_time" name="report_time" type="time" value="08:15">');
     expect(body).toContain('<option value="weekdays" selected>Weekdays (Monday to Friday)</option>');
-    expect(body).toContain("(Europe/London). Each profile&#39;s report is its own Hermes job.");
+    expect(body).toContain("(Europe/London). Each recruit&#39;s report is its own Hermes job.");
     await save(get, act, "sam-lee", { report_time: "06:45", report_days: "daily" });
     await save(get, act, "owner", { report_days: "weekdays" });
     expect(valuesWith(env, "queue:").map((i) => [i.u, i.report, i.details, i.job])).toEqual([

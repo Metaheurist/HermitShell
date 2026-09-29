@@ -39,7 +39,7 @@ const DONE = {
   saved: "Saved. The box above shows when HermitShell has applied it, within seconds while it is connected.",
   nochange: "Nothing had changed, so nothing was saved.",
   revoked: "Invite revoked.",
-  confirm: "Tick the confirmation box to delete a profile.",
+  confirm: "Tick the confirmation box to delete a recruit.",
   badkey: "That does not look like an API key.",
   ...SETTINGS_DONE,
 };
@@ -168,7 +168,7 @@ const STALE_MS = 45 * 60 * 1000;
 function lastUpdate(current, queued, presence) {
   const waiting = queued.length
     ? ` <a href="#tasks">Waiting for HermitShell: ${queued.length} change${queued.length === 1 ? "" : "s"}</a>.` : "";
-  const report = current.updated ? ` Profiles last reported ${esc(ago(current.updated))}.` : "";
+  const report = current.updated ? ` Recruits last reported ${esc(ago(current.updated))}.` : "";
   if (presence.live) {
     return `<p class="muted"><span class="live" aria-hidden="true"></span><b>HermitShell is connected</b>: changes reach it within seconds.${report}${waiting}</p>`;
   }
@@ -200,8 +200,8 @@ tr.pendingrow .avatar{background:linear-gradient(135deg,#fdba74,#fb923c);box-sha
 
 function pendingRow(p, tz, live) {
   const roles = p.roles ? `<div class="muted">looking for ${esc(p.roles.slice(0, 80))}</div>` : "";
-  const doing = live ? "HermitShell is reading their CV and building the profile. It shows here in full within a few minutes."
-    : "HermitShell builds the profile as soon as it connects.";
+  const doing = live ? "HermitShell is reading their CV and setting them up. They show here in full within a few minutes."
+    : "HermitShell sets them up as soon as it connects.";
   return `<tr class="pendingrow"><td><div class="who"><span class="avatar" aria-hidden="true">${esc(initials(p.name))}</span><div>
 <b>${esc(p.name)}</b><div class="muted">${esc(p.email)}</div><div class="muted">signed up ${esc(p.at ? `${ago(p.at)} (${when(p.at, tz)})` : "just now")}</div>${roles}</div></div></td>
 <td><span class="pill pending">pending</span><div class="muted">${doing}</div></td><td></td><td></td></tr>`;
@@ -243,12 +243,12 @@ async function dashboard(request, env, s) {
   const modals = shown.filter(({ p }) => !p.pending && PROFILE_RE.test(p.id || "")).map(({ p }) => keyModal(p, s.csrf)).join("");
   const rows = shown.map(({ p, stats: st }) => p.pending ? pendingRow(p, current.timezone, presence.live)
     : profileRow(p, s.csrf, current.timezone, st)).join("")
-    || (all.length ? noMatch(q) : '<tr><td colspan="4" class="muted">HermitShell has not reported any profiles yet.</td></tr>');
-  return page("Profiles", `<style>${LINK_STYLE}${KEY_STYLE}${SEARCH_STYLE}${PENDING_STYLE}${TASKS_STYLE}</style>${nav("profiles")}${done ? note(done) : ""}
+    || (all.length ? noMatch(q) : '<tr><td colspan="4" class="muted">HermitShell has not reported any recruits yet.</td></tr>');
+  return page("Recruits", `<style>${LINK_STYLE}${KEY_STYLE}${SEARCH_STYLE}${PENDING_STYLE}${TASKS_STYLE}</style>${nav("profiles")}${done ? note(done) : ""}
 ${lastUpdate(current, waiting, presence)}
 ${problems(current)}${checklist(current)}
 ${all.length ? searchBar(q, shown.length, all.length, tasks) : `<div class="tabletools"><span></span><div class="tools">${tasks}</div></div>`}
-<table class="list"><tr><th>Profile</th><th>Status</th><th>Crawler</th><th></th></tr>
+<table class="list"><tr><th>Recruit</th><th>Status</th><th>Crawler</th><th></th></tr>
 ${rows}</table>
 <p class="muted">The email server and web search keys everyone shares are under <a href="${SETTINGS_URL}">Global settings</a>.</p>
 <h2>Invite someone</h2>
@@ -284,7 +284,7 @@ async function docRequest(request, env, s) {
     return page("Expired form", "<p>Reload the admin page and try again.</p>", { status: 403 });
   }
   const [u, j, kind, title] = ["u", "j", "k", "n"].map((k) => String(form.get(k) || ""));
-  if (!PROFILE_RE.test(u)) return page("Unknown profile", "<p>Reload the admin page and try again.</p>", { status: 400 });
+  if (!PROFILE_RE.test(u)) return page("Unknown recruit", "<p>Reload the admin page and try again.</p>", { status: 400 });
   const p = ((await status(env)).profiles || []).find((x) => x.id === u);
   if (!p || !validJobKey(j) || !REQUEST_KINDS[kind] || title.length > 200 || /[\u0000-\u001f\u007f]/.test(title)) {
     return redirect(sentBack(u, form.get("back"), "", "docbad"));
@@ -309,13 +309,13 @@ async function action(request, env, s) {
   const act = String(form.get("action") || "");
   const u = String(form.get("u") || "");
   if (["set_key", "use_global", "pause", "resume", "delete", "send_now"].includes(act) && !PROFILE_RE.test(u)) {
-    return page("Unknown profile", "<p>Reload the admin page and try again.</p>", { status: 400 });
+    return page("Unknown recruit", "<p>Reload the admin page and try again.</p>", { status: 400 });
   }
   if (act === "invite") {
     const [invite, current] = await Promise.all([createInvite(env, form.get("note") || ""), status(env)]);
     const link = `${new URL(request.url).origin}/join?i=${invite.id}`;
     return page("Invite link", `<p>Send this link to ${esc(invite.note || "the person")}. It works once and expires on ${esc(when(invite.expires, current.timezone))}.</p>
-<code class="link">${esc(link)}</code><p><a href="/admin">Back to profiles</a></p>`);
+<code class="link">${esc(link)}</code><p><a href="/admin">Back to recruits</a></p>`);
   }
   if (act === "revoke") {
     await env.FEEDBACK.delete(`invite:${String(form.get("invite") || "").replace(/[^0-9a-f]/g, "")}`);

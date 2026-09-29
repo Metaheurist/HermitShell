@@ -476,7 +476,7 @@ def create_profile(item: dict, api, model_info_factory=lambda: connect_model("JO
     log(f"{'Rebuilt' if existing else 'Created'} profile {pid} ({len(built['skills'])} skills, "
         f"{len(built['titles'])} titles)")
     notify(lambda: send_welcome(profile, built, bool(existing)))
-    notify(lambda: send_owner(f"New profile: {name}" if not existing else f"Profile updated: {name}",
+    notify(lambda: send_owner(f"New recruit: {name}" if not existing else f"Recruit updated: {name}",
                               [f"{name} <{email}> {'joined' if not existing else 'sent a new CV'}.",
                                f"Looking for: {profile['roles']}",
                                f"Searching for: {', '.join(built['titles'])}",
@@ -619,10 +619,10 @@ def send_owner(subject: str, lines: list[str]) -> None:
     admin = (env("JOB_FEEDBACK_URL", "") or "").rstrip("/")
     body = "".join(f'<p style="margin:0 0 8px;font-size:14px;line-height:21px;color:#334155">{html.escape(x)}</p>'
                    for x in lines)
-    link = f'<p style="margin:10px 0 0"><a href="{html.escape(admin)}/admin" style="color:#4f46e5">Manage profiles</a></p>' \
+    link = f'<p style="margin:10px 0 0"><a href="{html.escape(admin)}/admin" style="color:#4f46e5">Manage recruits</a></p>' \
         if admin else ""
     profiles = all_profiles()
-    header = email_header("Profiles", _today(), subject, "People getting reports from your HermitShell",
+    header = email_header("Recruits", _today(), subject, "People getting reports from your HermitShell",
                           [(sum(p.get("status") == "active" for p in profiles), "Active"),
                            (sum(p.get("status") == "paused" for p in profiles), "Paused")], highlight=0)
     send(to, f"{FROM_NAME}: {subject}", _email(header, [body + link]), "\n".join(lines) + (f"\n\n{admin}/admin" if admin else ""))

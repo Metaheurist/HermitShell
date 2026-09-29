@@ -215,7 +215,7 @@ export function docActions(j, h, ctx) {
 }
 
 function emailAction(j, h, ctx, hidden) {
-  const to = esc(ctx.recipient || "the profile");
+  const to = esc(ctx.recipient || "the recruit");
   const sent = (ctx.emailed || []).find((e) => e.h === h);
   if (ctx.pending.has(`send_job\n${j}`)) {
     return `<div class="doc busy">${docIcon("send_job")}<span><b>Email to ${to}</b><small>Sending&hellip;</small></span><span class="dspin" aria-hidden="true"></span></div>`;

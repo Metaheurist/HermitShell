@@ -43,7 +43,7 @@ export function keyModal(p, csrf) {
   const links = CRAWLERS.map((name) => `<a href="${esc(PROVIDERS[name].signup)}" target="_blank" rel="noopener noreferrer">${esc(PROVIDERS[name].label)}</a>`).join(" or ");
   const who = p.owner
     ? "This becomes the global key, used by everyone without a key of their own."
-    : `${esc(p.name || "This profile")}'s searches will use only this key, never the global ones.`;
+    : `${esc(p.name || "This recruit")}'s searches will use only this key, never the global ones.`;
   return `<div class="modal" id="${id}" role="dialog" aria-modal="true" aria-labelledby="${id}-h">
 <a class="scrim" href="#_" aria-label="Close" tabindex="-1"></a>
 <div class="sheet"><a class="x" href="#_" aria-label="Close">&times;</a>

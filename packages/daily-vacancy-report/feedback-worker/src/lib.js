@@ -35,7 +35,7 @@ export const BRAND_MARK = brandMark("hs-", 'class="mark" aria-hidden="true" focu
 
 const LINE_ICON = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
 export const EXTERNAL_ICON = `<svg class="ext" ${LINE_ICON}><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg>`;
-export const BACK_TO_PROFILES = `<a class="back" href="/admin"><svg ${LINE_ICON}><path d="M19 12H5M11 6l-6 6 6 6"/></svg>Back to profiles</a>`;
+export const BACK_TO_RECRUITS = `<a class="back" href="/admin"><svg ${LINE_ICON}><path d="M19 12H5M11 6l-6 6 6 6"/></svg>Back to recruits</a>`;
 
 export function favicon() {
   return new Response(FAVICON, {
