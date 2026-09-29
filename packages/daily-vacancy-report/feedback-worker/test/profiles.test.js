@@ -222,7 +222,16 @@ describe("admin gateway", () => {
     expect(body).toContain("Sam Lee");
     expect(body).not.toContain("<th>Crawler</th>");
     expect(body).toContain('<a class="small" href="/admin/profile?u=sam-lee">Manage</a>');
-    expect(body.match(/delete CV and history/g)).toHaveLength(1);
+    expect(body.match(/class="binbtn"/g)).toHaveLength(1);
+    expect(body).toContain('<a class="binbtn" href="#del-sam-lee" title="Delete Sam Lee" aria-label="Delete Sam Lee">');
+    expect(body).not.toContain('href="#del-owner"');
+    const modal = body.slice(body.indexOf('<div class="modal" id="del-sam-lee"'));
+    expect(body.indexOf('<div class="modal" id="del-sam-lee"')).toBeLessThan(body.indexOf("<main"));
+    expect(modal).toContain("Delete Sam Lee?");
+    expect(modal).toContain('<input type="checkbox" name="confirm" value="yes" required> <span>Delete their CV and history');
+    expect(modal).toContain('<input type="hidden" name="action" value="delete"><input type="hidden" name="u" value="sam-lee">');
+    expect(modal).toContain('<a class="small quiet cancel" href="#_">Cancel</a>');
+    expect(body).not.toContain('<span class="muted">delete CV and history</span>');
 
     await adminAction(env, cookie, csrf, { action: "pause", u: "sam-lee" });
     expect((await adminAction(env, cookie, csrf, { action: "delete", u: "sam-lee" })).headers.get("Location")).toBe("/admin?done=confirm");

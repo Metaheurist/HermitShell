@@ -21,6 +21,7 @@ import {
   SETTINGS_DONE, SETTINGS_URL, STATUS_URL, USERS_URL, button, checklist, cvUpload, nav, problems, profileChange, profilePage, saveStatus,
   sendButton, settingsItem, settingsPage,
 } from "./settings.js";
+import { CONFIRM_STYLE, binButton, deleteModal } from "./confirm.js";
 import { MODAL_STYLE } from "./keys.js";
 import { SEARCH_STYLE, matchesProfile, noMatch, recruiterHits, recruiterRow, searchBar, searchQuery } from "./search.js";
 import {
@@ -281,17 +282,20 @@ function profileRow(p, csrf, tz, stats, { admin, third, inPool }) {
   const status = `<span class="pill${p.owner ? " owner" : p.status === "paused" ? " paused" : ""}">${p.owner ? "owner, " : ""}${esc(p.status)}</span>`
     + (p.scanning ? ' <span class="pill scanning">scanning now</span>' : "");
   const toggle = p.status === "paused" ? button(csrf, "resume", "Resume", { u: p.id }) : button(csrf, "pause", "Pause", { u: p.id });
-  const remove = p.owner || !admin ? "" : `<form method="post" action="/admin/action" class="inline" style="margin-top:6px">
-<input type="hidden" name="csrf" value="${esc(csrf)}"><input type="hidden" name="action" value="delete"><input type="hidden" name="u" value="${esc(p.id)}">
-<label class="check" style="margin:0"><input type="checkbox" name="confirm" value="yes"> <span class="muted">delete CV and history</span></label>
-<button class="small danger">Delete</button></form>`;
+  const remove = p.owner || !admin ? "" : binButton(`del-${p.id}`, `Delete ${p.name}`);
   const cv = p.has_cv === false ? ' <span class="pill paused">no CV</span>' : "";
   return `<tr${inPool ? ' class="inpool"' : ""}><td><div class="who"><span class="avatar" aria-hidden="true">${esc(initials(p.name))}</span><div>
 <b>${esc(p.name)}</b>${cv}<div class="muted">${esc(p.email || "")}</div><div class="muted">since ${esc(when(p.created, tz))}</div>
 <a class="small" href="/admin/profile?u=${esc(p.id)}">Manage</a><div>${statsLink(p, stats, tz)}</div></div></div></td>
 <td>${status}<div class="muted">last report ${esc(p.last_run ? `${ago(p.last_run)} (${when(p.last_run, tz)})` : "never")}</div>${schedule(p)}</td>
 ${third === null ? "" : `<td>${third}</td>`}
-<td><div class="actions">${sendButton(p, csrf)}${toggle}</div>${remove}</td></tr>`;
+<td><div class="actions">${sendButton(p, csrf)}${toggle}${remove}</div></td></tr>`;
+}
+
+function deleteRecruitModal(p, csrf) {
+  return deleteModal({ id: `del-${p.id}`, title: `Delete ${p.name}?`, action: "/admin/action",
+    intro: "They stop getting reports and are removed from HermitShell and this dashboard. This can't be undone.",
+    fields: { csrf, action: "delete", u: p.id }, check: "Delete their CV and history (jobs found, answers, letters and CVs) from the server" });
 }
 
 function inviteForm(s, recs) {
@@ -343,7 +347,8 @@ async function dashboard(request, env, s) {
     || (all.length ? noMatch(q) : `<tr><td colspan="4" class="muted">${admin ? "HermitShell has not reported any recruits yet."
       : "You have no recruits yet. The people you invite join your recruits, and an admin can assign others to you."}</td></tr>`);
   const who = `${esc(displayName(s.me, current))} (${s.me.roles.map((r) => ROLES[r].label.toLowerCase()).join(", ")})`;
-  return page("Recruits", `<style>${LINK_STYLE}${MODAL_STYLE}${SEARCH_STYLE}${PENDING_STYLE}${TASKS_STYLE}${RECRUITER_STYLE}</style>${nav("profiles", admin)}${done ? note(done) : ""}
+  const deletes = admin ? shown.filter(({ p }) => !p.owner && !p.pending).map(({ p }) => deleteRecruitModal(p, s.csrf)).join("") : "";
+  return page("Recruits", `<style>${LINK_STYLE}${MODAL_STYLE}${CONFIRM_STYLE}${SEARCH_STYLE}${PENDING_STYLE}${TASKS_STYLE}${RECRUITER_STYLE}</style>${nav("profiles", admin)}${done ? note(done) : ""}
 ${lastUpdate(current, waiting, presence)}
 ${admin ? `${problems(current)}${checklist(current)}` : ""}
 ${all.length ? searchBar(q, shown.length, all.length, tasks) : `<div class="tabletools"><span></span><div class="tools">${tasks}</div></div>`}
@@ -353,7 +358,7 @@ ${admin ? `<p class="muted">The email server and web search keys everyone shares
 ${inviteForm(s, recs)}
 ${inviteRows ? `<table class="list">${inviteRows}</table>` : ""}
 <div class="whoami"><span class="muted">Signed in as <b>${who}</b></span><form method="post" action="/admin/logout" class="signout"><button class="small quiet">Sign out</button></form></div>`,
-  { wide: true, before: tasksModal(), headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` } });
+  { wide: true, before: tasksModal() + deletes, headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` } });
 }
 
 async function tasksAction(request, env, s) {

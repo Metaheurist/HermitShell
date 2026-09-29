@@ -9,6 +9,7 @@
 // recruiter too. Changing a user's password or deleting them changes or drops the version their sessions are
 // signed with, which signs them out at once.
 
+import { CONFIRM_STYLE, binButton, deleteModal } from "./confirm.js";
 import { queueItem } from "./join.js";
 import { esc, hmacHex, newId, note, page, redirect, when } from "./lib.js";
 import { MODAL_STYLE } from "./keys.js";
@@ -175,16 +176,20 @@ function userModals(acc, csrf, adminLabel) {
 
 function userRow(u, count, me, csrf, tz) {
   const self = u.id === me.id;
-  const remove = self || u.main ? "" : `<form method="post" action="${USERS_URL}" class="inline" style="margin-top:6px">${hidden({ csrf, op: "delete", id: u.id })}
-<label class="check" style="margin:0"><input type="checkbox" name="confirm" value="yes"> <span class="muted">delete</span></label>
-<button class="small danger">Delete</button></form>`;
+  const remove = self || u.main ? "" : binButton(`deluser-${u.id}`, `Delete ${u.name}`);
   const weak = u.weak ? ' <span class="role weak" title="Shorter than the recommended length">short password</span>' : "";
   return `<tr><td><div class="who"><span class="avatar${u.roles.includes("recruiter") ? " rec" : ""}" aria-hidden="true">${esc(initials(u.name))}</span><div>
 <b>${esc(u.name)}</b>${self ? ' <span class="muted">(you)</span>' : ""}<div class="muted"><code>${esc(u.username)}</code></div>
 <div class="muted">${u.main ? "main admin, from the Worker's secrets" : `since ${esc(when(u.created, tz))}`}</div></div></div></td>
 <td>${pills(u.roles)}${weak}</td>
 <td>${u.roles.includes("recruiter") ? `<b>${count}</b> <span class="muted">recruit${count === 1 ? "" : "s"}</span>` : '<span class="muted">not a recruiter</span>'}</td>
-<td><div class="actions"><a class="small" href="#user-${esc(u.id)}">Edit</a></div>${remove}</td></tr>`;
+<td><div class="actions"><a class="small" href="#user-${esc(u.id)}">Edit</a>${remove}</div></td></tr>`;
+}
+
+function deleteUserModal(u, csrf) {
+  return deleteModal({ id: `deluser-${u.id}`, title: `Delete ${u.name}?`, action: USERS_URL,
+    intro: "They are signed out at once, their unused invites are deleted and their recruits become unassigned.",
+    fields: { csrf, op: "delete", id: u.id }, check: `Delete ${u.name}'s dashboard account` });
 }
 
 export const USERS_DONE = {
@@ -208,12 +213,13 @@ export function usersPage(acc, status, csrf, me, env, done = "") {
     .map((u) => userRow(u, count(u.id), me, csrf, status.timezone)).join("");
   const roles = Object.entries(ROLES).map(([r, info]) => `<div class="rolecard ${r}"><span class="roleicon">${roleIcon(r)}</span>
 <div><b>${esc(info.label)}</b><p class="muted">${esc(info.about)}</p></div></div>`).join("");
-  return page("Users and roles", `<style>${MODAL_STYLE}${USERS_STYLE}</style>${nav("users")}${done ? note(done) : ""}
+  const deletes = acc.users.filter((u) => u.id !== me.id).map((u) => deleteUserModal(u, csrf)).join("");
+  return page("Users and roles", `<style>${MODAL_STYLE}${CONFIRM_STYLE}${USERS_STYLE}</style>${nav("users")}${done ? note(done) : ""}
 <h2>Roles</h2><div class="rolecards">${roles}</div>
 <div class="tabletools"><h2 style="margin:0">Dashboard users</h2><a class="addkey" href="#user-new">${USER_ICON}Add user</a></div>
 <table class="list"><tr><th>User</th><th>Roles</th><th>Recruits</th><th></th></tr>${rows}</table>
 <p class="muted">Passwords are kept only as salted hashes. A new password or deleting a user signs them out at once. Assign recruits to a recruiter from the <a href="/admin">Recruits</a> list; the people a recruiter invites join their pool.</p>`,
-  { wide: true, before: userModals(acc, csrf, `${main.name} (main admin)`) });
+  { wide: true, before: userModals(acc, csrf, `${main.name} (main admin)`) + deletes });
 }
 
 // POST /admin/users (admins only, CSRF already checked by the caller).

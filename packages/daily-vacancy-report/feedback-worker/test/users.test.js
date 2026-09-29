@@ -67,6 +67,11 @@ describe("dashboard users", () => {
     expect(page).toContain("<b>Alex Morgan</b> <span class=\"muted\">(you)</span>");
     expect(page).toContain('<div class="modal" id="user-new"');
     expect(page).toContain('<div class="modal" id="user-casey"');
+    expect(page).toContain('<a class="binbtn" href="#deluser-casey" title="Delete Casey Quinn"');
+    expect(page).toContain('<div class="modal" id="deluser-casey"');
+    expect(page).toContain("Delete Casey Quinn&#39;s dashboard account");
+    expect(page).not.toContain('href="#deluser-admin"');
+    expect(page).not.toContain('<span class="muted">delete</span>');
     expect(page).not.toContain(users[0].hash);
     expect(page).not.toContain(users[0].salt);
   });
@@ -121,6 +126,8 @@ describe("recruiter sign-in and what they can see", () => {
     expect(board).not.toContain("Users and roles");
     expect(board).not.toContain("Global settings");
     expect(board).not.toContain('value="delete"');
+    expect(board).not.toContain('class="binbtn"');
+    expect(board).not.toContain('id="del-sam-lee"');
     expect(board).toContain("Signed in as <b>Casey Quinn (recruiter)</b>");
     expect(board).toContain("The person joins your recruits.");
     expect(board).not.toContain('name="recruiter"');
