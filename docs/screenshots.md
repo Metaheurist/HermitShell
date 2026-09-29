@@ -339,8 +339,9 @@ HermitShell hasn't collected them.
 
 | Section | What it sets |
 | --- | --- |
-| Details | Name, the email address reports go to, phone and town (for cover letters) |
-| Job search | Job titles (up to 8), region and towns, country, remote elsewhere, level, minimum salary and currency, employment types, work modes, hiding unnamed agency adverts |
+| **Back to profiles** | Floats in the top-left corner while you scroll |
+| Details | Name, the email address reports go to, phone and home town (for cover letters) |
+| Job search | Job titles (up to 8), region or city (used in web searches), country from a list, towns, remote elsewhere, seniority, minimum salary (empty = none) and currency, employment types, work location, hiding unnamed agency adverts |
 | CV | A new CV file or pasted text; HermitShell rebuilds the profile and skills from it and emails a summary |
 
 ## Regenerating these images

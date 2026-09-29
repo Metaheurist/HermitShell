@@ -359,12 +359,17 @@ them.
 
 <img src="images/worker/admin-profile.png" alt="A profile's settings page" width="720">
 
-- **Details**: name, the email address their reports go to, phone and town (shown on cover
+**Back to profiles** stays in the top-left corner while you scroll. Each box has a short hint
+under it.
+
+- **Details**: name, the email address their reports go to, phone and home town (shown on cover
   letters). For you, the address is `ALERT_EMAIL`.
-- **Job search**: up to 8 job titles, region and the towns inside it, country, whether fully
-  remote jobs elsewhere count, level, minimum salary and currency, employment types, work modes
-  and whether to hide agency adverts that don't name the employer. Saving rebuilds the web search
-  queries and the title filter when the titles or location change.
+- **Job search**: up to 8 job titles, region or city (web searches use it), country (picked from a
+  list), the towns that count as local, whether fully remote jobs elsewhere count, seniority,
+  minimum salary (empty means no minimum; `45000`, `45k` and `£45,000` all work) and currency,
+  employment types, work location and whether to hide agency adverts that don't name the
+  employer. Saving rebuilds the web search queries and the title filter when the titles or
+  location change.
 - **CV**: upload a PDF, Word or text file, or paste it. HermitShell reads it, rebuilds the profile and
   skills the jobs are rated against, and emails a summary. Your previous `job_profile.md` and
   `cv_keywords.json` are kept as `.bak` copies.

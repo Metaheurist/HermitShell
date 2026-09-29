@@ -77,7 +77,8 @@ Full template: [`.env.example`](../.env.example).
 | --- | --- | --- |
 | `JOB_REGION_NAME` | none | Region or city you're job hunting in. Empty = no location filter |
 | `JOB_REGION_PLACES` | none | Comma-separated towns or areas that count as inside the region |
-| `JOB_SEARCH_COUNTRY` | none | Two-letter country code for searches (`gb`, `ie`, `us`...) |
+| `JOB_SEARCH_COUNTRY` | none | Two-letter country code for searches (`gb`, `ie`, `us`...). The dashboard picks it from a list of countries |
+| `JOB_SEARCH_LOCATION` | `JOB_REGION_NAME` | Place name put into web searches, when it should differ from the region. `.env` only: saving the job search on the dashboard clears it, so searches use the region |
 | `JOB_REMOTE_ANYWHERE` | `0` | `1` lets fully remote jobs through the region filter |
 | `JOB_LEVEL` | `any` | `junior`, `mid`, `senior`, `lead` or `any`. Sets the seniority penalties below |
 | `JOB_EMPLOYMENT_TYPES` | `Permanent,Contract,Temporary` | Types to keep: also `Full-time`, `Part-time`, `Internship`. Jobs that don't say are kept |

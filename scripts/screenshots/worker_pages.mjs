@@ -91,7 +91,7 @@ env = freshEnv();
 const now = Date.now();
 const day = 86400000;
 const JOB = { titles: ["Data Engineer", "Analytics Engineer", "Python Developer"], region: "Greater Manchester",
-  places: ["Manchester", "Salford", "Stockport", "Trafford"], search_location: "", country: "gb", remote_anywhere: true,
+  places: ["Manchester", "Salford", "Stockport", "Trafford"], country: "gb", remote_anywhere: true,
   level: "mid", types: ["Permanent", "Contract"], modes: ["Hybrid", "Remote"], min_salary: "45000", currency: "£", hide_agency: true };
 const STATUS = {
   profiles: [

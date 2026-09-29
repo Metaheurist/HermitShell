@@ -8,6 +8,13 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Simpler profile page.** Country is now a dropdown of countries by name instead of a
+  two-letter code box. The separate "Location used in web searches" box is gone: searches use
+  Region or city (a dashboard save clears `JOB_SEARCH_LOCATION`). "Towns that count as inside it
+  (comma separated)" is now just **Towns**. Labels are plain, with a short hint under each box
+  instead of text in brackets. The minimum salary box is empty for no minimum and accepts `£45,000`.
+  The "All profiles" link is replaced by a **Back to profiles** button that stays in the top-left
+  corner while you scroll. The Global settings labels got the same treatment.
 - **Global settings tab.** The email server and web search API keys have moved off the profiles
   list to their own **Global settings** page (`/admin/settings`), because they apply to the whole
   tool. **Profiles** and **Global settings** tabs sit at the top of every admin page. The setup
