@@ -6,6 +6,8 @@ explains the techniques, for anyone building a new package.
 
 ## Layout
 
+<img src="images/emails/daily-report-card.png" alt="A job card" width="520">
+
 - Tables for layout, with all CSS inline. Some clients drop `<style>` blocks, and Outlook
   ignores flexbox and grid. See [Size](#size-staying-under-gmails-clipping-limit) for the one
   case where styles are moved into classes.

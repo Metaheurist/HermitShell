@@ -6,8 +6,8 @@ light and dark modes.
 
 ![Daily Vacancy Report email](../../docs/images/daily-vacancy-report.png)
 
-*Dry run with the fictional example profile and the Northern Ireland example config.
-[Full-length email](../../docs/images/daily-vacancy-report-full.png).*
+*Rendered with the fictional example profile.
+[Full-length email](../../docs/images/emails/daily-report.png) · [every email and page](../../docs/screenshots.md).*
 
 ## What it does
 
@@ -44,12 +44,19 @@ light and dark modes.
    jobs you applied to come back in a follow-up section after 7 and 14 days, and tapping a
    missing-skill tag adds skills you have to your skills pool
    ([how it works](../../docs/feedback-worker.md#adding-missing-skills)).
+
+   <img src="../../docs/images/emails/daily-report-card.png" alt="One job card" width="560">
+
+   What each part of the card means: [docs/screenshots.md](../../docs/screenshots.md#a-job-card).
 7. **Cover letters.** Pressing **Cover letter** gets you a tailored A4 PDF letter by email within
    about 5 minutes, written by Hermes' model from your profile and the listing
-   ([how it works](../../docs/feedback-worker.md#cover-letters)).
+   ([how it works](../../docs/feedback-worker.md#cover-letters)). **Tailored CV** works the same
+   way and sends your CV reordered and reworded for that job.
+
+   <img src="../../docs/images/emails/cover-letter.png" alt="Cover letter email" width="300"> <img src="../../docs/images/emails/cover-letter-pdf.png" alt="Cover letter PDF" width="250">
 8. **Weekly roll-up.** `job_weekly.py` (or `job_scanner.py --weekly`) emails a Sunday summary from
    `state/job_tracker.db`: best jobs of the week, applications and replies, common gaps, who's
-   hiring and source health.
+   hiring and source health ([screenshot](../../docs/images/emails/weekly.png)).
 9. **Extra profiles.** Invite other people from the feedback Worker's `/admin` page; they upload a
    CV and get their own daily report, buttons, cover letters and roll-up, run after yours. Every
    report has an **Unsubscribe** link that deletes their profile (or pauses yours)

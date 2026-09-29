@@ -8,6 +8,12 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Screenshots of every view.** [docs/screenshots.md](docs/screenshots.md) shows every email
+  (daily report and its variants, weekly roll-up, cover letter and tailored CV with their PDFs,
+  profile and test emails) and every feedback Worker page (button confirmations, sign-up, admin
+  sign-in and profiles), with what each part and control does. The READMEs and guides embed them
+  where each feature is described. `scripts/screenshots/make.py` regenerates them from the real
+  code with fictional data, in a temporary Hermes home.
 - **Automatic Cloudflare setup.** The wizard's feedback step now takes a Cloudflare account ID and
   API token (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`) and deploys the feedback Worker
   itself through the Cloudflare API, with no Node.js or wrangler: it finds or creates the

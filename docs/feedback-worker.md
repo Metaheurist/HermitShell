@@ -24,6 +24,11 @@ HTTPS. Nothing on your server is exposed, and the Workers free plan is more than
 email button ──> Worker /f (confirm page) ──> KV ──> Hermes GET /events, POST /ack
 ```
 
+<img src="images/worker/confirm-not-for-me.png" alt="Confirmation page for Not for me" width="300"> <img src="images/worker/saved.png" alt="Saved page" width="300">
+
+*A button's confirmation page and what Confirm shows. Every page is in
+[screenshots.md](screenshots.md#button-pages).*
+
 ## How it stays safe
 
 - **Signed links.** Every button carries an HMAC signature of the job, action, title, skills,
@@ -199,6 +204,12 @@ Cover letter button ──> Worker (confirm) ──> KV ──> cover_letter.py 
    packages), saved in `state/cover_letters/`, and emailed to you with the job details, a
    preview and a View job button.
 
+<img src="images/emails/cover-letter.png" alt="Cover letter email" width="360"> <img src="images/emails/cover-letter-pdf.png" alt="Cover letter PDF" width="300">
+
+**Tailored CV** follows the same path: `cover_letter.py` asks the model to reorder and reword your
+CV for the job (titles, employers and dates are copied, never invented) and emails it as a PDF
+([email](images/emails/tailored-cv.png), [PDF](images/emails/tailored-cv-pdf.png)).
+
 Everything runs on your Hermes server; the Worker only sees the job key and your note. Failed
 attempts are retried on the next two runs, then given up (see `letters` in
 `state/job_tracker.db`). Put your name and contact line in `.env` so they appear on the letter:
@@ -224,6 +235,8 @@ Each job card lists the skills the listing asks for that your CV doesn't show, a
 under **Missing from your CV**. If you have one of them, tap it. The Worker opens a page with
 that skill ticked and the job's other missing skills beside it, plus a box for any other skills
 you want to add. After you confirm:
+
+<img src="images/worker/confirm-add-skill.png" alt="Add to my skills page" width="300"> <img src="images/worker/saved-add-skill.png" alt="Skills added" width="300">
 
 - the skills join your skills pool (`skills` in `state/job_tracker.db`) at the next sync, which
   happens within 5 minutes when cover letters are set up, otherwise at the next scan;
@@ -275,6 +288,11 @@ from the Worker's admin page; Hermes applies the changes, since the Worker can't
    `job_profile.md`, `cv_keywords.json` and search settings under `state/profiles/<id>/`, emails
    them a welcome message listing what it will search for, and emails you a note.
 
+<img src="images/worker/join-form.png" alt="Sign-up form" width="280"> <img src="images/emails/welcome.png" alt="Welcome email" width="330">
+
+*The sign-up form and the welcome email. The other states are in
+[screenshots.md](screenshots.md#sign-up-page).*
+
 From then on every daily report, weekly roll-up and cover letter run also runs for each active
 profile, one after the other once your own run has finished, with their own seen jobs, tracker,
 feedback buttons and skills pool. They share your region, sources and model settings. A sign-up
@@ -290,6 +308,8 @@ they are. `profiles.py` registers you on its first run.
 
 ### The admin page
 
+<img src="images/worker/admin-dashboard.png" alt="Admin page" width="720">
+
 - **Profiles**: everyone Hermes reports, with status and last report. Pause, resume or delete
   (deleting removes their CV and history from your server; the owner can't be deleted).
 - **Crawler keys**: give a profile its own Firecrawl key (it then uses only that key), or leave
@@ -301,6 +321,8 @@ they are. `profiles.py` registers you on its first run.
 Changes wait in KV and are applied by `profiles.py` within 5 minutes ("Waiting for Hermes" shows
 what is pending). Keys typed into the page are deleted from KV after 2 days if Hermes hasn't
 collected them.
+
+Every control is described in [screenshots.md](screenshots.md#profiles).
 
 Sign-in: five wrong passwords lock that address (an IPv6 /64 counts as one address) out for 15
 minutes, and 30 wrong passwords from anywhere lock sign-in for everyone for 15 minutes. If KV
@@ -344,6 +366,8 @@ Every daily report and weekly roll-up ends with an **Unsubscribe** link (signed 
 with a confirmation page). For an extra profile it deletes the profile, CV and history at the next
 `profiles.py` run and tells you; for the owner it only pauses your own reports (the others keep
 running) until you resume from `/admin` or with `profiles.py --resume owner`.
+
+<img src="images/worker/confirm-unsubscribe.png" alt="Unsubscribe confirmation" width="300">
 
 ### Free-plan limits
 

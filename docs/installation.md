@@ -185,7 +185,8 @@ docker exec -u hermes -w /opt/data hermes-agent python3 scripts/job_scanner.py -
 ```
 
 Dry runs write the email HTML to `scripts/state/*_last.html`. Copy that file along with the
-`logos/` folder next to it to preview the email in a browser.
+`logos/` folder next to it to preview the email in a browser. The test email and a full report
+should look like the ones in [screenshots.md](screenshots.md#test-emails).
 
 ### 5. Schedule
 

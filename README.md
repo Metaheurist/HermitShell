@@ -15,7 +15,19 @@ includes credentials, API keys, your CV and your region.
 
 <a href="packages/daily-vacancy-report"><img src="docs/images/daily-vacancy-report.png" alt="Daily Vacancy Report email" width="480"></a>
 
-The screenshot comes from a dry run using the fictional example profile shipped in this repo.
+All screenshots are rendered by the real code with fictional data (the example profile shipped in
+this repo).
+
+<table>
+<tr>
+<td><img src="docs/images/emails/weekly.png" alt="Weekly roll-up" width="250"></td>
+<td><img src="docs/images/emails/cover-letter.png" alt="Cover letter email" width="250"></td>
+<td><img src="docs/images/worker/admin-dashboard.png" alt="Admin page" width="300"></td>
+</tr>
+<tr><td align="center">Weekly roll-up</td><td align="center">Cover letter on request</td><td align="center">Profiles admin page</td></tr>
+</table>
+
+Every email, PDF and page, with what each part does: [docs/screenshots.md](docs/screenshots.md).
 
 ## What you get
 
@@ -91,8 +103,10 @@ scripts/cloudflare_worker.py
                            deploys or updates the Worker with a Cloudflare API token
 scripts/tests/             unit tests for the wizard, the Worker deploy and the .env.example files
 scripts/install.sh         copies common + the package flat into $HERMES_HOME/scripts
+scripts/screenshots/       regenerates the documentation screenshots from fictional data
 .github/workflows/         CI (lint, tests, Worker build) and Security (secrets, CVEs, CodeQL)
-docs/                      installation, configuration, Cloudflare, feedback Worker, email rendering, web providers
+docs/                      installation, configuration, Cloudflare, feedback Worker, email rendering,
+                           web providers, screenshots
 ```
 
 The scripts are installed flat next to `hermes_common.py`, because Hermes cron jobs run a single
