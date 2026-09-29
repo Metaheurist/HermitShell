@@ -20,7 +20,8 @@ import {
 } from "./settings.js";
 import { CRAWLERS, KEY_STYLE, crawlerCell, keyModal } from "./keys.js";
 import { SEARCH_STYLE, matchesProfile, noMatch, searchBar, searchQuery } from "./search.js";
-import { LINK_STYLE, MAX_STATS_BYTES, SENT_URL, STATS_URL, sentPage, statsLink, statsPage, validStats } from "./stats.js";
+import { DOC_KINDS, DOC_URL, docIndex, pdfResponse, pendingDocs, readDoc, requestDoc, storeDoc, validJobKey } from "./docs.js";
+import { LINK_STYLE, MAX_STATS_BYTES, SENT_RANGES, SENT_URL, STATS_URL, sentPage, splitStats, statsLink, statsPage, validStats } from "./stats.js";
 import { TASKS_STYLE, TASKS_URL, cancelTask, requests, taskRows, tasksButton, tasksModal, tasksPage } from "./tasks.js";
 
 const SESSION_SECONDS = 12 * 3600;
@@ -267,6 +268,38 @@ async function tasksAction(request, env, s) {
   return redirect(`${TASKS_URL}?done=${done}`);
 }
 
+// Where a letter or CV request from the list of jobs sent comes back to: the same filters, the job opened.
+function sentBack(u, back, open, done) {
+  const given = new URLSearchParams(String(back || "").slice(0, 60));
+  const r = SENT_RANGES[given.get("r")] ? given.get("r") : "7";
+  const a = /^[a-z_]{1,20}$/.test(given.get("a") || "") ? `&a=${given.get("a")}` : "";
+  return `${SENT_URL}?u=${u}&r=${r}${a}${open ? `&open=${open}` : ""}&done=${done}${open ? `#job-${open}` : ""}`;
+}
+
+async function docRequest(request, env, s) {
+  const form = await limitedForm(request, 8192);
+  if (!form || !safeEqual(String(form.get("csrf") || ""), s.csrf)) {
+    return page("Expired form", "<p>Reload the admin page and try again.</p>", { status: 403 });
+  }
+  const [u, j, kind, title] = ["u", "j", "k", "n"].map((k) => String(form.get(k) || ""));
+  if (!PROFILE_RE.test(u)) return page("Unknown profile", "<p>Reload the admin page and try again.</p>", { status: 400 });
+  const p = ((await status(env)).profiles || []).find((x) => x.id === u);
+  if (!p || !validJobKey(j) || !DOC_KINDS[kind] || title.length > 200 || /[\u0000-\u001f\u007f]/.test(title)) {
+    return redirect(sentBack(u, form.get("back"), "", "docbad"));
+  }
+  const h = await requestDoc(env, { profile: u, owner: Boolean(p.owner), j, kind, title, fresh: form.get("fresh") === "1" });
+  return redirect(sentBack(u, form.get("back"), h.slice(0, 16), "doc"));
+}
+
+async function docDownload(request, env) {
+  const url = new URL(request.url);
+  const [u, kind, h] = ["u", "k", "h"].map((k) => url.searchParams.get(k) || "");
+  if (!PROFILE_RE.test(u)) return text("Not found", 404);
+  const doc = await readDoc(env, u, kind, h);
+  if (doc) return pdfResponse(doc);
+  return redirect(`${SENT_URL}?u=${u}&r=7${/^[0-9a-f]{32}$/.test(h) ? `&open=${h.slice(0, 16)}` : ""}&done=docgone${/^[0-9a-f]{32}$/.test(h) ? `#job-${h.slice(0, 16)}` : ""}`);
+}
+
 async function action(request, env, s) {
   const form = await limitedForm(request, MAX_FORM_BYTES);
   if (!form) return text("Request too large", 413);
@@ -362,9 +395,15 @@ export async function handleAdmin(request, env, ctx) {
     const url = new URL(request.url);
     const u = url.searchParams.get("u") || "";
     if (!PROFILE_RE.test(u)) return text("Not found", 404);
-    const [current, stats] = await Promise.all([status(env), env.FEEDBACK.get(`stats:${u}`, "json")]);
-    return sentPage(current, stats, u, url.searchParams.get("r"), url.searchParams.get("a"));
+    const [current, stats, sent, docs, held] = await Promise.all([status(env), env.FEEDBACK.get(`stats:${u}`, "json"),
+      env.FEEDBACK.get(`sent:${u}`, "json"), docIndex(env, u), requests(env)]);
+    const owner = Boolean((current.profiles || []).find((x) => x.id === u)?.owner);
+    const q = (k) => url.searchParams.get(k) || "";
+    return sentPage(current, stats, u, { range: q("r"), answer: q("a"), open: q("open"), done: q("done"), csrf: s.csrf,
+      sent: Array.isArray(sent) ? sent : null, docs, pending: pendingDocs(current, held, u, owner) });
   }
+  if (path === DOC_URL && request.method === "GET") return docDownload(request, env);
+  if (path === DOC_URL && request.method === "POST") return docRequest(request, env, s);
   if (path === STATUS_URL && request.method === "GET") {
     const url = new URL(request.url);
     const u = url.searchParams.get("u") || "";
@@ -420,13 +459,17 @@ export async function handleApi(request, env) {
     const u = typeof body?.u === "string" ? body.u : "";
     if (!PROFILE_RE.test(u)) return json({ error: "bad profile" }, 400);
     if (body.stats === null) {
-      await env.FEEDBACK.delete(`stats:${u}`);
+      await Promise.all([env.FEEDBACK.delete(`stats:${u}`), env.FEEDBACK.delete(`sent:${u}`)]);
       return json({ deleted: true });
     }
     if (!validStats(body.stats)) return json({ error: "invalid stats" }, 400);
-    await env.FEEDBACK.put(`stats:${u}`, JSON.stringify({ ...body.stats, updated: Date.now() }));
+    const { stats, sent } = splitStats(body.stats);
+    await Promise.all([env.FEEDBACK.put(`stats:${u}`, JSON.stringify({ ...stats, updated: Date.now() })),
+      env.FEEDBACK.put(`sent:${u}`, JSON.stringify(sent))]);
     return json({ saved: true });
   }
+  // A cover letter or tailored CV HermitShell has made, kept encrypted for download (docs.js).
+  if (url.pathname === "/api/doc" && request.method === "POST") return storeDoc(request, env);
   if (url.pathname === "/api/invite" && request.method === "POST") {
     const body = (await limitedJson(request, 10000)) || {};
     const invite = await createInvite(env, body.note || "");

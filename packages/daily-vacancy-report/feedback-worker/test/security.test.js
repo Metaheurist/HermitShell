@@ -467,3 +467,131 @@ describe("task list", () => {
     expect(res.headers.get("Content-Security-Policy")).not.toContain("script-src");
   });
 });
+
+describe("letters and CVs kept for download", () => {
+  const PDF = new TextEncoder().encode("%PDF-1.4\nprivate letter text\n%%EOF");
+  const API = { Authorization: "Bearer api-token" };
+  const JOB = "https://jobs.example.com/1";
+  const upload = (env, params = {}, body = PDF, headers = API) => worker.fetch(new Request(`${BASE}/api/doc?${new URLSearchParams({
+    u: "sam-lee", j: JOB, k: "cover_letter", days: "7", name: "Letter.pdf", ...params })}`, { method: "POST", headers, body }), env);
+  const reportedStatus = (env) => env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [
+    { id: "owner", owner: true, name: "Alex Morgan" }, { id: "sam-lee", name: "Sam Lee" }, { id: "riley-chen", name: "Riley Chen" }] }));
+
+  it("only takes documents from HermitShell's API token, as PDFs within the size limit, for a real profile id", async () => {
+    const env = testEnv(ADMIN);
+    expect((await upload(env, {}, PDF, {})).status).toBe(401);
+    expect((await upload(env, {}, PDF, { Authorization: "Bearer wrong" })).status).toBe(401);
+    expect((await upload(env, {}, new TextEncoder().encode("<html><script>alert(1)</script>"))).status).toBe(400);
+    expect((await upload(env, {}, new Uint8Array(2 * 1024 * 1024 + 1).fill(37))).status).toBe(413);
+    for (const params of [{ u: "../owner" }, { u: "" }, { k: "applied" }, { j: "" }, { j: "x".repeat(301) }, { j: "a\nb" }, { days: "0" }, { days: "31" }, { days: "7.5" }]) {
+      expect((await upload(env, params)).status).toBe(400);
+    }
+    expect([...env.FEEDBACK.store.keys()].filter((k) => k.startsWith("doc"))).toEqual([]);
+  });
+
+  it("stores them encrypted and bound to their key, so tampered or moved copies do not open", async () => {
+    const env = testEnv(ADMIN);
+    await reportedStatus(env);
+    await upload(env);
+    const { jobHash } = await import("../src/docs.js");
+    const h = await jobHash(JOB);
+    const key = `doc:sam-lee:cover_letter:${h}`;
+    const stored = new Uint8Array(env.FEEDBACK.store.get(key));
+    expect(new TextDecoder().decode(stored)).not.toContain("private letter text");
+    const cookie = await signIn(env, "203.0.113.30");
+    const download = () => get(`/admin/doc?u=sam-lee&k=cover_letter&h=${h}`, env, { Cookie: cookie });
+    expect((await download()).status).toBe(200);
+    const tampered = stored.slice();
+    tampered[tampered.length - 1] ^= 1;
+    env.FEEDBACK.store.set(key, tampered.buffer);
+    expect((await download()).status).toBe(303);
+    env.FEEDBACK.store.set(key, stored.buffer);
+    await upload(env, { u: "riley-chen", j: "https://jobs.example.com/2" });
+    const h2 = await jobHash("https://jobs.example.com/2");
+    env.FEEDBACK.store.set(`doc:riley-chen:cover_letter:${h2}`, stored.buffer);
+    expect((await get(`/admin/doc?u=riley-chen&k=cover_letter&h=${h2}`, env, { Cookie: cookie })).status).toBe(303);
+    const other = await testEnv({ ...ADMIN, JOB_FEEDBACK_SECRET: "another-secret" });
+    other.FEEDBACK = env.FEEDBACK;
+    const { readDoc } = await import("../src/docs.js");
+    expect(await readDoc(other, "sam-lee", "cover_letter", h)).toBeNull();
+    expect(await readDoc(env, "sam-lee", "cover_letter", h)).not.toBeNull();
+  });
+
+  it("downloads only for a signed-in admin, as an attachment that cannot run in the page", async () => {
+    const env = testEnv(ADMIN);
+    await reportedStatus(env);
+    await upload(env, { name: `Letter"; filename=evil.html\r\n<script>.pdf` });
+    const { jobHash } = await import("../src/docs.js");
+    const path = `/admin/doc?u=sam-lee&k=cover_letter&h=${await jobHash(JOB)}`;
+    const anonymous = await get(path, env);
+    expect(anonymous.headers.get("Content-Type")).toContain("text/html");
+    expect(await anonymous.text()).toContain("Admin sign-in");
+    const res = await get(path, env, { Cookie: await signIn(env, "203.0.113.31") });
+    const disposition = res.headers.get("Content-Disposition");
+    expect(disposition).toMatch(/^attachment; filename="[^"\r\n;]*"; filename\*=UTF-8''\S+$/);
+    expect(disposition).not.toContain("evil.html\"");
+    expect(disposition).not.toMatch(/[\r\n<>]/);
+    expect(res.headers.get("Content-Security-Policy")).toBe("default-src 'none'; sandbox");
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+    expect((await get("/admin/doc?u=sam-lee&k=cover_letter&h=../../x", env, { Cookie: await signIn(env, "203.0.113.32") })).status).toBe(303);
+    expect((await get("/admin/doc?u=../sam-lee&k=cover_letter&h=0", env, { Cookie: await signIn(env, "203.0.113.33") })).status).toBe(404);
+  });
+
+  it("needs a signed-in session and the form's CSRF token to ask for one from the dashboard", async () => {
+    const env = testEnv(ADMIN);
+    await reportedStatus(env);
+    const fields = { u: "sam-lee", j: JOB, k: "cover_letter", n: "Data Engineer" };
+    const anonymous = await worker.fetch(new Request(`${BASE}/admin/doc`, { method: "POST", body: new URLSearchParams({ csrf: "x", ...fields }) }), env);
+    expect(await anonymous.text()).toContain("Admin sign-in");
+    const cookie = await signIn(env, "203.0.113.34");
+    const forged = await worker.fetch(new Request(`${BASE}/admin/doc`, { method: "POST", headers: { Cookie: cookie },
+      body: new URLSearchParams({ csrf: "0".repeat(32), ...fields }) }), env);
+    expect(forged.status).toBe(403);
+    expect([...env.FEEDBACK.store.keys()].filter((k) => k.startsWith("event:"))).toEqual([]);
+  });
+
+  it("serves an email button's document only for that link's job, profile and kind, and never for a changed or expired link", async () => {
+    const env = testEnv(ADMIN);
+    await reportedStatus(env);
+    await upload(env);
+    const fetchDoc = (p) => worker.fetch(new Request(`${BASE}/f/doc?${new URLSearchParams(p)}`), env);
+    const good = await signed("cover_letter", JOB, "Data Engineer", "sam-lee");
+    expect((await fetchDoc(good)).headers.get("Content-Type")).toBe("application/pdf");
+    expect((await fetchDoc({ ...good, u: "riley-chen" })).status).toBe(403);
+    expect((await fetchDoc({ ...good, a: "tailored_cv" })).status).toBe(403);
+    expect((await fetchDoc({ ...good, j: "https://jobs.example.com/2" })).status).toBe(403);
+    expect((await fetchDoc(await signed("cover_letter", JOB, "Data Engineer", "riley-chen"))).status).toBe(404);
+    expect((await fetchDoc(await signed("tailored_cv", JOB, "Data Engineer", "sam-lee"))).status).toBe(404);
+    expect((await fetchDoc(await signed("applied", JOB, "Data Engineer", "sam-lee"))).status).toBe(404);
+    const old = String(today() - 91);
+    const expired = { ...good, d: old, t: await sign("test-secret", JOB, "cover_letter", "Data Engineer", "", "sam-lee", old) };
+    expect((await fetchDoc(expired)).status).toBe(410);
+  });
+
+  it("escapes every job detail on the list of jobs sent and links only real web addresses", async () => {
+    const env = testEnv(ADMIN);
+    await reportedStatus(env);
+    const job = { title: HOSTILE, employer: HOSTILE, day: new Date().toISOString().slice(0, 10), fit: 8, key: `k${HOSTILE}`, url: "javascript:alert(1)",
+      more: { reasoning: HOSTILE, about: HOSTILE, profile: HOSTILE, company: HOSTILE, type: HOSTILE, closing: HOSTILE, published: HOSTILE,
+        site: "javascript:alert(1)", matched: [HOSTILE], gaps: [HOSTILE], confidence: "100%\"><script>", coverage: 1e9 } };
+    await worker.fetch(new Request(`${BASE}/api/stats`, { method: "POST", headers: API, body: JSON.stringify({ u: "sam-lee", stats: { days: {}, sent: [job] } }) }), env);
+    const body = await (await get("/admin/sent?u=sam-lee&r=7", env, { Cookie: await signIn(env, "203.0.113.35") })).text();
+    expect(body).not.toContain("<script>");
+    expect(body).not.toContain("<img");
+    expect(body).not.toContain("javascript:");
+    expect(body).toContain("&lt;script&gt;");
+    expect(body).not.toContain("Confidence</span>");
+    expect(body).not.toContain("CV keyword match</span>");
+    expect(body).toContain('name="j" value="k&lt;script&gt;');
+  });
+
+  it("refuses details that are not an object", async () => {
+    const env = testEnv(ADMIN);
+    const put = (sent) => worker.fetch(new Request(`${BASE}/api/stats`, { method: "POST", headers: API,
+      body: JSON.stringify({ u: "sam-lee", stats: { days: {}, sent } }) }), env);
+    expect((await put([{ title: "x", more: "text" }])).status).toBe(400);
+    expect((await put([{ title: "x", more: [1] }])).status).toBe(400);
+    expect((await put([{ title: "x", more: {} }])).status).toBe(200);
+  });
+});

@@ -3,11 +3,14 @@
 // Pages may not run scripts (see CSP), so the charts are inline SVG, the motion is CSS (off for reduced motion)
 // and hovering a bar shows its numbers through the SVG <title>.
 
+import { DOC_STYLE, docActions, jobHash, validJobKey } from "./docs.js";
 import { ago, esc, page } from "./lib.js";
 
 export const STATS_URL = "/admin/stats";
 export const SENT_URL = "/admin/sent";
-export const MAX_STATS_BYTES = 150 * 1024;
+// The jobs sent carry each job's details ("more"), which are kept apart from the stats ("sent:<id>") so the
+// dashboard, which reads every profile's stats, stays quick.
+export const MAX_STATS_BYTES = 600 * 1024;
 const MAX_SENT = 200;
 // Same order as FIELDS in profile_stats.py.
 export const FIELDS = ["scanned", "rated", "sent", "fit_sum", "fit_n", "strong", "runs", "interested", "good_match",
@@ -31,7 +34,14 @@ export function validStats(s) {
     (s.ranges == null || (typeof s.ranges === "object" && !Array.isArray(s.ranges))) &&
     (s.pipeline == null || (typeof s.pipeline === "object" && !Array.isArray(s.pipeline))) &&
     (s.sent == null || (Array.isArray(s.sent) && s.sent.length <= MAX_SENT &&
-      s.sent.every((j) => j && typeof j === "object" && !Array.isArray(j))));
+      s.sent.every((j) => j && typeof j === "object" && !Array.isArray(j) &&
+        (j.more == null || (typeof j.more === "object" && !Array.isArray(j.more))))));
+}
+
+// What is stored: the stats without the jobs' details, and the jobs sent with them.
+export function splitStats(stats) {
+  const sent = Array.isArray(stats.sent) ? stats.sent : [];
+  return { stats: { ...stats, sent: sent.map(({ more, ...job }) => job) }, sent };
 }
 
 // ------------------------------------------------------------------------- numbers
@@ -349,46 +359,110 @@ function answerFilter(pid, range, answer, jobs) {
     `<a href="${SENT_URL}?u=${esc(pid)}&amp;r=${range}${k ? `&amp;a=${k}` : ""}"${k === answer ? ' class="on" aria-current="page"' : ""}>${esc(label)} <b>${counts[k]}</b></a>`).join("")}</nav>`;
 }
 
-function sentRow(j, i) {
+const text = (v, n) => (typeof v === "string" ? v.slice(0, n).trim() : "");
+const percent = (v) => (Number.isInteger(v) && v >= 0 && v <= 100 ? v : null);
+const words = (v, n) => (Array.isArray(v) ? v.filter((s) => typeof s === "string" && s.trim()).slice(0, n).map((s) => s.slice(0, 60)) : []);
+const safeUrl = (v) => (typeof v === "string" && v.length <= 500 && LINK_RE.test(v) ? v : "");
+const domain = (url) => url.replace(/^https?:\/\/(www\.)?/i, "").split(/[/?#]/)[0].slice(0, 60);
+
+function closingPill(closing, today) {
+  if (!DATE_RE.test(closing || "")) return "";
+  const days = Math.round((msOf(closing) - msOf(today)) / DAY_MS);
+  const label = days < 0 ? "Closed" : days === 0 ? "Closes today" : days === 1 ? "Closes tomorrow" : `Closes in ${days} days`;
+  return `<span class="fact${days <= 3 ? " soon" : ""}" title="Closing date ${esc(closing)}">${label}</span>`;
+}
+
+function meter(label, value, max, color, suffix) {
+  if (value === null) return "";
+  return `<div class="meter"><span>${label}</span><b>${value}${suffix}</b><i><em style="width:${Math.max(3, Math.round((value / max) * 100))}%;background:${color}"></em></i></div>`;
+}
+
+function skillChips(label, items, cls) {
+  return items.length ? `<div class="skills ${cls}"><span class="lbl">${label}</span><div>${items.map((s) => `<span>${esc(s)}</span>`).join("")}</div></div>` : "";
+}
+
+// What the job's email card showed, below its title line.
+function jobMore(j, fit, color, today, docs) {
+  const m = j.more && typeof j.more === "object" && !Array.isArray(j.more) ? j.more : {};
+  const chips = [closingPill(m.closing, today), ...[m.type, j.mode, m.seniority].map((v) => text(v, 40)).filter((v) => v && v !== "Unknown")
+    .map((v) => `<span class="fact">${esc(v)}</span>`), text(m.published, 30) ? `<span class="fact soft">Posted ${esc(text(m.published, 30))}</span>` : "",
+  j.salary ? "" : '<span class="fact soft">Salary not listed</span>'].join("");
+  const salary = text(j.salary, 60) ? `<div class="salary">${icon("coin")}<b>${esc(text(j.salary, 60))}</b></div>` : "";
+  const meters = [meter("HermitShell fit", fit, 10, color, "/10"), meter("Confidence", percent(m.confidence), 100, "#6366f1", "%"),
+    meter("CV keyword match", percent(m.coverage), 100, "#0ea5e9", "%")].join("");
+  const why = text(m.reasoning, 600) ? `<p class="why">${esc(text(m.reasoning, 600))}</p>` : "";
+  const site = safeUrl(m.site);
+  const company = [text(j.employer, 60) ? `<b>${esc(text(j.employer, 60))}</b>` : "", esc(text(m.profile, 120)),
+    site ? `<a href="${esc(site)}" target="_blank" rel="noopener noreferrer nofollow">${esc(domain(site))} &#8599;</a>` : ""].filter(Boolean).join(" &middot; ");
+  const about = text(m.about, 400) || text(m.company, 60) ? `<div class="about"><span class="lbl">About the company</span>${company ? `<div>${company}</div>` : ""}${
+    text(m.about, 400) ? `<p>${esc(text(m.about, 400))}</p>` : ""}${text(m.company, 60) ? `<div class="muted">Advertised by <b>${esc(text(m.company, 60))}</b></div>` : ""}</div>` : "";
+  const url = safeUrl(j.url);
+  const advert = url ? `<a class="advert" href="${esc(url)}" target="_blank" rel="noopener noreferrer nofollow">View the advert on ${esc(domain(url))} &#8599;</a>` : "";
+  return `<div class="more">${chips ? `<div class="facts">${chips}</div>` : ""}${salary}${meters ? `<div class="meters">${meters}</div>` : ""}${why}${about}
+${skillChips("Strongest matches with the CV", words(m.matched, 12), "have")}${skillChips("Missing from the CV", words(m.gaps, 6), "gap")}
+${docs ? `<div class="docs">${docs}</div>` : ""}${advert}</div>`;
+}
+
+async function sentRow(j, i, ctx) {
   const fit = Number.isInteger(j.fit) && j.fit >= 0 && j.fit <= 10 ? j.fit : null;
   const color = fit >= 8 ? "#10b981" : fit >= 7 ? "#84cc16" : fit >= 5 ? "#f59e0b" : "#94a3b8";
-  const title = esc(cut(j.title, 90));
-  const url = typeof j.url === "string" && j.url.length <= 500 && LINK_RE.test(j.url) ? j.url : "";
-  const heading = url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer nofollow">${title}</a>` : title;
+  const key = validJobKey(j.key) ? j.key : "";
+  const h = key ? await jobHash(key) : "";
+  const id = h ? h.slice(0, 16) : `n${i}`;
   const meta = [j.employer, j.location, j.mode, j.salary].map((v) => cut(v, 60).trim()).filter(Boolean).map(esc).join(" &middot; ");
   const [label, tone] = ANSWER_LABELS[j.answer] || [];
   const badge = label ? `<span class="answer" style="--a:${tone}">${esc(label)}</span>` : "";
   const source = j.source ? `<span class="source">${esc(cut(j.source, 60))}</span>` : "";
-  return `<li style="animation-delay:${Math.min(i, 12) * 35}ms">${fit === null ? '<span class="nofit">&ndash;</span>' : ring(fit, 10, { size: 40, color, label: String(fit) })}
-<div class="job"><b>${heading}</b><span class="muted">${meta}</span></div><div class="tags">${badge}${source}</div></li>`;
+  const title = [cut(j.title, 90), cut(j.employer, 60)].filter(Boolean).join(" at ");
+  const docs = key ? docActions(key, h, { ...ctx, title: title.slice(0, 120) }) : "";
+  return `<li id="job-${id}" style="animation-delay:${Math.min(i, 12) * 35}ms"><details${ctx.open === id ? " open" : ""}><summary>${
+    fit === null ? '<span class="nofit">&ndash;</span>' : ring(fit, 10, { size: 40, color, label: String(fit) })}
+<div class="job"><b>${esc(cut(j.title, 90))}</b><span class="muted">${meta}</span></div><div class="tags">${badge}${source}</div><span class="chev" aria-hidden="true"></span></summary>
+${jobMore(j, fit, color, ctx.today, docs)}</details></li>`;
 }
 
-export function sentPage(status, stats, pid, rangeParam, answerParam) {
+const SENT_NOTES = {
+  doc: ["ok", "HermitShell is making it. It shows here to download within a few minutes, and this page checks every 15 seconds while it waits."],
+  docbad: ["bad", "That request could not be made. Reload the page and try again."],
+  docgone: ["bad", "That document is no longer kept. Generate a new one below."],
+};
+
+// `opts`: range and answer (the filters), open (the job to show opened), done (a note), csrf, sent (the jobs with
+// their details), docs (the letters and CVs kept) and pending (those being made).
+export async function sentPage(status, stats, pid, opts = {}) {
   const p = (status.profiles || []).find((x) => x.id === pid);
   const back = { wide: true, before: '<a class="back" href="/admin">&larr; Back to profiles</a>' };
   if (!p) return page("Profile not found", '<p>HermitShell has not reported this profile. <a href="/admin">Back to profiles</a></p>', { status: 404 });
-  const range = SENT_RANGES[rangeParam] ? Number(rangeParam) : DEFAULT_RANGE;
-  const answer = answerParam === "none" || ANSWER_LABELS[answerParam] ? answerParam : "";
+  const range = SENT_RANGES[opts.range] ? Number(opts.range) : DEFAULT_RANGE;
+  const answer = opts.answer === "none" || ANSWER_LABELS[opts.answer] ? opts.answer : "";
   const heading = p.owner ? "Jobs sent to you" : `Jobs sent to ${p.name || "this profile"}`;
   const links = `<a class="small" href="${STATS_URL}?u=${esc(pid)}">Stats</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage profile</a>`;
-  const first = dayList(zonedToday(status.timezone), range)[0];
-  const inRange = sentJobs(stats).filter((j) => j.day >= first);
+  const today = zonedToday(status.timezone);
+  const first = dayList(today, range)[0];
+  const inRange = sentJobs(Array.isArray(opts.sent) ? { sent: opts.sent } : stats).filter((j) => j.day >= first);
   const shown = inRange.filter((j) => !answer || (answer === "none" ? !ANSWER_LABELS[j.answer] : j.answer === answer));
+  const open = /^[0-9a-f]{16}$/.test(opts.open || "") ? opts.open : "";
+  const ctx = { profile: pid, csrf: opts.csrf || "", docs: opts.docs || [], pending: opts.pending || new Set(), today, open,
+    back: `r=${range}${answer ? `&a=${answer}` : ""}` };
+  const rows = await Promise.all(shown.map((j, i) => sentRow(j, i, ctx)));
   const byDay = [];
-  for (const j of shown) {
-    if (byDay.at(-1)?.day !== j.day) byDay.push({ day: j.day, jobs: [] });
-    byDay.at(-1).jobs.push(j);
-  }
+  shown.forEach((j, i) => {
+    if (byDay.at(-1)?.day !== j.day) byDay.push({ day: j.day, rows: [] });
+    byDay.at(-1).rows.push(rows[i]);
+  });
+  const waiting = open && shown.some((j, i) => rows[i].startsWith(`<li id="job-${open}"`) && rows[i].includes('class="doc busy"'));
   const updated = stats?.updated ? `Updated ${esc(ago(stats.updated))} &middot; ` : "";
   const empty = !stats ? "HermitShell sends the list within a few minutes of its next check-in, and after every report."
     : inRange.length ? "No job sent in this period has that answer." : "No jobs were sent in this period.";
-  const body = byDay.length ? byDay.map((g) => `<section class="sentday"><h3>${weekday(g.day)} ${shortDay(g.day)}<span>${g.jobs.length} job${g.jobs.length === 1 ? "" : "s"}</span></h3>
-<ul class="sentlist">${g.jobs.map(sentRow).join("")}</ul></section>`).join("")
+  const [tone, message] = SENT_NOTES[opts.done] || [];
+  const body = byDay.length ? byDay.map((g) => `<section class="sentday"><h3>${weekday(g.day)} ${shortDay(g.day)}<span>${g.rows.length} job${g.rows.length === 1 ? "" : "s"}</span></h3>
+<ul class="sentlist">${g.rows.join("")}</ul></section>`).join("")
     : `<div class="nostats">${icon("mail", "hero")}<p><b>Nothing to show.</b> ${empty}</p></div>`;
-  return page(heading, `<style>${STYLE}${SENT_STYLE}</style>
+  return page(heading, `<style>${STYLE}${SENT_STYLE}${DOC_STYLE}</style>${message ? `<p class="note ${tone}" role="status">${esc(message)}</p>` : ""}
 <div class="statbar">${sentTabs(pid, range, answer)}<span class="muted">${updated}${links}</span></div>
 ${inRange.length ? answerFilter(pid, range, answer, inRange) : ""}${body}
-<p class="muted small">Links open the advert. Notes typed on the buttons are never shown here.</p>`, back);
+<p class="muted small">Press a job for everything its email showed, the advert, and its cover letter and tailored CV. Letters and CVs made from
+here are kept to download for a few days and are not emailed. Notes typed on the buttons are never shown here.</p>`, { ...back, refresh: waiting ? 15 : 0 });
 }
 
 export function statsPage(status, stats, pid, rangeParam) {
@@ -531,18 +605,53 @@ nav.answers a.on{background:var(--soft);border-color:#c7cbf5;color:var(--brand-i
 .sentday h3{display:flex;align-items:baseline;gap:10px;margin:0 0 8px;font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:750}
 .sentday h3 span{letter-spacing:0;text-transform:none;font-weight:600;color:#94a3b8}
 .sentlist{list-style:none;padding:0;margin:0;display:grid;gap:8px}
-.sentlist li{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:14px;align-items:center;padding:12px 16px;background:#fff;
-border:1px solid var(--line);border-radius:16px;animation:rise .45s var(--ease) both;transition:transform .15s var(--ease),box-shadow .15s}
-.sentlist li:hover{transform:translateY(-2px);box-shadow:0 14px 26px -20px rgba(30,27,75,.45)}
+.sentlist li{background:#fff;border:1px solid var(--line);border-radius:16px;animation:rise .45s var(--ease) both;scroll-margin-top:80px;
+transition:box-shadow .2s,border-color .2s}
+.sentlist li:hover{box-shadow:0 14px 26px -20px rgba(30,27,75,.45)}
+.sentlist li:has(details[open]){border-color:#c7cbf5;box-shadow:0 18px 40px -26px rgba(30,27,75,.5)}
+.sentlist summary{display:grid;grid-template-columns:40px minmax(0,1fr) auto 16px;gap:14px;align-items:center;padding:12px 16px;cursor:pointer;
+list-style:none;border-radius:16px;transition:background .15s}
+.sentlist summary::-webkit-details-marker{display:none}
+.sentlist summary:hover{background:#fafaff}
+.sentlist summary:focus-visible{outline:3px solid rgba(99,102,241,.35);outline-offset:-3px}
+.sentlist details[open]>summary{border-radius:16px 16px 0 0;background:linear-gradient(180deg,#f7f7ff,#fff)}
+.chev{width:9px;height:9px;border:solid var(--muted);border-width:0 2px 2px 0;transform:rotate(45deg) translate(-2px,-2px);
+transition:transform .25s var(--ease),border-color .15s;justify-self:center}
+summary:hover .chev{border-color:var(--brand-ink)}
+details[open] .chev{transform:rotate(225deg) translate(-2px,-2px)}
 .sentlist .job{display:grid;gap:3px;min-width:0}
 .sentlist .job b{font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
-.sentlist .job b a{color:inherit;text-decoration:none}.sentlist .job b a:hover{color:var(--brand-ink);text-decoration:underline}
+.sentlist details[open] .job b{white-space:normal}
 .sentlist .job .muted{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sentlist .tags{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.more{padding:4px 18px 18px 70px;display:grid;gap:12px;animation:unfold .35s var(--ease) both}
+@keyframes unfold{from{opacity:0;transform:translateY(-6px)}}
+.facts{display:flex;flex-wrap:wrap;gap:6px}
+.fact{font-size:12px;font-weight:650;padding:3px 9px;border-radius:7px;background:#eef2ff;color:#3730a3}
+.fact.soft{background:#f1f3f9;color:var(--muted)}.fact.soon{background:#fff7ed;color:#c2410c}
+.salary{display:inline-flex;align-items:center;gap:8px;justify-self:start;padding:6px 12px 6px 9px;border-radius:10px;
+background:var(--ok-bg);border:1px solid var(--ok-line);color:#065f46;font-size:15px}
+.salary svg{width:18px;height:18px}
+.meters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.meter{display:grid;grid-template-columns:1fr auto;gap:2px 8px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.meter b{font-size:14px;letter-spacing:0;color:var(--ink)}
+.meter i{grid-column:1/-1;height:6px;border-radius:99px;background:#e9ecf4;overflow:hidden}
+.meter em{display:block;height:100%;border-radius:inherit;animation:growx .8s var(--ease) both .1s;transform-origin:0 50%}
+.why{margin:0;padding:11px 14px;border-left:3px solid var(--brand);border-radius:10px;background:#f8fafc;font-size:14px;line-height:1.55;color:var(--text)}
+.about{padding:11px 14px;border:1px solid var(--line);border-radius:12px;font-size:13.5px;color:var(--text);line-height:1.5}
+.about p{margin:4px 0 0;font-size:13.5px}.about .muted{margin-top:6px}
+.more .lbl{display:block;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:650;margin-bottom:5px}
+.skills div{display:flex;flex-wrap:wrap;gap:6px}
+.skills span:not(.lbl){font-size:12px;font-weight:650;padding:3px 10px;border-radius:99px;border:1px solid}
+.skills.have span:not(.lbl){background:#ecfdf5;border-color:#6ee7b7;color:#047857}
+.skills.gap .lbl{color:#92400e}.skills.gap span:not(.lbl){background:#fffbeb;border-color:#fcd34d;color:#92400e}
+.more .docs{margin-top:2px}
+a.advert{justify-self:start;font-size:13px;font-weight:650;text-decoration:none}a.advert:hover{text-decoration:underline}
 .answer{font-size:11.5px;font-weight:750;padding:3px 10px;border-radius:99px;color:var(--a);background:color-mix(in srgb,var(--a) 13%,#fff);white-space:nowrap}
 .source{font-size:11.5px;color:#94a3b8;white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis}
 .nofit{width:40px;height:40px;display:grid;place-items:center;border-radius:50%;background:#f1f3f9;color:var(--muted);font-weight:700}
-@media (max-width:640px){.sentlist li{grid-template-columns:40px minmax(0,1fr)}.sentlist .tags{grid-column:2;flex-direction:row;align-items:center}}
+@media (max-width:640px){.sentlist summary{grid-template-columns:40px minmax(0,1fr) 16px}.sentlist .tags{grid-column:2;flex-direction:row;align-items:center}
+.sentlist .chev{grid-row:1;grid-column:3}.more{padding:4px 14px 16px}.meters{grid-template-columns:1fr}}
 `;
 
 // The dashboard's Stats links; added to the shared page style.

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import worker from "../src/index.js";
-import { FIELDS, sentPage, statsPage, totals, validStats, windowFor, zonedToday } from "../src/stats.js";
+import { jobHash } from "../src/docs.js";
+import { FIELDS, sentPage, splitStats, statsPage, totals, validStats, windowFor, zonedToday } from "../src/stats.js";
 import { BASE, keysWith, testEnv } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
@@ -136,14 +137,29 @@ describe("stats page", () => {
   });
 });
 
+const MORE = {
+  closing: daysAgo(-2), type: "Full-time permanent", seniority: "Mid", published: "2 days ago", confidence: 80, coverage: 65,
+  reasoning: "Strong SQL and Python overlap with the CV.", about: "Northwind makes kitchen tools.", profile: "Manufacturer",
+  site: "https://www.northwind.example.com/about", company: "Contoso Recruitment", matched: ["Python", "SQL"], gaps: ["dbt"],
+};
+
+function detailed() {
+  const s = sample();
+  s.sent[0] = { ...s.sent[0], key: "https://jobs.example.com/1", more: MORE };
+  s.sent[1] = { ...s.sent[1], key: "nijobs:1234567" };
+  return s;
+}
+
+const sentOf = async (stats, pid, opts) => (await sentPage(STATUS, stats, pid, opts)).text();
+
 describe("jobs sent page", () => {
   it("lists the jobs sent in the range, newest day first, with their score, details, answer and advert link", async () => {
-    const body = await sentPage(STATUS, sample(), "sam-lee", "7", null).text();
+    const body = await sentOf(sample(), "sam-lee", { range: "7" });
     expect(body).toContain("Jobs sent to Sam Lee");
     expect(body).toContain('aria-current="page">7 days');
     expect(body.indexOf("Data Engineer")).toBeLessThan(body.indexOf("BI Developer"));
     expect(body).not.toContain("Data Analyst");
-    expect(body).toContain('<a href="https://jobs.example.com/1" target="_blank" rel="noopener noreferrer nofollow">Data Engineer</a>');
+    expect(body).toContain('<a class="advert" href="https://jobs.example.com/1" target="_blank" rel="noopener noreferrer nofollow">View the advert on jobs.example.com');
     expect(body).toContain("<b>Analytics Engineer</b>");
     expect(body).toContain("Northwind &middot; York &middot; Hybrid &middot; £55,000");
     expect(body).toMatch(/class="answer"[^>]*>Applied</);
@@ -155,25 +171,73 @@ describe("jobs sent page", () => {
   });
 
   it("filters by answer, keeps the filter across ranges and says when nothing matches", async () => {
-    const applied = await sentPage(STATUS, sample(), "owner", "30", "applied").text();
+    const applied = await sentOf(sample(), "owner", { range: "30", answer: "applied" });
     expect(applied).toContain("Jobs sent to you");
     expect(applied).toContain("Data Engineer");
     expect(applied).not.toContain("Analytics Engineer");
     expect(applied).toContain('href="/admin/sent?u=owner&amp;r=90&amp;a=applied"');
-    const none = await sentPage(STATUS, sample(), "owner", "30", "none").text();
+    const none = await sentOf(sample(), "owner", { range: "30", answer: "none" });
     expect(none).toContain("Analytics Engineer");
     expect(none).not.toContain(">Data Engineer<");
-    const nothing = await sentPage(STATUS, sample(), "owner", "7", "heard_back").text();
+    const nothing = await sentOf(sample(), "owner", { range: "7", answer: "heard_back" });
     expect(nothing).toContain("No job sent in this period has that answer.");
-    const odd = await sentPage(STATUS, sample(), "owner", "365", "bogus").text();
+    const odd = await sentOf(sample(), "owner", { range: "365", answer: "bogus" });
     expect(odd).toContain('aria-current="page">30 days');
     expect(odd).toContain(">All <b>3</b>");
   });
 
   it("explains an empty list and 404s for an unknown profile", async () => {
-    expect(await sentPage(STATUS, null, "sam-lee", "7").text()).toContain("HermitShell sends the list");
-    expect(await sentPage(STATUS, { days: {} }, "sam-lee", "7").text()).toContain("No jobs were sent in this period.");
-    expect(sentPage(STATUS, sample(), "casey-quinn", "7").status).toBe(404);
+    expect(await sentOf(null, "sam-lee", { range: "7" })).toContain("HermitShell sends the list");
+    expect(await sentOf({ days: {} }, "sam-lee", { range: "7" })).toContain("No jobs were sent in this period.");
+    expect((await sentPage(STATUS, sample(), "casey-quinn", { range: "7" })).status).toBe(404);
+  });
+
+  it("opens each job, when pressed, to everything its email card showed", async () => {
+    const body = await sentOf(detailed(), "sam-lee", { range: "7" });
+    expect(body).toMatch(/<details><summary><svg class="ring"[\s\S]*?<b>Data Engineer<\/b>[\s\S]*?<span class="chev"/);
+    expect(body).not.toContain("<details open");
+    for (const part of ["Closes in 2 days", "Full-time permanent", "Hybrid", "Mid", "Posted 2 days ago", "HermitShell fit</span><b>9/10",
+      "Confidence</span><b>80%", "CV keyword match</span><b>65%", '<p class="why">Strong SQL and Python overlap with the CV.</p>',
+      "About the company", "<b>Northwind</b> &middot; Manufacturer", 'href="https://www.northwind.example.com/about"',
+      "northwind.example.com &#8599;", "Northwind makes kitchen tools.", "Advertised by <b>Contoso Recruitment</b>",
+      "Strongest matches with the CV", "<span>Python</span><span>SQL</span>", "Missing from the CV", "<span>dbt</span>",
+      '<div class="salary">']) {
+      expect(body).toContain(part);
+    }
+    expect(body).toContain("Salary not listed");
+  });
+
+  it("offers each job's cover letter and tailored CV: Generate, then Download and Regenerate, and a spinner while one is made", async () => {
+    const h = await jobHash("https://jobs.example.com/1");
+    const other = await jobHash("nijobs:1234567");
+    const docs = [{ k: "cover_letter", h, name: "Cover letter.pdf", at: Date.now() - 3600000, exp: Date.now() + 86400000 }];
+    const pending = new Set(["tailored_cv\nnijobs:1234567"]);
+    const body = await sentOf(detailed(), "sam-lee", { range: "7", csrf: "c".repeat(32), docs, pending, open: h.slice(0, 16), done: "doc" });
+    expect(body).toContain(`<li id="job-${h.slice(0, 16)}"`);
+    expect(body).toContain(`<li id="job-${h.slice(0, 16)}" style="animation-delay:0ms"><details open>`);
+    expect(body).toContain(`href="/admin/doc?u=sam-lee&amp;k=cover_letter&amp;h=${h}" download>Download</a>`);
+    expect(body).toMatch(/name="k" value="cover_letter">[\s\S]*?name="fresh" value="1">[\s\S]*?>Regenerate</);
+    expect(body).toMatch(/name="k" value="tailored_cv">[\s\S]*?<button class="small">Generate<\/button>/);
+    expect(body).toContain('name="j" value="https://jobs.example.com/1"');
+    expect(body).toContain(`name="csrf" value="${"c".repeat(32)}"`);
+    expect(body).toContain('name="back" value="r=7"');
+    expect(body).toContain('name="n" value="Data Engineer at Northwind"');
+    expect(body).toMatch(new RegExp(`<li id="job-${other.slice(0, 16)}"[\\s\\S]*?class="doc busy"[\\s\\S]*?Tailored CV`));
+    expect(body).toContain("HermitShell is making it.");
+    expect(body).not.toContain('http-equiv="refresh"');
+    expect(body.match(/<li id="job-n\d+"[\s\S]*?<\/li>/)[0]).not.toContain('class="doc');
+    const waiting = await sentOf(detailed(), "sam-lee", { range: "7", pending, open: other.slice(0, 16) });
+    expect(waiting).toContain('<meta http-equiv="refresh" content="15">');
+    expect(waiting).toContain(`<li id="job-${other.slice(0, 16)}" style="animation-delay:35ms"><details open>`);
+  });
+
+  it("reads the jobs with their details when they are kept apart from the stats", async () => {
+    const { stats, sent } = splitStats(detailed());
+    expect(stats.sent[0].more).toBeUndefined();
+    expect(stats.sent[0].key).toBe("https://jobs.example.com/1");
+    expect(sent[0].more.reasoning).toBe(MORE.reasoning);
+    expect(await sentOf(stats, "sam-lee", { range: "7" })).not.toContain("Strong SQL");
+    expect(await sentOf(stats, "sam-lee", { range: "7", sent })).toContain("Strong SQL");
   });
 });
 

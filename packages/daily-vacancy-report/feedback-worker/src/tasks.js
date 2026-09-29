@@ -29,7 +29,8 @@ export async function rememberRequest(env, event, title, ttl) {
   if (!REQUEST_ACTIONS.includes(event.a)) return;
   const list = await env.FEEDBACK.get(REQUESTS_KEY, "json");
   const next = [...(Array.isArray(list) ? list : []).filter((r) => r.id !== event.id),
-    { id: event.id, a: event.a, n: String(title || "").slice(0, 120), u: event.u || "", at: event.at }].slice(-MAX_REQUESTS);
+    { id: event.id, a: event.a, n: String(title || "").slice(0, 120), u: event.u || "", at: event.at, j: String(event.j || "").slice(0, 300),
+      ...(event.via === "dashboard" ? { via: "dashboard" } : {}) }].slice(-MAX_REQUESTS);
   await env.FEEDBACK.put(REQUESTS_KEY, JSON.stringify(next), { expirationTtl: ttl });
 }
 
@@ -90,7 +91,7 @@ export function taskRows(status, queue, held) {
     if (server.some((t) => String(t.id).endsWith(`:${r.id}`))) continue;
     if (profiles.length && r.u && !known.has(r.u)) continue;
     rows.push({ id: r.id, kind: REQUEST_ACTIONS.includes(r.a) ? r.a : "cover_letter", who: who(r.u), at: Number(r.at) || 0,
-      state: "waiting", trigger: "email", title: String(r.n || ""), where: "worker" });
+      state: "waiting", trigger: r.via === "dashboard" ? "dashboard" : "email", title: String(r.n || ""), where: "worker" });
   }
   const order = { running: 0, stopping: 1, waiting: 2 };
   return rows.sort((a, b) => order[a.state] - order[b.state] || a.at - b.at);

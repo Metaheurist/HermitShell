@@ -12,10 +12,11 @@
 // Invite sign-ups (/join) and the admin gateway (/admin) are in join.js and admin.js.
 
 import { handleAdmin, handleApi } from "./admin.js";
+import { DOC_KINDS, DOC_STYLE, OWNER_ID, docFor, jobHash, pdfResponse, readDoc } from "./docs.js";
 import { handleJoin, queueItem } from "./join.js";
 import {
-  CONTROL_RE, LINK_DAYS, authorised, deleteAndUnflag, esc, eventFlag, eventPrefix, favicon, json, limitedForm, limitedJson,
-  listFlagged, page, purgeProfileEvents, safeEqual, setFlag, sha256Hex, sign, text, today,
+  CONTROL_RE, EVENT_TTL_SECONDS, LINK_DAYS, ago, authorised, deleteAndUnflag, esc, eventFlag, eventPrefix, favicon, json, limitedForm,
+  limitedJson, listFlagged, page, purgeProfileEvents, safeEqual, setFlag, sha256Hex, sign, text, today,
 } from "./lib.js";
 import { privacyPage } from "./privacy.js";
 import { forgetRequests, rememberRequest } from "./tasks.js";
@@ -44,11 +45,14 @@ const PLACEHOLDERS = {
   unsubscribe: "Anything we could do better? (optional)",
 };
 const SAVED_MESSAGES = {
-  cover_letter: "HermitShell is writing your cover letter. It arrives by email, as a PDF, within about 10 minutes.",
-  tailored_cv: "HermitShell is tailoring your CV to this job. It arrives by email, as a PDF, within about 10 minutes.",
+  cover_letter: "HermitShell is writing your cover letter. It arrives by email, as a PDF, within about 10 minutes (sooner if it made one for this job in the last few days).",
+  tailored_cv: "HermitShell is tailoring your CV to this job. It arrives by email, as a PDF, within about 10 minutes (sooner if it made one for this job in the last few days).",
   add_skill: "HermitShell counts these as on your CV from its next run, for ratings and cover letters.",
 };
-const EVENT_TTL_SECONDS = 60 * 60 * 24 * 30;
+const FRESH_MESSAGES = {
+  cover_letter: "HermitShell is writing a new cover letter. It arrives by email, as a PDF, within about 10 minutes.",
+  tailored_cv: "HermitShell is tailoring your CV to this job again. It arrives by email, as a PDF, within about 10 minutes.",
+};
 const MAX_TITLE = 120;
 const MAX_REASON = 300;
 const MAX_SKILL = 60;
@@ -113,11 +117,28 @@ function unsubscribePage(p, hidden) {
 <p style="font-size:13px">Nothing changes until you press Confirm.</p>`);
 }
 
-function confirmPage(p) {
+// A letter or CV made for this job in the last few days: download it, or write a new one.
+function readyPage(p, hidden, kept) {
+  const what = p.a === "cover_letter" ? "cover letter" : "tailored CV";
+  const query = LINK_FIELDS.filter((k) => p[k]).map((k) => `${k}=${encodeURIComponent(p[k])}`).join("&amp;");
+  return page(ACTIONS[p.a], `<style>${DOC_STYLE}.doc{margin:14px 0 4px}</style><p>${esc(p.n || "This job")}</p>
+<div class="doc ready"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 13l2 2 3-3.5"/></svg>
+<span><b>Your ${what} is ready</b><small>made ${esc(ago(kept.at))}, kept until ${esc(new Date(kept.exp).toISOString().slice(0, 10))}</small></span>
+<a class="dl" href="/f/doc?${query}" download>Download PDF</a></div>
+<form method="post" action="/f">${hidden}<input type="hidden" name="fresh" value="1">
+<label for="r">Or have a new one written (optional guidance)</label>
+<textarea id="r" name="r" maxlength="${MAX_REASON}" placeholder="${esc(PLACEHOLDERS[p.a])}"></textarea>
+<button type="submit" class="quiet">Confirm: write a new ${what}</button></form>
+<p style="font-size:13px">Downloading changes nothing. A new one is only written when you press Confirm.</p>`);
+}
+
+async function confirmPage(p, env) {
   const hidden = LINK_FIELDS.filter((k) => p[k])
     .map((k) => `<input type="hidden" name="${k}" value="${esc(p[k])}">`).join("");
   if (p.a === "add_skill") return skillPage(p, hidden);
   if (p.a === "unsubscribe") return unsubscribePage(p, hidden);
+  const kept = DOC_KINDS[p.a] ? await docFor(env, p.u || OWNER_ID, p.a, p.j) : null;
+  if (kept) return readyPage(p, hidden, kept);
   const placeholder = PLACEHOLDERS[p.a] || "Anything worth remembering (optional)";
   const label = p.a === "cover_letter" ? "Guidance for the letter (optional)"
     : p.a === "tailored_cv" ? "Guidance for the CV (optional)" : "Note for HermitShell (optional)";
@@ -166,13 +187,17 @@ async function saveAnswer(form, env) {
     }
     saved = `Added to your skills: ${esc(event.skills.join(", "))}.`;
   }
-  // Pressing Confirm again with the same answer overwrites the stored event instead of adding one.
-  const answer = await sha256Hex(`${event.r}\n${(event.skills || []).join("|")}`);
+  // "Write a new one" asks for a new letter or CV even if one was made in the last few days.
+  const fresh = DOC_KINDS[p.a] && form.get("fresh") === "1";
+  if (fresh) event.fresh = 1;
+  // Pressing Confirm again with the same answer overwrites the stored event instead of adding one; asking for a new
+  // one again is a new request from the next minute on.
+  const answer = await sha256Hex(`${event.r}\n${(event.skills || []).join("|")}${fresh ? `\nfresh:${Math.floor(at / 60000)}` : ""}`);
   event.id = `${eventPrefix(p.u)}${p.t}:${answer.slice(0, 12)}`;
   await env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });
   await setFlag(env, eventFlag(p.u), EVENT_TTL_SECONDS);
   await rememberRequest(env, event, p.n, EVENT_TTL_SECONDS);
-  const next = SAVED_MESSAGES[p.a] || "HermitShell picks this up on its next run.";
+  const next = (fresh && FRESH_MESSAGES[p.a]) || SAVED_MESSAGES[p.a] || "HermitShell picks this up on its next run.";
   return page("Saved", `<p>${saved}</p>
 <p>${esc(next)} You can close this tab.</p>`);
 }
@@ -180,10 +205,19 @@ async function saveAnswer(form, env) {
 async function route(request, env, ctx) {
   const url = new URL(request.url);
 
+  // The letter or CV an email button's link was for, when one is kept: the signed link is the permission.
+  if (url.pathname === "/f/doc" && request.method === "GET") {
+    const p = Object.fromEntries(url.searchParams);
+    const problem = await checkLink(env, p);
+    if (problem) return problem;
+    const doc = DOC_KINDS[p.a] ? await readDoc(env, p.u || OWNER_ID, p.a, await jobHash(p.j)) : null;
+    return doc ? pdfResponse(doc) : page("No longer kept", "<p>This document is no longer kept for download. Use the button in the email again to have a new one written.</p>", { status: 404 });
+  }
+
   if (url.pathname === "/f") {
     if (request.method === "GET") {
       const p = Object.fromEntries(url.searchParams);
-      return (await checkLink(env, p)) || confirmPage(p);
+      return (await checkLink(env, p)) || confirmPage(p, env);
     }
     if (request.method === "POST") {
       const form = await limitedForm(request, MAX_FORM_BYTES);

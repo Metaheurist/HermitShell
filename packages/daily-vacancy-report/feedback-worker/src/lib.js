@@ -269,9 +269,10 @@ export function note(text, kind = "ok") {
 }
 
 // `before` goes outside the card: main's entrance animation would otherwise pin a fixed element to the card.
-export function page(heading, body, { status = 200, wide = false, headers = {}, before = "" } = {}) {
+export function page(heading, body, { status = 200, wide = false, headers = {}, before = "", refresh = 0 } = {}) {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">${
+  refresh > 0 ? `<meta http-equiv="refresh" content="${Math.trunc(refresh)}">` : ""}
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"><title>${esc(heading)}</title><style>${STYLE}</style></head><body>${before}<main${wide ? ' class="wide"' : ""}>
 <div class="eyebrow">HermitShell</div><h1>${esc(heading)}</h1>${body}</main></body></html>`;
   return new Response(html, {
@@ -298,11 +299,26 @@ export async function deleteAndUnflag(env, ids, prefix, flag) {
   if (ids.length && !(await env.FEEDBACK.list({ prefix, limit: 1 })).keys.length) await env.FEEDBACK.delete(flag);
 }
 
-// An extra profile that unsubscribes or is deleted: its answers not yet collected by HermitShell, and its
-// stats, are dropped.
+// Answers are kept until HermitShell collects them, for at most this long.
+export const EVENT_TTL_SECONDS = 60 * 60 * 24 * 30;
+
+// A cover letter or tailored CV kept for download (docs.js), and the list of those a profile has.
+export function docKey(profile, kind, hash) {
+  return `doc:${profile}:${kind}:${hash}`;
+}
+
+export function docIndexKey(profile) {
+  return `docs:${profile}`;
+}
+
+// An extra profile that unsubscribes or is deleted: its answers not yet collected by HermitShell, its stats, its
+// list of jobs sent and the letters and CVs kept for download are dropped.
 export async function purgeProfileEvents(env, profile) {
   if (!profile) return;
-  await env.FEEDBACK.delete(`stats:${profile}`);
+  const docs = await env.FEEDBACK.get(docIndexKey(profile), "json");
+  await Promise.all((Array.isArray(docs) ? docs : []).filter((d) => d && /^[0-9a-f]{32}$/.test(d.h) && /^[a-z_]{1,20}$/.test(d.k))
+    .map((d) => env.FEEDBACK.delete(docKey(profile, d.k, d.h))));
+  await Promise.all([env.FEEDBACK.delete(docIndexKey(profile)), env.FEEDBACK.delete(`sent:${profile}`), env.FEEDBACK.delete(`stats:${profile}`)]);
   let cursor;
   do {
     const listed = await env.FEEDBACK.list({ prefix: eventPrefix(profile), cursor });
@@ -328,7 +344,7 @@ export function redirect(location, headers = {}) {
 }
 
 // The request body, read up to `max` bytes; null when it is larger.
-async function limitedBytes(request, max) {
+export async function limitedBytes(request, max) {
   if (Number(request.headers.get("Content-Length")) > max) return null;
   const chunks = [];
   let total = 0;
