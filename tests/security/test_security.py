@@ -4,6 +4,7 @@ Run from the repository root:  python -m pytest tests/security
 """
 
 import io
+import json
 import os
 import sqlite3
 import subprocess
@@ -49,9 +50,10 @@ def test_profile_ids_cannot_leave_the_profiles_folder(pid):
         profiles.profile_dir(pid)
 
 
-@pytest.mark.parametrize("key", ["PATH", "LD_PRELOAD", "PYTHONPATH", "HERMES_HOME", "HERMES_DATA_KEY",
+@pytest.mark.parametrize("key", ["PATH", "LD_PRELOAD", "PYTHONPATH", "HERMES_HOME", "HERMITSHELL_HOME", "HERMES_DATA_KEY",
                                  "JOB_PROFILE_FILE", "HERMES_STATE_DIR", "OLLAMA_HOST", "OLLAMA_HOSTS",
-                                 "HERMES_AUTOFIT", "HERMES_AUTOFIT_THREADS", "HERMES_MODEL_CONCURRENCY"])
+                                 "HERMES_AUTOFIT", "HERMES_AUTOFIT_THREADS", "HERMES_MODEL_CONCURRENCY",
+                                 "OLLAMA_NUM_CTX", "HERMITSHELL_JOB_TIMEOUT", "HERMITSHELL_CATCHUP_MINUTES"])
 def test_the_dashboard_cannot_set_process_or_path_settings(key):
     assert not hc.dashboard_key_allowed(key)
 
@@ -156,10 +158,10 @@ def test_a_report_time_from_the_dashboard_only_becomes_a_plain_schedule(when):
 
 
 @pytest.mark.parametrize("pid", ["--help", "../owner", "owner --script x.py", "a" * 41])
-def test_send_now_and_hermes_jobs_take_only_real_profile_ids(tmp_path, monkeypatch, pid):
+def test_send_now_and_scheduled_jobs_take_only_real_profile_ids(tmp_path, monkeypatch, pid):
     monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
     monkeypatch.setattr(profiles.subprocess, "Popen", lambda *a, **k: pytest.fail("started a process"))
-    monkeypatch.setattr(profiles.subprocess, "run", lambda *a, **k: pytest.fail("ran hermes"))
+    monkeypatch.setattr(profiles.subprocess, "run", lambda *a, **k: pytest.fail("ran the scheduler"))
     with pytest.raises(profiles.ProfileError):
         profiles.admin_action({"type": "admin", "action": "send_now", "u": pid})
     with pytest.raises(profiles.ProfileError):
@@ -250,7 +252,7 @@ def test_stats_sent_to_the_worker_hold_no_notes_or_contact_details(tmp_path, mon
 
 
 def test_log_scrubbing_treats_names_as_text_not_patterns(tmp_path, monkeypatch):
-    monkeypatch.setattr(hc, "HERMES_HOME", tmp_path)
+    monkeypatch.setattr(hc, "APP_HOME", tmp_path)
     monkeypatch.setattr(profiles, "STATE_DIR", tmp_path / "state")
     (tmp_path / "logs").mkdir()
     log = tmp_path / "logs" / "agent.log"
@@ -338,7 +340,7 @@ def test_errors_about_the_key_never_contain_it(monkeypatch):
 def test_files_the_scripts_create_are_owner_only(tmp_path):
     script = f"import sys; sys.path.insert(0, {str(REPO / 'common')!r}); import hermes_common; " \
              f"open({str(tmp_path / 'plain.txt')!r}, 'w').write('x')"
-    subprocess.run([sys.executable, "-c", script], check=True, env={**os.environ, "HERMES_HOME": str(tmp_path)})
+    subprocess.run([sys.executable, "-c", script], check=True, env={**os.environ, "HERMITSHELL_HOME": str(tmp_path)})
     assert (tmp_path / "plain.txt").stat().st_mode & 0o777 == 0o600
     hc.write_private(tmp_path / "private.txt", "x")
     hc.write_atomic(tmp_path / "atomic.txt", "x", private=True)
@@ -349,7 +351,7 @@ def test_files_the_scripts_create_are_owner_only(tmp_path):
 @POSIX
 def test_backups_are_owner_only_and_encrypted(tmp_path, monkeypatch):
     pytest.importorskip("cryptography")
-    monkeypatch.setattr(hc, "HERMES_HOME", tmp_path / "home")
+    monkeypatch.setattr(hc, "APP_HOME", tmp_path / "home")
     monkeypatch.setattr(maintenance, "SCRIPT_DIR", tmp_path / "scripts")
     monkeypatch.setattr(maintenance, "STATE_DIR", tmp_path / "scripts" / "state")
     (tmp_path / "scripts" / "state").mkdir(parents=True)
@@ -469,7 +471,72 @@ def test_a_tampered_autofit_state_is_bounded_and_cannot_add_instances(autofit_fi
 def test_the_root_watchdog_never_writes_into_folders_the_container_can_change():
     script = (REPO / "scripts" / "host" / "ollama-watchdog.sh").read_text(encoding="utf-8")
     code = "\n".join(line.split("#")[0] for line in script.splitlines())
-    assert "$HERMES_STATE/" not in code and "> $HERMES_STATE" not in code
-    assert 'exec -i -u "$HERMES_USER"' in code and 'chmod 700 "$RUN_DIR"' in code
+    assert "$STATE/" not in code and "> $STATE" not in code
+    assert 'exec -i -u "$APP_USER"' in code and 'chmod 700 "$RUN_DIR"' in code
     installer = (REPO / "scripts" / "host" / "install-watchdog.sh").read_text(encoding="utf-8")
     assert 'stat -c %u "$DEST"' in installer and "-o root -g root" in installer
+
+
+# --------------------------------------------------------------------------- the scheduler and the container
+
+@pytest.fixture
+def sched(tmp_path, monkeypatch):
+    import scheduler
+    home = tmp_path / "home"
+    (home / "scripts").mkdir(parents=True)
+    cron = home / "cron"
+    monkeypatch.setattr(scheduler.hc, "APP_HOME", home)
+    monkeypatch.setattr(scheduler, "SCRIPT_DIR", home / "scripts")
+    for name, value in {"CRON_DIR": cron, "JOBS_FILE": cron / "jobs.json", "OUTPUT_DIR": cron / "output",
+                        "LOCK_DIR": cron / "locks", "HEARTBEAT": cron / "heartbeat.json"}.items():
+        monkeypatch.setattr(scheduler, name, value)
+    monkeypatch.setattr(scheduler.subprocess, "Popen", lambda *a, **k: pytest.fail("started a process"))
+    return scheduler, home
+
+
+@pytest.mark.parametrize("job", [
+    {"script": "../../../bin/evil.py"}, {"script": "/usr/bin/python3"}, {"script": "run.sh"},
+    {"script": "ok.py", "workdir": "/etc"}, {"script": "ok.py", "workdir": "../.."},
+    {"script": "ok.py\n"}, {"script": ""}])
+def test_a_hand_edited_jobs_file_cannot_run_anything_outside_the_scripts(sched, job):
+    scheduler, home = sched
+    (home / "scripts" / "ok.py").write_text("", encoding="utf-8")
+    scheduler.CRON_DIR.mkdir(parents=True)
+    scheduler.JOBS_FILE.write_text(json.dumps({"jobs": [{"id": "abc123", "name": "x", "schedule": "* * * * *",
+                                                         **job}]}), encoding="utf-8")
+    assert scheduler.execute("abc123") == 2
+    assert scheduler.find(scheduler.load_jobs(), "abc123")["last_status"] == "error"
+
+
+@pytest.mark.parametrize("ref", ["../../etc/passwd", "abc123/../x", "x; rm -rf /", "--help"])
+def test_job_references_never_become_paths(sched, ref):
+    scheduler, _ = sched
+    with pytest.raises(scheduler.ScheduleError):
+        scheduler.execute(ref)
+    assert not (scheduler.LOCK_DIR / ref).exists()
+
+
+def test_jobs_get_the_environment_the_scheduler_started_with_not_its_secrets_from_env_files():
+    code = (REPO / "common" / "scheduler.py").read_text(encoding="utf-8")
+    assert code.index("BASE_ENV = dict(os.environ)") < code.index("import hermes_common")
+    assert "env=BASE_ENV" in code and "shell=True" not in code
+
+
+def test_the_container_runs_unprivileged_and_read_only():
+    dockerfile = (REPO / "Dockerfile").read_text(encoding="utf-8")
+    assert "USER hermitshell" in dockerfile and 'ARG UID=10000' in dockerfile and "tini" in dockerfile
+    compose = (REPO / "docker-compose.yml").read_text(encoding="utf-8")
+    for line in ("read_only: true", "- ALL", "no-new-privileges:true", "/var/run/docker.sock"):
+        assert (line in compose) is (line != "/var/run/docker.sock"), line
+    ignored = (REPO / ".dockerignore").read_text(encoding="utf-8").split()
+    assert {".env", "**/.env", ".git", "data", "**/tests"} <= set(ignored)
+
+
+def test_the_entrypoint_and_installers_quote_what_they_are_given():
+    entry = (REPO / "docker" / "entrypoint.sh").read_text(encoding="utf-8")
+    assert "set -eu" in entry and 'exec "$cmd" "$@"' in entry and "eval" not in entry
+    service = (REPO / "scripts" / "install-service.sh").read_text(encoding="utf-8")
+    assert 'case "$APP_USER" in "" | *[!a-z0-9_-]*)' in service and "*[!A-Za-z0-9_./-]*" in service
+    unit = (REPO / "scripts" / "host" / "hermitshell.service").read_text(encoding="utf-8")
+    for line in ("NoNewPrivileges=yes", "ProtectSystem=strict", "ReadWritePaths=@HOME@", "UMask=0077"):
+        assert line in unit, line

@@ -1,0 +1,29 @@
+# HermitShell as a container (docs/installation.md#run-it-as-a-container). Put this file in a folder of its own,
+# then: docker compose up -d. Settings and data live in HERMITSHELL_DATA (default ./data), which must belong to
+# uid 10000: sudo mkdir -p data && sudo chown 10000:10000 data
+#
+# Ollama is found at OLLAMA_HOST from data/.env, else on the Docker host (port 11434) or as a container named
+# `ollama` on the same network. scripts/host/install-updater.sh keeps the image up to date.
+services:
+  hermitshell:
+    image: ${HERMITSHELL_IMAGE:-ghcr.io/metaheurist/hermitshell:latest}
+    container_name: hermitshell
+    restart: unless-stopped
+    volumes:
+      - ${HERMITSHELL_DATA:-./data}:/data
+    environment:
+      TZ: ${TZ:-UTC}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
