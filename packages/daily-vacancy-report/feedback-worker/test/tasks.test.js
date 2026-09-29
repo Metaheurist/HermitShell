@@ -92,6 +92,20 @@ describe("the task list", () => {
     expect(res.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'self'");
   });
 
+  it("spins a round ring on the running task that carries on where it was after each refresh", async () => {
+    const { get } = await setup([REPORT, LETTER]);
+    const body = await (await get("/admin/tasks")).text();
+    const [running, waiting] = body.split('<li class="task').slice(1);
+    const phase = running.match(/^[^>]*s-running" style="--spin:(-\d\.\d\d)s">/);
+    expect(phase).not.toBeNull();
+    expect(Number(phase[1])).toBeGreaterThan(-1);
+    expect(Number(phase[1])).toBeLessThanOrEqual(0);
+    expect(waiting).not.toContain("--spin");
+    expect(body).toContain(".s-running .ticon{margin:0 3px;border-radius:50%");
+    expect(body).toContain("animation:tspin 1s linear infinite;animation-delay:var(--spin,0s)");
+    expect(body).toMatch(/mask:radial-gradient\(farthest-side/);
+  });
+
   it("estimates progress from the last run when there is no count, and slows then stops refreshing", async () => {
     const t = { ...REPORT, done: 0, total: 0, at: Date.now() - 600000, expected: 1200000 };
     const { get } = await setup([t]);

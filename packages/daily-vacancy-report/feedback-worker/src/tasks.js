@@ -189,11 +189,16 @@ function cancelForm(t, csrf) {
 <input type="hidden" name="task" value="${esc(t.id)}"><button class="tcancel" title="${label} this task">${label}</button></form>`;
 }
 
+// The list reloads every few seconds; starting the ring where the clock says it is keeps the spin from jumping back.
+function spinPhase(now = Date.now()) {
+  return ` style="--spin:-${((now % 1000) / 1000).toFixed(2)}s"`;
+}
+
 function taskRow(t, csrf, tz) {
   const name = t.kind === "report" || t.kind === "cover_letter" || t.kind === "tailored_cv" || t.kind === "signup" || t.kind === "unsubscribe"
     ? KIND_LABELS[t.kind] : t.title;
   const sub = ["report", "signup", "unsubscribe", "send", "delete", "key", "cv", "change"].includes(t.kind) ? "" : t.title;
-  return `<li class="task k-${esc(t.kind)} s-${t.state}"><span class="ticon">${icon(t.state === "waiting" ? "clock" : t.kind)}</span>
+  return `<li class="task k-${esc(t.kind)} s-${t.state}"${t.state === "running" ? spinPhase() : ""}><span class="ticon">${icon(t.state === "waiting" ? "clock" : t.kind)}</span>
 <div class="tbody"><div class="thead"><b>${esc(name)}</b><span class="twho">${esc(t.who)}</span><span class="chip">${esc(TRIGGERS[t.trigger])}</span></div>
 ${sub ? `<div class="ttitle">${esc(sub)}</div>` : ""}<div class="tsub" title="${esc(t.at ? when(t.at, tz) : "")}">${detail(t)}</div>${progress(t)}</div>
 ${cancelForm(t, csrf)}</li>`;
@@ -230,8 +235,10 @@ transition:transform .2s var(--ease),background .2s,box-shadow .2s}
 .tasksbtn:hover{transform:translateY(-1px);background:#e2e5ff}
 .tring{position:relative;width:30px;height:30px;display:grid;place-items:center;border-radius:50%}
 .tring svg{width:18px;height:18px}
-.tasksbtn.busy .tring::before{content:"";position:absolute;inset:0;border-radius:50%;border:2.5px solid rgba(99,102,241,.18);
-border-top-color:var(--brand);border-right-color:var(--brand2);animation:tspin .9s linear infinite}
+.tasksbtn.busy .tring::before{content:"";position:absolute;inset:0;border-radius:50%;
+background:conic-gradient(from 0deg,rgba(139,92,246,0) 0deg,rgba(139,92,246,.15) 90deg,var(--brand2) 250deg,var(--brand) 350deg,rgba(99,102,241,0) 360deg),#dfe2fb;
+-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2.5px));
+mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2.5px));animation:tspin 1s linear infinite}
 .tcount{position:absolute;top:-7px;right:-7px;min-width:20px;height:20px;padding:0 6px;box-sizing:border-box;border-radius:99px;
 display:grid;place-items:center;font-size:11.5px;font-weight:800;color:#fff;background:linear-gradient(135deg,#f97316,#ef4444);
 border:2px solid #fff;box-shadow:0 4px 10px -4px rgba(239,68,68,.9);animation:tpop .35s var(--ease) both}
@@ -249,9 +256,13 @@ ul.tasks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 animation:tin .3s cubic-bezier(.2,.8,.2,1) both}
 .ticon{position:relative;flex:none;width:36px;height:36px;border-radius:12px;display:grid;place-items:center;color:#4f46e5;background:#eef0ff}
 .ticon svg{width:19px;height:19px}
-.s-running .ticon{color:#fff;background:linear-gradient(135deg,#6366f1,#8b5cf6)}
-.s-running .ticon::after{content:"";position:absolute;inset:-4px;border-radius:15px;border:2px solid transparent;
-border-top-color:#8b5cf6;animation:tspin 1s linear infinite}
+.s-running .ticon{margin:0 3px;border-radius:50%;color:#fff;background:linear-gradient(135deg,#6366f1,#8b5cf6)}
+.s-running .ticon::before,.s-running .ticon::after{content:"";position:absolute;inset:-5px;border-radius:50%;
+-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2.5px));
+mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2.5px))}
+.s-running .ticon::before{background:#e6e8fb}
+.s-running .ticon::after{background:conic-gradient(from 0deg,rgba(139,92,246,0) 0deg,rgba(139,92,246,.15) 90deg,#8b5cf6 250deg,#6366f1 350deg,rgba(99,102,241,0) 360deg);
+animation:tspin 1s linear infinite;animation-delay:var(--spin,0s)}
 .s-waiting .ticon{color:#64748b;background:#f1f5f9}.s-waiting .ticon svg{animation:ttick 2s steps(8) infinite}
 .s-stopping .ticon{color:#b91c1c;background:#fee2e2}
 .tbody{flex:1;min-width:0}

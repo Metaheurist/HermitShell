@@ -449,4 +449,21 @@ describe("task list", () => {
     expect(body.split('<li class="task')).toHaveLength(4);
     expect(body).not.toContain(`value="letter:owner:event:_:&lt;`);
   });
+
+  it("puts nothing a task reports into the inline style that phases its loading circle", async () => {
+    const env = testEnv(ADMIN);
+    await env.FEEDBACK.put("status:profiles", reported([
+      { id: "report:sam-lee-456789", kind: "report", u: "sam-lee-456789", state: "running", stage: HOSTILE, spin: HOSTILE, style: HOSTILE },
+      { id: "letter:owner:event:_:abc:0a1b2c", kind: `x" style="background:url(//evil)`, u: "owner", state: `running" style="x`, title: HOSTILE },
+    ]));
+    const cookie = await signIn(env, "203.0.113.23");
+    const res = await get("/admin/tasks", env, { Cookie: cookie });
+    const body = await res.text();
+    const styles = [...body.matchAll(/<li [^>]*style="([^"]*)"/g)].map((m) => m[1]);
+    expect(styles.length).toBeGreaterThan(0);
+    for (const s of styles) expect(s).toMatch(/^--spin:-\d\.\d\ds$/);
+    expect(body).not.toContain('style="background');
+    expect(body).not.toContain('style="x');
+    expect(res.headers.get("Content-Security-Policy")).not.toContain("script-src");
+  });
 });
