@@ -8,6 +8,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Profile search on the dashboard.** An animated magnifying glass above the profiles table slides out a
+  search box, with CSS only and no JavaScript. Enter lists the profiles whose name, email, id, place,
+  status or crawler contain every word (`/admin?q=`, up to 60 characters). It shows how many profiles
+  match, a message with a way back when none do, and **&times;** to clear the search.
 - **A tidier Crawler column, with an Add key window.**
   - A profile's row shows its crawler key only when it has one: the provider (Firecrawl or Tavily) and
     the start and end of the key. The owner's row shows the global key, tagged **global**.

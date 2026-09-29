@@ -198,6 +198,7 @@ await call("/api/invite", { method: "POST", headers: { Authorization: `Bearer ${
 await save("admin-invite-link", await admin("/admin/action", { method: "POST", form: { csrf, action: "invite", note: "Casey from the course" } }));
 await admin("/admin/action", { method: "POST", form: { csrf, action: "resume", u: "jordan-patel" } });
 await save("admin-dashboard", await admin("/admin?done=queued"));
+await save("admin-dashboard-search", await admin("/admin?q=york"));
 // Opened as a file, the page cannot be given the #key-jordan-patel fragment that opens its key modal.
 const withModal = (await (await admin("/admin")).text()).replace("</head>", "<style>#key-jordan-patel{display:grid}</style></head>");
 await save("admin-key-modal", new Response(withModal));

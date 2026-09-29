@@ -292,6 +292,7 @@ deleted ([data protection](configuration.md#data-protection)).
 | Control | What it does |
 | --- | --- |
 | Status line | **HermitShell is connected** (green dot) while its live link is up, so changes reach it within seconds, then when it last reported its profiles. Without the link: when HermitShell last checked in, with the time in your timezone (`HERMES_TIMEZONE`). Also lists changes still **Waiting for HermitShell**. A warning appears above it if HermitShell hasn't checked in for 45 minutes |
+| Search (magnifying glass) | Slides out a search box. Type part of a name, email, place, status (**paused**, **scanning**, **no cv**) or crawler and press Enter: only the profiles with every word are listed, with **1 of 3 profiles** above the table. **&times;** shows everyone again |
 | Profile, Status | Name, email and start date, **no CV** when there is none yet; owner, active or paused; **scanning now** while a report runs; time of the last report and the daily report time |
 | **Send jobs now** | Runs that profile's report straight away and emails it when the scan finishes, even if nothing new turned up. Shows **Scanning…** while a report runs; missing without a CV |
 | **Manage** | Opens [that profile's page](#a-profiles-page): details, job search, report time and CV |
@@ -306,7 +307,13 @@ deleted ([data protection](configuration.md#data-protection)).
 | **Revoke** | Cancels an unused invite |
 | **Sign out** | Ends every admin session |
 
-<img src="images/worker/admin-key-modal.png" alt="The Add key window: Firecrawl or Tavily, and the API key" width="620">
+<table>
+<tr><th>Add key</th><th>Searching for a profile</th></tr>
+<tr>
+<td><img src="images/worker/admin-key-modal.png" alt="The Add key window: Firecrawl or Tavily, and the API key" width="380"></td>
+<td><img src="images/worker/admin-dashboard-search.png" alt="The profiles table searched for York" width="380"></td>
+</tr>
+</table>
 
 <table>
 <tr><th>Right after setup: the checklist</th><th>Before HermitShell has reported</th><th>New invite link</th></tr>
