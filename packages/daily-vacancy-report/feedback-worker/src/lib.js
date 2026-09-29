@@ -124,7 +124,7 @@ export function page(heading, body, { status = 200, wide = false, headers = {} }
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
 <title>${esc(heading)}</title><style>${STYLE}</style></head><body><main${wide ? ' class="wide"' : ""}>
-<div class="eyebrow">Daily Vacancy Report</div><h1>${esc(heading)}</h1>${body}</main></body></html>`;
+<div class="eyebrow">HermitShell</div><h1>${esc(heading)}</h1>${body}</main></body></html>`;
   return new Response(html, {
     status,
     headers: {

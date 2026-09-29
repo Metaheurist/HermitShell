@@ -1,4 +1,4 @@
-// Daily Vacancy Report feedback Worker.
+// HermitShell feedback Worker.
 //
 // Email buttons link to GET /f with a signed token. The link only shows a confirmation page, so
 // mail scanners that open every link cannot record answers; pressing Confirm POSTs the answer,
@@ -103,7 +103,7 @@ function unsubscribePage(p, hidden) {
     ? "HermitShell stops sending these reports. Your profile is kept on the server and can be switched back on there."
     : "HermitShell stops sending these reports and deletes this profile, its CV and its history from the server, " +
       'removes your name and email from its logs, and emails you a confirmation. <a href="/privacy">How your data is handled</a>.';
-  return page("Unsubscribe", `<p>Stop the Daily Vacancy Report for <b>${esc(p.n || "this profile")}</b>?</p><p>${effect}</p>
+  return page("Unsubscribe", `<p>Stop HermitShell's job reports for <b>${esc(p.n || "this profile")}</b>?</p><p>${effect}</p>
 <form method="post" action="/f">${hidden}
 <label for="r">Feedback (optional)</label>
 <textarea id="r" name="r" maxlength="${MAX_REASON}" placeholder="${esc(PLACEHOLDERS.unsubscribe)}"></textarea>
@@ -213,7 +213,7 @@ async function route(request, env, ctx) {
   if (url.pathname === "/join") return handleJoin(request, env);
   if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return handleAdmin(request, env, ctx);
   if (url.pathname.startsWith("/api/")) return handleApi(request, env);
-  if (url.pathname === "/") return text("Daily Vacancy Report feedback endpoint.");
+  if (url.pathname === "/") return text("HermitShell feedback endpoint.");
   return text("Not found", 404);
 }
 

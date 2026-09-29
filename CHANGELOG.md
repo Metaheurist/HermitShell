@@ -25,6 +25,8 @@ using [Semantic Versioning](https://semver.org/).
   HermitShell", "HermitShell has deleted your profile"). Hermes still names the Hermes Agent platform
   it runs on: its home folder, `config.yaml`, model, container and `hermes cron`. Settings such as
   `HERMES_HOME` are unchanged. The default sender for letters is now "HermitShell cover letters".
+  The Worker's pages (sign-in, dashboard, sign-up, buttons, privacy) are headed HermitShell rather
+  than Daily Vacancy Report, and the sign-up page is titled "Join HermitShell".
 - **Tidier job cards.** The buttons are no longer in one crowded row. Thumbs up and down sit under
   the fit score. **View job**, **I applied** and **Interested** follow a divider. **Cover letter**
   and **Tailored CV** share a "Made for this job" panel below them. The "Rated from the search

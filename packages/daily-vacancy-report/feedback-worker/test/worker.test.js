@@ -264,6 +264,16 @@ describe("feedback worker", () => {
     expect(body).not.toContain("Hermes");
   });
 
+  it("brands every page and the root endpoint as HermitShell", async () => {
+    const env = testEnv({ ADMIN_PASSWORD: "correct horse battery" });
+    for (const path of ["/privacy", "/admin", "/join?i=bad"]) {
+      const body = await (await worker.fetch(new Request(`${BASE}${path}`), env)).text();
+      expect(body, path).toContain('<div class="eyebrow">HermitShell</div>');
+      expect(body, path).not.toContain("Daily Vacancy Report");
+    }
+    expect(await (await worker.fetch(new Request(`${BASE}/`), env)).text()).toBe("HermitShell feedback endpoint.");
+  });
+
   it("only pauses when the owner unsubscribes", async () => {
     const env = testEnv();
     const params = await link("unsubscribe", "profile-pause", "Your reports");

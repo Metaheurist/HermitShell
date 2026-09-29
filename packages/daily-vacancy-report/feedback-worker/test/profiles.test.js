@@ -54,7 +54,9 @@ describe("invite sign-up", () => {
     expect(form).toContain('enctype="multipart/form-data"');
     expect(form).toContain('href="/privacy"');
     expect(form).toContain("HermitShell checks job boards");
+    expect(form).toContain("<h1>Join HermitShell</h1>");
     expect(form).not.toContain("Hermes");
+    expect(form).not.toContain("Daily Vacancy Report");
     expect((await worker.fetch(joinForm(id, { cv_text: CV_TEXT }), env)).status).toBe(200);
     expect(keysWith(env, "invite:")).toEqual([]);
     expect((await worker.fetch(joinForm(id, { cv_text: CV_TEXT }), env)).status).toBe(410);

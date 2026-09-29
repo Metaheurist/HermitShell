@@ -121,7 +121,7 @@ commit the ID if you share your fork.)
 On the first deploy, wrangler may ask you to register a `workers.dev` subdomain; accept it and
 pick a name. The deploy prints your URL, e.g.
 `https://vacancy-feedback.<subdomain>.workers.dev`. Opening it in a browser shows
-"Daily Vacancy Report feedback endpoint."
+"HermitShell feedback endpoint."
 
 ## Connect HermitShell
 

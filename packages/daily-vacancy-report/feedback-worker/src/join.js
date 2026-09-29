@@ -67,7 +67,7 @@ export function cvKind(file, bytes) {
 
 function form(inviteId, values = {}, error = "") {
   const v = (k) => esc(values[k] || "");
-  return page("Join the Daily Vacancy Report", `${error ? `<p style="color:#b91c1c">${esc(error)}</p>` : ""}
+  return page("Join HermitShell", `${error ? `<p style="color:#b91c1c">${esc(error)}</p>` : ""}
 <p>HermitShell checks job boards every day and emails you the roles that match your CV, with a fit score and the skills each one asks for.</p>
 <form method="post" action="/join?i=${esc(inviteId)}" enctype="multipart/form-data">
 <input type="hidden" name="i" value="${esc(inviteId)}">
