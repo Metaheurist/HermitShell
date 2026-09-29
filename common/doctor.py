@@ -37,6 +37,7 @@ REQUIREMENTS = [
     ("cryptography", "cryptography", "44", True),
     ("PIL", "pillow", "10.4", False),
     ("yaml", "pyyaml", "6.0", False),
+    ("websockets", "websockets", "13.0", False),
 ]
 CHECKS = ("python", "packages", "scheduler", "ollama", "settings", "worker", "disk")
 MIN_FREE_GB = 1.0

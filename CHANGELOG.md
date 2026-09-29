@@ -617,6 +617,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The container keeps the live link to the Worker.** The image lacked the `websockets` package, so a
+  container fell back to polling the Worker every 5 minutes; it is now installed (and optional in
+  `requirements.txt`), the doctor reports it, and the image's smoke test imports it.
+
 - A new sign-up dropped off the dashboard until its profile was built. It now has a **pending** row
   from the moment the invite form is sent. HermitShell also reports the new profile before it takes the
   sign-up off the queue: before, it took it off first and reported the profile only after updating the

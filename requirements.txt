@@ -3,6 +3,8 @@
 # Keep in step with REQUIREMENTS in common/doctor.py.
 requests>=2.32
 cryptography>=44
-# Optional: round company logos, and reading an older install's config.yaml with a real YAML parser.
+# Optional: round company logos, reading an older install's config.yaml with a real YAML parser, and the live
+# link to the feedback Worker (without it HermitShell polls the Worker every 5 minutes instead).
 pillow>=10.4
 pyyaml>=6.0
+websockets>=13.0

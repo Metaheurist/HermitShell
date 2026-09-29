@@ -273,7 +273,7 @@ cd $HERMITSHELL_HOME/scripts && python3 doctor.py --fix
 | Check | What `--fix` does |
 | --- | --- |
 | Python 3.10 or newer | Nothing (the container has 3.13) |
-| Packages: `requests`, `cryptography`, optional `pillow` and `pyyaml` ([requirements.txt](../requirements.txt)) | Installs missing or too-old ones with pip, or with uv when Python has no pip, into `scripts/.deps/pyX.Y`, which `hermes_common.py` puts on the import path |
+| Packages: `requests`, `cryptography`, optional `pillow`, `pyyaml` and `websockets` ([requirements.txt](../requirements.txt)) | Installs missing or too-old ones with pip, or with uv when Python has no pip, into `scripts/.deps/pyX.Y`, which `hermes_common.py` puts on the import path |
 | The scheduler: its jobs, failed runs, and whether it is running | Adds the standard jobs when there are none |
 | Ollama answers, with the model the scripts will use | Downloads the model through Ollama's API (`JOB_SCANNER_MODEL`, else `OLLAMA_MODEL`, else `qwen3:4b-instruct-2507-q4_K_M`, about 2.5 GB). `--no-pull` skips it, `--model NAME` picks another |
 | `.env` is owner-only, `HERMES_DATA_KEY` works, SMTP and a web search key are set | Makes `.env` owner-only and generates the data key when none is set, but never when encrypted files already exist (a new key can't open them) |

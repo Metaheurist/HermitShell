@@ -73,7 +73,7 @@ jobs:
           jobs=$(docker exec smoke python3 /data/scripts/scheduler.py list --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
           [ "$jobs" -ge 5 ] || { echo "expected the standard jobs, found $jobs"; exit 1; }
           docker exec smoke python3 /data/scripts/doctor.py --only python,packages
-          docker exec -w /data/scripts smoke python3 -c 'import hermes_common, scheduler, profiles, job_scanner'
+          docker exec -w /data/scripts smoke python3 -c 'import hermes_common, scheduler, profiles, job_scanner, websockets.sync.client'
           [ "$(docker exec smoke id -u)" = 10000 ]
           docker rm -f smoke
 

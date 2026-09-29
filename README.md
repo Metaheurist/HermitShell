@@ -174,7 +174,8 @@ job runs one of them.
 
 - Docker, or Linux with Python 3.10+ (the container has everything else).
 - Without the container: the `requests` and `cryptography` packages. `pillow` is optional and
-  gives round company logos; `pyyaml` is optional. [`requirements.txt`](requirements.txt) lists
+  gives round company logos; `pyyaml` is optional; `websockets` is optional and gives the live
+  link to the Worker (without it HermitShell polls every 5 minutes). [`requirements.txt`](requirements.txt) lists
   them, and `doctor.py --fix` installs any that are missing
   ([prerequisites](docs/installation.md#3-check-the-prerequisites)).
 - An Ollama model. A 4B instruct model such as `qwen3:4b-instruct-2507` works well on a CPU. The
