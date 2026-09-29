@@ -363,16 +363,22 @@ def test_watch_settings_come_from_the_env(home, monkeypatch, value, default, min
     assert profiles._seconds("JOB_PROFILES_TEST_SECONDS", default, minimum) == expected
 
 
-@pytest.mark.parametrize("argv, watched", [([], True), (["--once"], False), (["--full", "--once"], False)])
-def test_main_watches_between_cron_runs_unless_once(home, monkeypatch, argv, watched):
+@pytest.mark.parametrize("argv, live, calls_after_sync", [
+    ([], False, [("live",), ("watch", profiles.WATCH_SECONDS, profiles.POLL_SECONDS)]),
+    ([], True, [("live",)]),
+    (["--once"], True, []),
+    (["--full", "--once"], False, []),
+])
+def test_main_keeps_the_live_link_up_or_polls_unless_once(home, monkeypatch, argv, live, calls_after_sync):
     calls = []
     monkeypatch.setenv("JOB_FEEDBACK_API_TOKEN", "api-token")
     monkeypatch.setattr(profiles, "load_env_file", lambda *a, **k: None)
     monkeypatch.setattr(profiles, "sync", lambda api, full=False: calls.append(("sync", full)) or [])
+    monkeypatch.setattr(profiles, "ensure_listener", lambda: calls.append(("live",)) or live)
     monkeypatch.setattr(profiles, "watch", lambda api, seconds, poll: calls.append(("watch", seconds, poll)) or [])
     assert profiles.main(argv) == 0
     assert calls[0] == ("sync", "--full" in argv)
-    assert calls[1:] == ([("watch", profiles.WATCH_SECONDS, profiles.POLL_SECONDS)] if watched else [])
+    assert calls[1:] == calls_after_sync
     assert profiles.WATCH_SECONDS + 2 * profiles.POLL_SECONDS <= 300, "a run must end before the next one starts"
 
 
@@ -380,11 +386,153 @@ def test_a_slow_sync_shortens_the_watch_so_the_next_run_is_not_skipped(home, mon
     clock, calls = Clock(), []
     monkeypatch.setenv("JOB_FEEDBACK_API_TOKEN", "api-token")
     monkeypatch.setattr(profiles, "load_env_file", lambda *a, **k: None)
+    monkeypatch.setattr(profiles, "ensure_listener", lambda: False)
     monkeypatch.setattr(profiles.time, "monotonic", clock)
     monkeypatch.setattr(profiles, "sync", lambda api, full=False: clock.sleep(200) or [])
     monkeypatch.setattr(profiles, "watch", lambda api, seconds, poll: calls.append(seconds) or [])
     profiles.main([])
     assert calls == [profiles.WATCH_SECONDS - 200]
+
+
+class FakeSocket:
+    """A live link replaying (time, message) events on a Clock; an exception as the message is raised instead."""
+
+    def __init__(self, clock, events):
+        self.clock, self.events, self.sent = clock, list(events), []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def recv(self, timeout=None):
+        if self.events and self.events[0][0] <= self.clock.now + timeout:
+            at, message = self.events.pop(0)
+            self.clock.now = max(self.clock.now, at)
+            if isinstance(message, Exception):
+                raise message
+            return message
+        self.clock.now += timeout
+        raise TimeoutError
+
+    def send(self, message):
+        self.sent.append((self.clock.now, message))
+
+
+class Refused(Exception):
+    def __init__(self, status):
+        super().__init__(f"HTTP {status}")
+        self.response = type("Response", (), {"status_code": status})()
+
+
+def listen(api, seconds, clock, links, **kw):
+    calls = []
+
+    def connect(url, **options):
+        calls.append((url, options))
+        link = links.pop(0) if links else OSError("unreachable")
+        if isinstance(link, Exception):
+            raise link
+        return link
+    return profiles.listen(api, seconds, connect=connect, clock=clock, sleep=clock.sleep, stamp=kw.pop("stamp", lambda: 1)), calls
+
+
+def test_the_live_link_syncs_on_connect_and_the_moment_something_is_queued(home, monkeypatch):
+    clock, synced = Clock(), []
+    monkeypatch.setattr(profiles, "sync", lambda api, full=False: synced.append(clock.now) or [f"synced at {clock.now:.0f}"])
+    link = FakeSocket(clock, [(0, '{"flag": ""}'), (40, "pong"), (50, '{"flag": "queue:1:a"}'),
+                              (51, '{"flag": "queue:1:a"}'), (70, '{"flag": "queue:2:b"}')])
+    result, calls = listen(profiles.Api("https://fb.example.workers.dev", "api-token"), 100, clock, [link])
+    assert result == "done"
+    assert synced == [0, 50, 70]
+    assert calls[0][0] == "wss://fb.example.workers.dev/api/live"
+    assert calls[0][1]["additional_headers"] == {"Authorization": "Bearer api-token"}
+    assert link.sent == [(30, "ping"), (60, "ping"), (90, "ping")]
+
+
+def test_a_push_that_finds_nothing_yet_is_retried(home, monkeypatch):
+    clock, synced, replies = Clock(), [], [[], [], ["admin: done (pause)"]]
+    monkeypatch.setattr(profiles, "sync", lambda api, full=False: synced.append(clock.now) or replies.pop(0))
+    result, _ = listen(profiles.Api("https://fb.example", "t"), 100, clock,
+                       [FakeSocket(clock, [(0, '{"flag": "queue:1:a"}')])])
+    assert result == "done"
+    assert synced == [0, 5, 20]
+
+
+def test_the_live_link_reconnects_after_a_drop_and_catches_up(home, monkeypatch):
+    clock, synced = Clock(), []
+    monkeypatch.setattr(profiles, "sync", lambda api, full=False: synced.append(clock.now) or ["ok"])
+    first = FakeSocket(clock, [(0, '{"flag": "queue:1:a"}'), (10, ConnectionResetError())])
+    second = FakeSocket(clock, [(15, '{"flag": "queue:1:a"}'), (20, '{"flag": "queue:2:b"}')])
+    result, calls = listen(profiles.Api("https://fb.example", "t"), 60, clock, [first, second])
+    assert result == "done" and len(calls) == 2
+    assert synced == [0, 20]
+    assert clock.sleeps == [5]
+
+
+def test_a_worker_without_the_live_link_is_left_to_polling(home, monkeypatch):
+    monkeypatch.setattr(profiles, "sync", lambda api, full=False: [])
+    for status in (401, 403):
+        result, calls = listen(profiles.Api("https://fb.example", "t"), 600, Clock(), [Refused(status)])
+        assert result == "unavailable" and len(calls) == 1
+    clock = Clock()
+    result, calls = listen(profiles.Api("https://fb.example", "t"), 3600, clock, [Refused(404)] * 10)
+    assert result == "unavailable" and len(calls) == profiles.LIVE_FAILURES
+    assert clock.sleeps == [5, 10, 20, 40, 60]
+
+
+def test_a_worker_deployed_seconds_ago_is_waited_for(home, monkeypatch):
+    clock, synced = Clock(), []
+    monkeypatch.setattr(profiles, "sync", lambda api, full=False: synced.append(clock.now) or ["ok"])
+    link = FakeSocket(clock, [(15, '{"flag": ""}')])
+    result, calls = listen(profiles.Api("https://fb.example", "t"), 60, clock, [Refused(404), Refused(404), link])
+    assert result == "done" and len(calls) == 3
+    assert clock.sleeps == [5, 10] and synced == [15]
+
+
+def test_a_listener_hands_over_when_its_code_changes(home):
+    stamps = iter([1, 2])
+    result, calls = listen(profiles.Api("https://fb.example", "t"), 600, Clock(), [], stamp=lambda: next(stamps))
+    assert result == "updated" and calls == []
+
+
+def test_the_cron_run_keeps_one_listener_going_and_polls_without_one(home, monkeypatch):
+    spawned = []
+
+    def spawn(cmd, **kw):
+        spawned.append(cmd)
+    monkeypatch.setattr(profiles, "listener_running", lambda: False)
+    assert profiles.ensure_listener(spawn) is True
+    assert spawned[0][1:] == [str(Path(profiles.__file__).resolve()), "listen"]
+    assert (profiles.STATE_DIR / "profiles-live.log").is_file()
+    monkeypatch.setattr(profiles, "listener_running", lambda: True)
+    assert profiles.ensure_listener(spawn) is True and len(spawned) == 1
+    monkeypatch.setenv("JOB_PROFILES_LIVE", "off")
+    assert profiles.ensure_listener(spawn) is False
+
+
+@pytest.mark.parametrize("result, handed_over", [("unavailable", False), ("updated", True), ("done", True)])
+def test_a_finished_listener_hands_over_or_leaves_it_to_polling(home, monkeypatch, result, handed_over):
+    spawned = []
+    monkeypatch.setattr(profiles, "listen", lambda api, seconds: result)
+    monkeypatch.setattr(profiles, "listener_running", lambda: False)
+    assert profiles.run_listener(profiles.Api("https://fb.example", "t"), spawn=lambda cmd, **kw: spawned.append(cmd)) == 0
+    assert bool(spawned) is handed_over
+    assert profiles.ensure_listener(lambda cmd, **kw: spawned.append(cmd)) is handed_over
+
+
+def test_the_live_link_log_and_rotated_logs_are_scrubbed_too(home, monkeypatch):
+    monkeypatch.setattr(profiles.hc, "HERMES_HOME", home[0])
+    (home[0] / "state").mkdir(parents=True, exist_ok=True)
+    (home[0] / "profiles").mkdir(parents=True, exist_ok=True)
+    files = [home[0] / "state" / "profiles-live.log", home[0] / "state" / "profiles-live.log.1",
+             home[0] / "profiles" / "runs.log", home[0] / "profiles" / "runs.log.1"]
+    for f in files:
+        f.write_text("signup: done (Sam Lee)\n", encoding="utf-8")
+    assert set(files) <= set(profiles.log_files())
+    assert profiles.scrub_logs(["Sam Lee"]) == len(files)
+    assert all(f.read_text(encoding="utf-8") == "signup: done ([deleted])\n" for f in files)
 
 
 def test_admin_can_go_back_to_the_env_keys_and_delete(home):

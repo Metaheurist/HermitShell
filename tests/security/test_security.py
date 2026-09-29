@@ -97,6 +97,23 @@ def test_job_card_buttons_escape_their_links():
     assert html.count("&lt;script&gt;") == 7
 
 
+def test_the_live_link_keeps_tls_and_never_logs_the_api_token(capsys):
+    token = "live-link-token-0123456789abcdef"
+    api = profiles.Api("https://feedback.example.workers.dev/", token)
+    assert api.live_url == "wss://feedback.example.workers.dev/api/live"
+    assert profiles.Api("http://localhost:8787", token).live_url == "ws://localhost:8787/api/live"
+
+    class Refused(Exception):
+        response = type("Response", (), {"status_code": 401})()
+
+    def connect(url, **options):
+        assert options["additional_headers"] == {"Authorization": f"Bearer {token}"}
+        raise Refused(f"server rejected WebSocket connection: HTTP 401 ({url})")
+    assert profiles.listen(api, 60, connect=connect, sleep=lambda s: None, stamp=lambda: 1) == "unavailable"
+    out = capsys.readouterr()
+    assert token not in out.out + out.err
+
+
 def test_log_scrubbing_treats_names_as_text_not_patterns(tmp_path, monkeypatch):
     monkeypatch.setattr(hc, "HERMES_HOME", tmp_path)
     monkeypatch.setattr(profiles, "STATE_DIR", tmp_path / "state")

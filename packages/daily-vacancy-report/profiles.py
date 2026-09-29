@@ -9,10 +9,12 @@ Each extra profile lives in state/profiles/<id>/ and gets the same daily report,
 tailored CVs and weekly roll-up, run after the owner's; the unsubscribe link in its reports deletes it.
 Dashboard changes (email server, API keys, job search settings, new CVs, pause, resume, delete) arrive the
 same way; passwords and keys stay in the Worker only until this script collects them. The Worker never
-reaches this server: this script polls it.
+reaches this server: a background listener started by the cron run holds a WebSocket out to the Worker (the live
+link), which tells it the moment anything is queued; without one the cron run polls the Worker instead.
 
-    python3 profiles.py                        # sync, then watch for changes until the next run (cron, every 5 min)
+    python3 profiles.py                        # sync, then keep the live link up (or poll until the next run); cron, every 5 min
     python3 profiles.py --once                 # sync once and exit
+    python3 profiles.py listen                 # hold the live link (started in the background by the cron run)
     python3 profiles.py --list
     python3 profiles.py --invite "Sam from the meetup"
     python3 profiles.py --pause ID | --resume ID | --delete ID
@@ -70,6 +72,15 @@ STATUS_EVERY = 900
 # watches for dashboard changes until comfortably before the next (counted from when the run started).
 WATCH_SECONDS = 250
 POLL_SECONDS = 15
+# The live link: a WebSocket to the Worker's /api/live, told the moment anything is queued (feedback-worker/src/hub.js).
+# The cron run keeps a listener process holding it and only polls as above when the Worker has no live link.
+LIVE_PING = 30
+# A pushed item can take a few seconds to show in the Worker's queue listing, so a push that found nothing is retried.
+LIVE_RETRIES = (5, 20, 60)
+LIVE_FAILURES = 6
+LIVE_BACKOFF = 60
+LIVE_RECHECK = 3600
+LIVE_LIFETIME = 24 * 3600
 RUN_TIMEOUT = 4 * 3600
 MAX_CV_CHARS = 12_000
 MIN_CV_CHARS = 200
@@ -582,6 +593,10 @@ class Api:
         self.base, self.timeout = base.rstrip("/"), timeout
         self.headers = {"Authorization": f"Bearer {token}"}
 
+    @property
+    def live_url(self) -> str:
+        return re.sub(r"^http", "ws", self.base, count=1) + "/api/live"
+
     def call(self, method: str, path: str, **kwargs):
         resp = requests.request(method, f"{self.base}{path}", headers=self.headers, timeout=self.timeout, **kwargs)
         resp.raise_for_status()
@@ -630,10 +645,12 @@ def set_status(pid: str, status: str) -> None:
 
 
 def log_files() -> list[Path]:
-    """Script output that may name a person: Hermes' logs, scheduled-job output and run logs in state/."""
+    """Script output that may name a person: Hermes' logs, scheduled-job output, run logs in state/ (the live link's
+    too) and the per-profile runs log, with their rotated copies."""
     roots = [hc.HERMES_HOME / "logs", hc.HERMES_HOME / "cron" / "output"]
     found = [f for root in roots if root.is_dir() for f in root.rglob("*")]
-    return [f for f in found + sorted(STATE_DIR.glob("*.log")) if f.is_file() and not f.is_symlink()]
+    runs = sorted(STATE_DIR.glob("*.log")) + sorted(STATE_DIR.glob("*.log.1")) + sorted(PROFILES_DIR.glob("runs.log*"))
+    return [f for f in found + runs if f.is_file() and not f.is_symlink()]
 
 
 def scrub_logs(terms: list[str], max_bytes: int = 50 * 1024 * 1024) -> int:
@@ -1040,6 +1057,125 @@ def watch(api: Api, seconds: int, poll: int, sleep=time.sleep, clock=time.monoto
     return report
 
 
+def _code_stamp() -> tuple[int, ...]:
+    return tuple(p.stat().st_mtime_ns if p.is_file() else 0 for p in (Path(__file__).resolve(), Path(hc.__file__)))
+
+
+def _pushed_flag(message) -> str | None:
+    """The queue flag in a message from the live link; None for anything else (such as "pong")."""
+    try:
+        data = json.loads(message)
+    except (TypeError, ValueError):
+        return None
+    return str(data.get("flag") or "") if isinstance(data, dict) else None
+
+
+def _print_report(report: list[str]) -> list[str]:
+    for line in report:
+        print(line, flush=True)
+    return report
+
+
+def listen(api: Api, seconds: float, connect=None, clock=time.monotonic, sleep=time.sleep, stamp=_code_stamp) -> str:
+    """Hold the Worker's live link and sync the moment it says something was queued, reconnecting when it drops
+    (a Worker deploy closes it). Syncs on every (re)connect too, for anything queued while it was down.
+    Returns "unavailable" when the Worker or this Python has no live link (the cron run then polls), "updated"
+    when this script changed (a fresh listener takes over) and "done" after `seconds`."""
+    if connect is None:
+        try:
+            from websockets.sync.client import connect
+        except ImportError:
+            log("The websockets package is missing, so there is no live link")
+            return "unavailable"
+    deadline, start = clock() + seconds, stamp()
+    last, failures, retries = None, 0, []
+    while clock() < deadline:
+        if stamp() != start:
+            return "updated"
+        try:
+            with connect(api.live_url, additional_headers=api.headers, open_timeout=20, close_timeout=5,
+                         max_size=65536) as ws:
+                failures = 0
+                log("Live link to the Worker connected")
+                next_ping = clock() + LIVE_PING
+                while clock() < deadline and stamp() == start:
+                    try:
+                        message = ws.recv(timeout=max(0.1, min([next_ping, deadline, *retries]) - clock()))
+                    except TimeoutError:
+                        message = None
+                    now = clock()
+                    if now >= next_ping:
+                        ws.send("ping")
+                        next_ping = now + LIVE_PING
+                    if retries and retries[0] <= now:
+                        retries.pop(0)
+                        if _print_report(sync(api)):
+                            retries = []
+                    flag = _pushed_flag(message) if message is not None else None
+                    if flag is None or flag == last:
+                        continue
+                    last = flag
+                    found = _print_report(sync(api))
+                    retries = [] if found or not flag else [clock() + d for d in LIVE_RETRIES]
+        except Exception as exc:  # websockets raises its own errors as well as OSError; a sync bug must not end the link
+            status = getattr(getattr(exc, "response", None), "status_code", 0)
+            if status in (401, 403):
+                log(f"The Worker refused the live link (HTTP {status})")
+                return "unavailable"
+            # A 404 is retried too: a Worker deployed seconds ago is still reaching every Cloudflare location.
+            failures += 1
+            reason = f"HTTP {status}" if status else exc.__class__.__name__
+            if failures >= LIVE_FAILURES:
+                log(f"Live link failed {failures} times in a row ({reason})")
+                return "unavailable"
+            log(f"Live link dropped ({reason}); reconnecting")
+            sleep(min(LIVE_BACKOFF, 5 * 2 ** (failures - 1)))
+    return "done"
+
+
+def listener_running() -> bool:
+    with lock("listen") as got:
+        return not got
+
+
+def start_listener(spawn=subprocess.Popen) -> None:
+    """Start `profiles.py listen` in the background, detached from the cron run that started it."""
+    log_file = STATE_DIR / "profiles-live.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    if log_file.is_file() and log_file.stat().st_size > 2_000_000:
+        log_file.replace(log_file.with_suffix(".log.1"))
+    with open(log_file, "ab") as out:
+        spawn([sys.executable, str(Path(__file__).resolve()), "listen"], stdout=out, stderr=subprocess.STDOUT,
+              stdin=subprocess.DEVNULL, cwd=SCRIPT_DIR, start_new_session=True)
+
+
+def ensure_listener(spawn=subprocess.Popen) -> bool:
+    """From the cron run: True when a listener holds (or is starting to hold) the live link, so the run can end;
+    False when JOB_PROFILES_LIVE turns it off or the Worker had no live link within the hour, so the run polls."""
+    if (env("JOB_PROFILES_LIVE") or "on").strip().lower() in ("0", "off", "false", "no"):
+        return False
+    if time.time() - read_json(PROFILES_DIR / ".live.json", {}).get("unavailable", 0) < LIVE_RECHECK:
+        return False
+    if not listener_running():
+        start_listener(spawn)
+    return True
+
+
+def run_listener(api: Api, spawn=subprocess.Popen) -> int:
+    with lock("listen") as got:
+        if not got:
+            log("A live-link listener is already running")
+            return 0
+        result = listen(api, LIVE_LIFETIME)
+    if result == "unavailable":
+        write_json(PROFILES_DIR / ".live.json", {"unavailable": time.time()})
+        log("No live link; the vacancy-profiles job polls the Worker instead")
+    else:
+        write_json(PROFILES_DIR / ".live.json", {})
+        start_listener(spawn)
+    return 0
+
+
 # --------------------------------------------------------------------------- running scripts for other profiles
 
 def spawn_others(script: str, args: list[str]) -> bool:
@@ -1109,6 +1245,13 @@ def main(argv: list[str] | None = None) -> int:
         run_all(rest[0], rest[1:], after)
         return 0
     hc.set_model_priority(waiting=True)
+    if argv[:1] == ["listen"]:
+        api = api_from_env()
+        if not api:
+            log("JOB_FEEDBACK_URL and JOB_FEEDBACK_API_TOKEN are not set; the live link needs the feedback Worker")
+            return 1
+        ensure_owner()
+        return run_listener(api)
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--list", action="store_true", help="list profiles")
     parser.add_argument("--invite", metavar="NOTE", help="create a single-use sign-up link (note is only for you)")
@@ -1116,7 +1259,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--resume", metavar="ID")
     parser.add_argument("--delete", metavar="ID", help="delete a profile, its CV and its history")
     parser.add_argument("--full", action="store_true", help="make the Worker list its whole queue")
-    parser.add_argument("--once", action="store_true", help="sync once and exit, without watching for changes")
+    parser.add_argument("--once", action="store_true", help="sync once and exit, without starting the live link or polling")
     args = parser.parse_args(argv)
     ensure_owner()
     try:
@@ -1150,7 +1293,7 @@ def main(argv: list[str] | None = None) -> int:
     started = time.monotonic()
     for line in sync(api, args.full):
         print(line)
-    if not args.once:
+    if not args.once and not ensure_listener():
         left = _seconds("JOB_PROFILES_WATCH_SECONDS", WATCH_SECONDS, 0) - int(time.monotonic() - started)
         for line in watch(api, left, _seconds("JOB_PROFILES_POLL_SECONDS", POLL_SECONDS, 5)):
             print(line)
