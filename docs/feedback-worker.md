@@ -471,9 +471,10 @@ HermitShell refuses the request and says so under **HermitShell could not apply*
 
 #### Tasks
 
-The **Tasks** button next to the search shows a spinning ring while something is running and, in its
+The **Tasks** button next to the search shows a loading circle while something is running and, in its
 corner, how many tasks there are. It opens a window listing everything HermitShell is doing or has
-waiting, whoever started it:
+waiting, whoever started it. Each running task has the same circle round its icon, and it keeps
+turning smoothly as the list refreshes:
 
 <img src="images/worker/admin-tasks.png" alt="The Tasks window with a running report, a cover letter being written and requests waiting" width="720">
 

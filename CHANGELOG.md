@@ -430,6 +430,9 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **A smooth loading circle for running tasks.** The icon of a running task in the Tasks window, and
+  the busy Tasks button, now spin a round ring with a fading tail instead of an arc swinging round a
+  square. The ring carries on where it was when the list refreshes rather than jumping back.
 - **A roomier dashboard search box**: wider, with more padding, the same height as the buttons next to
   it, and more space around the profile table's toolbar.
 - **Job ratings no longer use Hermes' full chat context.** A rating gets the context it needs, so
