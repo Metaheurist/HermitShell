@@ -390,9 +390,10 @@ settings** (the email server and web search keys the whole tool shares). Recruit
   (see [Send jobs now](#send-jobs-now)); while a report is running, daily or sent now, the row says
   **scanning now** instead. **Manage** opens that recruit's page (details, job search, report time
   and CV). The sent button has two halves: the little chart opens its [stats page](#stats) and
-  **24 sent** the [list of jobs sent](#jobs-sent). Pause, resume or delete
-  (deleting removes their CV and history from your server, their answers still waiting in KV and
-  their name and email from the logs; the owner can't be deleted).
+  **24 sent** the [list of jobs sent](#jobs-sent). Pause or resume them, or delete them with the red
+  bin button: it opens a window where you tick **Delete their CV and history** and press **Delete**.
+  Deleting removes their CV and history from your server, their answers still waiting in KV and
+  their name and email from the logs; the owner can't be deleted.
 - **Pending sign-ups**: someone who has sent the invite form gets a **pending** row straight away
   (name, email, when and what they're looking for), while HermitShell reads their CV and sets them
   up. HermitShell reports the new recruit before it takes the sign-up off the queue, so the row
@@ -427,8 +428,9 @@ secret, as before, and always has the Admin role. Everyone else gets an account 
   `_`) and a password, and the roles. Passwords shorter than 12 characters are allowed but marked
   **short password** on the list.
 - **Edit** changes a user's name, roles or password. A new password signs them out everywhere.
-- **Delete** (tick the box first) signs the user out, deletes their unused invites and leaves their
-  recruits unassigned. You can't delete or demote the account you are signed in with.
+- The red bin button opens a window to confirm; tick the box and press **Delete** to sign the user
+  out, delete their unused invites and leave their recruits unassigned. You can't delete or demote
+  the account you are signed in with.
 - The main admin's own **Edit** window adds or removes the Recruiter role for you, so people you
   invite can join your own pool.
 

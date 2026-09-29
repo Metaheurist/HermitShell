@@ -261,6 +261,7 @@ await save("admin-users", await admin("/admin/users"));
 // Opened as files, pages cannot be given the fragment that opens a modal, so it is opened with a style.
 const withOpenModal = async (path, id) => new Response((await (await admin(path)).text()).replace("</head>", `<style>#${id}{display:grid}</style></head>`));
 await save("admin-user-modal", await withOpenModal("/admin/users", "user-new"));
+await save("admin-delete-modal", await withOpenModal("/admin", "del-jordan-patel"));
 await save("admin-global-key-modal", await withOpenModal("/admin/settings", "gkey-scrapfly"));
 await save("admin-profile", await framed(await admin("/admin/profile?u=owner"), admin));
 await save("admin-profile-scanning", await framed(await admin("/admin/profile?u=sam-lee"), admin));

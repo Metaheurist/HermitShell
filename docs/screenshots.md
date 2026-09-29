@@ -321,11 +321,13 @@ deleted ([data protection](configuration.md#data-protection)).
 | **24 sent** | How many jobs were sent this week; opens [the list of those jobs](#the-jobs-sent-to-a-recruit) |
 | Recruiter + **Assign** (admins only) | Whose pool the recruit is in: the recruiter's initials, name and username, or **Unassigned**. Pick another recruiter and press **Assign**; the owner's row says **The main admin** |
 | **Pause** / **Resume** | Stops or restarts that recruit's reports |
-| **Delete** (with the tick box, admins only) | Deletes an extra recruit's CV and history from your server. The owner can't be deleted |
+| Bin button (red, admins only) | Opens a window to confirm deleting the recruit. Tick **Delete their CV and history** and press **Delete** to remove their CV and history from your server; **Cancel** or &times; closes it. The owner can't be deleted |
 | **Recruits** / **Users and roles** / **Global settings** tabs | Switch between the recruits, [who can sign in](#users-and-roles) and the [settings shared by the whole tool](#global-settings). Recruiters only have **Recruits** |
 | Invite someone + recruiter list + **Create invite link** | Makes a one-time `/join` link; the note is only for you. Admins pick whose recruit the person becomes; a recruiter's invites join their own pool |
 | **Revoke** | Cancels an unused invite |
 | Signed in as + **Sign out** | Who you are signed in as and your roles. Signing out ends that user's sessions |
+
+<img src="images/worker/admin-delete-modal.png" alt="Deleting a recruit: the confirm window with the CV and history tick box" width="380">
 
 <table>
 <tr><th>Searching for a recruit</th><th>Searching for a recruiter</th></tr>
@@ -347,7 +349,7 @@ deleted ([data protection](configuration.md#data-protection)).
 | Users table | Each user's name, username, roles, how many recruits they have, and **short password** when their password is under 12 characters. The main admin (`ADMIN_USER`) is always first |
 | **Add user** | Opens a window for a name, username, password and roles |
 | **Edit** | Changes the name, roles or password; a new password signs them out everywhere. On your own row it adds or removes your Recruiter role |
-| **Delete** (with the tick box) | Signs the user out, deletes their unused invites and leaves their recruits unassigned |
+| Bin button (red) | Opens a window to confirm; tick the box and press **Delete** to sign the user out, delete their unused invites and leave their recruits unassigned |
 
 <table>
 <tr><th>Add user</th><th>A recruiter's view</th></tr>

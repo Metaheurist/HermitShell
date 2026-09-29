@@ -481,6 +481,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Deleting asks in a window.** On the Recruits list and on Users and roles, the tick box and
+  **Delete** button are replaced by a red bin button. It opens a confirm window (CSS only) with the
+  tick box inside (**Delete their CV and history** for a recruit), **Cancel** and a **Delete** button
+  that stays faded until the box is ticked. The Worker still refuses a delete without it.
 - **Global settings adds keys through a window.** Each web search provider has a row showing
   **set here** or **from .env** and the start and end of its key, with **Add key** or **Change**
   opening the same style of window the recruits' keys used, now offering Firecrawl, Tavily and
