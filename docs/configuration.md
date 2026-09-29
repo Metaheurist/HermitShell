@@ -114,9 +114,11 @@ Catalog ids: `ai`, `ml`, `python`, `iot`, `newtech`, `security`, `cloud`, `progr
 
 Run times aren't `.env` settings: they are `hermes cron` jobs. The wizard asks for a time per
 package (`07:30`, `weekdays 08:00`, `sunday 18:00` or a cron expression) and creates or updates
-the job. The vacancy report has a second job for its weekly roll-up (`job_weekly.py`, default
-Sunday 18:00). In an unattended `--answers` file, use `SCHEDULE_DAILY_VACANCY_REPORT`,
-`SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY` and `SCHEDULE_NEWS_DIGEST`.
+the job. The vacancy report has two more jobs: its weekly roll-up (`job_weekly.py`, default
+Sunday 18:00) and the cover letter requests check (`cover_letter.py`, default every 5 minutes,
+silent when idle). In an unattended `--answers` file, use `SCHEDULE_DAILY_VACANCY_REPORT`,
+`SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY`, `SCHEDULE_DAILY_VACANCY_REPORT_LETTERS` and
+`SCHEDULE_NEWS_DIGEST`.
 
 ## MCP sources
 

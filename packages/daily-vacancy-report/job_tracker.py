@@ -1,4 +1,4 @@
-"""Daily Vacancy Report tracker: every rated job, your feedback and applications, in SQLite.
+"""Daily Vacancy Report tracker: every rated job, your feedback, applications and cover letter requests.
 
 Feedback arrives through the optional feedback Worker (see docs/feedback-worker.md in HermitShell):
 email buttons are signed links to the Worker, which stores confirmed answers until
@@ -25,9 +25,15 @@ ACTIONS = {
     "applied": "I applied",
     "heard_back": "Heard back",
     "rejected": "Rejected",
+    "good_match": "Good match",
+    "cover_letter": "Generate cover letter",
 }
-CARD_ACTIONS = ("interested", "not_for_me", "applied")
+CARD_ACTIONS = ("applied", "good_match", "not_for_me", "interested", "cover_letter")
 FOLLOWUP_ACTIONS = ("heard_back", "rejected")
+# Actions that describe where an application stands; the others (e.g. cover_letter) are requests.
+STATUS_ACTIONS = ("interested", "not_for_me", "applied", "heard_back", "rejected", "good_match")
+_STATUS_SQL = ", ".join(f"'{a}'" for a in STATUS_ACTIONS)
+LETTER_ATTEMPTS = 3
 FOLLOWUP_DAYS = (7, 14)
 DAY = 86400
 
@@ -70,7 +76,14 @@ CREATE TABLE IF NOT EXISTS reminders (key TEXT PRIMARY KEY, stage INTEGER);
 CREATE TABLE IF NOT EXISTS runs (
     at REAL PRIMARY KEY, rated INTEGER, shown INTEGER, sources TEXT, problems TEXT
 );
+CREATE TABLE IF NOT EXISTS letters (
+    event_id TEXT PRIMARY KEY, key TEXT, status TEXT, attempts INTEGER DEFAULT 0, error TEXT,
+    file TEXT, at REAL
+);
 """
+# Listing details kept for cover letters (added after the first release, hence not in CREATE TABLE).
+DETAIL_FIELDS = ("location", "employment_type", "work_mode", "seniority", "salary", "reasoning", "about",
+                 "company_profile", "company_site", "listing")
 
 
 class Tracker:
@@ -79,6 +92,9 @@ class Tracker:
         self.db = sqlite3.connect(str(path))
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        if "details" not in {r["name"] for r in self.db.execute("PRAGMA table_info(jobs)")}:
+            self.db.execute("ALTER TABLE jobs ADD COLUMN details TEXT")
+            self.db.commit()
 
     def close(self) -> None:
         self.db.commit()
@@ -89,21 +105,36 @@ class Tracker:
     def upsert_job(self, key: str, job: dict, emailed: bool, now: float | None = None) -> None:
         now = now or time.time()
         salary = job.get("salary_range") or {}
+        details = json.dumps({k: job[k] for k in DETAIL_FIELDS if job.get(k)}, default=str)
         self.db.execute(
             """INSERT INTO jobs (key, title, company, employer, url, source, fit, confidence, salary, year_low,
-                                 year_high, closing, matched, gaps, emailed, first_seen, last_seen)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                 year_high, closing, matched, gaps, emailed, first_seen, last_seen, details)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(key) DO UPDATE SET fit=excluded.fit, confidence=excluded.confidence,
-                   closing=excluded.closing, emailed=max(jobs.emailed, excluded.emailed), last_seen=excluded.last_seen""",
+                   closing=excluded.closing, emailed=max(jobs.emailed, excluded.emailed), last_seen=excluded.last_seen,
+                   details=coalesce(excluded.details, jobs.details)""",
             (key, job.get("title", ""), job.get("company", ""), job.get("employer", ""), job.get("url", ""),
              job.get("source", ""), job.get("fit"), job.get("confidence"), job.get("salary", ""),
              salary.get("year_low"), salary.get("year_high"), job.get("closing", ""),
-             json.dumps(job.get("matched", [])), json.dumps(job.get("gaps", [])), int(emailed), now, now))
+             json.dumps(job.get("matched", [])), json.dumps(job.get("gaps", [])), int(emailed), now, now,
+             details if details != "{}" else None))
         self.db.commit()
 
     def job(self, key: str) -> dict | None:
         row = self.db.execute("SELECT * FROM jobs WHERE key = ?", (key,)).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        job = dict(row)
+        for field in ("matched", "gaps"):
+            try:
+                job[field] = json.loads(job[field] or "[]")
+            except ValueError:
+                job[field] = []
+        try:
+            job.update(json.loads(job.pop("details") or "{}"))
+        except ValueError:
+            pass
+        return job
 
     # ------------------------------------------------------------------ events
 
@@ -116,11 +147,12 @@ class Tracker:
         return cur.rowcount == 1
 
     def latest_action(self, key: str) -> str | None:
-        row = self.db.execute("SELECT action FROM events WHERE key = ? ORDER BY at DESC LIMIT 1", (key,)).fetchone()
+        row = self.db.execute(f"SELECT action FROM events WHERE key = ? AND action IN ({_STATUS_SQL}) "
+                              "ORDER BY at DESC LIMIT 1", (key,)).fetchone()
         return row["action"] if row else None
 
     def examples(self, per_kind: int = 3) -> tuple[list[dict], list[dict]]:
-        """Recent 'interested'/'applied' and 'not for me' jobs with the reason given, for the rating prompt."""
+        """Recent liked (good match, interested, applied) and 'not for me' jobs with the reason given."""
         def pick(actions: tuple[str, ...]) -> list[dict]:
             marks = ",".join("?" * len(actions))
             rows = self.db.execute(
@@ -129,7 +161,7 @@ class Tracker:
                     WHERE e.action IN ({marks}) AND j.title IS NOT NULL
                     GROUP BY e.key ORDER BY last_at DESC LIMIT ?""", (*actions, per_kind)).fetchall()
             return [dict(r) for r in rows]
-        return pick(("interested", "applied")), pick(("not_for_me",))
+        return pick(("good_match", "interested", "applied")), pick(("not_for_me",))
 
     # ------------------------------------------------------------------ follow-ups
 
@@ -137,10 +169,10 @@ class Tracker:
         """Applications with no update after 7 or 14 days that have not been reminded at that stage yet."""
         now = now or time.time()
         rows = self.db.execute(
-            """SELECT e.key, e.at AS applied_at, j.title, j.company, j.employer, j.url, coalesce(r.stage, 0) AS stage
+            f"""SELECT e.key, e.at AS applied_at, j.title, j.company, j.employer, j.url, coalesce(r.stage, 0) AS stage
                FROM events e JOIN jobs j ON j.key = e.key LEFT JOIN reminders r ON r.key = e.key
                WHERE e.action = 'applied'
-                 AND e.at = (SELECT max(at) FROM events WHERE key = e.key)""").fetchall()
+                 AND e.at = (SELECT max(at) FROM events WHERE key = e.key AND action IN ({_STATUS_SQL}))""").fetchall()
         due = []
         for r in rows:
             days = int((now - r["applied_at"]) // DAY)
@@ -154,6 +186,32 @@ class Tracker:
             self.db.execute("INSERT INTO reminders (key, stage) VALUES (?, ?) "
                             "ON CONFLICT(key) DO UPDATE SET stage = excluded.stage", (item["key"], item["due_stage"]))
         self.db.commit()
+
+    # ------------------------------------------------------------------ cover letter requests
+
+    def pending_letters(self, max_attempts: int = LETTER_ATTEMPTS) -> list[dict]:
+        """Cover letter requests not yet sent, oldest first, with the note given on the confirmation page."""
+        rows = self.db.execute(
+            """SELECT e.id AS event_id, e.key, e.reason, e.at, coalesce(l.attempts, 0) AS attempts
+               FROM events e LEFT JOIN letters l ON l.event_id = e.id
+               WHERE e.action = 'cover_letter' AND coalesce(l.status, '') NOT IN ('sent', 'failed')
+               ORDER BY e.at""").fetchall()
+        return [dict(r) for r in rows if r["attempts"] < max_attempts]
+
+    def mark_letter(self, event_id: str, key: str, status: str, error: str = "", file: str = "",
+                    max_attempts: int = LETTER_ATTEMPTS) -> str:
+        """Record a send ('sent') or a failed attempt; the request is given up after max_attempts failures."""
+        row = self.db.execute("SELECT attempts FROM letters WHERE event_id = ?", (event_id,)).fetchone()
+        attempts = (row["attempts"] if row else 0) + (status != "sent")
+        if status != "sent":
+            status = "failed" if attempts >= max_attempts else "retry"
+        self.db.execute(
+            """INSERT INTO letters (event_id, key, status, attempts, error, file, at) VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(event_id) DO UPDATE SET status=excluded.status, attempts=excluded.attempts,
+                   error=excluded.error, file=excluded.file, at=excluded.at""",
+            (event_id, key, status, attempts, error[:300], file, time.time()))
+        self.db.commit()
+        return status
 
     # ------------------------------------------------------------------ runs and weekly data
 
@@ -169,8 +227,9 @@ class Tracker:
             "WHERE e.at >= ? ORDER BY e.at", (since,))]
         runs = [dict(r) for r in self.db.execute("SELECT * FROM runs WHERE at >= ? ORDER BY at", (since,))]
         applied = [dict(r) for r in self.db.execute(
-            """SELECT e.key, min(e.at) AS applied_at, j.title, j.company, j.employer, j.url,
-                      (SELECT action FROM events WHERE key = e.key ORDER BY at DESC LIMIT 1) AS status
+            f"""SELECT e.key, min(e.at) AS applied_at, j.title, j.company, j.employer, j.url,
+                      (SELECT action FROM events WHERE key = e.key AND action IN ({_STATUS_SQL})
+                       ORDER BY at DESC LIMIT 1) AS status
                FROM events e LEFT JOIN jobs j ON j.key = e.key
                WHERE e.action = 'applied' AND e.at >= ? GROUP BY e.key ORDER BY applied_at DESC""",
             (since - 53 * DAY,))]
@@ -227,7 +286,7 @@ def prompt_examples(tracker: Tracker | None, per_kind: int = 3) -> str:
 
     parts = ["CANDIDATE FEEDBACK ON RECENT JOBS (use it to calibrate fit_score):"]
     if liked:
-        parts.append("Marked interested or applied:\n" + fmt(liked))
+        parts.append("Marked a good match, interested or applied:\n" + fmt(liked))
     if disliked:
         parts.append("Marked not for me:\n" + fmt(disliked))
     return "\n".join(parts)

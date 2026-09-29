@@ -1,12 +1,17 @@
 # Feedback buttons (Cloudflare Worker)
 
-The Daily Vacancy Report can put buttons on every job: **Interested**, **Not for me** and
-**I applied**, plus **Heard back** and **Rejected** on follow-up reminders. Your answers:
+The Daily Vacancy Report can put buttons on every job, next to **View job**: **I applied**,
+round thumbs up (**Good match**) and thumbs down (**Not for me**) buttons, **Interested** and
+**Cover letter**, plus **Heard back** and **Rejected** on follow-up reminders. Your answers:
 
-- calibrate the model: recent jobs you liked and turned down (with your reason) are added to
-  the rating prompt as examples;
+- calibrate the model: recent jobs you liked (thumbs up, Interested, I applied) and turned down
+  (thumbs down, with your reason) are added to the rating prompt as examples;
 - drive reminders: jobs you applied to come back in a "Follow up" section after 7 and 14 days;
-- feed the Sunday roll-up (applications, replies, rejections).
+- feed the Sunday roll-up (applications, replies, rejections);
+- request a tailored cover letter, emailed to you as a PDF (see [Cover letters](#cover-letters)).
+
+The button icons are [Lucide](https://lucide.dev) SVGs (`packages/daily-vacancy-report/icons/src`)
+rendered to PNG by `icons/build_icons.py`, because Gmail strips SVG from emails.
 
 Emails can't talk to a server on your home network, and opening a port for Hermes isn't a good
 idea. Instead, the buttons link to a tiny [Cloudflare Worker](https://developers.cloudflare.com/workers/)
@@ -158,9 +163,46 @@ The next email has buttons under each job. Press one, confirm, and the following
 | TLS or handshake errors right after the first deploy | A new `workers.dev` subdomain takes a few minutes to get its certificate. Wait and retry. |
 | No buttons in the email | `JOB_FEEDBACK_URL` or `JOB_FEEDBACK_SECRET` is empty in `.env`. |
 | Answers never arrive | Check requests with `npx wrangler tail`, or the Workers Observability MCP / dashboard logs. |
+| No cover letter email | Check `hermes cron list` for `vacancy-cover-letters` and its output in `cron/output/`; run `python3 cover_letter.py` by hand to see errors. |
 
 Answers wait in KV until Hermes fetches them, so a server that is off for a few days loses
 nothing (up to 30 days).
+
+## Cover letters
+
+**Cover letter** on a job card opens the usual confirmation page, where you can add guidance
+("mention my Azure work", "keep it short"). After you confirm:
+
+```
+Cover letter button ──> Worker (confirm) ──> KV ──> cover_letter.py every 5 min ──> email + PDF
+```
+
+1. `cover_letter.py`, a `hermes cron` job, fetches the request from the Worker within 5 minutes.
+2. Hermes' model writes the letter from `job_profile.md` (plus `COVER_LETTER_CV_FILE` if set),
+   the listing saved when the job was rated, and your note. It is told to use only facts from
+   your CV. Letters that are too short or contain placeholders are rejected and retried.
+3. The letter is laid out as an A4 PDF with real, selectable text (`letter_pdf.py`, no extra
+   packages), saved in `state/cover_letters/`, and emailed to you with the job details, a
+   preview and a View job button.
+
+Everything runs on your Hermes server; the Worker only sees the job key and your note. Failed
+attempts are retried on the next two runs, then given up (see `letters` in
+`state/job_tracker.db`). Put your name and contact line in `.env` so they appear on the letter:
+
+```sh
+COVER_LETTER_NAME=Sam Taylor
+COVER_LETTER_CONTACT=Belfast · sam@example.com · 07700 900000
+```
+
+The wizard schedules the job; by hand:
+
+```sh
+hermes cron create "*/5 * * * *" "Cover letter requests" \
+    --name vacancy-cover-letters --script cover_letter.py --no-agent --deliver local
+python3 cover_letter.py --job <tracker key> --dry-run   # try one without email
+```
+
+The job prints nothing when there is nothing to do, so Hermes records it as a silent run.
 
 ## Removing it
 

@@ -40,9 +40,12 @@ light and dark modes.
 6. **Email.** Sends a summary, then one card per job with the closing date (jobs closing within
    three days come first), your three strongest matching skills, the biggest gap and a link to
    apply. A banner warns when a source failed (for example an expired Indeed login). With the
-   optional [feedback buttons](../../docs/feedback-worker.md), each card also has **Interested**,
-   **Not for me** and **I applied** buttons, and jobs you applied to come back in a follow-up
-   section after 7 and 14 days.
+   optional [feedback buttons](../../docs/feedback-worker.md), each card also has **I applied**,
+   thumbs up / thumbs down, **Interested** and **Cover letter** buttons next to **View job**, and
+   jobs you applied to come back in a follow-up section after 7 and 14 days.
+8. **Cover letters.** Pressing **Cover letter** gets you a tailored A4 PDF letter by email within
+   about 5 minutes, written by Hermes' model from your profile and the listing
+   ([how it works](../../docs/feedback-worker.md#cover-letters)).
 7. **Weekly roll-up.** `job_weekly.py` (or `job_scanner.py --weekly`) emails a Sunday summary from
    `state/job_tracker.db`: best jobs of the week, applications and replies, common gaps, who's
    hiring and source health.
@@ -58,7 +61,10 @@ definitely ruled out; ratings that fail are retried on the next runs, up to 4 at
 | `job_scanner.py` | Entry point run by the daily cron job |
 | `job_weekly.py` | Weekly roll-up email and shared email blocks; entry point for the weekly cron job |
 | `job_extras.py` | Salary and closing-date parsing, title screening, second opinions, repost and agency grouping |
-| `job_tracker.py` | `state/job_tracker.db` (jobs, feedback, reminders, runs) and the feedback Worker sync |
+| `job_tracker.py` | `state/job_tracker.db` (jobs, feedback, reminders, runs, cover letter requests) and the feedback Worker sync |
+| `cover_letter.py` | Cover letter requests: writes each letter with the model and emails it as a PDF; entry point for the 5-minute cron job |
+| `letter_pdf.py` | Dependency-free A4 PDF writer for the letters |
+| `icons/` | Button icons: Lucide SVG sources in `icons/src`, PNGs built by `icons/build_icons.py` |
 | `companies.py` | Employer website, logo and profile lookup with caching |
 | `indeed_mcp.py` | Indeed job search and job details through Hermes' Indeed MCP connection |
 | `feedback-worker/` | Optional Cloudflare Worker for the feedback buttons ([guide](../../docs/feedback-worker.md)); not installed into Hermes |
@@ -89,8 +95,9 @@ It asks for your email and API keys, then:
 - Your **candidate profile** (guided questions, an imported CV, or the example).
 - Optional **feedback buttons:** paste your Worker URL and the wizard generates both secrets
   and can copy them to the Worker for you. See [the guide](../../docs/feedback-worker.md).
-- **When** the report should run, for example `07:00` or `weekdays 07:30`, and when the weekly
-  roll-up goes out (default `sunday 18:00`).
+- **When** the report should run, for example `07:00` or `weekdays 07:30`, when the weekly
+  roll-up goes out (default `sunday 18:00`), and how often to check for cover letter requests
+  (default every 5 minutes).
 
 It then writes `job_profile.md` and `cv_keywords.json`, connects Indeed, schedules the cron job
 and sends a test email. See [the installation guide](../../docs/installation.md#setup-wizard).
@@ -166,6 +173,8 @@ hermes cron create "0 7 * * *" "Daily Vacancy Report" \
     --name daily-vacancy-report --script job_scanner.py --no-agent --deliver local
 hermes cron create "0 18 * * 0" "Weekly vacancy roll-up" \
     --name weekly-vacancy-report --script job_weekly.py --no-agent --deliver local
+hermes cron create "*/5 * * * *" "Cover letter requests" \
+    --name vacancy-cover-letters --script cover_letter.py --no-agent --deliver local
 hermes cron list
 ```
 

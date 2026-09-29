@@ -599,7 +599,10 @@ def inline_images(html_body: str, directory: Path) -> dict[str, bytes]:
 
 
 def send_email(subject: str, html_body: str, text_body: str, from_name: str,
-               images: dict[str, bytes] | None = None) -> None:
+               images: dict[str, bytes] | None = None,
+               attachments: list[tuple[str, bytes, str]] | None = None) -> None:
+    """HTML email with a plain-text alternative, inline CID images and optional (filename, data, MIME type)
+    attachments."""
     host = env("SMTP_HOST", "smtp.gmail.com")
     port = env_int("SMTP_PORT", 587)
     user, password = env("SMTP_USER"), env("SMTP_PASSWORD")
@@ -621,6 +624,9 @@ def send_email(subject: str, html_body: str, text_body: str, from_name: str,
     html_part = msg.get_payload()[1]
     for name, data in (images or {}).items():
         html_part.add_related(data, "image", "png", cid=f"<{name}>", disposition="inline")
+    for filename, data, mime in attachments or []:
+        maintype, subtype = mime.split("/", 1)
+        msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=filename)
     with smtplib.SMTP(host, port, timeout=30) as smtp:
         smtp.ehlo()
         smtp.starttls(context=ssl.create_default_context())

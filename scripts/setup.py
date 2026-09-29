@@ -52,7 +52,11 @@ PACKAGES = {
         "schedule": "0 7 * * *", "dry_run": ["--dry-run", "--limit", "3"],
         "extra_jobs": [{"id": "weekly", "title": "Weekly vacancy roll-up", "script": "job_weekly.py",
                         "cron": "weekly-vacancy-report", "schedule": "0 18 * * 0",
-                        "intro": "A Sunday summary of the week: best jobs, applications, common gaps."}],
+                        "intro": "A Sunday summary of the week: best jobs, applications, common gaps."},
+                       {"id": "letters", "title": "Cover letter requests", "script": "cover_letter.py",
+                        "cron": "vacancy-cover-letters", "schedule": "*/5 * * * *",
+                        "intro": "Checks the feedback Worker for Cover letter button presses and emails each "
+                                 "letter as a PDF. Needs the feedback Worker; runs silently when idle."}],
     },
     "news-digest": {
         "title": "News Digest", "script": "news_digest.py", "cron": "news-digest",

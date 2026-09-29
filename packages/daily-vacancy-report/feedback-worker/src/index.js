@@ -4,6 +4,8 @@
 // mail scanners that open every link cannot record answers; pressing Confirm POSTs the answer,
 // which is kept in Workers KV (30 days) until Hermes fetches it from GET /events and deletes it
 // with POST /ack. Secrets: JOB_FEEDBACK_SECRET (link signing) and JOB_FEEDBACK_API_TOKEN (API).
+// A confirmed "cover_letter" answer is a request: Hermes' cover_letter.py polls every few minutes,
+// writes the letter on the Hermes server and emails it as a PDF.
 
 export const ACTIONS = {
   interested: "Interested",
@@ -11,6 +13,17 @@ export const ACTIONS = {
   applied: "I applied",
   heard_back: "Heard back",
   rejected: "Rejected",
+  good_match: "Good match",
+  cover_letter: "Generate cover letter",
+};
+const PLACEHOLDERS = {
+  not_for_me: "Why not? For example: too senior, needs travel, wrong tech stack",
+  rejected: "Anything they said (optional)",
+  good_match: "What makes it a good match? For example: right stack, great location",
+  cover_letter: "Anything to emphasise? For example: mention my Azure work, keep it under a page",
+};
+const SAVED_MESSAGES = {
+  cover_letter: "Hermes is writing your cover letter. It arrives by email, as a PDF, within about 10 minutes.",
 };
 const EVENT_TTL_SECONDS = 60 * 60 * 24 * 30;
 const MAX_TITLE = 120;
@@ -85,12 +98,11 @@ function json(data, status = 200) {
 
 function confirmPage(p) {
   const hidden = ["j", "a", "n", "t"].map((k) => `<input type="hidden" name="${k}" value="${esc(p[k] || "")}">`).join("");
-  const placeholder = p.a === "not_for_me" || p.a === "rejected"
-    ? "Why not? For example: too senior, needs travel, wrong tech stack"
-    : "Anything worth remembering (optional)";
+  const placeholder = PLACEHOLDERS[p.a] || "Anything worth remembering (optional)";
+  const label = p.a === "cover_letter" ? "Guidance for the letter (optional)" : "Note for Hermes (optional)";
   return page(ACTIONS[p.a], `<p>${esc(p.n || "This job")}</p>
 <form method="post" action="/f">${hidden}
-<label for="r">Note for Hermes (optional)</label>
+<label for="r">${label}</label>
 <textarea id="r" name="r" maxlength="${MAX_REASON}" placeholder="${esc(placeholder)}"></textarea>
 <button type="submit">Confirm: ${esc(ACTIONS[p.a])}</button></form>
 <p style="font-size:13px">Nothing is saved until you press Confirm.</p>`);
@@ -115,8 +127,9 @@ export default {
         const id = `event:${at}:${crypto.randomUUID()}`;
         const event = { id, j: p.j, a: p.a, r: p.r.slice(0, MAX_REASON), at };
         await env.FEEDBACK.put(id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });
+        const next = SAVED_MESSAGES[p.a] || "Hermes picks this up on its next run.";
         return page("Saved", `<p>${esc(ACTIONS[p.a])}: ${esc(p.n || "this job")}.</p>
-<p>Hermes picks this up on its next run. You can close this tab.</p>`);
+<p>${esc(next)} You can close this tab.</p>`);
       }
       return new Response("Method not allowed", { status: 405, headers: { Allow: "GET, POST" } });
     }

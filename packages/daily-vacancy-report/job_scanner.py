@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import re
 import smtplib
 import time
@@ -51,7 +52,7 @@ from indeed_mcp import IndeedMCP
 from job_extras import (below_min_salary, closing_date, combined_level, days_left, group_agency_posts,
                         parse_salary, rating_failed, repost_key, second_opinion, triage_titles)
 from job_tracker import ACTIONS, FOLLOWUP_ACTIONS, Tracker, card_links, prompt_examples, sync_feedback
-from job_weekly import (action_buttons, build_weekly, closing_pill, followup_section, followup_text,
+from job_weekly import (ICON_DIR, card_action_bar, build_weekly, closing_pill, followup_section, followup_text,
                         source_banner, weekly_when)
 
 hc.LOG_TAG = "job_radar"
@@ -801,9 +802,8 @@ def job_card(job: dict, rank: int) -> str:
   {more_skills}
   {gaps_block}
   {note}
-  <div style="margin-top:16px"><a href="{esc(job['url'])}" style="display:inline-block;background:{C_ACCENT};color:#ffffff;padding:11px 20px;border-radius:10px;font-size:14px;font-weight:600;text-decoration:none">View job &rarr;</a>
-  <span style="font-size:11px;color:{C_MUTED};margin-left:10px;word-break:break-all">{esc(job['url'])}</span></div>
-  {action_buttons(job.get("actions") or {})}
+  {card_action_bar(job['url'], job.get("actions") or {})}
+  <div style="font-size:11px;color:{C_MUTED};word-break:break-all">{esc(job['url'])}</div>
 </td></tr></table>"""
 
 
@@ -888,8 +888,9 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, pr
         if stats.get(k))
     verify_note = (f"Scores of {stats['verify_from']} or more are checked a second time and the two scores are averaged."
                    if stats.get("verify_from") else "")
-    feedback_note = ("<br>Buttons on each job record your answer after you confirm it; Hermes uses them to "
-                     "calibrate future scores and to remind you about applications."
+    feedback_note = ("<br>Buttons on each job record your answer after you confirm it. Thumbs up and down "
+                     "teach Hermes what a good match looks like, Interested shortlists a job, I applied starts "
+                     "follow-up reminders, and Cover letter emails you a tailored PDF letter within minutes."
                      if stats.get("feedback") else "")
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{EMAIL_HEAD}<title>{esc(CFG.title)}</title></head>
@@ -925,6 +926,13 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, pr
 </table></td></tr></table></body></html>"""
 
 
+def preview_html(html_body: str) -> str:
+    """The email with CID images pointed at their files, so the saved copy opens in a browser."""
+    icons = Path(os.path.relpath(ICON_DIR, STATE_DIR)).as_posix()
+    return re.sub(r'src="cid:([\w-]+)"',
+                  lambda m: f'src="{icons if m.group(1).startswith("btn-") else "logos"}/{m.group(1)}.png"', html_body)
+
+
 def build_text(jobs: list[dict], summary: str, followups: str = "") -> str:
     parts = [summary, ""] if summary else []
     for i, j in enumerate(jobs, 1):
@@ -935,9 +943,7 @@ def build_text(jobs: list[dict], summary: str, followups: str = "") -> str:
                      + "".join(f"\n   {label}: {j[k]}" for label, k in (("Employer", "employer"), ("About", "about"),
                                                                         ("Company site", "company_site"))
                                if j.get(k))
-                     + "".join(f"\n   {label}: {j['actions'][a]}" for a, label in (
-                         ("interested", "Interested"), ("not_for_me", "Not for me"), ("applied", "I applied"))
-                         if (j.get("actions") or {}).get(a)))
+                     + "".join(f"\n   {ACTIONS[a]}: {url}" for a, url in (j.get("actions") or {}).items()))
     if followups:
         parts.append(followups)
     where = f" in {CFG.region}" if CFG.region else ""
@@ -1210,7 +1216,7 @@ def main() -> int:
             "closing": closing.isoformat() if closing else "", "days_left": left,
             "fit": fit, "model_fit": rating["fit_score"], "confidence": confidence, "coverage": coverage,
             "matched": matched, "gaps": gaps, "reasoning": rating.get("reasoning", "").strip(),
-            "snippet_only": job["snippet_only"],
+            "snippet_only": job["snippet_only"], "listing": job["text"][:MAX_LISTING_CHARS],
         }
         repost = repost_key(entry["title"], entry["company"])
         if repost:
@@ -1278,7 +1284,7 @@ def main() -> int:
     html_body = fitted_html(top, maybe, stats, summary, problems, followups_html)
     text_body = build_text(results, summary, followup_text(followups))
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    LAST_REPORT.write_text(re.sub(r'src="cid:([\w-]+)"', r'src="logos/\1.png"', html_body), encoding="utf-8")
+    LAST_REPORT.write_text(preview_html(html_body), encoding="utf-8")
     LAST_RESULTS.write_text(json.dumps({"generated": when, "model": model, "summary": summary, "sources": health,
                                         "problems": problems, "jobs": results}, indent=1, default=str),
                             encoding="utf-8")
@@ -1300,7 +1306,7 @@ def main() -> int:
                         f"{'' if len(followups) == 1 else 's'}" if followups
                    else f"{CFG.title}: 0 new jobs")
         try:
-            hc.send_email(subject, html_body, text_body, CFG.title, inline_images(html_body, LOGO_DIR))
+            hc.send_email(subject, html_body, text_body, CFG.title, {**inline_images(html_body, LOGO_DIR), **inline_images(html_body, ICON_DIR)})
         except (smtplib.SMTPException, OSError, RuntimeError) as exc:
             log(f"Email failed: {exc}")
             save_retries(retries)

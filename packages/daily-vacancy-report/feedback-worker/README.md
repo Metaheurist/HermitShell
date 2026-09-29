@@ -1,7 +1,8 @@
 # Vacancy feedback Worker
 
 A small Cloudflare Worker that gives the Daily Vacancy Report email working buttons
-(Interested, Not for me, I applied, Heard back, Rejected) without opening any port on your server.
+(I applied, Good match, Not for me, Interested, Cover letter, Heard back, Rejected) without opening
+any port on your server.
 
 - Each button is a signed link (`/f?j=…&a=…&n=…&t=…`). Opening it only shows a confirmation page, so
   mail scanners that follow every link cannot record answers.

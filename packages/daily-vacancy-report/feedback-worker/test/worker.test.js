@@ -70,6 +70,25 @@ describe("feedback worker", () => {
     expect(event.id).toMatch(/^event:\d+:/);
   });
 
+  it("queues a cover letter request with its guidance and says when it arrives", async () => {
+    const env = testEnv();
+    const confirm = await worker.fetch(new Request(`${BASE}/f?${new URLSearchParams(await link("cover_letter"))}`), env);
+    const form = await confirm.text();
+    expect(form).toContain("Guidance for the letter");
+    expect(form).toContain("Confirm: Generate cover letter");
+    const res = await worker.fetch(formRequest({ ...(await link("cover_letter")), r: "mention Azure" }), env);
+    expect(await res.text()).toContain("within about 10 minutes");
+    const [event] = [...env.FEEDBACK.store.values()].map((v) => JSON.parse(v));
+    expect(event).toMatchObject({ j: "nijobs:123", a: "cover_letter", r: "mention Azure" });
+  });
+
+  it("accepts thumbs up as a good match", async () => {
+    const env = testEnv();
+    const res = await worker.fetch(formRequest({ ...(await link("good_match")), r: "" }), env);
+    expect(await res.text()).toContain("Good match: AI Engineer");
+    expect(env.FEEDBACK.store.size).toBe(1);
+  });
+
   it("requires the API token for /events and /ack", async () => {
     const env = testEnv();
     expect((await worker.fetch(new Request(`${BASE}/events`), env)).status).toBe(401);

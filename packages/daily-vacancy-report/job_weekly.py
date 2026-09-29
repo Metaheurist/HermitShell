@@ -13,6 +13,7 @@ import html
 import json
 from collections import Counter
 from datetime import datetime
+from pathlib import Path
 
 from hermes_common import EMAIL_HEAD, gmail_dark_safe
 from job_tracker import ACTIONS
@@ -25,6 +26,16 @@ BUTTON_STYLES = {
     "heard_back": ("#047857", "#ecfdf5", "#a7f3d0"),
     "rejected": ("#475569", "#f8fafc", "#cbd5e1"),
 }
+# Job card buttons in display order: (label, Lucide icon, colour, background, border, round).
+# icons/build_icons.py renders each icon as icons/btn-<action>.png in its colour.
+CARD_BUTTONS = {
+    "applied": ("I applied", "circle-check", "#4338ca", "#eef2ff", "#c7d2fe", False),
+    "good_match": ("Good match", "thumbs-up", "#047857", "#ecfdf5", "#a7f3d0", True),
+    "not_for_me": ("Not for me", "thumbs-down", "#b91c1c", "#fef2f2", "#fecaca", True),
+    "interested": ("Interested", "bookmark", "#b45309", "#fffbeb", "#fde68a", False),
+    "cover_letter": ("Cover letter", "file-text", "#6d28d9", "#f5f3ff", "#ddd6fe", False),
+}
+ICON_DIR = Path(__file__).resolve().parent / "icons"
 
 
 def esc(text) -> str:
@@ -54,6 +65,32 @@ def action_buttons(links: dict[str, str]) -> str:
                    f'border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;text-decoration:none;'
                    f'margin:0 6px 6px 0">{esc(ACTIONS[action])}</a>')
     return f'<div style="margin-top:12px">{"".join(out)}</div>'
+
+
+def card_action_bar(job_url: str, links: dict[str, str]) -> str:
+    """View job, then the feedback buttons with icons: pills for I applied / Interested / Cover letter,
+    circles for thumbs up and down. Icons are CID PNGs from ICON_DIR because Gmail strips SVG."""
+    out = [f'<a href="{esc(job_url)}" style="display:inline-block;background:{C_ACCENT};color:#ffffff;'
+           f'border:1px solid {C_ACCENT};border-radius:10px;padding:9px 18px;font-size:14px;line-height:20px;'
+           f'font-weight:600;text-decoration:none;margin:0 6px 8px 0;vertical-align:middle">View job &rarr;</a>']
+    for action in CARD_BUTTONS:
+        if not links.get(action):
+            continue
+        label, _, fg, bg, border, round_ = CARD_BUTTONS[action]
+        title = esc(ACTIONS.get(action, label))
+        if round_:
+            out.append(f'<a href="{esc(links[action])}" title="{title}" style="display:inline-block;width:38px;'
+                       f'height:38px;line-height:38px;text-align:center;border-radius:20px;background:{bg};'
+                       f'border:1px solid {border};margin:0 6px 8px 0;vertical-align:middle;text-decoration:none">'
+                       f'<img src="cid:btn-{action}" width="18" height="18" alt="{esc(label)}" '
+                       f'style="display:inline-block;vertical-align:middle;border:0;outline:none"></a>')
+        else:
+            out.append(f'<a href="{esc(links[action])}" title="{title}" style="display:inline-block;background:{bg};'
+                       f'color:{fg};border:1px solid {border};border-radius:10px;padding:9px 14px;font-size:14px;'
+                       f'line-height:20px;font-weight:600;text-decoration:none;margin:0 6px 8px 0;vertical-align:middle">'
+                       f'<img src="cid:btn-{action}" width="16" height="16" alt="" style="display:inline-block;'
+                       f'vertical-align:-3px;border:0;outline:none;margin-right:6px">{esc(label)}</a>')
+    return f'<div style="margin-top:16px">{"".join(out)}</div>'
 
 
 def closing_pill(days: int | None) -> str:

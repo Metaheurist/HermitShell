@@ -9,8 +9,10 @@ using [Semantic Versioning](https://semver.org/).
 ### Added
 
 - **Vacancy report feedback buttons** (optional):
-  - Each job card gets **Interested**, **Not for me** and **I applied** buttons, and follow-up
-    reminders get **Heard back** and **Rejected**.
+  - Next to **View job**, each card gets **I applied**, round thumbs up (**Good match**) and
+    thumbs down (**Not for me**) buttons, **Interested** and **Cover letter**, all with
+    [Lucide](https://lucide.dev) icons rendered to PNG (`icons/build_icons.py`) because Gmail
+    strips SVG. Follow-up reminders get **Heard back** and **Rejected**.
   - The buttons are signed links to a small Cloudflare Worker
     (`packages/daily-vacancy-report/feedback-worker`, with Vitest tests). Opening a link only
     shows a confirmation page with an optional note, so mail scanners can't record answers.
@@ -19,8 +21,17 @@ using [Semantic Versioning](https://semver.org/).
   - Set up with `JOB_FEEDBACK_URL`, `JOB_FEEDBACK_SECRET` and `JOB_FEEDBACK_API_TOKEN`. New guide,
     [docs/feedback-worker.md](docs/feedback-worker.md), covers deploying with the Cloudflare MCP
     in an AI agent or with wrangler by hand.
-- **`state/job_tracker.db`** (`job_tracker.py`, SQLite) records rated and emailed jobs, feedback,
-  reminders and run statistics:
+- **Cover letters.** The **Cover letter** button queues a request in the feedback Worker, with
+  optional guidance from the confirmation page. `cover_letter.py`, a `hermes cron` job every 5
+  minutes, writes the letter with Hermes' model from `job_profile.md` (plus
+  `COVER_LETTER_CV_FILE`) and the listing saved at rating time, lays it out as an A4 PDF with
+  real text (`letter_pdf.py`, no extra packages) and emails it with the job details. Letters
+  that are too short, contain placeholders or claim a job title the CV does not use are
+  rewritten, and failed requests are retried up to 3 times. Settings:
+  `COVER_LETTER_NAME`, `COVER_LETTER_CONTACT`, `COVER_LETTER_CV_FILE`, `COVER_LETTER_SIGN_OFF`,
+  `COVER_LETTER_FROM_NAME` and `COVER_LETTER_MODEL`. `send_email()` now takes attachments.
+- **`state/job_tracker.db`** (`job_tracker.py`, SQLite) records rated and emailed jobs (with the
+  listing, for cover letters), feedback, reminders, cover letter requests and run statistics:
   - Recent liked and rejected jobs, with your reasons, are added to the rating prompt as
     examples.
   - Jobs you applied to come back in a "Follow up" section after 7 and 14 days.

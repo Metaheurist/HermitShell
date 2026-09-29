@@ -51,9 +51,10 @@ def test_schedule_round_trip(reply):
     assert setup.friendly_schedule(setup.cron_expression(reply)) == reply
 
 
-def test_scheduled_jobs_include_the_weekly_roll_up():
+def test_scheduled_jobs_include_the_weekly_roll_up_and_cover_letters():
     assert [job for job, _ in setup.scheduled_jobs("daily-vacancy-report")] == \
-        ["daily-vacancy-report", "daily-vacancy-report-weekly"]
+        ["daily-vacancy-report", "daily-vacancy-report-weekly", "daily-vacancy-report-letters"]
+    assert setup.cron_expression("*/5 * * * *") == "*/5 * * * *"
     assert [job for job, _ in setup.scheduled_jobs("news-digest")] == ["news-digest"]
 
 

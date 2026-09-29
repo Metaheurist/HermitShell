@@ -167,6 +167,43 @@ def test_prompt_examples(tracker):
     tracker.add_event("e2", "k2", "not_for_me", reason="too much travel")
     text = prompt_examples(tracker)
     assert "AI Engineer at Acme" in text and "Sales Engineer at Beta (reason: too much travel)" in text
+    tracker.upsert_job("k3", {"title": "ML Engineer", "company": "Gamma"}, emailed=True)
+    tracker.add_event("e3", "k3", "good_match")
+    assert "ML Engineer at Gamma" in prompt_examples(tracker)
+
+
+def test_tracker_keeps_listing_details_for_cover_letters(tracker):
+    tracker.upsert_job("k1", {"title": "AI Engineer", "company": "Acme", "matched": ["Python"], "gaps": ["Go"],
+                              "location": "Belfast", "listing": "We need Python.", "reasoning": "Good fit."},
+                       emailed=True)
+    tracker.upsert_job("k1", {"title": "AI Engineer", "company": "Acme"}, emailed=False)
+    job = tracker.job("k1")
+    assert job["matched"] == ["Python"] and job["gaps"] == ["Go"]
+    assert (job["location"], job["listing"], job["reasoning"]) == ("Belfast", "We need Python.", "Good fit.")
+    assert tracker.job("missing") is None
+
+
+def test_cover_letter_requests_do_not_change_application_status(tracker):
+    now = time.time()
+    tracker.upsert_job("k1", {"title": "AI Engineer", "company": "Acme", "url": "https://x/1"}, emailed=True)
+    tracker.add_event("e1", "k1", "applied", at=now - 8 * 86400)
+    tracker.add_event("e2", "k1", "cover_letter", reason="mention Azure", at=now - 86400)
+    assert tracker.latest_action("k1") == "applied"
+    assert [d["key"] for d in tracker.followups(now)] == ["k1"]
+    assert tracker.week(now - 7 * 86400)["applications"][0]["status"] == "applied"
+
+
+def test_pending_letters_retry_then_give_up(tracker):
+    tracker.add_event("e1", "k1", "cover_letter", reason="short please")
+    tracker.add_event("e2", "k2", "cover_letter")
+    tracker.add_event("e3", "k3", "interested")
+    assert [(p["event_id"], p["reason"]) for p in tracker.pending_letters()] == [("e1", "short please"), ("e2", "")]
+    assert tracker.mark_letter("e1", "k1", "sent", file="letter.pdf") == "sent"
+    assert tracker.mark_letter("e2", "k2", "error", "model timeout") == "retry"
+    assert tracker.mark_letter("e2", "k2", "error", "model timeout") == "retry"
+    assert [p["attempts"] for p in tracker.pending_letters()] == [2]
+    assert tracker.mark_letter("e2", "k2", "error", "model timeout") == "failed"
+    assert tracker.pending_letters() == []
 
 
 class FakeResponse:
@@ -236,6 +273,22 @@ def test_report_renders_new_card_parts():
         assert text in page, text
     plain = job_scanner.build_text([job], "Summary.")
     assert "closes in 2 days" in plain and "I applied: https://fb.example.workers.dev/f?" in plain
+    assert "Generate cover letter: https://fb.example.workers.dev/f?" in plain
+
+
+def test_card_buttons_sit_next_to_view_job_with_icons():
+    import job_scanner
+
+    page = job_scanner.build_html([report_job()], [], REPORT_STATS, "Summary.")
+    order = [page.index(s) for s in ("View job &rarr;", "a=applied", "a=good_match", "a=not_for_me",
+                                     "a=interested", "a=cover_letter")]
+    assert order == sorted(order)
+    for action in ("applied", "good_match", "not_for_me", "interested", "cover_letter"):
+        assert f'src="cid:btn-{action}"' in page
+        assert (job_scanner.ICON_DIR / f"btn-{action}.png").is_file()
+    assert 'title="Good match"' in page and 'alt="Not for me"' in page and ">Cover letter</a>" in page
+    preview = job_scanner.preview_html('<img src="cid:btn-applied"><img src="cid:logo-acme">')
+    assert preview.endswith('/btn-applied.png"><img src="logos/logo-acme.png">')
 
 
 def test_report_fits_gmail_by_listing_the_lowest_ranked_jobs_on_one_line(monkeypatch):
