@@ -313,7 +313,9 @@ they are. `profiles.py` registers you on its first run.
 ### The admin page
 
 Once the wizard has deployed the Worker, everything else can be set here: the email server, the
-web search keys, your job search and your CV.
+web search keys, your job search and your CV. Two tabs split it up: **Profiles** (everyone's
+details, job search and CV) and **Global settings** (the email server and web search keys the
+whole tool shares).
 
 <img src="images/worker/admin-dashboard-setup.png" alt="Admin page right after setup, with the checklist" width="720">
 
@@ -328,16 +330,24 @@ web search keys, your job search and your CV.
   their name and email from the logs; the owner can't be deleted).
 - **Crawler**: give a profile its own Firecrawl key (it then uses only that key), or leave it on
   the global keys.
+- **Invites**: create, see and revoke unused links.
+
+#### Global settings
+
+`/admin/settings`, the **Global settings** tab. These apply to every profile.
+
+<img src="images/worker/admin-settings.png" alt="Global settings: email server and web search API keys" width="720">
+
 - **Email server**: SMTP server, port, username, password (for Gmail an
   [app password](api-keys.md#gmail-app-password)) and an optional sender address, used for
   everyone's reports. The password box stays empty; leave it empty to keep the saved one. Changing
   the server or username without a new password clears the old password, so it is never sent to a
   different server. **Send a test email** reports the result on the page after HermitShell's next check.
-  **Go back to the .env email settings** undoes the dashboard values.
+  **Go back to the .env email settings** undoes the dashboard values. Where each person's reports
+  go is set on their own profile page.
 - **Web search API keys**: Firecrawl (several keys, comma separated, are used in turn), Tavily and
   Scrapfly for everyone without their own key. Empty boxes leave a key alone; **Use the .env key**
   undoes a dashboard key. [Where to get each key](api-keys.md).
-- **Invites**: create, see and revoke unused links.
 
 Keys and passwords are stored on the HermitShell server (`state/dashboard.json` and
 `state/profiles/`, mode 600) and shown only as their last four characters. Changes wait in KV and

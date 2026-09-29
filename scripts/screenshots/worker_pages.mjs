@@ -142,6 +142,7 @@ await save("admin-invite-link", await admin("/admin/action", { method: "POST", f
 await admin("/admin/action", { method: "POST", form: { csrf, action: "resume", u: "jordan-patel" } });
 await save("admin-dashboard", await admin("/admin?done=queued"));
 await save("admin-profile", await admin("/admin/profile?u=owner"));
+await save("admin-settings", await admin("/admin/settings"));
 
 // A fresh install: HermitShell has connected, nothing else is set yet.
 const fresh = { ...STATUS, profiles: [{ ...STATUS.profiles[0], has_cv: false, job: { ...JOB, titles: [], region: "", places: [] } }],

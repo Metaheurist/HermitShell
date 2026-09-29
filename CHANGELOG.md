@@ -8,6 +8,11 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Global settings tab.** The email server and web search API keys have moved off the profiles
+  list to their own **Global settings** page (`/admin/settings`), because they apply to the whole
+  tool. **Profiles** and **Global settings** tabs sit at the top of every admin page. The setup
+  checklist links there, and saving either form returns to it. Each profile's own page still sets
+  where that person's reports go.
 - **Named HermitShell throughout.** Emails, the Worker's pages, the dashboard, the privacy notice
   and the docs now say HermitShell where they meant the job finder ("HermitShell fit", "Waiting for
   HermitShell", "HermitShell has deleted your profile"). Hermes still names the Hermes Agent platform

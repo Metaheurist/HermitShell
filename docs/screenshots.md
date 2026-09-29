@@ -298,17 +298,10 @@ deleted ([data protection](configuration.md#data-protection)).
 | **Use global key** | Takes a profile back to the global key |
 | **Pause** / **Resume** | Stops or restarts that profile's reports |
 | **Delete** (with the tick box) | Deletes an extra profile's CV and history from your server. The owner can't be deleted |
-| Email server + **Save email server** | SMTP server, port, username, password and sender for everyone's emails. The password box stays empty; leave it empty to keep the saved password |
-| **Send a test email** | Sends a test to the address typed (default: yours); the result shows under Email server after HermitShell's next check |
-| **Go back to the .env email settings** | Shown when the email server was set here; undoes it |
-| Web search API keys + **Save keys** | Firecrawl (several, comma separated), Tavily and Scrapfly keys for everyone without their own; empty boxes leave a key as it is |
-| **Use the .env key** | Shown next to a key set here; goes back to the one in `.env` |
+| **Profiles** / **Global settings** tabs | Switch between the profiles and the [settings shared by the whole tool](#global-settings) |
 | Invite someone + **Create invite link** | Makes a one-time `/join` link; the note is only for you |
 | **Revoke** | Cancels an unused invite |
 | **Sign out** | Ends every admin session |
-
-Keys are shown only as `fc-...1234`. Keys typed here are removed from the Worker after 2 days if
-HermitShell hasn't collected them.
 
 <table>
 <tr><th>Right after setup: the checklist</th><th>Before HermitShell has reported</th><th>New invite link</th></tr>
@@ -322,6 +315,23 @@ HermitShell hasn't collected them.
 The checklist stays until HermitShell has connected, the email server is set and a test worked, a web
 search key is in, and your CV and job search are set. **HermitShell could not apply** lists changes
 HermitShell rejected in the last day, with the reason.
+
+### Global settings
+
+`/admin/settings`: the email server and web search keys every profile uses.
+
+<img src="images/worker/admin-settings.png" alt="Global settings: email server and web search API keys" width="620">
+
+| Control | What it does |
+| --- | --- |
+| Email server + **Save email server** | SMTP server, port, username, password and sender for everyone's emails. The password box stays empty; leave it empty to keep the saved password |
+| **Send a test email** | Sends a test to the address typed (default: yours); the result shows under Email server after HermitShell's next check |
+| **Go back to the .env email settings** | Shown when the email server was set here; undoes it |
+| Web search API keys + **Save keys** | Firecrawl (several, comma separated), Tavily and Scrapfly keys for everyone without their own; empty boxes leave a key as it is |
+| **Use the .env key** | Shown next to a key set here; goes back to the one in `.env` |
+
+Keys are shown only as `fc-...1234`. Keys typed here are removed from the Worker after 2 days if
+HermitShell hasn't collected them.
 
 ### A profile's page
 

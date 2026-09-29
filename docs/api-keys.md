@@ -7,10 +7,10 @@ links and the `/admin` dashboard where all of the keys below can be entered.
 | Service | Needed? | What for | Free plan (checked September 2026) | Where it goes |
 | --- | --- | --- | --- | --- |
 | [Cloudflare](#cloudflare) | Recommended | Buttons in the emails, `/admin`, sign-up links | Workers free plan: 100,000 requests a day | Setup wizard |
-| [Gmail](#gmail-app-password) (or any SMTP account) | Yes | Sending the reports | About 500 recipients a day for a personal Gmail account | `/admin` → Email server, or the wizard |
-| [Firecrawl](#firecrawl) | One search key is | Web search and reading job pages | 1,000 credits a month, 2 requests at a time, no card | `/admin` → Web search API keys |
-| [Tavily](#tavily) | Optional | Second search provider when Firecrawl fails or runs out | 1,000 credits a month, no card | `/admin` → Web search API keys |
-| [Scrapfly](#scrapfly) | Optional | Reading pages that block ordinary requests | 1,000 credits when you sign up, no card | `/admin` → Web search API keys |
+| [Gmail](#gmail-app-password) (or any SMTP account) | Yes | Sending the reports | About 500 recipients a day for a personal Gmail account | Global settings (`/admin/settings`) → Email server, or the wizard |
+| [Firecrawl](#firecrawl) | One search key is | Web search and reading job pages | 1,000 credits a month, 2 requests at a time, no card | Global settings → Web search API keys |
+| [Tavily](#tavily) | Optional | Second search provider when Firecrawl fails or runs out | 1,000 credits a month, no card | Global settings → Web search API keys |
+| [Scrapfly](#scrapfly) | Optional | Reading pages that block ordinary requests | 1,000 credits when you sign up, no card | Global settings → Web search API keys |
 | [Ollama](#ollama) | Yes | The model that rates jobs and writes letters, on your own machine | Free and open source | Set up by the wizard |
 
 Free plans change: check each pricing page before relying on the numbers. Keys and passwords typed
@@ -47,7 +47,7 @@ Gmail doesn't accept your normal password from other programs; it needs an app p
 2. Open [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords), type a
    name such as `HermitShell` and press **Create**.
 3. Copy the 16-letter password Google shows. It is only shown once. Spaces in it don't matter.
-4. On `/admin` under **Email server** enter:
+4. On the **Global settings** tab (`/admin/settings`) under **Email server** enter:
 
    | Field | Value |
    | --- | --- |
@@ -75,7 +75,7 @@ transactional email service's SMTP relay.
 1. Sign up at [firecrawl.dev](https://www.firecrawl.dev) with an email address, Google or GitHub.
 2. Open [API keys](https://www.firecrawl.dev/app/api-keys) in the dashboard and copy the key (it
    starts with `fc-`).
-3. Paste it on `/admin` under **Web search API keys** → Firecrawl. Several keys can be pasted
+3. Paste it on the **Global settings** tab under **Web search API keys** → Firecrawl. Several keys can be pasted
    separated by commas; they are used in turn.
 
 Free plan: 1,000 credits a month (a search costs about 2 credits per 10 results, a page read 1
@@ -85,7 +85,7 @@ credit), 2 requests at a time, no card.
 
 1. Sign up at [app.tavily.com](https://app.tavily.com).
 2. The dashboard home page shows your API key (it starts with `tvly-`); copy it.
-3. Paste it on `/admin` under **Web search API keys** → Tavily.
+3. Paste it on the **Global settings** tab under **Web search API keys** → Tavily.
 
 Free plan: 1,000 credits a month, no card. A basic search costs 1 credit. Tavily is used when
 Firecrawl fails or runs out, so the free plan is usually plenty.
@@ -94,7 +94,7 @@ Firecrawl fails or runs out, so the free plan is usually plenty.
 
 1. Sign up at [scrapfly.io](https://scrapfly.io/register).
 2. The [dashboard](https://scrapfly.io/dashboard) shows your API key; copy it.
-3. Paste it on `/admin` under **Web search API keys** → Scrapfly.
+3. Paste it on the **Global settings** tab under **Web search API keys** → Scrapfly.
 
 Free: 1,000 credits when you sign up, no card. A plain page read costs 1 credit; pages that need a
 real browser or proxies cost more. Scrapfly is only used for pages Firecrawl can't read, so it is
