@@ -328,7 +328,7 @@ whole tool shares).
 - **HermitShell could not apply**: changes HermitShell rejected in the last day (a mistyped SMTP server,
   for example), with the reason.
 - **Profiles**: everyone HermitShell reports, with status, last report and a **no CV** tag when there
-  is none yet. **Settings, job search and CV** opens that profile's page. Pause, resume or delete
+  is none yet. **Manage** opens that profile's page (details, job search and CV). Pause, resume or delete
   (deleting removes their CV and history from your server, their answers still waiting in KV and
   their name and email from the logs; the owner can't be deleted).
 - **Crawler**: give a profile its own Firecrawl key (it then uses only that key), or leave it on

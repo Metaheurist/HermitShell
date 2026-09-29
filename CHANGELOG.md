@@ -19,7 +19,8 @@ using [Semantic Versioning](https://semver.org/).
   (comma separated)" is now just **Towns**. Labels are plain, with a short hint under each box
   instead of text in brackets. The minimum salary box is empty for no minimum and accepts `£45,000`.
   The "All profiles" link is replaced by a **Back to profiles** button that stays in the top-left
-  corner while you scroll. The Global settings labels got the same treatment.
+  corner while you scroll. The Global settings labels got the same treatment. In the profiles
+  table, "Settings, job search and CV" is now just **Manage**.
 - **Global settings tab.** The email server and web search API keys have moved off the profiles
   list to their own **Global settings** page (`/admin/settings`), because they apply to the whole
   tool. **Profiles** and **Global settings** tabs sit at the top of every admin page. The setup
