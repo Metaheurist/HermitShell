@@ -6,11 +6,35 @@ explains the techniques, for anyone building a new package.
 
 ## Layout
 
-- Tables for layout, with all CSS inline. Gmail drops most `<style>` rules, and Outlook ignores
-  flexbox and grid.
+- Tables for layout, with all CSS inline. Some clients drop `<style>` blocks, and Outlook
+  ignores flexbox and grid. See [Size](#size-staying-under-gmails-clipping-limit) for the one
+  case where styles are moved into classes.
 - A centred 680px content column (`max-width`) with percentage widths inside, so it shrinks on
   phones.
 - Every email also has a plain-text part (`multipart/alternative`), for clients that block HTML.
+
+## Size: staying under Gmail's clipping limit
+
+Gmail cuts off any message whose HTML is over 102 KB and shows "[Message clipped] View entire
+message". Anything after the cut is hidden, including buttons, and inline images from the hidden
+part show up as loose attachments. Inline styles repeated on every card add up quickly: 16 job
+cards came to 126 KB.
+
+`send_email()` runs `hermes_common.compact_html()` on every email, so packages don't need to
+handle this themselves:
+
+1. Under `EMAIL_HTML_BUDGET` (95 KB) the email is sent unchanged, with all styles inline.
+2. Otherwise whitespace between tags is collapsed.
+3. If it's still too big, inline styles that repeat on tags without a `class` move into short
+   classes (`.h0`, `.h1`, ...) in `<style>` blocks. These stay inside Gmail's limits: each block
+   is under 8,192 characters, the total is under 16 KB, and there are no `url(`, gradients or
+   `background-image`, any of which makes Gmail drop the whole block. Tags that already have a
+   class, such as the dark-mode wrappers, keep their inline styles.
+
+The result renders the same: the 126 KB report became 69 KB with identical computed styles on
+every element. The vacancy report also uses `fitted_html()`. If the compacted email is still
+over budget, the lowest-ranked jobs appear as one-line entries under "More matches", with the
+same feedback links, instead of full cards.
 
 ## Images: inline attachments, not SVG or remote URLs
 

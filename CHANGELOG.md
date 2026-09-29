@@ -159,6 +159,14 @@ using [Semantic Versioning](https://semver.org/).
   characters (found by CodeQL).
 - LinkedIn search results showed the page title ("Acme hiring Data Engineer Job in Belfast") instead
   of the job title.
+- Gmail clipped long reports ("[Message clipped]") partway through, hiding the later jobs and
+  their buttons and showing their logos as loose attachments. `send_email()` now compacts
+  emails over 95 KB by moving repeated inline styles into Gmail-safe classes, so they render the
+  same at about half the size. If the vacancy report is still too big, the lowest-ranked jobs
+  become one-line "More matches" entries. See
+  [docs/email-rendering.md](docs/email-rendering.md#size-staying-under-gmails-clipping-limit).
+- The Indeed sign-in warning repeated "Run `hermes mcp login indeed`" when the error already
+  said so.
 
 ## [0.1.0] - 2026-09-28
 

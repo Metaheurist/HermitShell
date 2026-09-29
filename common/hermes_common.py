@@ -15,6 +15,7 @@ import smtplib
 import ssl
 import sys
 import time
+from collections import Counter
 from email.message import EmailMessage
 from html.parser import HTMLParser
 from pathlib import Path
@@ -415,6 +416,71 @@ def gmail_dark_safe(inner_html: str) -> str:
     return f'<div class="gmail-screen"><div class="gmail-difference">{inner_html}</div></div>'
 
 
+# Gmail clips HTML over 102 KB ("[Message clipped]"), drops a whole <style> block over 8,192
+# characters or one containing background images, and ignores styles past 16 KB in total.
+EMAIL_HTML_BUDGET = 95_000
+STYLE_BLOCK_MAX = 7_000
+STYLE_TOTAL_MAX = 15_000
+_TAG_RE = re.compile(r"<[a-zA-Z][^<>]*>")
+_STYLE_ATTR_RE = re.compile(r'\sstyle="([^"]*)"')
+_UNSAFE_STYLE_RE = re.compile(r"url\(|background-image|gradient|expression|[&{}@\\<>]", re.I)
+
+
+def html_size(html_body: str) -> int:
+    return len(html_body.encode("utf-8"))
+
+
+def compact_html(html_body: str, budget: int | None = None) -> str:
+    """Shrink an email under `budget` bytes (default EMAIL_HTML_BUDGET) without changing how it renders.
+
+    Inline styles stay inline while the email fits, since some clients ignore <style>. Beyond
+    that, whitespace between tags is collapsed, then inline styles repeated on class-less tags
+    become short classes in <style> blocks sized to Gmail's limits.
+    """
+    budget = EMAIL_HTML_BUDGET if budget is None else budget
+    if html_size(html_body) <= budget:
+        return html_body
+    html_body = re.sub(r">\s*\n\s*<", "> <", html_body)
+    head_end = html_body.find("</head>")
+    if html_size(html_body) <= budget or head_end < 0:
+        return html_body
+
+    def movable(tag: str) -> str | None:
+        found = _STYLE_ATTR_RE.search(tag)
+        if not found or " class=" in tag:
+            return None
+        value = found.group(1).strip().rstrip(";")
+        return value if len(value) >= 24 and not _UNSAFE_STYLE_RE.search(value) else None
+
+    counts = Counter(v for tag in _TAG_RE.findall(html_body) if (v := movable(tag)))
+    classes: dict[str, str] = {}
+    rules: list[str] = []
+    total = 0
+    for value, uses in sorted(counts.items(), key=lambda kv: -kv[1] * len(kv[0])):
+        name = f"h{len(classes)}"
+        rule = f".{name}{{{value}}}"
+        if uses < 2 or total + len(rule) > STYLE_TOTAL_MAX:
+            continue
+        classes[value] = name
+        rules.append(rule)
+        total += len(rule)
+    if not classes:
+        return html_body
+
+    def swap(match: re.Match) -> str:
+        tag = match.group(0)
+        name = classes.get(movable(tag) or "")
+        return _STYLE_ATTR_RE.sub(f' class="{name}"', tag, count=1) if name else tag
+
+    html_body = _TAG_RE.sub(swap, html_body)
+    blocks = [""]
+    for rule in rules:
+        if len(blocks[-1]) + len(rule) > STYLE_BLOCK_MAX:
+            blocks.append("")
+        blocks[-1] += rule
+    return html_body.replace("</head>", "".join(f"<style>{b}</style>" for b in blocks) + "</head>", 1)
+
+
 class _TextExtractor(HTMLParser):
     BLOCK = {"p", "div", "br", "ul", "ol", "tr", "table", "section", "article", "header", "footer", "blockquote"}
 
@@ -544,6 +610,12 @@ def send_email(subject: str, html_body: str, text_body: str, from_name: str,
     msg["Subject"] = subject
     msg["From"] = f"{from_name} <{env('SMTP_FROM', user)}>"
     msg["To"] = to_addr
+    original = html_size(html_body)
+    html_body = compact_html(html_body)
+    if html_size(html_body) != original:
+        log(f"Email HTML compacted from {original // 1024} KB to {html_size(html_body) // 1024} KB")
+    if html_size(html_body) > 102 * 1024:
+        log(f"Email HTML is {html_size(html_body) // 1024} KB; Gmail clips messages over 102 KB")
     msg.set_content(text_body)
     msg.add_alternative(html_body, subtype="html")
     html_part = msg.get_payload()[1]

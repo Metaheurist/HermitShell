@@ -209,27 +209,64 @@ def test_sync_feedback_reports_errors(tracker, monkeypatch):
 
 # --------------------------------------------------------------------------- report rendering
 
+def report_job(key: str = "k1", title: str = "AI Engineer", fit: int = 8) -> dict:
+    return {"key": key, "title": title, "url": f"https://example.com/job/{key}", "source": "example.com",
+            "company": "Acme", "location": "Remote", "employment_type": "Contract", "work_mode": "Remote",
+            "salary": "", "seniority": "Mid", "published": "", "days_left": 2, "fit": fit, "model_fit": 9,
+            "confidence": 80, "coverage": 70, "matched": ["Python", "Azure", "LLMs", "Docker"],
+            "gaps": ["Kubernetes", "Go"], "reasoning": "Strong overlap.", "snippet_only": False,
+            "second_opinion": 8, "also_advertised_by": ["Agency Ltd"],
+            "actions": card_links("https://fb.example.workers.dev", "s", key, title)}
+
+
+REPORT_STATS = {"when": "today", "shown": 1, "strong": 1, "avg_fit": "8.0", "scanned": 3, "min_score": 5,
+                "excluded_location": 0, "excluded_type": 0, "below_min": 0, "model": "m", "sources": "web search 3",
+                "web_usage": "n/a", "min_salary": 40000, "salary_currency": "£", "excluded_closed": 1,
+                "verify_from": 8, "feedback": True}
+
+
 def test_report_renders_new_card_parts():
     import job_scanner
 
-    job = {"key": "k1", "title": "AI Engineer", "url": "https://example.com/job/1", "source": "example.com",
-           "company": "Acme", "location": "Remote", "employment_type": "Contract", "work_mode": "Remote",
-           "salary": "", "seniority": "Mid", "published": "", "days_left": 2, "fit": 8, "model_fit": 9,
-           "confidence": 80, "coverage": 70, "matched": ["Python", "Azure", "LLMs", "Docker"],
-           "gaps": ["Kubernetes", "Go"], "reasoning": "Strong overlap.", "snippet_only": False,
-           "second_opinion": 8, "also_advertised_by": ["Agency Ltd"],
-           "actions": card_links("https://fb.example.workers.dev", "s", "k1", "AI Engineer")}
-    stats = {"when": "today", "shown": 1, "strong": 1, "avg_fit": "8.0", "scanned": 3, "min_score": 5,
-             "excluded_location": 0, "excluded_type": 0, "below_min": 0, "model": "m", "sources": "web search 3",
-             "web_usage": "n/a", "min_salary": 40000, "salary_currency": "£", "excluded_closed": 1,
-             "verify_from": 8, "feedback": True}
-    page = job_scanner.build_html([job], [], stats, "Summary.", ["Indeed failed: expired."], "")
+    job = report_job()
+    page = job_scanner.build_html([job], [], REPORT_STATS, "Summary.", ["Indeed failed: expired."], "")
     for text in ("Closes in 2 days", "Salary not listed", "Biggest gap:", "Also on your CV: Docker",
                  "Also advertised by Agency Ltd", "Checked twice", "Indeed failed: expired.",
                  "salary at least £40,000", "1 already closed", "/f?j=k1&amp;a=applied"):
         assert text in page, text
     plain = job_scanner.build_text([job], "Summary.")
     assert "closes in 2 days" in plain and "I applied: https://fb.example.workers.dev/f?" in plain
+
+
+def test_report_fits_gmail_by_listing_the_lowest_ranked_jobs_on_one_line(monkeypatch):
+    import hermes_common
+    import job_scanner
+
+    top = [report_job(f"t{i}", f"Top role {i}", 8) for i in range(3)]
+    maybe = [report_job(f"m{i}", f"Maybe role {i}", 5) for i in range(3)]
+    full = job_scanner.fitted_html(top, maybe, REPORT_STATS, "Summary.")
+    assert "More matches" not in full
+
+    budget = hermes_common.html_size(hermes_common.compact_html(full, budget=0)) * 2 // 3
+    monkeypatch.setattr(hermes_common, "EMAIL_HTML_BUDGET", budget)
+    page = job_scanner.fitted_html(top, maybe, REPORT_STATS, "Summary.")
+    assert hermes_common.html_size(hermes_common.compact_html(page)) <= budget
+    assert "More matches" in page and "#6 Maybe role 2" in page
+    assert page.count("View job &rarr;") < 6
+    assert all(f"Top role {i}" in page and f"Maybe role {i}" in page for i in range(3))
+    assert "/f?j=m2&amp;a=not_for_me" in page
+
+
+def test_source_problems_suggests_the_indeed_login_once():
+    import job_scanner
+
+    health = {"Indeed": {"found": 0, "error": "not authorised yet; run `hermes mcp login indeed` and try again"},
+              "LinkedIn": {"found": 0}}
+    problems = job_scanner.source_problems(health, None)
+    assert problems[0].count("hermes mcp login indeed") == 1
+    assert problems[1] == "LinkedIn found no postings this run."
+    expired = job_scanner.source_problems({"Indeed": {"found": 0, "error": "OAuth token expired"}}, "HTTP 500")
+    assert "Run `hermes mcp login indeed`" in expired[0] and expired[1].startswith("Feedback buttons: HTTP 500")
 
 
 def test_weekly_roll_up_shows_jobs_applications_and_source_health():

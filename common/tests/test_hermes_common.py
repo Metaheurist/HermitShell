@@ -5,6 +5,7 @@ Run from the repository root:  python -m pytest common/tests
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -146,6 +147,35 @@ def test_inline_images_only_returns_referenced_files_that_exist(tmp_path):
     (tmp_path / "unused.png").write_bytes(b"other")
     page = '<img src="cid:logo"><img src="cid:missing">'
     assert hc.inline_images(page, tmp_path) == {"logo": b"png-bytes"}
+
+
+def _report(cards: int) -> str:
+    card = ('<table style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;margin:0 0 18px">\n'
+            '  <tr><td style="padding:22px 24px;font-size:14px;color:#334155;line-height:1.5">Job {n}</td></tr>\n'
+            '  <tr><td style="background-image:linear-gradient(#000,#fff);padding:4px">Header {n}</td></tr>\n'
+            '  <tr><td class="gmail-screen" style="padding:22px 24px;font-size:14px;color:#334155">Dark {n}</td></tr>\n'
+            '</table>\n')
+    return f"<html><head>{hc.EMAIL_HEAD}</head><body>{''.join(card.format(n=n) for n in range(cards))}</body></html>"
+
+
+def test_compact_html_leaves_emails_under_budget_alone():
+    page = _report(3)
+    assert hc.compact_html(page) == page
+
+
+def test_compact_html_moves_repeated_styles_into_gmail_safe_classes():
+    page = _report(400)
+    small = hc.compact_html(page, budget=0)
+    assert hc.html_size(small) < hc.html_size(page) * 0.7
+    assert hc.html_to_text(small) == hc.html_to_text(page)
+    blocks = re.findall(r"<style>(.*?)</style>", small, flags=re.S)
+    added = blocks[1:]
+    assert added and all(len(b) <= hc.STYLE_BLOCK_MAX for b in added)
+    assert sum(len(b) for b in added) <= hc.STYLE_TOTAL_MAX
+    assert not any(re.search(r"url\(|gradient|background-image", b) for b in added)
+    assert small.count('style="background-image:linear-gradient(#000,#fff);padding:4px"') == 400
+    assert small.count('class="gmail-screen" style="padding:22px 24px;font-size:14px;color:#334155"') == 400
+    assert 'class="h0"' in small
 
 
 # --------------------------------------------------------------------------- model

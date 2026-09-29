@@ -50,7 +50,7 @@ from hermes_common import (BROWSER_HEADERS, EMAIL_HEAD, STATE_DIR, WebClient, co
 from indeed_mcp import IndeedMCP
 from job_extras import (below_min_salary, closing_date, combined_level, days_left, group_agency_posts,
                         parse_salary, rating_failed, repost_key, second_opinion, triage_titles)
-from job_tracker import FOLLOWUP_ACTIONS, Tracker, card_links, prompt_examples, sync_feedback
+from job_tracker import ACTIONS, FOLLOWUP_ACTIONS, Tracker, card_links, prompt_examples, sync_feedback
 from job_weekly import (action_buttons, build_weekly, closing_pill, followup_section, followup_text,
                         source_banner, weekly_when)
 
@@ -822,8 +822,47 @@ def section(title: str, subtitle: str, jobs: list[dict], start: int) -> str:
             f'<div style="font-size:13px;color:{C_MUTED}">{subtitle}</div></div>{cards}')
 
 
+def more_section(jobs: list[dict], start: int) -> str:
+    """One line per job, for matches that would push the email past Gmail's clipping size."""
+    if not jobs:
+        return ""
+    rows = []
+    for i, job in enumerate(jobs):
+        meta = " &middot; ".join(esc(x) for x in (job.get("employer") or job["company"], job["location"],
+                                                   job["salary"]) if x)
+        links = " &middot; ".join(f'<a href="{esc(url)}" style="color:{C_ACCENT};text-decoration:underline">'
+                                  f'{esc(ACTIONS[action])}</a>' for action, url in (job.get("actions") or {}).items())
+        rows.append(
+            f'<tr><td width="52" valign="top" style="padding:10px 0;border-top:1px solid #e2e8f0;font-size:14px;'
+            f'font-weight:800;color:{fit_colour(job["fit"])}">{job["fit"]}/10</td>'
+            f'<td style="padding:10px 0;border-top:1px solid #e2e8f0">'
+            f'<a href="{esc(job["url"])}" style="font-size:14px;font-weight:700;color:{C_INK};text-decoration:none">'
+            f'#{start + i} {esc(job["title"])}</a>{closing_pill(job.get("days_left")).replace("margin:0 6px 6px 0", "margin-left:6px")}'
+            f'<div style="font-size:12px;color:{C_MUTED};margin-top:2px">{meta}</div>'
+            + (f'<div style="font-size:12px;margin-top:4px">{links}</div>' if links else "") + '</td></tr>')
+    return (f'<div style="margin:26px 0 12px"><div style="font-size:18px;font-weight:800;color:{C_INK}">More matches</div>'
+            f'<div style="font-size:13px;color:{C_MUTED}">Shortened so the email is not clipped; the plain-text '
+            f'version has full details.</div></div>'
+            f'<table width="100%" cellpadding="0" cellspacing="0" style="background:{C_CARD};border:1px solid #e2e8f0;'
+            f'border-radius:16px;padding:6px 20px;margin:0 0 18px">{"".join(rows)}</table>')
+
+
+def fitted_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, problems: list[str] | None = None,
+                followups: str = "") -> str:
+    """The report with as many full cards as fit Gmail's size limit; the lowest-ranked rest become one-liners."""
+    jobs = top + maybe
+    for shown in range(len(jobs), -1, -1):
+        html_body = build_html(top[:shown], maybe[:max(0, shown - len(top))], stats, summary, problems, followups,
+                               jobs[shown:])
+        if hc.html_size(hc.compact_html(html_body)) <= hc.EMAIL_HTML_BUDGET:
+            break
+    if shown < len(jobs):
+        log(f"Email size: {len(jobs) - shown} lower-ranked matches shown as one-line entries")
+    return html_body
+
+
 def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, problems: list[str] | None = None,
-               followups: str = "") -> str:
+               followups: str = "", more: list[dict] | None = None) -> str:
     summary_block = (
         f'<table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e0e7ff;border-radius:16px;margin:22px 0 4px">'
         f'<tr><td style="padding:18px 22px"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:{C_ACCENT};font-weight:700">Hermes&rsquo; take</div>'
@@ -871,6 +910,7 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, pr
   {summary_block}
   {section("Top matches", "Fit score 7 or higher: apply to these first. Jobs closing soon come first.", top, 1)}
   {section("Worth a look", "Partial fit: adjacent roles or a few gaps to cover.", maybe, len(top) + 1)}
+  {more_section(more or [], len(top) + len(maybe) + 1)}
   {empty}
   {followups}
   <div style="font-size:12px;color:{C_MUTED};line-height:1.6;padding:18px 6px 6px;text-align:center">
@@ -930,7 +970,8 @@ def source_problems(health: dict, feedback_error: str | None) -> list[str]:
     for name, info in health.items():
         if info.get("error"):
             hint = " Run `hermes mcp login indeed` where Hermes runs." \
-                if name == "Indeed" and re.search(r"auth|login|token|oauth", info["error"], re.I) else ""
+                if name == "Indeed" and re.search(r"auth|login|token|oauth", info["error"], re.I) \
+                and "mcp login" not in info["error"] else ""
             problems.append(f"{name} failed: {info['error']}.{hint}")
         elif not info.get("found"):
             problems.append(f"{name} found no postings this run.")
@@ -1234,7 +1275,7 @@ def main() -> int:
         "sources": ", ".join(f"{name} {info['found']}" for name, info in health.items()) or "none",
         "web_usage": web.usage() + (f", Indeed MCP {indeed.calls} calls" if indeed and indeed.calls else ""),
     }
-    html_body = build_html(top, maybe, stats, summary, problems, followups_html)
+    html_body = fitted_html(top, maybe, stats, summary, problems, followups_html)
     text_body = build_text(results, summary, followup_text(followups))
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     LAST_REPORT.write_text(re.sub(r'src="cid:([\w-]+)"', r'src="logos/\1.png"', html_body), encoding="utf-8")
