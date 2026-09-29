@@ -125,6 +125,22 @@ def test_signup_builds_a_profile_from_the_cv(home):
     assert ids == ["owner", pid]
 
 
+def test_a_new_profile_reaches_the_worker_before_its_signup_leaves_the_queue(home):
+    order = []
+
+    class Ordered(FakeApi):
+        def status(self, payload):
+            order.append(("status", [p["id"] for p in payload["profiles"]]))
+            super().status(payload)
+
+        def ack(self, ids):
+            order.append(("ack", ids))
+            super().ack(ids)
+
+    profiles.sync(Ordered([signup()]))
+    assert order == [("status", ["owner", "sam-lee-456789"]), ("ack", ["queue:1700000000000:abcdef0123456789"])]
+
+
 def test_nijobs_keywords_follow_the_owner(home, monkeypatch):
     monkeypatch.setenv("JOB_SCANNER_NIJOBS_KEYWORDS", "data-engineer")
     profiles.sync(FakeApi([signup()]))

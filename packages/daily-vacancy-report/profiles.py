@@ -1111,14 +1111,16 @@ def sync(api: Api, full: bool = False) -> list[str]:
                 report.append(f"{item.get('type')}: rejected ({exc})")
             done.append(iid)
             attempts.pop(iid, None)
+        write_json(PROFILES_DIR / ".attempts.json", attempts)
+        schedule_reports()
+        # The dashboard shows a sign-up as pending while it is queued, so the new profile must reach the Worker
+        # before the sign-up leaves the queue, or it vanishes from the dashboard in between.
+        push_status(api, force=bool(done))
         if done:
             try:
                 api.ack(done)
             except requests.RequestException as exc:
                 log(f"Could not acknowledge queue items: {exc.__class__.__name__}")
-        write_json(PROFILES_DIR / ".attempts.json", attempts)
-        schedule_reports()
-        push_status(api, force=bool(done))
         return report
 
 
