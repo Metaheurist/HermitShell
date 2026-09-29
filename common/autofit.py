@@ -531,12 +531,21 @@ def calibrate(host: str, model: str, num_ctx: int | None) -> list[str]:
     """Load the model at each standard size (and Hermes' own) to learn what fits on the GPU and how fast it is."""
     lines = []
     prompt = "Summarise in one sentence: " + "a data engineer building pipelines for analytics teams. " * 60
-    for ctx in dict.fromkeys([c for c in (*BUCKETS, num_ctx) if c]):
+
+    def ask(ctx: int, text: str, predict: int):
         body = {"model": model, "stream": False, "keep_alive": "5m",
-                "options": {"temperature": 0, "num_predict": 40, "num_ctx": ctx},
-                "messages": [{"role": "user", "content": prompt}]}
+                "options": {"temperature": 0, "num_predict": predict, "num_ctx": ctx},
+                "messages": [{"role": "user", "content": text}]}
+        return hc.requests.post(f"{host}/api/chat", json=body, timeout=600)
+
+    # The first request after Ollama starts also sets up the GPU, which would make the first size look slow.
+    try:
+        ask(BUCKETS[0], "Hi", 4)
+    except hc.requests.RequestException:
+        pass
+    for ctx in dict.fromkeys([c for c in (*BUCKETS, num_ctx) if c]):
         try:
-            reply = hc.requests.post(f"{host}/api/chat", json=body, timeout=600)
+            reply = ask(ctx, prompt, 40)
             reply.raise_for_status()
             data = reply.json()
         except (hc.requests.RequestException, ValueError) as exc:

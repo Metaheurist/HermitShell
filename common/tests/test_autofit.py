@@ -326,6 +326,7 @@ def test_calibrate_learns_each_standard_size(fit):
     assert [line.split()[0] for line in lines] == ["8192", "16384", "32768", "65536"]
     assert "95% on the GPU" in lines[0] and "tokens/s" in lines[0]
     assert len(fit.state()["models"][MODEL]["points"]) == 4
+    assert fit.chats[0][1]["num_predict"] == 4 and len(fit.chats) == 5
 
 
 def test_main_prints_the_machine_and_the_plan(fit, monkeypatch, capsys):
