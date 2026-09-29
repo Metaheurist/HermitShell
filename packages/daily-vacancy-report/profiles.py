@@ -1597,7 +1597,8 @@ def report_task(profile: dict) -> dict | None:
 
 
 def letter_tasks(pid: str) -> list[dict]:
-    """A profile's cover letter and tailored CV requests still to be made, the one being written first."""
+    """A profile's cover letter, tailored CV and job email requests still to be carried out, the one being done
+    first."""
     path = tracker_file(pid)
     if not path.is_file():
         return []

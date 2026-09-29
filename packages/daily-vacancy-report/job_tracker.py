@@ -31,11 +31,13 @@ ACTIONS = {
     "cover_letter": "Generate cover letter",
     "tailored_cv": "Tailored CV",
     "add_skill": "Add to my skills",
+    "send_job": "Emailed from the dashboard",
 }
 CARD_ACTIONS = ("applied", "good_match", "not_for_me", "interested", "cover_letter", "tailored_cv")
 FOLLOWUP_ACTIONS = ("heard_back", "rejected")
-# Requests that cover_letter.py turns into a PDF and emails.
-REQUEST_ACTIONS = ("cover_letter", "tailored_cv")
+# Requests that cover_letter.py carries out: a letter or CV turned into a PDF, or the job emailed to the profile
+# (send_job, only asked for from the dashboard's list of jobs sent).
+REQUEST_ACTIONS = ("cover_letter", "tailored_cv", "send_job")
 # Actions that describe where an application stands; the others (e.g. cover_letter) are requests.
 STATUS_ACTIONS = ("interested", "not_for_me", "applied", "heard_back", "rejected", "good_match")
 _STATUS_SQL = ", ".join(f"'{a}'" for a in STATUS_ACTIONS)

@@ -13,6 +13,9 @@ for the same job with no new guidance sends the one already made instead of writ
 for a new one. Requests from the dashboard are kept for download and not emailed. COVER_LETTER_KEEP_DAYS=0
 keeps them on this server only, and every request writes a new one.
 
+The dashboard's "Email" button on a job asks for that job's report card to be emailed to the profile (job_mail.py);
+it is sent from here too, without the model, and the Worker is told so it can mark the job as emailed.
+
     python3 cover_letter.py                         # fetch requests from the Worker and send them
     python3 cover_letter.py --job KEY [--note ...]  # write a letter for a tracked job now
     python3 cover_letter.py --job KEY --cv          # tailor the CV for it instead
@@ -40,6 +43,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 import hermes_common as hc
+import job_mail
 import profiles
 import tailored_cv
 from hermes_common import EMAIL_HEAD, STATE_DIR, connect_model, env, env_int, load_env_file, log, ollama_chat
@@ -51,7 +55,8 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 TRACKER_FILE = STATE_DIR / "job_tracker.db"
 LETTER_DIR = STATE_DIR / "cover_letters"
 CV_DIR = STATE_DIR / "tailored_cvs"
-KIND_LABELS = {"cover_letter": "Cover letter", "tailored_cv": "Tailored CV"}
+KIND_LABELS = {"cover_letter": "Cover letter", "tailored_cv": "Tailored CV", "send_job": "Job email"}
+SEND_JOB = "send_job"
 LOCK_FILE = STATE_DIR / "cover_letter.lock"
 # The request being written right now, so the dashboard can show it and stop it (profiles.cancel_task).
 WRITING_FILE = STATE_DIR / profiles.WRITING_NAME
@@ -379,6 +384,20 @@ def upload_doc(kind: str, key: str, path: Path, filename: str, days: int | None 
     return ""
 
 
+def record_emailed(key: str) -> str:
+    """Tell the Worker a job was emailed, for its "Emailed" mark on the dashboard; returns a problem to log, or ""."""
+    base, token = secure_base(env("JOB_FEEDBACK_URL", "") or ""), env("JOB_FEEDBACK_API_TOKEN", "")
+    if not (base and token):
+        return ""
+    params = {"u": env("JOB_PROFILE_ID", "") or profiles.OWNER, "j": key}
+    try:
+        requests.post(f"{base}/api/emailed", params=params, timeout=30,
+                      headers={"Authorization": f"Bearer {token}"}).raise_for_status()
+    except requests.RequestException as exc:
+        return f"could not mark the job as emailed on the Worker: {exc.__class__.__name__}"
+    return ""
+
+
 def send_again(tracker: Tracker, kind: str, key: str, path: Path, note: str, send: bool, dry_run: bool) -> None:
     """Email a letter or CV made before, as it was, instead of writing a new one."""
     job = tracker.job(key)
@@ -408,9 +427,13 @@ def process_pending(tracker: Tracker, model_info_factory, dry_run: bool = False)
         send = "quiet" not in flags
         profiles.write_json(WRITING_FILE, {"event_id": req["event_id"], "pid": os.getpid(), "at": time.time()})
         profiles.tasks_changed()
+        path = earlier = None
         try:
-            earlier = None if note or "fresh" in flags else recent_doc(tracker, kind, req["key"])
-            if earlier:
+            if kind != SEND_JOB and not note and "fresh" not in flags:
+                earlier = recent_doc(tracker, kind, req["key"])
+            if kind == SEND_JOB:
+                job_mail.send_job(tracker, req["key"], dry_run)
+            elif earlier:
                 path = earlier[0]
                 send_again(tracker, kind, req["key"], path, note, send, dry_run)
             else:
@@ -427,6 +450,13 @@ def process_pending(tracker: Tracker, model_info_factory, dry_run: bool = False)
             continue
         finally:
             WRITING_FILE.unlink(missing_ok=True)
+        if kind == SEND_JOB:
+            if not dry_run:
+                tracker.mark_letter(req["event_id"], req["key"], "sent")
+                if problem := record_emailed(req["key"]):
+                    log(problem)
+            lines.append(f"{what} {'not sent (dry run)' if dry_run else 'sent'} for {label}")
+            continue
         if not dry_run:
             tracker.mark_letter(req["event_id"], req["key"], "sent", file=path.name)
             days = days_left(earlier[1]) if earlier else None

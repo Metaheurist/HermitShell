@@ -1058,8 +1058,10 @@ def test_request_tasks_say_where_they_were_asked_for_and_for_which_job(home):
     _request(pid, "event:e1")
     with Tracker(profiles.tracker_file(pid)) as tracker:
         tracker.add_event("event:e2", "k1", "tailored_cv", at=1_790_000_100.0, flags="quiet,fresh")
+        tracker.add_event("event:e3", "k1", "send_job", at=1_790_000_200.0, flags="quiet")
     tasks = profiles.letter_tasks(pid)
-    assert [(t["kind"], t["trigger"], t["j"]) for t in tasks] == [("cover_letter", "email", "k1"), ("tailored_cv", "dashboard", "k1")]
+    assert [(t["kind"], t["trigger"], t["j"]) for t in tasks] == [
+        ("cover_letter", "email", "k1"), ("tailored_cv", "dashboard", "k1"), ("send_job", "dashboard", "k1")]
     assert "07700" not in str(tasks)
 
 

@@ -100,6 +100,37 @@ def test_job_card_buttons_escape_their_links():
     assert "<script>" not in mini and "<img src=x" not in mini and mini.count("&lt;script&gt;") == 6
 
 
+def test_a_job_emailed_from_the_dashboard_escapes_hostile_tracker_fields(monkeypatch):
+    import job_mail
+
+    monkeypatch.setenv("JOB_FEEDBACK_URL", "https://w.example")
+    monkeypatch.setenv("JOB_FEEDBACK_SECRET", "secret")
+    job = {k: HOSTILE for k in ("title", "company", "employer", "location", "source", "reasoning", "about",
+                                "salary", "company_site", "employment_type")}
+    subject, body, _ = job_mail.job_email("k1", {**job, "url": f"javascript:{HOSTILE}", "matched": [HOSTILE],
+                                                 "gaps": [HOSTILE]})
+    assert "<script>" not in body and "<img src=x" not in body and "javascript:" not in body
+    subject, _, _ = job_mail.job_email("k1", {"title": "AI Engineer\r\nBcc: someone@example.com", "company": "Contoso"})
+    assert "\n" not in subject and "\r" not in subject and subject.endswith("AI Engineer Bcc: someone@example.com at Contoso")
+
+
+def test_job_email_marks_go_only_over_tls_with_the_token(monkeypatch, capsys):
+    import cover_letter
+
+    token = "mark-token-0123456789abcdef"
+    seen = []
+    monkeypatch.setattr(cover_letter.requests, "post", lambda url, params, timeout, headers: seen.append((url, headers))
+                        or type("R", (), {"raise_for_status": lambda self: None})())
+    monkeypatch.setenv("JOB_FEEDBACK_API_TOKEN", token)
+    for base in ("http://w.example", "ftp://w.example", "w.example"):
+        monkeypatch.setenv("JOB_FEEDBACK_URL", base)
+        assert cover_letter.record_emailed("k1") == "" and seen == []
+    monkeypatch.setenv("JOB_FEEDBACK_URL", "https://w.example")
+    assert cover_letter.record_emailed("k1") == ""
+    assert seen == [("https://w.example/api/emailed", {"Authorization": f"Bearer {token}"})]
+    assert token not in capsys.readouterr().out
+
+
 def test_the_live_link_keeps_tls_and_never_logs_the_api_token(capsys):
     token = "live-link-token-0123456789abcdef"
     api = profiles.Api("https://feedback.example.workers.dev/", token)

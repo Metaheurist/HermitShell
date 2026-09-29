@@ -838,7 +838,7 @@ def gap_tags(gaps: list[str], link: str) -> str:
             f'color:{C_MUTED}">{hint}</span></div><div>{tags}</div>')
 
 
-def job_card(job: dict, rank: int) -> str:
+def job_card(job: dict, rank: int | None) -> str:
     colour = fit_colour(job["fit"])
     shown = job.get("employer") or job["company"]
     logo = (job.get("employer_logo") if job.get("employer") else "") or job.get("company_logo", "")
@@ -868,7 +868,7 @@ def job_card(job: dict, rank: int) -> str:
   <table width="100%" cellpadding="0" cellspacing="0"><tr>
     <td width="62" valign="top" style="padding-top:2px">{company_avatar(shown, logo)}</td>
     <td valign="top">
-      <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:{C_ACCENT};font-weight:700">#{rank} &middot; {esc(job['source'])}</div>
+      <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:{C_ACCENT};font-weight:700">{f"#{rank} &middot; " if rank else ""}{esc(job['source'])}</div>
       <a href="{esc(job['url'])}" style="display:block;font-size:19px;font-weight:700;color:{C_INK};text-decoration:none;line-height:1.3;margin:4px 0">{esc(job['title'])}</a>
       <div style="font-size:13px;color:#475569;margin-bottom:10px">{meta}</div>
       {salary_block(job)}
