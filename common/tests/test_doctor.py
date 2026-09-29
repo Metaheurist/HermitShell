@@ -18,10 +18,11 @@ import hermes_common as hc  # noqa: E402
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
-    monkeypatch.setattr(hc, "HERMES_HOME", tmp_path)
+    monkeypatch.setattr(hc, "APP_HOME", tmp_path)
     monkeypatch.setattr(hc, "STATE_DIR", tmp_path / "scripts" / "state")
     monkeypatch.setattr(hc.os, "environ", dict(hc.os.environ))
-    for key in ("OLLAMA_HOST", "OLLAMA_FALLBACK_HOST", "OLLAMA_MODEL", "JOB_SCANNER_MODEL", hc.DATA_KEY_ENV,
+    for key in ("OLLAMA_HOST", "OLLAMA_FALLBACK_HOST", "OLLAMA_MODEL", "OLLAMA_NUM_CTX", "JOB_SCANNER_MODEL",
+                hc.DATA_KEY_ENV,
                 "SMTP_USER", "SMTP_PASSWORD", "FIRECRAWL_API_KEY", "TAVILY_API_KEY", "SCRAPFLY_API_KEY",
                 "JOB_FEEDBACK_URL"):
         monkeypatch.delenv(key, raising=False)
@@ -139,7 +140,17 @@ def test_ollama_down_fails_with_a_hint(home, monkeypatch):
     assert statuses(report) == [("ollama", "fail")] and "OLLAMA_HOST" in report.items[0]["fix"]
 
 
-def test_ollama_uses_hermes_model_when_hermes_talks_to_ollama(home, monkeypatch):
+def test_ollama_uses_the_model_and_host_in_the_settings(home, monkeypatch):
+    monkeypatch.setenv("OLLAMA_HOST", "http://gpu:11434/")
+    monkeypatch.setenv("OLLAMA_MODEL", "llama3:8b")
+    fake_ollama(monkeypatch, {"http://gpu:11434": ["llama3:8b"]})
+    report = doctor.Report(as_json=True)
+    doctor.check_ollama(report, fix=False)
+    assert report.items == [{"check": "ollama", "status": "ok", "message": "Ollama at http://gpu:11434 has llama3:8b",
+                             "fix": "", "host": "http://gpu:11434", "model": "llama3:8b", "wanted": "llama3:8b"}]
+
+
+def test_ollama_still_reads_the_config_yaml_an_install_inside_hermes_left(home, monkeypatch):
     (home / "config.yaml").write_text("model:\n  default: llama3:8b\n  base_url: http://gpu:11434/v1\n")
     fake_ollama(monkeypatch, {"http://gpu:11434": ["llama3:8b"]})
     report = doctor.Report(as_json=True)
@@ -194,11 +205,47 @@ def test_doctor_on_a_cpu_only_machine_names_the_cores(home, monkeypatch, placed)
     assert report.items[1]["message"].endswith("not loaded right now; no GPU found, CPU: 18 cores / 36 threads")
 
 
-def test_a_cloud_model_in_hermes_config_is_not_looked_for_on_ollama(home, monkeypatch):
+def test_a_cloud_model_in_an_old_config_yaml_is_not_looked_for_on_ollama(home, monkeypatch):
     (home / "config.yaml").write_text("model:\n  default: anthropic/claude-sonnet\n  provider: openrouter\n")
     hosts, models, wanted = doctor.ollama_plan(hc)
     assert "anthropic/claude-sonnet" not in models and wanted == hc.DEFAULT_MODEL
-    assert hosts == ["http://ollama:11434", "http://localhost:11434"]
+    assert hosts == ["http://localhost:11434", "http://ollama:11434", "http://host.docker.internal:11434"]
+
+
+# --------------------------------------------------------------------------- scheduler
+
+@pytest.fixture
+def jobs(home, monkeypatch):
+    import scheduler
+    cron = home / "cron"
+    for name, value in {"CRON_DIR": cron, "JOBS_FILE": cron / "jobs.json", "HEARTBEAT": cron / "heartbeat.json",
+                        "LOCK_DIR": cron / "locks", "OUTPUT_DIR": cron / "output", "SCRIPT_DIR": home / "scripts"}.items():
+        monkeypatch.setattr(scheduler, name, value)
+    (home / "scripts").mkdir()
+    (home / "scripts" / "job_scanner.py").write_text("")
+    (home / "scripts" / "demo.jobs.json").write_text(json.dumps({"jobs": [
+        {"name": "daily", "title": "Daily", "script": "job_scanner.py", "schedule": "0 7 * * *"}]}))
+    return scheduler
+
+
+def test_no_schedule_fails_and_fix_adds_the_standard_jobs(jobs):
+    report = doctor.Report(as_json=True)
+    doctor.check_scheduler(report, fix=False)
+    assert statuses(report) == [("scheduler", "fail")] and "--only scheduler" in report.items[0]["fix"]
+    report = doctor.Report(as_json=True)
+    doctor.check_scheduler(report, fix=True)
+    assert [i["message"] for i in report.items][:2] == ["added the standard jobs: daily", "1 scheduled jobs (1 active)"]
+    assert report.items[2]["status"] == "fail" and "not running" in report.items[2]["message"]
+
+
+def test_a_running_scheduler_and_a_failed_job_are_reported(jobs):
+    jobs.add_defaults()
+    jobs.record(jobs.load_jobs()[0]["id"], last_status="error")
+    jobs.beat()
+    report = doctor.Report(as_json=True)
+    doctor.check_scheduler(report, fix=False)
+    assert statuses(report) == [("scheduler", "warn"), ("scheduler", "ok")]
+    assert "last run failed: daily" in report.items[0]["message"]
 
 
 def test_fix_downloads_the_missing_model(home, monkeypatch):

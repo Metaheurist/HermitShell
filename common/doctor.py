@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """HermitShell doctor: checks everything the scripts need and, with --fix, sets up what it can.
 
-Runs in Hermes' own Python (the setup wizard runs it there after installing, and again at the end):
+Runs in the Python that runs the scripts (the setup wizard runs it after installing, and again at the end):
 
     python3 doctor.py              # report: ok / warn / FAIL for each check
     python3 doctor.py --fix        # also install missing packages, download the model, generate the data key
@@ -9,7 +9,7 @@ Runs in Hermes' own Python (the setup wizard runs it there after installing, and
     python3 doctor.py --json       # machine-readable, for the wizard
 
 Checks: Python version; the Python packages (installed with --fix into scripts/.deps/pyX.Y, on the data volume,
-using pip or uv, so they survive container updates); Hermes' config.yaml and the `hermes` command; Ollama
+using pip or uv, so they survive updates); the scheduler's jobs and whether it is running; Ollama
 reachable with the model the scripts will use (downloaded with --fix); the .env file's permissions, the data
 key, email and web search settings; the feedback Worker; free disk space. Exit code 1 when a check fails.
 Uses only the standard library until `requests` is available, so it can repair a bare Python.
@@ -38,7 +38,7 @@ REQUIREMENTS = [
     ("PIL", "pillow", "10.4", False),
     ("yaml", "pyyaml", "6.0", False),
 ]
-CHECKS = ("python", "packages", "hermes", "ollama", "settings", "worker", "disk")
+CHECKS = ("python", "packages", "scheduler", "ollama", "settings", "worker", "disk")
 MIN_FREE_GB = 1.0
 PULL_TIMEOUT = 3600
 
@@ -162,30 +162,40 @@ def common():
     return hermes_common
 
 
-def check_hermes(report: Report, _fix: bool) -> None:
-    hc = common()
-    config = hc.HERMES_HOME / "config.yaml"
-    if config.is_file():
-        report.add("hermes", "ok", f"Hermes config: {config}")
+def check_scheduler(report: Report, fix: bool) -> None:
+    common()
+    import scheduler
+    jobs = scheduler.load_jobs()
+    if jobs is None and fix:
+        added = scheduler.add_defaults()
+        report.add("scheduler", "fixed", f"added the standard jobs: {', '.join(added) or 'none'}")
+        jobs = scheduler.load_jobs()
+    if jobs is None:
+        report.add("scheduler", "fail", f"no scheduled jobs ({scheduler.JOBS_FILE})",
+                   "run: python3 doctor.py --fix --only scheduler (or the setup wizard)")
+        return
+    failing = [j["name"] for j in jobs if j.get("last_status") == "error"]
+    report.add("scheduler", "warn" if failing else "ok",
+               f"{len(jobs)} scheduled jobs ({sum(scheduler.enabled(j) for j in jobs)} active)"
+               + (f"; last run failed: {', '.join(failing)}" if failing else ""),
+               "see cron/output/<job id>/ for what they printed" if failing else "")
+    if scheduler.healthy():
+        report.add("scheduler", "ok", "the scheduler is running")
     else:
-        report.add("hermes", "warn", f"no {config}", "set HERMES_HOME to Hermes' data folder (the one with config.yaml)")
-    if shutil.which("hermes"):
-        report.add("hermes", "ok", "`hermes` command found (for the scheduled jobs)")
-    else:
-        report.add("hermes", "warn", "`hermes` command not on PATH here",
-                   "create the schedules from where Hermes runs (the wizard does this through Docker)")
+        report.add("scheduler", "fail", "the scheduler is not running, so nothing runs on time",
+                   "start it: docker compose up -d (container), systemctl start hermitshell (service), "
+                   "or sudo sh scripts/install-service.sh")
 
 
 def ollama_plan(hc) -> tuple[list[str], list[str], str]:
     """(hosts to try, models the scripts accept in order, the model to download when none is there)."""
-    hcfg = hc.hermes_model_config()
-    local = bool(hcfg["host"])  # Hermes itself talks to an Ollama-style server, so its model is an Ollama name
-    models = [hc.env("JOB_SCANNER_MODEL"), hcfg["model"] if local else "", hc.env("OLLAMA_MODEL"), hc.DEFAULT_MODEL]
-    hosts = [hcfg["host"], hc.env("OLLAMA_HOST", "http://ollama:11434"),
-             hc.env("OLLAMA_FALLBACK_HOST", "http://localhost:11434")]
-    models = [m for m in dict.fromkeys(models) if m]
+    cfg = hc.model_config()
+    # A config.yaml model with no Ollama host (a cloud provider's name) is not one Ollama can have.
+    if not cfg["host"] and not hc.env("OLLAMA_MODEL"):
+        cfg["model"] = ""
+    models = [m for m in dict.fromkeys([hc.env("JOB_SCANNER_MODEL"), cfg["model"], hc.DEFAULT_MODEL]) if m]
     wanted = hc.env("JOB_SCANNER_MODEL") or hc.env("OLLAMA_MODEL") or hc.DEFAULT_MODEL
-    return [h.rstrip("/") for h in dict.fromkeys(hosts) if h], models, wanted
+    return hc.ollama_hosts(cfg), models, wanted
 
 
 def ollama_models(hc, host: str) -> list[str] | None:
@@ -230,7 +240,7 @@ def check_ollama(report: Report, fix: bool, model: str | None = None, pull: bool
     reachable = {h: names for h in hosts if (names := ollama_models(hc, h)) is not None}
     if not reachable:
         report.add("ollama", "fail", f"no Ollama server answers at {', '.join(hosts)}",
-                   "start Ollama (the wizard can start a container next to Hermes) or set OLLAMA_HOST",
+                   "start Ollama (the wizard can start a container for it) or set OLLAMA_HOST in .env",
                    host="", model="", wanted=wanted)
         return
     for host, names in reachable.items():
@@ -294,7 +304,7 @@ def add_env_line(path: Path, key: str, value: str) -> None:
 
 def check_settings(report: Report, fix: bool) -> None:
     hc = common()
-    env_path = hc.HERMES_HOME / ".env"
+    env_path = hc.APP_HOME / ".env"
     if not env_path.is_file():
         report.add("settings", "warn", f"no {env_path}", "run the setup wizard: python3 scripts/setup.py")
     elif os.name == "posix" and env_path.stat().st_mode & 0o077:
@@ -351,7 +361,7 @@ def check_worker(report: Report, _fix: bool) -> None:
 
 def check_disk(report: Report, _fix: bool) -> None:
     hc = common()
-    folder = hc.HERMES_HOME if hc.HERMES_HOME.is_dir() else SCRIPT_DIR
+    folder = hc.APP_HOME if hc.APP_HOME.is_dir() else SCRIPT_DIR
     free = shutil.disk_usage(folder).free / 1e9
     report.add("disk", "ok" if free >= MIN_FREE_GB else "warn", f"{free:.1f} GB free in {folder}",
                "" if free >= MIN_FREE_GB else "backups and the model need space")
@@ -360,7 +370,7 @@ def check_disk(report: Report, _fix: bool) -> None:
 # --------------------------------------------------------------------------- command line
 
 def run(only: list[str], fix: bool, report: Report, model: str | None = None, pull: bool = True) -> None:
-    steps = {"python": check_python, "packages": check_packages, "hermes": check_hermes,
+    steps = {"python": check_python, "packages": check_packages, "scheduler": check_scheduler,
              "ollama": lambda r, f: check_ollama(r, f, model, pull), "settings": check_settings,
              "worker": check_worker, "disk": check_disk}
     for name in only:

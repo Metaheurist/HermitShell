@@ -88,17 +88,51 @@ def test_firecrawl_keys_combines_main_and_backup_keys(monkeypatch):
     assert hc.firecrawl_keys() == ["key-a", "key-b", "key-c"]
 
 
-def test_hermes_model_config_reads_config_yaml(tmp_path, monkeypatch):
+def test_model_config_reads_an_old_config_yaml(tmp_path, monkeypatch):
     (tmp_path / "config.yaml").write_text(
         "model:\n  default: qwen3:4b\n  base_url: http://ollama:11434/v1\n  ollama_num_ctx: 16384\n",
         encoding="utf-8")
-    monkeypatch.setattr(hc, "HERMES_HOME", tmp_path)
-    assert hc.hermes_model_config() == {"model": "qwen3:4b", "host": "http://ollama:11434", "num_ctx": 16384}
+    monkeypatch.setattr(hc, "APP_HOME", tmp_path)
+    for key in ("OLLAMA_MODEL", "OLLAMA_HOST", "OLLAMA_NUM_CTX"):
+        monkeypatch.delenv(key, raising=False)
+    assert hc.model_config() == {"model": "qwen3:4b", "host": "http://ollama:11434", "num_ctx": 16384}
+    monkeypatch.setenv("OLLAMA_MODEL", "llama3:8b")
+    monkeypatch.setenv("OLLAMA_HOST", "http://gpu:11434/")
+    monkeypatch.setenv("OLLAMA_NUM_CTX", "8192")
+    assert hc.model_config() == {"model": "llama3:8b", "host": "http://gpu:11434", "num_ctx": 8192}
 
 
-def test_hermes_model_config_without_a_config_file(tmp_path, monkeypatch):
-    monkeypatch.setattr(hc, "HERMES_HOME", tmp_path)
-    assert hc.hermes_model_config() == {"model": "", "host": "", "num_ctx": None}
+def test_model_config_without_a_config_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(hc, "APP_HOME", tmp_path)
+    for key in ("OLLAMA_MODEL", "OLLAMA_HOST", "OLLAMA_NUM_CTX"):
+        monkeypatch.delenv(key, raising=False)
+    assert hc.model_config() == {"model": "", "host": "", "num_ctx": None}
+    assert hc.ollama_hosts(hc.model_config()) == ["http://localhost:11434", "http://ollama:11434",
+                                                   "http://host.docker.internal:11434"]
+
+
+def test_connect_model_prefers_the_settings_and_keeps_their_context_size(tmp_path, monkeypatch):
+    monkeypatch.setattr(hc, "APP_HOME", tmp_path)
+    monkeypatch.setenv("OLLAMA_HOST", "http://gpu:11434")
+    monkeypatch.setenv("OLLAMA_MODEL", "llama3:8b")
+    monkeypatch.setenv("OLLAMA_NUM_CTX", "16384")
+    monkeypatch.delenv("JOB_SCANNER_MODEL", raising=False)
+    seen = []
+    monkeypatch.setattr(hc, "pick_ollama_host", lambda hosts, models: seen.append((hosts, models)) or (hosts[0], models[0]))
+    assert hc.connect_model("JOB_SCANNER_MODEL") == ("http://gpu:11434", "llama3:8b", 16384)
+    assert seen[0][1] == ["llama3:8b", hc.DEFAULT_MODEL]
+    monkeypatch.setenv("JOB_SCANNER_MODEL", "qwen3:8b")
+    assert hc.connect_model("JOB_SCANNER_MODEL") == ("http://gpu:11434", "qwen3:8b", 8192)
+
+
+def test_the_home_folder_is_hermitshells_own(tmp_path):
+    import subprocess
+    code = "import hermes_common as hc; print(hc.APP_HOME, hc.HERMES_HOME == hc.APP_HOME)"
+    env = {k: v for k, v in hc.os.environ.items() if k not in ("HERMITSHELL_HOME", "HERMES_HOME")}
+    run = lambda **extra: subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True,  # noqa: E731
+                                         cwd=str(Path(__file__).resolve().parents[1]), env={**env, **extra}).stdout.split()
+    assert run(HERMITSHELL_HOME=str(tmp_path / "new"), HERMES_HOME=str(tmp_path / "old")) == [str(tmp_path / "new"), "True"]
+    assert run(HERMES_HOME=str(tmp_path / "old")) == [str(tmp_path / "old"), "True"]
 
 
 # --------------------------------------------------------------------------- text and URLs

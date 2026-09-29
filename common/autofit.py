@@ -9,7 +9,7 @@ from what it knows about the machine and what Ollama reported after earlier load
   Ollama machine itself.
 - Ollama: after a load, /api/ps says how much of the model sits on the GPU at that context size, so autofit learns
   how much fits and picks the smallest standard context (8k, 16k, 32k, 64k) that holds the prompt and keeps the
-  model on the GPU. Without a GPU it keeps Hermes' own context size, so the loaded model is shared, not reloaded.
+  model on the GPU. Without a GPU it keeps the configured context size (OLLAMA_NUM_CTX), so the loaded model is shared, not reloaded.
 - Threads: when most of the model runs on the CPU it tries Ollama's default (one per core) against every logical
   CPU and keeps whichever answers faster.
 - Instances: OLLAMA_HOSTS adds more Ollama servers (one per GPU, or another machine). Requests are spread over
@@ -320,7 +320,7 @@ def gpu_budget(hw: dict, h: dict, now: float) -> int:
 
 
 def gpu_context(default: int | None, needed: int, fits) -> int:
-    """Hermes' context when it fits on the GPU (the loaded model is shared), else the smallest standard size that
+    """The configured context when it fits on the GPU (the loaded model is shared), else the smallest standard size that
     fits, else the smallest that holds the prompt (the most of the model on the GPU)."""
     options = ([default] if default and default >= needed else []) + [b for b in BUCKETS if b >= needed]
     for ctx in dict.fromkeys(options):
@@ -528,7 +528,7 @@ def where(loaded: dict | None) -> str:
 
 
 def calibrate(host: str, model: str, num_ctx: int | None) -> list[str]:
-    """Load the model at each standard size (and Hermes' own) to learn what fits on the GPU and how fast it is."""
+    """Load the model at each standard size (and the configured one) to learn what fits on the GPU and how fast it is."""
     lines = []
     prompt = "Summarise in one sentence: " + "a data engineer building pipelines for analytics teams. " * 60
 

@@ -1,9 +1,9 @@
-"""Shared plumbing for HermitShell packages (Hermes scheduled scripts).
+"""Shared plumbing for HermitShell packages (the scripts scheduler.py runs).
 
-.env loading, Hermes model discovery, web data providers (Firecrawl with
+.env loading, model discovery, web data providers (Firecrawl with
 backup-key failover, then Tavily and Scrapfly as backups), Ollama chat helper
 and SMTP sending with inline images. Every setting comes from environment
-variables or $HERMES_HOME/.env; see docs/configuration.md.
+variables or $HERMITSHELL_HOME/.env; see docs/configuration.md.
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-# Packages doctor.py installed because Hermes' Python lacked them. They live next to the scripts, on the data
-# volume, so they survive container updates; one folder per Python version, since compiled wheels are tied to it.
+# Packages doctor.py installed because the system Python lacked them. They live next to the scripts, on the data
+# volume, so they survive updates; one folder per Python version, since compiled wheels are tied to it.
 DEPS_DIR = Path(__file__).resolve().parent / ".deps" / f"py{sys.version_info[0]}.{sys.version_info[1]}"
 if DEPS_DIR.is_dir() and str(DEPS_DIR) not in sys.path:
     sys.path.insert(0, str(DEPS_DIR))
@@ -35,7 +35,10 @@ if DEPS_DIR.is_dir() and str(DEPS_DIR) not in sys.path:
 import requests  # noqa: E402
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-HERMES_HOME = Path(os.environ.get("HERMES_HOME", SCRIPT_DIR.parent))
+# HermitShell's home: .env, cron/ (the scheduler's jobs), backups/ and scripts/ with its state. HERMES_HOME is the
+# name older installs, made when HermitShell ran inside Hermes, still set.
+APP_HOME = Path(os.environ.get("HERMITSHELL_HOME") or os.environ.get("HERMES_HOME") or SCRIPT_DIR.parent)
+HERMES_HOME = APP_HOME
 # Reports, trackers, CVs and letters hold personal data: files the scripts create are readable by their owner only.
 os.umask(0o077)
 
@@ -50,7 +53,7 @@ BROWSER_HEADERS = {
 }
 DEFAULT_MODEL = "qwen3:4b-instruct-2507-q4_K_M"
 
-LOG_TAG = "hermes"
+LOG_TAG = "hermitshell"
 TRACKING_PARAMS = {"cid", "source", "ref", "trk", "gh_src", "fbclid", "gclid", "mc_cid", "mc_eid"}
 
 
@@ -60,7 +63,7 @@ def log(msg: str) -> None:
 
 # --------------------------------------------------------------------------- config
 
-def load_env_file(path: Path = HERMES_HOME / ".env") -> None:
+def load_env_file(path: Path = APP_HOME / ".env") -> None:
     """Minimal .env loader; values already present in the process env win."""
     if not path.is_file():
         return
@@ -90,7 +93,7 @@ def dashboard_key_allowed(key: str) -> bool:
 
 
 def load_dashboard_settings(path: Path = DASHBOARD_FILE) -> None:
-    """Settings saved from the feedback Worker's dashboard beat .env and anything inherited from Hermes. A process
+    """Settings saved from the feedback Worker's dashboard beat .env and the inherited environment. A process
     whose parent already applied them (HERMES_DASHBOARD_APPLIED) keeps the environment its parent chose."""
     if os.environ.get("HERMES_DASHBOARD_APPLIED"):
         return
@@ -272,12 +275,20 @@ def normalize_url(url: str) -> str:
                        parts.path.rstrip("/"), urlencode(query), ""))
 
 
-def hermes_model_config() -> dict:
-    """Model, Ollama host and context size from Hermes' own config.yaml."""
-    path = HERMES_HOME / "config.yaml"
+def model_config() -> dict:
+    """The model, Ollama host and context size: OLLAMA_MODEL, OLLAMA_HOST and OLLAMA_NUM_CTX, each falling back to
+    a config.yaml in the home folder (left by installs that ran inside Hermes)."""
+    legacy = legacy_model_config()
+    return {"model": env("OLLAMA_MODEL") or legacy["model"], "host": (env("OLLAMA_HOST") or legacy["host"]).rstrip("/"),
+            "num_ctx": env_int("OLLAMA_NUM_CTX", 0) or legacy["num_ctx"]}
+
+
+def legacy_model_config() -> dict:
+    """Model, Ollama host and context size from the home folder's config.yaml (Hermes' format), if there is one."""
+    path = APP_HOME / "config.yaml"
     cfg: dict = {}
     try:
-        import yaml  # available in the Hermes venv
+        import yaml
         cfg = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("model") or {}
     except Exception:
         try:
@@ -748,15 +759,23 @@ def pick_ollama_host(hosts: list[str], models: list[str]) -> tuple[str, str]:
     raise RuntimeError(f"No reachable Ollama host with any of {models}")
 
 
+OLLAMA_DEFAULT_HOSTS = ("http://ollama:11434", "http://host.docker.internal:11434")
+
+
+def ollama_hosts(cfg: dict) -> list[str]:
+    """Where to look for Ollama: OLLAMA_HOST, OLLAMA_FALLBACK_HOST (default localhost), then the usual container
+    addresses (an `ollama` container on the same network, or Ollama published on the Docker host)."""
+    hosts = [cfg["host"], env("OLLAMA_FALLBACK_HOST", "http://localhost:11434"), *OLLAMA_DEFAULT_HOSTS]
+    return [h.rstrip("/") for h in dict.fromkeys(hosts) if h]
+
+
 def connect_model(override_env: str) -> tuple[str, str, int | None]:
-    """Resolve (host, model, num_ctx), preferring the model Hermes itself is configured with."""
-    hcfg = hermes_model_config()
-    models = [env(override_env), hcfg["model"], env("OLLAMA_MODEL"), DEFAULT_MODEL]
-    hosts = [hcfg["host"], env("OLLAMA_HOST", "http://ollama:11434"),
-             env("OLLAMA_FALLBACK_HOST", "http://localhost:11434")]
-    host, model = pick_ollama_host(hosts, [m for m in dict.fromkeys(models) if m])
-    # Reusing Hermes' num_ctx keeps the already-loaded model instance instead of forcing a reload.
-    num_ctx = hcfg["num_ctx"] if model == hcfg["model"] else 8192
+    """Resolve (host, model, num_ctx): `override_env`'s model, else OLLAMA_MODEL, else the default."""
+    cfg = model_config()
+    models = [env(override_env), cfg["model"], DEFAULT_MODEL]
+    host, model = pick_ollama_host(ollama_hosts(cfg), [m for m in dict.fromkeys(models) if m])
+    # The configured num_ctx matches the model instance other programs keep loaded, instead of forcing a reload.
+    num_ctx = cfg["num_ctx"] if model == cfg["model"] else 8192
     return host, model, num_ctx
 
 
