@@ -91,6 +91,37 @@ describe("signed API requests", () => {
     expect((await worker.fetch(await signed("GET", "/api/queue"), env)).status).toBe(200);
   });
 
+  it("checks a signed poll's nonce and records the check-in in one call to the hub", async () => {
+    const HUB = memoryHub({ sql: true });
+    const calls = [];
+    const stub = HUB.get();
+    HUB.get = () => ({ fetch: (url, init) => { calls.push(new URL(url).pathname); return stub.fetch(url, init); } });
+    const env = testEnv({ HUB });
+    await env.FEEDBACK.put("flag:queue", "123");
+    const res = await worker.fetch(await signed("GET", "/api/queue/flag"), env);
+    expect(await res.json()).toEqual({ flag: "123" });
+    expect(calls).toEqual(["/nonce"]);
+    expect(HUB.storage.get("seen")).toBeGreaterThan(0);
+
+    const replay = await signed("GET", "/api/queue/flag");
+    await worker.fetch(replay.clone(), env);
+    HUB.storage.delete("seen");
+    expect((await worker.fetch(replay, env)).status).toBe(401);
+    expect(HUB.storage.has("seen")).toBe(false);
+
+    calls.length = 0;
+    await worker.fetch(await signed("GET", "/api/queue"), env);
+    expect(calls).toEqual(["/nonce"]);
+    expect(HUB.storage.has("seen")).toBe(false);
+  });
+
+  it("records the check-in of a poll from an older HermitShell that does not sign", async () => {
+    const HUB = memoryHub();
+    const env = testEnv({ HUB });
+    expect((await worker.fetch(new Request(`${BASE}/api/queue/flag`, { headers: TOKEN }), env)).status).toBe(200);
+    expect(HUB.storage.get("seen")).toBeGreaterThan(0);
+  });
+
   it("still needs the API token, and a secret to check signatures against", async () => {
     const env = testEnv();
     const noToken = await worker.fetch(await signed("GET", "/api/queue", null, { headers: {} }), env);

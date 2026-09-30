@@ -959,12 +959,14 @@ an hourly and a daily full check. With the live link, `profiles.py` only lists a
 up to three short retries if the new item isn't listed yet); its pings cost a few hundred Durable
 Object requests a day, well inside that plan's 100,000 requests and 13,000 GB-seconds, because
 a hibernating socket isn't billed for time. Without the link it reads `/api/queue/flag` every 15
-seconds between runs (about 5,200 reads and requests a day) and only syncs when its value
+seconds between runs (about 5,200 reads and requests a day, each one Durable Object request that both
+checks the signature's nonce and records the check-in) and only syncs when its value
 changes, so an item that keeps failing is retried by the next run rather than listed every 15
 seconds. Admin pages also skip the listing when the flag says the queue is empty. Each flag holds when it was
 last set, and a listing that finds nothing under a flag set over two minutes ago takes it down (KV lists can
 show a deleted key for about a minute), so a flag can't stay on after its items have gone and cost a list on
-every poll. Status reports
+every poll. Each request reads a KV key at most once (`src/memo.js`: later reads, and reads after
+the request's own writes, come from memory, and each caller gets its own parsed copy). Status reports
 from HermitShell are only written when something changed or every 15 minutes (at most 96 of the
 1,000 writes a day), plus two per report (when it starts and when it ends), about one a minute for
 a report's progress while it runs (a 20-minute scan adds about 20), and one per cover letter or

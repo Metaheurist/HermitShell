@@ -9,7 +9,7 @@
 // Both sides state PROTOCOL (X-HermitShell-Protocol); HermitShell reports its own with its status and the
 // dashboard warns when they differ.
 
-import { hubNonce } from "./hub.js";
+import { POLL_PATH, hubNonce } from "./hub.js";
 import { authorised, limitedBytes, safeEqual } from "./lib.js";
 
 export const PROTOCOL = 2;
@@ -43,18 +43,25 @@ export async function signature(secret, method, target, stamp, nonce, body) {
   return hex(await crypto.subtle.sign("HMAC", await signingKey(secret), encoder.encode(message)));
 }
 
+// Remembered per KV store, not per request's memo of it (memo.js), so after the first signed request it costs no read.
+const store = (env) => env.FEEDBACK.raw || env.FEEDBACK;
+
 async function latched(env) {
-  if (latchedStores.has(env.FEEDBACK)) return true;
+  if (latchedStores.has(store(env))) return true;
   if ((await env.FEEDBACK.get(LATCH_KEY)) !== "1") return false;
-  latchedStores.add(env.FEEDBACK);
+  latchedStores.add(store(env));
   return true;
 }
 
 async function latch(env) {
   if (await latched(env)) return;
   await env.FEEDBACK.put(LATCH_KEY, "1");
-  latchedStores.add(env.FEEDBACK);
+  latchedStores.add(store(env));
 }
+
+// Signed polls of the queue flag whose check-in (hub.js) was recorded along with their nonce.
+const checkedIn = new WeakSet();
+export const hasCheckedIn = (request) => checkedIn.has(request);
 
 const refused = (status, error) => ({ ok: false, status, error });
 
@@ -77,9 +84,11 @@ export async function verifyApi(request, env) {
   const url = new URL(request.url);
   const expected = await signature(env.JOB_FEEDBACK_SECRET, method, url.pathname + url.search, stamp, nonce, body);
   if (!safeEqual(given, `v1=${expected}`)) return refused(401, "bad signature");
-  if (!(await hubNonce(env, nonce))) return refused(401, "replayed");
+  const seen = url.pathname === POLL_PATH;
+  if (!(await hubNonce(env, nonce, seen))) return refused(401, "replayed");
   await latch(env);
   const passed = body ? new Request(request.url, { method, headers: request.headers, body }) : request;
+  if (seen) checkedIn.add(passed);
   return { ok: true, request: passed, signed: true };
 }
 

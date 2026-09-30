@@ -13,7 +13,8 @@
 
 import { DEMO_DONE, DEMO_URL, demoEnv, demoMode, demoRibbon, demoSection, demoToggle, saveDemo } from "./demo.js";
 import { HISTORY_URL, historyPage, listed, moveOwnerHistory, record, recordReported } from "./history.js";
-import { hubConnect, hubPresence, hubSeen } from "./hub.js";
+import { hasCheckedIn } from "./apiauth.js";
+import { POLL_PATH, hubConnect, hubPresence, hubSeen } from "./hub.js";
 import { enhance, enhancedCsp } from "./enhance.js";
 import { createInvite, queueItem } from "./join.js";
 import {
@@ -766,8 +767,8 @@ export async function handleApi(request, env) {
     return (await hubConnect(request, env)) || json({ error: "no live link" }, 404);
   }
   // Polled by profiles.py when it has no live link: one KV read, and a new value whenever something is queued.
-  if (url.pathname === "/api/queue/flag" && request.method === "GET") {
-    const [flag] = await Promise.all([env.FEEDBACK.get("flag:queue"), hubSeen(env)]);
+  if (url.pathname === POLL_PATH && request.method === "GET") {
+    const [flag] = await Promise.all([env.FEEDBACK.get("flag:queue"), hasCheckedIn(request) ? null : hubSeen(env)]);
     return json({ flag: flag || "" });
   }
   if (url.pathname === "/api/file" && request.method === "GET") {

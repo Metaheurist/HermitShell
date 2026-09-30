@@ -207,9 +207,11 @@ export async function requestDoc(env, { profile: u, j, kind, title, fresh, send,
   const event = { j, a: kind, r: "", at, via: "dashboard", ...(fresh ? { fresh: 1 } : {}), ...(send ? { send: 1 } : {}), ...picked, ...(u ? { u } : {}) };
   const code = `${picked.len ? `l${picked.len[0]}` : ""}${picked.tone ? `t${picked.tone[0]}` : ""}`;
   event.id = `${eventPrefix(u)}dash-${h.slice(0, 20)}:${REQUEST_CODES[kind]}${fresh ? "n" : send ? "e" : "g"}${code}${Math.floor(at / 60000)}`;
-  await env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });
-  await setFlag(env, eventFlag(u), EVENT_TTL_SECONDS);
-  await rememberRequest(env, event, title, EVENT_TTL_SECONDS);
+  await Promise.all([
+    env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS }),
+    setFlag(env, eventFlag(u), EVENT_TTL_SECONDS),
+    rememberRequest(env, event, title, EVENT_TTL_SECONDS),
+  ]);
   return h;
 }
 
@@ -229,11 +231,16 @@ export async function requestSkill(env, { profile, j, skill }) {
   const tag = (await sha256Hex(`skill\n${skill.toLowerCase()}`)).slice(0, 16);
   const event = { j, a: "add_skill", r: "", at, skills: [skill], via: "dashboard", u: profile };
   event.id = `${eventPrefix(profile)}dash-${h.slice(0, 20)}:s${tag}${Math.floor(at / 60000)}`;
-  await env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });
-  await setFlag(env, eventFlag(profile), EVENT_TTL_SECONDS);
-  const added = (await addedSkills(env, profile, at)).filter((e) => e.s.toLowerCase() !== skill.toLowerCase());
-  added.push({ s: skill, at });
-  await env.FEEDBACK.put(skillAddKey(profile), JSON.stringify(added.slice(-MAX_ADDED)), { expirationTtl: EVENT_TTL_SECONDS });
+  const remember = async () => {
+    const added = (await addedSkills(env, profile, at)).filter((e) => e.s.toLowerCase() !== skill.toLowerCase());
+    added.push({ s: skill, at });
+    await env.FEEDBACK.put(skillAddKey(profile), JSON.stringify(added.slice(-MAX_ADDED)), { expirationTtl: EVENT_TTL_SECONDS });
+  };
+  await Promise.all([
+    env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS }),
+    setFlag(env, eventFlag(profile), EVENT_TTL_SECONDS),
+    remember(),
+  ]);
   return h;
 }
 

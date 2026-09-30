@@ -9,6 +9,8 @@
 const NAME = "hub";
 // HermitShell pings every 30 seconds; a link with no ping for this long is treated as dropped.
 export const LIVE_MS = 90 * 1000;
+// Polled by profiles.py when it has no live link.
+export const POLL_PATH = "/api/queue/flag";
 // SIGN_WINDOW_MS in apiauth.js, which imports this file.
 const NONCE_WINDOW_MS = 5 * 60 * 1000;
 
@@ -29,9 +31,10 @@ async function call(env, path, init) {
   }
 }
 
-// Whether a signed API request's nonce is new (apiauth.js); true when there is no hub to ask.
-export async function hubNonce(env, nonce) {
-  const got = await call(env, "/nonce", { method: "POST", body: JSON.stringify({ nonce }) });
+// Whether a signed API request's nonce is new (apiauth.js); true when there is no hub to ask. `seen` also records
+// HermitShell's check-in, so a signed poll of the queue flag is one call to the hub.
+export async function hubNonce(env, nonce, seen = false) {
+  const got = await call(env, "/nonce", { method: "POST", body: JSON.stringify({ nonce, ...(seen ? { seen: true } : {}) }) });
   return got?.fresh !== false;
 }
 
@@ -122,7 +125,12 @@ export class Hub {
       return Response.json(await this.presence());
     }
     if (path === "/presence") return Response.json(await this.presence());
-    if (path === "/nonce" && request.method === "POST") return Response.json({ fresh: this.nonce(String((await request.json())?.nonce || "")) });
+    if (path === "/nonce" && request.method === "POST") {
+      const body = await request.json();
+      const fresh = this.nonce(String(body?.nonce || ""));
+      if (fresh && body?.seen === true) await this.state.storage.put("seen", Date.now());
+      return Response.json({ fresh });
+    }
     return new Response("Not found", { status: 404 });
   }
 

@@ -931,6 +931,12 @@ using [Semantic Versioning](https://semver.org/).
   before the model is asked.
 - The model's context size is only raised above the default when the prompt needs it.
 - Adding a skill to the CV asks the model to rewrite only the skills section, not the whole CV.
+- The Worker reads each KV key at most once per request (pages that asked for the same status or
+  profile several times now read it once), and saving an answer, asking for a letter or CV, or adding
+  a skill writes its keys together instead of one after another.
+- A signed poll of `/api/queue/flag` checks its nonce and records HermitShell's check-in in one call
+  to the live link's Durable Object instead of two, halving that object's requests when HermitShell
+  polls.
 
 ### Security
 

@@ -22,6 +22,7 @@ import {
   CONTROL_RE, EVENT_TTL_SECONDS, LINK_DAYS, MAX_SKILL, ago, authorised, cleanSkill, deleteAndUnflag, esc, eventFlag, eventPrefix, favicon, json, limitedForm,
   limitedJson, listFlagged, page, purgeProfileEvents, safeEqual, setFlag, sha256Hex, sign, text, today,
 } from "./lib.js";
+import { memoKV } from "./memo.js";
 import { privacyPage } from "./privacy.js";
 import { forgetRequests, rememberRequest } from "./tasks.js";
 
@@ -218,10 +219,12 @@ async function saveAnswer(form, env) {
   const answer = await sha256Hex(`${event.r}\n${(event.skills || []).join("|")}${fresh ? `\nfresh:${Math.floor(at / 60000)}` : ""}${style ? `\nstyle:${style}` : ""}`);
   event.id = `${eventPrefix(u)}${p.t}:${answer.slice(0, 12)}`;
   const repeat = await env.FEEDBACK.get(event.id);
-  await env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });
-  if (!repeat) await record(env, u || OWNER_ID, ...historyEntry(p, event, fresh), { via: "email", at });
-  await setFlag(env, eventFlag(u), EVENT_TTL_SECONDS);
-  await rememberRequest(env, event, p.n, EVENT_TTL_SECONDS);
+  await Promise.all([
+    env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS }),
+    repeat ? null : record(env, u || OWNER_ID, ...historyEntry(p, event, fresh), { via: "email", at }),
+    setFlag(env, eventFlag(u), EVENT_TTL_SECONDS),
+    rememberRequest(env, event, p.n, EVENT_TTL_SECONDS),
+  ]);
   const next = (fresh && FRESH_MESSAGES[p.a]) || SAVED_MESSAGES[p.a] || "HermitShell picks this up on its next run.";
   return page("Saved", `<p>${saved}</p>
 <p>${esc(next)} You can close this tab.</p>`);
@@ -294,7 +297,7 @@ async function apiRoute(request, env, url) {
 export default {
   async fetch(request, env, ctx) {
     try {
-      return await route(request, env, ctx);
+      return await route(request, env.FEEDBACK ? { ...env, FEEDBACK: memoKV(env.FEEDBACK) } : env, ctx);
     } catch (err) {
       console.error(`${new URL(request.url).pathname}: ${err?.name || "Error"}: ${String(err?.message || "").slice(0, 200)}`);
       return page("Something went wrong", "<p>Please try again in a minute.</p>", { status: 500 });
