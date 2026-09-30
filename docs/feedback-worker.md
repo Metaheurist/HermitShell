@@ -524,7 +524,9 @@ them.
 
 <img src="images/worker/admin-profile.png" alt="A recruit's settings page" width="720">
 
-**Back to recruits** stays in the top-left corner while you scroll. Each box has a short hint
+**Back to recruits** stays in the top-left corner while you scroll. The page has its own two tabs,
+**Manage** (this page) and **History** (see [History](#history)); **Users and roles** and **Global
+settings** are only on the dashboard. Each box has a short hint
 under it. Details, job search and the daily report time are one form with one **Save changes**
 button; **Send jobs now** and the CV's **Upload CV** have their own.
 
@@ -582,6 +584,29 @@ button becomes **Scanning…**, and the recruit's page status box says when the 
 checking every 30 seconds (from HermitShell's status report only, with no KV listing) for up to 40
 minutes. A second press while a scan is running does nothing. A recruit without a CV has no button;
 HermitShell refuses the request and says so under **HermitShell could not apply**.
+
+#### History
+
+The **History** tab on a recruit's page (`/admin/history?u=<id>`, also linked from their Stats and
+Jobs sent pages) is a timeline of everything done on their account, newest first and grouped by day.
+Each entry says who did it: an admin or recruiter by name, the recruit **from an email button**, or
+**HermitShell**. It records:
+
+- saves on their page (which fields changed: details, job search or report time), CV uploads and pasted CVs;
+- **Send jobs now**, pausing and resuming, assigning or unassigning a recruiter (also when their
+  recruiter's account is deleted);
+- cover letters and tailored CVs asked for, jobs emailed to them and skills added from the Jobs sent list;
+- every email button they press (Interested, Applied, a cover letter and so on), once, even if they
+  press Confirm again; their notes are never copied in;
+- from HermitShell's status reports: each job report that ran and each time it read a new CV.
+
+<img src="images/worker/admin-history.png" alt="A recruit's History tab: a timeline of reports, changes by their recruiter and email answers, grouped by day" width="720">
+
+Entries are kept in KV by month (`history:<id>:YYYY-MM`, at most 1,000 a month); the pills at the
+top switch months and the oldest ends with the day they joined. Recruiters see only their own
+recruits' history. Nothing expires while the recruit is subscribed: their history is deleted with
+the rest of their data when they unsubscribe or are deleted from the dashboard. Yours is kept. A
+failed history write never stops the action itself.
 
 #### Tasks
 
@@ -743,7 +768,7 @@ python3 profiles.py --pause <id>     # or --resume, --delete
 
 Every daily report and weekly roll-up ends with an **Unsubscribe** link (signed like the buttons,
 with a confirmation page). For a recruit the Worker drops their answers still waiting in
-KV straight away, and the next `profiles.py` run deletes the profile, CV, tracker and letters,
+KV and their [history](#history) straight away, and the next `profiles.py` run deletes the profile, CV, tracker and letters,
 replaces their name and email address with `[deleted]` in the logs, emails them a confirmation and
 tells you (without their address). For the owner it only pauses your own reports (the others keep
 running) until you resume from `/admin` or with `profiles.py --resume owner`.
@@ -777,7 +802,8 @@ tailored CV as it starts and finishes. An
 email-button request adds one write when it arrives and one when HermitShell collects it. The
 Tasks window only lists the queue when its flag says something is waiting. Each recruit's stats
 are written only when they changed, at most every 30 minutes, plus once after each report (in
-practice a few writes per recruit a day). If the Durable Object allowance ever ran out, saves still work and
+practice a few writes per recruit a day). Each [history](#history) entry adds one write, and a
+History page one list. If the Durable Object allowance ever ran out, saves still work and
 HermitShell falls back to polling.
 
 ## Removing it

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import worker from "../../packages/daily-vacancy-report/feedback-worker/src/index.js";
 import { LINK_DAYS, sign, today } from "../../packages/daily-vacancy-report/feedback-worker/src/lib.js";
 import { jobHash } from "../../packages/daily-vacancy-report/feedback-worker/src/docs.js";
+import { record } from "../../packages/daily-vacancy-report/feedback-worker/src/history.js";
 import { zonedToday } from "../../packages/daily-vacancy-report/feedback-worker/src/stats.js";
 
 const BASE = "https://vacancy-feedback.example.workers.dev";
@@ -338,6 +339,21 @@ await save("admin-profile-saved", await framed(await admin("/admin/profile?u=own
 mine.set("email", "alex@example.org");
 mine.set("titles", `${mine.get("titles")}\nData Platform Engineer`);
 await save("admin-profile-conflict", await framed(await admin("/admin/action", { method: "POST", form: mine }), admin));
+
+// Sam Lee's history: two weeks of reports, changes and answers, then Casey asking for jobs now.
+const hour = 3600000;
+for (const [ago, kind, text, by, via] of [
+  [11 * day + 2 * hour, "cv_read", "Read the new CV and rebuilt the skills jobs are rated against", "", "hermitshell"],
+  [10 * day, "report", "Job report ran", "", "hermitshell"],
+  [8 * day + 5 * hour, "job", "Changed Job titles and Places", "Casey Quinn", "dashboard"],
+  [7 * day, "report", "Job report ran", "", "hermitshell"],
+  [6 * day + 3 * hour, "answer", "Answered Interested: BI Developer at Fabrikam", "", "email"],
+  [3 * day + 4 * hour, "pause", "Paused reports", "Casey Quinn", "dashboard"],
+  [2 * day + 6 * hour, "resume", "Resumed reports", "Casey Quinn", "dashboard"],
+  [day, "report", "Job report ran", "", "hermitshell"],
+]) await record(env, "sam-lee", kind, text, { by, via, at: now - ago });
+await casey("/admin/action", { method: "POST", form: { csrf: caseyCsrf, action: "send_now", u: "sam-lee" } });
+await save("admin-history", await casey("/admin/history?u=sam-lee"));
 
 env = freshEnv();
 await save("admin-dashboard-empty", await call("/admin").then(async () => {

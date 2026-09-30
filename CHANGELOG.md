@@ -8,6 +8,15 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **History tab on each recruit's page.** A timeline of everything done on the account, newest first and
+  grouped by day, saying who did it: profile saves (which fields), CV uploads, Send jobs now, pausing,
+  resuming and assigning, cover letters, tailored CVs, emailed jobs and skills asked for, every email button
+  the recruit pressed (once, never their notes), and from HermitShell's status reports each job report that
+  ran and each new CV it read. Also linked from Stats and Jobs sent. Stored in the Worker's KV by month (one
+  write per entry, at most 1,000 a month), shown only to admins and the recruit's recruiter, and deleted
+  with the rest of the recruit's data when they unsubscribe or are deleted; the owner's is kept. Entries are
+  cleaned of control characters, capped in length and escaped on the page, and a failed write never blocks
+  the action. The privacy notice says so.
 - **Salaries in your currency.** The profile page's Currency is now a list (pound, euro, US, Canadian,
   Australian and New Zealand dollar, or As advertised) instead of a text box. A job advertised in another of
   them shows the converted figure with the advertised one beside it ("£55,700 - £64,300 a year, converted from
@@ -572,6 +581,8 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **A recruit's page has its own tabs.** **Manage** and **History** replace the dashboard's Recruits, Users
+  and roles and Global settings tabs there; those stay on the dashboard, with **Back to recruits** to return.
 - **Recruits and Users and roles fit the screen.** Both pages now grow with the window, up to 1320px wide,
   instead of stopping at 900px, so the Recruit, Status and Recruiter columns no longer squeeze together.
   Under 900px each row becomes a card (name on top, status and recruiter side by side, then the buttons),

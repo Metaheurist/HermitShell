@@ -450,6 +450,7 @@ HermitShell hasn't collected them.
 | Section | What it sets |
 | --- | --- |
 | **Back to recruits** | Floats in the top-left corner while you scroll |
+| **Manage** / **History** | The page's own tabs: this page and [its timeline](#a-recruits-history); Users and roles and Global settings are only on the dashboard |
 | **View stats** | Opens [this profile's stats](#a-recruits-stats) |
 | Status box | Under the tabs: **Up to date**, **Waiting for HermitShell** while a save is queued (it checks again by itself), **Applied by HermitShell**, **Scanning for jobs since…** while a report runs, or why a change couldn't be applied |
 | Details | Name, the email address reports go to, phone and home town (for cover letters) |
@@ -473,6 +474,16 @@ yours. Changes to different fields are both kept.
 
 *While a report runs (here after **Send jobs now**), the status box says when the scan started and
 the button waits until it has finished.*
+
+### A recruit's history
+
+<img src="images/worker/admin-history.png" alt="A recruit's History tab: a timeline of reports, changes by their recruiter and email answers, grouped by day" width="620">
+
+`/admin/history?u=<id>`, the **History** tab: everything done on the account, newest first and grouped
+by day. Each entry says who did it (an admin or recruiter by name, the recruit **from an email button**,
+or **HermitShell** for reports that ran and CVs it read). The pills at the top switch months; the
+oldest ends with the day they joined. It is kept until they unsubscribe or are deleted
+([more](feedback-worker.md#history)).
 
 ### A recruit's stats
 
