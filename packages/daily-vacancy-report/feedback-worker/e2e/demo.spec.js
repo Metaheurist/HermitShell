@@ -9,9 +9,9 @@ test.afterEach(async ({ page }) => {
     await signIn(page);
     await page.goto("/admin/settings");
   }
-  const off = page.getByRole("button", { name: "Turn off demo mode" });
-  if (await off.count()) {
-    await off.press("Enter");
+  const toggle = page.getByRole("switch", { name: "Demo mode" });
+  if (await toggle.count() && (await toggle.getAttribute("aria-checked")) === "true") {
+    await toggle.press("Enter");
     await expect(page).toHaveURL(/done=demo_off#demo$/);
   }
 });
@@ -20,9 +20,12 @@ test("demo mode fills the dashboard with made-up recruits, saves nothing and tur
   await signIn(page);
   await page.goto("/admin/settings");
   await expect(page.getByRole("heading", { name: "Demo mode" })).toBeVisible();
-  await page.getByRole("button", { name: "Turn on demo mode" }).click();
+  const toggle = page.getByRole("switch", { name: "Demo mode" });
+  await expect(toggle).not.toBeChecked();
+  await toggle.click();
   await expect(page).toHaveURL(/done=demo_on#demo$/);
   await expect(page.getByText("Demo mode is on: every dashboard page now shows made-up data")).toBeVisible();
+  await expect(page.getByRole("switch", { name: "Demo mode" })).toBeChecked();
 
   await page.goto("/admin");
   const ribbon = page.locator(".demoribbon");
@@ -43,8 +46,9 @@ test("demo mode fills the dashboard with made-up recruits, saves nothing and tur
 
   await ribbon.getByRole("link", { name: "Turn off" }).click();
   await expect(page).toHaveURL(/\/admin\/settings#demo$/);
-  await page.getByRole("button", { name: "Turn off demo mode" }).click();
+  await page.locator('label[for="demo-switch"]').click();
   await expect(page).toHaveURL(/done=demo_off#demo$/);
+  await expect(page.getByRole("switch", { name: "Demo mode" })).not.toBeChecked();
   await page.goto("/admin");
   await expect(page.locator(".demoribbon")).toHaveCount(0);
   await expect(page.locator("table.recruits").getByText("Jamie Walsh")).toHaveCount(0);
@@ -56,7 +60,7 @@ test.describe("on a phone", () => {
   test("the demo pages and their ribbon fit the screen", async ({ page }) => {
     await signIn(page);
     await page.goto("/admin/settings");
-    await page.getByRole("button", { name: "Turn on demo mode" }).press("Enter");
+    await page.getByRole("switch", { name: "Demo mode" }).press("Enter");
     await expect(page).toHaveURL(/done=demo_on#demo$/);
     for (const path of ["/admin", "/admin/profile?u=jamie-walsh", "/admin/stats?u=avery-lane", "/admin/sent?u=avery-lane&r=30", "/admin/history?u=sam-lee"]) {
       await page.goto(path);

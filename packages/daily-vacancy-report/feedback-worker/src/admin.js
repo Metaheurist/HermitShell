@@ -669,8 +669,9 @@ async function signedInRoute(request, env, s, path) {
     if (!s.me.admin) return page(...ADMINS_ONLY);
     const url = new URL(request.url);
     const [current, queue] = await Promise.all([status(env), queued(env)]);
-    return settingsPage(current, s.csrf, { done: DONE[url.searchParams.get("done")] || "", queued: describe(queue), queue,
-      demo: demoSection(s.demo, s.csrf, current.timezone) });
+    const done = url.searchParams.get("done");
+    return settingsPage(current, s.csrf, { done: DONE[done] || "", queued: describe(queue), queue,
+      demo: demoSection(s.demo, s.csrf, current.timezone, done === "demo_on" || done === "demo_off") });
   }
   const url = new URL(request.url);
   const u = url.searchParams.get("u") || "";

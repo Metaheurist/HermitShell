@@ -49,20 +49,43 @@ export async function demoToggle(request, env, s) {
   return redirect(`${SETTINGS_URL}?done=${on ? "demo_on" : "demo_off"}#demo`);
 }
 
-function demoButton(csrf, on, label, cls) {
-  return `<form method="post" action="${DEMO_URL}" style="display:inline"><input type="hidden" name="csrf" value="${esc(csrf)}">
-<input type="hidden" name="on" value="${on ? "1" : "0"}"><button class="${cls}">${label}</button></form>`;
+const SWITCH_STYLE = `.demoswitch{display:flex;align-items:center;gap:14px;flex-wrap:wrap;width:max-content;max-width:100%;margin-top:14px;
+padding:12px 18px 12px 14px;border:1px solid #e5e7f5;border-radius:16px;background:#f8f9ff}
+.demoswitch.on{border-color:#c7d2fe;background:linear-gradient(135deg,#eef2ff,#f5f3ff)}
+.demoswitch label{display:inline;margin:0;font-size:14.5px;font-weight:700;cursor:pointer}.demoswitch .state{font-size:13px;color:var(--muted)}
+.demoswitch.on .state b{color:var(--brand-ink)}
+button.switch{flex:none;position:relative;margin:0;padding:0;width:50px;height:28px;border-radius:99px;background:#cbd5e1;
+box-shadow:inset 0 1px 3px rgba(15,23,42,.2);transition:background .25s,box-shadow .25s}
+button.switch:hover{transform:none;filter:none;background:#b8c2d3;box-shadow:inset 0 1px 3px rgba(15,23,42,.2)}
+button.switch[aria-checked="true"]{background:linear-gradient(135deg,var(--brand),var(--brand2));box-shadow:0 6px 16px -8px rgba(99,102,241,.9)}
+button.switch[aria-checked="true"]:hover{filter:brightness(1.06)}
+.switch .knob{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;
+box-shadow:0 2px 6px rgba(15,23,42,.3);transition:transform .25s cubic-bezier(.3,1.4,.5,1)}
+.switch[aria-checked="true"] .knob{transform:translateX(22px)}
+.switch:active .knob{transform:scale(.88)}.switch[aria-checked="true"]:active .knob{transform:translateX(22px) scale(.88)}
+.switch.moved .knob{animation:knob-off .35s cubic-bezier(.3,1.4,.5,1) both}
+.switch.moved[aria-checked="true"] .knob{animation-name:knob-on}
+@keyframes knob-on{from{transform:translateX(0)}}@keyframes knob-off{from{transform:translateX(22px)}}`;
+
+// A plain form, so it works without scripts: pressing the switch posts the opposite state and the page reloads with
+// the knob sliding over (`moved`).
+function demoSwitch(demo, csrf, tz, moved) {
+  const state = demo ? `<b>On</b> since ${esc(when(demo.at, tz || TZ))}` : "Off";
+  return `<style>${SWITCH_STYLE}</style><form method="post" action="${DEMO_URL}" class="demoswitch${demo ? " on" : ""}">
+<input type="hidden" name="csrf" value="${esc(csrf)}"><input type="hidden" name="on" value="${demo ? "0" : "1"}">
+<button id="demo-switch" class="switch${moved ? " moved" : ""}" role="switch" aria-checked="${demo ? "true" : "false"}"><span class="knob"></span></button>
+<label for="demo-switch">Demo mode</label><span class="state">${state}</span></form>`;
 }
 
-// `tz` is the timezone HermitShell reported, so the time matches the rest of the real settings.
-export function demoSection(demo, csrf, tz) {
+// `tz` is the timezone HermitShell reported, so the time matches the rest of the real settings. `moved` is set on the
+// page shown straight after the switch was pressed.
+export function demoSection(demo, csrf, tz, moved = false) {
   return `<h2 id="demo">Demo mode</h2>
 <p class="muted">Shows a made-up recruitment desk on every dashboard page instead of the real one: recruits, recruiters,
 stats, jobs sent, history, tasks and settings, all fictional. Use it to show HermitShell to someone without showing
 anyone's data. While it is on, nothing pressed on the dashboard is saved or reaches HermitShell, and it applies to
 everyone signed in. Reports, email buttons and sign-ups carry on as normal.</p>
-${demo ? `<p>Demo mode is <b>on</b>, since ${esc(when(demo.at, tz || TZ))}.</p>${demoButton(csrf, false, "Turn off demo mode", "small")}`
-    : demoButton(csrf, true, "Turn on demo mode", "small quiet")}`;
+${demoSwitch(demo, csrf, tz, moved)}`;
 }
 
 // Centred on the screen (50vw), not the fixed box (50%): on phones the background glows widen the layout viewport past

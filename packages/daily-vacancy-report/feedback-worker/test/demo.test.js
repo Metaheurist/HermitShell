@@ -63,8 +63,26 @@ describe("demo mode switch", () => {
     const { body } = await admin.get("/admin/settings");
     expect(body).toContain('<h2 id="demo">Demo mode</h2>');
     expect(body).toContain('action="/admin/demo"');
-    expect(body).toContain("Turn on demo mode");
+    expect(body).toMatch(/<button id="demo-switch" class="switch" role="switch" aria-checked="false">/);
+    expect(body).toContain('<label for="demo-switch">Demo mode</label><span class="state">Off</span>');
+    expect(body).toContain('<input type="hidden" name="on" value="1">');
+    expect(body).not.toContain("Turn on demo mode");
     expect(body).not.toContain("demoribbon");
+  });
+
+  it("shows the switch on, with since when, and slides the knob only straight after a press", async () => {
+    const { admin } = await setup();
+    await demoOn(admin);
+    const moved = (await admin.get("/admin/settings?done=demo_on")).body;
+    expect(moved).toMatch(/<button id="demo-switch" class="switch moved" role="switch" aria-checked="true">/);
+    expect(moved).toMatch(/class="demoswitch on"/);
+    expect(moved).toMatch(/<span class="state"><b>On<\/b> since [^<]+<\/span>/);
+    expect(moved).toContain('<input type="hidden" name="on" value="0">');
+    const still = (await admin.get("/admin/settings")).body;
+    expect(still).toMatch(/class="switch" role="switch" aria-checked="true"/);
+    expect((await admin.get("/admin/settings?done=saved")).body).not.toContain("switch moved");
+    await demoOff(admin);
+    expect((await admin.get("/admin/settings?done=demo_off")).body).toMatch(/class="switch moved" role="switch" aria-checked="false"/);
   });
 
   it("turns on and off, storing only the switch", async () => {
@@ -76,7 +94,7 @@ describe("demo mode switch", () => {
     expect([...env.FEEDBACK.store.keys()].filter((k) => !before.has(k))).toEqual(["demo:mode"]);
     const settings = (await admin.get("/admin/settings?done=demo_on")).body;
     expect(settings).toContain("Demo mode is on: every dashboard page now shows made-up data");
-    expect(settings).toContain("Turn off demo mode");
+    expect(settings).toContain('role="switch" aria-checked="true"');
     const off = await demoOff(admin);
     expect(off.headers.get("Location")).toBe("/admin/settings?done=demo_off#demo");
     expect(env.FEEDBACK.store.has("demo:mode")).toBe(false);
