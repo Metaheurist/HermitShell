@@ -88,7 +88,8 @@ export async function sign(secret, key, action, title, skills = "", profile = ""
   return (await hmacHex(secret, message)).slice(0, 32);
 }
 
-// Events are stored per profile ("_" is the owner) with one "something is waiting" flag each.
+// Events are stored per profile ("_" for links in the main admin's reports from before they were staff only) with
+// one "something is waiting" flag each.
 export function eventPrefix(profile) {
   return `event:${profile || "_"}:`;
 }
@@ -233,7 +234,7 @@ background:linear-gradient(135deg,var(--brand),var(--brand2));box-shadow:0 6px 1
 .pill{display:inline-flex;align-items:center;gap:6px;border-radius:99px;padding:3px 10px;font-size:12px;font-weight:650;
 background:var(--soft);color:var(--brand-ink)}
 .pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
-.pill.paused{background:#fef3c7;color:#92400e}.pill.owner{background:var(--ok-bg);color:#047857}
+.pill.paused{background:#fef3c7;color:#92400e}
 .pill.scanning{background:#eef0ff;color:#4338ca}.pill.scanning::before{animation:blink .9s ease-in-out infinite alternate}
 button:disabled{opacity:.55;cursor:default;transform:none;filter:none;box-shadow:none}
 .actions{display:flex;flex-direction:column;gap:8px;align-items:flex-start}

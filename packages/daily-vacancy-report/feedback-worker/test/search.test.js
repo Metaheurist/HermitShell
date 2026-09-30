@@ -6,12 +6,13 @@ import { BASE, testEnv } from "./helpers.js";
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const API = { Authorization: "Bearer api-token" };
 const PROFILES = [
-  { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, has_cv: true,
+  { id: "riley-chen", name: "Riley Chen", email: "riley@example.com", status: "active", has_cv: true,
     details: { location: "Salford" } },
   { id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active", has_cv: true, scanning: 1,
     details: { location: "York" } },
   { id: "jordan-patel", name: "Jordan Patel", email: "jordan@contoso.example", status: "paused", has_cv: false,
     details: { location: "Leeds" } },
+  { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, recruiter: "", has_cv: false, recruit: "" },
 ];
 
 const RECRUITER = { id: "casey", name: "Casey Quinn", roles: ["recruiter"], salt: "00".repeat(16), hash: "00".repeat(32), iter: 1000, v: "v1" };
@@ -35,7 +36,7 @@ describe("profile search", () => {
     expect(body).toContain('<form class="search" method="get" action="/admin" role="search">');
     expect(body).toContain('<span class="count">3 recruits</span>');
     expect(body).toContain("form.search:focus-within #profile-search");
-    expect(listed(body)).toEqual(["owner", "sam-lee", "jordan-patel"]);
+    expect(listed(body)).toEqual(["riley-chen", "sam-lee", "jordan-patel"]);
   });
 
   it("lists only the profiles whose details contain every word, whatever the case", async () => {
@@ -45,9 +46,10 @@ describe("profile search", () => {
     expect(listed(await get("?q=paused"))).toEqual(["jordan-patel"]);
     expect(listed(await get("?q=active+lee"))).toEqual(["sam-lee"]);
     expect(listed(await get("?q=contoso"))).toEqual(["jordan-patel"]);
-    expect(listed(await get("?q=owner"))).toEqual(["owner"]);
+    expect(listed(await get("?q=owner"))).toEqual([]);
+    expect(listed(await get("?q=alex+morgan"))).toEqual([]);
     const some = await get("?q=example.com");
-    expect(listed(some)).toEqual(["owner", "sam-lee"]);
+    expect(listed(some)).toEqual(["riley-chen", "sam-lee"]);
     expect(some).toContain('<span class="count">2 of 3 recruits</span>');
     expect(some).toContain('<form class="search open"');
     expect(some).toContain('value="example.com"');
@@ -58,13 +60,13 @@ describe("profile search", () => {
     const pooled = PROFILES.map((p) => (p.owner ? p : { ...p, recruiter: "casey" }));
     const get = await setup(pooled, { users: [RECRUITER] });
     const body = await get("?q=casey+quinn");
-    expect(listed(body)).toEqual(["sam-lee", "jordan-patel"]);
+    expect(listed(body)).toEqual(["riley-chen", "sam-lee", "jordan-patel"]);
     expect(body.indexOf('class="recrow"')).toBeGreaterThan(-1);
-    expect(body.indexOf('class="recrow"')).toBeLessThan(body.indexOf("/admin/profile?u=sam-lee"));
+    expect(body.indexOf('class="recrow"')).toBeLessThan(body.indexOf("/admin/profile?u=riley-chen"));
     expect(body).toContain("<b>Casey Quinn</b> <span class=\"role recruiter\">Recruiter</span>");
-    expect(body).toContain("<code>casey</code> &middot; 2 recruits");
-    expect(body.match(/<tr class="inpool">/g)).toHaveLength(2);
-    expect(body).toContain('<span class="count">2 of 3 recruits</span>');
+    expect(body).toContain("<code>casey</code> &middot; 3 recruits");
+    expect(body.match(/<tr class="inpool">/g)).toHaveLength(3);
+    expect(body).toContain('<span class="count">3 of 3 recruits</span>');
   });
 
   it("finds a recruit by their recruiter and their own details together, still under the recruiter", async () => {

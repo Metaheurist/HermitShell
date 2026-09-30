@@ -27,7 +27,8 @@ export const DOC_KINDS = { cover_letter: "Cover letter", tailored_cv: "Tailored 
 export const REQUEST_KINDS = { ...DOC_KINDS, send_job: "Job email" };
 const REQUEST_CODES = { cover_letter: "c", tailored_cv: "v", send_job: "m" };
 export const EMAILED_DAYS = 90;
-// The owner's profile id, as HermitShell reports it; the owner's email links carry no profile id.
+// The main admin's id, as HermitShell reports it. Links in their own reports from before they were staff only carry
+// no profile id; with no recruit to send them to (index.js answerProfile) they are filed under this id.
 export const OWNER_ID = "owner";
 export const MAX_DOC_BYTES = 2 * 1024 * 1024;
 export const MAX_DOC_DAYS = 30;
@@ -160,9 +161,8 @@ export function pdfResponse(doc) {
 
 // A request from the dashboard, stored as the email button would store it. Asking again in the same minute is the
 // same request, so a double press makes one.
-export async function requestDoc(env, { profile, owner, j, kind, title, fresh, send }) {
+export async function requestDoc(env, { profile: u, j, kind, title, fresh, send }) {
   const at = Date.now();
-  const u = owner ? "" : profile;
   const h = await jobHash(j);
   fresh = fresh && Boolean(DOC_KINDS[kind]);
   send = send && !fresh && Boolean(DOC_KINDS[kind]);
@@ -184,15 +184,14 @@ export async function addedSkills(env, profile, now = Date.now()) {
 
 // A skill added from the dashboard, stored as the email's "Add to my skills" answer would be. Adding the same skill
 // for the same job in the same minute is the same answer, so a double press makes one.
-export async function requestSkill(env, { profile, owner, j, skill }) {
+export async function requestSkill(env, { profile, j, skill }) {
   const at = Date.now();
-  const u = owner ? "" : profile;
   const h = await jobHash(j);
   const tag = (await sha256Hex(`skill\n${skill.toLowerCase()}`)).slice(0, 16);
-  const event = { j, a: "add_skill", r: "", at, skills: [skill], via: "dashboard", ...(u ? { u } : {}) };
-  event.id = `${eventPrefix(u)}dash-${h.slice(0, 20)}:s${tag}${Math.floor(at / 60000)}`;
+  const event = { j, a: "add_skill", r: "", at, skills: [skill], via: "dashboard", u: profile };
+  event.id = `${eventPrefix(profile)}dash-${h.slice(0, 20)}:s${tag}${Math.floor(at / 60000)}`;
   await env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });
-  await setFlag(env, eventFlag(u), EVENT_TTL_SECONDS);
+  await setFlag(env, eventFlag(profile), EVENT_TTL_SECONDS);
   const added = (await addedSkills(env, profile, at)).filter((e) => e.s.toLowerCase() !== skill.toLowerCase());
   added.push({ s: skill, at });
   await env.FEEDBACK.put(skillAddKey(profile), JSON.stringify(added.slice(-MAX_ADDED)), { expirationTtl: EVENT_TTL_SECONDS });
@@ -201,14 +200,14 @@ export async function requestSkill(env, { profile, owner, j, skill }) {
 
 // Letters, CVs and job emails asked for and not done yet, as "<kind>\n<job key>" to "send" when every request for it
 // only emails the kept one, "make" otherwise: from HermitShell's task list and from the requests it has not collected.
-export function pendingDocs(status, held, profile, owner) {
+export function pendingDocs(status, held, profile) {
   const busy = new Map();
   const mark = (key, send) => busy.set(key, send && busy.get(key) !== "make" ? "send" : "make");
   for (const t of Array.isArray(status.tasks) ? status.tasks : []) {
     if (t && t.u === profile && REQUEST_KINDS[t.kind] && typeof t.j === "string") mark(`${t.kind}\n${t.j}`, t.send === true);
   }
   for (const r of held) {
-    if (r && (r.u || (owner ? profile : "")) === profile && REQUEST_KINDS[r.a] && typeof r.j === "string") mark(`${r.a}\n${r.j}`, r.send === 1);
+    if (r && r.u === profile && REQUEST_KINDS[r.a] && typeof r.j === "string") mark(`${r.a}\n${r.j}`, r.send === 1);
   }
   return busy;
 }
@@ -226,7 +225,7 @@ function docIcon(kind) {
 // One job's letter and CV on the dashboard's list of jobs sent: Download, Email and Regenerate when one is kept, a
 // spinner while one is being made or emailed, Generate otherwise. Then the job emailed to the profile: Send, a
 // spinner while it goes, then when it went and Send again. `ctx` has the profile, the job's hash, the kept documents,
-// the jobs emailed, what is pending, who the email goes to ("you" or a first name), the CSRF token and where to come
+// the jobs emailed, what is pending, who the email goes to (a first name), the CSRF token and where to come
 // back to.
 export function docActions(j, h, ctx) {
   if (!validJobKey(j) || !HASH_RE.test(h || "")) return "";

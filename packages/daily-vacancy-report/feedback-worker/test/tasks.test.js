@@ -206,7 +206,7 @@ describe("cancelling a task", () => {
     expect(keysWith(env, "history:")).toEqual([]);
   });
 
-  it("writes the cancellation, and who made it, in the recruit's history", async () => {
+  it("writes the cancellation, and who made it, in the recruit's history, and never in the admin's", async () => {
     const { env, cancel } = await setup([REPORT, LETTER]);
     const [held] = await press(env, "tailored_cv", "AI Engineer", "sam-lee-456789");
     const change = await queueItem(env, { type: "admin", action: "pause", u: "sam-lee-456789" });
@@ -217,7 +217,8 @@ describe("cancelling a task", () => {
       ["cancel", "Stopped the job report", "Alex Morgan"],
       ["cancel", "Cancelled: Pause reports", "Alex Morgan"],
     ]);
-    const [mine] = valuesWith(env, "history:owner:").flat();
-    expect(mine).toMatchObject({ k: "cancel", t: "Cancelled the cover letter: Data Engineer at Northwind Traders" });
+    expect(keysWith(env, "queue:").map((k) => JSON.parse(env.FEEDBACK.store.get(k)))).toContainEqual(
+      expect.objectContaining({ action: "cancel", u: "owner", task: LETTER.id }));
+    expect(keysWith(env, "history:owner:")).toEqual([]);
   });
 });

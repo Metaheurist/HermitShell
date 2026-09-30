@@ -8,11 +8,14 @@ const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const API = { Authorization: "Bearer api-token" };
 const CASEY_PASSWORD = "a long enough passphrase";
 const PROFILES = [
-  { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, has_cv: true, created: Date.UTC(2026, 7, 1) },
   { id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active", has_cv: true, recruiter: "casey",
     created: Date.UTC(2026, 8, 18), last_run: Date.UTC(2026, 8, 29, 8), cv_updated: Date.UTC(2026, 8, 18) },
   { id: "jordan-patel", name: "Jordan Patel", email: "jordan@contoso.example", status: "active", has_cv: true },
+  { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, recruiter: "", has_cv: false, recruit: "" },
 ];
+// HermitShell has moved the admin's own job search to Riley Chen, a recruit like any other.
+const MOVED = [...PROFILES.map((p) => (p.owner ? { ...p, recruit: "riley-chen" } : p)),
+  { id: "riley-chen", name: "Riley Chen", email: "riley@example.com", status: "active", has_cv: true }];
 
 function post(path, fields, headers = {}) {
   return new Request(`${BASE}${path}`, { method: "POST", body: new URLSearchParams(fields), headers });
@@ -78,8 +81,9 @@ describe("a recruit's history", () => {
     expect((await casey.get("/admin/history?u=Not%20valid")).status).toBe(404);
   });
 
-  it("records answers from email buttons once, for the owner too", async () => {
+  it("records answers from email buttons once, and an old report of the admin's under the recruit it moved to", async () => {
     const { env, admin } = await setup();
+    await report(env, MOVED);
     await answer(env, "applied", "Data Engineer at Northwind", "sam-lee");
     await answer(env, "applied", "Data Engineer at Northwind", "sam-lee");
     await answer(env, "cover_letter", "BI Developer at Contoso", "sam-lee");
@@ -88,7 +92,29 @@ describe("a recruit's history", () => {
     expect(body.match(/Answered Applied: Data Engineer at Northwind/g)).toHaveLength(1);
     expect(body).toMatch(/Answered Applied: Data Engineer at Northwind<\/b>\s*<small[^>]*>\d\d:\d\d &middot; from an email button<\/small>/);
     expect(body).toContain("<b>Asked for a cover letter: BI Developer at Contoso</b>");
-    expect(await admin.text("/admin/history?u=owner")).toContain("<b>Answered Interested: Analyst at Fabrikam</b>");
+    expect(await admin.text("/admin/history?u=riley-chen")).toContain("<b>Answered Interested: Analyst at Fabrikam</b>");
+    expect((await admin.get("/admin/history?u=owner")).status).toBe(404);
+    expect(keysWith(env, "history:owner:")).toEqual([]);
+    expect(keysWith(env, "event:riley-chen:")).toHaveLength(1);
+    expect(keysWith(env, "event:_:")).toEqual([]);
+    expect(env.FEEDBACK.store.has("flag:events:riley-chen")).toBe(true);
+  });
+
+  it("moves what was kept for the admin to the recruit their job search moved to, once", async () => {
+    const { env, admin } = await setup();
+    await answer(env, "interested", "Analyst at Fabrikam");
+    expect(keysWith(env, "history:owner:")).toHaveLength(1);
+    await record(env, "riley-chen", "send", "Asked for jobs now", { by: "Alex Morgan", at: Date.now() - 1000 });
+    await report(env, MOVED.map((p) => (p.owner ? { ...p, recruit: "../x" } : p)));
+    expect(keysWith(env, "history:owner:")).toHaveLength(1);
+    await report(env, MOVED);
+    expect(keysWith(env, "history:owner:")).toEqual([]);
+    const body = await admin.text("/admin/history?u=riley-chen");
+    expect(body).toContain("<b>Answered Interested: Analyst at Fabrikam</b>");
+    expect(body.indexOf("Answered Interested")).toBeLessThan(body.indexOf("Asked for jobs now"));
+    await record(env, "owner", "send", "Asked for jobs now");
+    await report(env, MOVED);
+    expect(keysWith(env, "history:owner:")).toHaveLength(1);
   });
 
   it("records the reports HermitShell ran and the CVs it read, once each", async () => {

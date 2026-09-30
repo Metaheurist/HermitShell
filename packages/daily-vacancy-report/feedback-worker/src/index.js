@@ -89,6 +89,16 @@ async function profileGone(env, u) {
   return Array.isArray(status?.profiles) && status.profiles.length > 0 && !status.profiles.some((p) => p.id === u);
 }
 
+// Whose answer a link records. Links in the main admin's own reports carry no profile id; the admin is staff now,
+// and HermitShell moved their job search to a recruit (reported as the admin row's `recruit`), so answers from
+// those links, and the letters and CVs they ask for, belong to that recruit. The link's signature stays over `u`.
+async function answerProfile(env, p) {
+  if (p.u) return p.u;
+  const status = await env.FEEDBACK.get("status:profiles", "json");
+  const moved = (Array.isArray(status?.profiles) ? status.profiles : []).find((x) => x?.owner)?.recruit;
+  return typeof moved === "string" && PROFILE_RE.test(moved) ? moved : "";
+}
+
 function skillPage(p, hidden) {
   const picked = cleanSkill(p.p);
   const boxes = skillList(p.s).map((skill) => `<label class="skill"><input type="checkbox" name="k" value="${esc(skill)}"${
@@ -134,7 +144,7 @@ async function confirmPage(p, env) {
     .map((k) => `<input type="hidden" name="${k}" value="${esc(p[k])}">`).join("");
   if (p.a === "add_skill") return skillPage(p, hidden);
   if (p.a === "unsubscribe") return unsubscribePage(p, hidden);
-  const kept = DOC_KINDS[p.a] ? await docFor(env, p.u || OWNER_ID, p.a, p.j) : null;
+  const kept = DOC_KINDS[p.a] ? await docFor(env, (await answerProfile(env, p)) || OWNER_ID, p.a, p.j) : null;
   if (kept) return readyPage(p, hidden, kept);
   const placeholder = PLACEHOLDERS[p.a] || "Anything worth remembering (optional)";
   const label = p.a === "cover_letter" ? "Guidance for the letter (optional)"
@@ -183,7 +193,8 @@ async function saveAnswer(form, env) {
     return page("Unsubscribed", `<p>Done. ${after}</p><p>You can close this tab.</p>`);
   }
   const at = Date.now();
-  const event = { j: p.j, a: p.a, r: p.r, at, ...(p.u ? { u: p.u } : {}) };
+  const u = await answerProfile(env, p);
+  const event = { j: p.j, a: p.a, r: p.r, at, ...(u ? { u } : {}) };
   let saved = `${esc(ACTIONS[p.a])}: ${esc(p.n || "this job")}.`;
   if (p.a === "add_skill") {
     const offered = new Set(skillList(p.s));
@@ -201,11 +212,11 @@ async function saveAnswer(form, env) {
   // Pressing Confirm again with the same answer overwrites the stored event instead of adding one; asking for a new
   // one again is a new request from the next minute on.
   const answer = await sha256Hex(`${event.r}\n${(event.skills || []).join("|")}${fresh ? `\nfresh:${Math.floor(at / 60000)}` : ""}`);
-  event.id = `${eventPrefix(p.u)}${p.t}:${answer.slice(0, 12)}`;
+  event.id = `${eventPrefix(u)}${p.t}:${answer.slice(0, 12)}`;
   const repeat = await env.FEEDBACK.get(event.id);
   await env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });
-  if (!repeat) await record(env, p.u || OWNER_ID, ...historyEntry(p, event, fresh), { via: "email", at });
-  await setFlag(env, eventFlag(p.u), EVENT_TTL_SECONDS);
+  if (!repeat) await record(env, u || OWNER_ID, ...historyEntry(p, event, fresh), { via: "email", at });
+  await setFlag(env, eventFlag(u), EVENT_TTL_SECONDS);
   await rememberRequest(env, event, p.n, EVENT_TTL_SECONDS);
   const next = (fresh && FRESH_MESSAGES[p.a]) || SAVED_MESSAGES[p.a] || "HermitShell picks this up on its next run.";
   return page("Saved", `<p>${saved}</p>
@@ -220,7 +231,7 @@ async function route(request, env, ctx) {
     const p = Object.fromEntries(url.searchParams);
     const problem = await checkLink(env, p);
     if (problem) return problem;
-    const doc = DOC_KINDS[p.a] ? await readDoc(env, p.u || OWNER_ID, p.a, await jobHash(p.j)) : null;
+    const doc = DOC_KINDS[p.a] ? await readDoc(env, (await answerProfile(env, p)) || OWNER_ID, p.a, await jobHash(p.j)) : null;
     return doc ? pdfResponse(doc) : page("No longer kept", "<p>This document is no longer kept for download. Use the button in the email again to have a new one written.</p>", { status: 404 });
   }
 

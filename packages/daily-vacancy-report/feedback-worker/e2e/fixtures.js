@@ -25,12 +25,15 @@ function person(id, name, email, location, extra = {}) {
     report: { time: "08:00", days: "daily", schedule: "0 8 * * *", job: true, pending: false }, ...extra };
 }
 
-// What HermitShell reports every few minutes (profiles.py), for three fictional recruits.
+// What HermitShell reports every few minutes (profiles.py): the main admin as a staff row, whose own job search
+// HermitShell moved to the recruit Drew Harper, and three more fictional recruits.
 export function hermitShellStatus({ samRecruiter = "" } = {}) {
   return {
     protocol: PROTOCOL,
     profiles: [
-      person("owner", "Alex Morgan", "alex.morgan@example.com", "Salford", { owner: true }),
+      { id: "owner", name: "Alex Morgan", email: "alex.morgan@example.com", status: "active", owner: true, recruiter: "", has_cv: false,
+        recruit: "drew-harper", created: Date.now() - 30 * DAY },
+      person("drew-harper", "Drew Harper", "drew.harper@example.com", "Salford"),
       person("sam-lee", "Sam Lee", "sam.lee@example.com", "York", { recruiter: samRecruiter }),
       person("jordan-patel", "Jordan Patel", "jordan.patel@example.net", "Leeds", { status: "paused" }),
     ],

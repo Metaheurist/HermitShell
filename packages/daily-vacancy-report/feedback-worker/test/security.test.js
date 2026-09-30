@@ -98,17 +98,17 @@ describe("escaping", () => {
 
   it("never echoes or queues a hostile country, whether reported or posted", async () => {
     const env = testEnv(ADMIN);
-    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "owner", owner: true, name: "Alex Morgan",
-      email: "alex@example.com", job: { country: HOSTILE, titles: [], places: [] } }] }));
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "sam-lee", name: "Sam Lee",
+      email: "sam@example.com", job: { country: HOSTILE, titles: [], places: [] } }] }));
     const cookie = await signIn(env, "203.0.113.8");
-    const body = await (await get("/admin/profile?u=owner", env, { Cookie: cookie })).text();
+    const body = await (await get("/admin/profile?u=sam-lee", env, { Cookie: cookie })).text();
     expect(body).not.toContain("<script>");
     expect(body).not.toContain("<img");
     expect(body).toContain('<option value="">Any country</option>');
     expect(body.match(/<select id="country"[\s\S]*?<\/select>/)[0]).not.toContain("selected");
     const csrf = body.match(/name="csrf" value="([0-9a-f]+)"/)[1];
     await worker.fetch(new Request(`${BASE}/admin/action`, { method: "POST", headers: { Cookie: cookie },
-      body: new URLSearchParams({ csrf, action: "profile", u: "owner", name: "Alex Morgan", email: "alex@example.com",
+      body: new URLSearchParams({ csrf, action: "profile", u: "sam-lee", name: "Sam Lee", email: "sam@example.com",
         country: HOSTILE, level: "any", types: "Permanent", modes: "Remote" }) }), env);
     expect(valuesWith(env, "queue:").map((i) => i.job?.country)).not.toContain(HOSTILE);
     expect(JSON.stringify(valuesWith(env, "queue:"))).not.toContain("<script>");
@@ -116,15 +116,15 @@ describe("escaping", () => {
 
   it("never trusts or echoes a tampered form base", async () => {
     const env = testEnv(ADMIN);
-    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "owner", owner: true, name: "Alex Morgan",
-      email: "alex@example.com" }] }));
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "sam-lee", name: "Sam Lee",
+      email: "sam@example.com" }] }));
     const cookie = await signIn(env, "203.0.113.6");
-    const page = await (await get("/admin/profile?u=owner", env, { Cookie: cookie })).text();
+    const page = await (await get("/admin/profile?u=sam-lee", env, { Cookie: cookie })).text();
     const csrf = page.match(/name="csrf" value="([0-9a-f]+)"/)[1];
     for (const base of [JSON.stringify({ name: HOSTILE, email: HOSTILE, titles: [HOSTILE], level: HOSTILE, country: HOSTILE }),
       "not json", '["array"]', JSON.stringify({ __proto__: { polluted: true } })]) {
       const res = await worker.fetch(new Request(`${BASE}/admin/action`, { method: "POST", headers: { Cookie: cookie },
-        body: new URLSearchParams({ csrf, action: "profile", u: "owner", base, name: HOSTILE, email: "nope" }) }), env);
+        body: new URLSearchParams({ csrf, action: "profile", u: "sam-lee", base, name: HOSTILE, email: "nope" }) }), env);
       const body = await res.text();
       expect([400, 409]).toContain(res.status);
       expect(body).not.toContain("<script>");
@@ -946,5 +946,58 @@ describe("a recruit's history", () => {
     const forged = await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", body: JSON.stringify({ profiles: PROFILES }) }), env);
     expect(forged.status).toBe(401);
     expect(valuesWith(env, "history:")).toEqual([]);
+  });
+});
+
+describe("the admin is staff, not a recruit", () => {
+  const API = { Authorization: "Bearer api-token" };
+  const STAFF = { id: "owner", owner: true, name: "Alex Morgan", email: "alex@example.com", status: "active", recruiter: "", has_cv: false,
+    recruit: "sam-lee" };
+
+  async function setup(ip) {
+    const env = testEnv(ADMIN);
+    await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: API,
+      body: JSON.stringify({ profiles: [STAFF, { id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active" }] }) }), env);
+    const cookie = await signIn(env, ip);
+    const csrf = (await (await get("/admin", env, { Cookie: cookie })).text()).match(/name="csrf" value="([0-9a-f]+)"/)[1];
+    const post = (path, fields) => worker.fetch(new Request(`${BASE}${path}`, { method: "POST", headers: { Cookie: cookie },
+      body: new URLSearchParams({ csrf, ...fields }) }), env);
+    return { env, cookie, post };
+  }
+
+  it("has no recruit pages of their own, even for the main admin", async () => {
+    const { env, cookie } = await setup("203.0.113.90");
+    const board = await (await get("/admin", env, { Cookie: cookie })).text();
+    expect(board).not.toContain("u=owner");
+    expect(board).toContain("/admin/profile?u=sam-lee");
+    for (const path of ["/admin/profile?u=owner", "/admin/stats?u=owner", "/admin/sent?u=owner&r=7", "/admin/history?u=owner",
+      "/admin/status?u=owner"]) {
+      expect((await get(path, env, { Cookie: cookie })).status, path).toBe(404);
+    }
+  });
+
+  it("cannot be given a job search, a CV or reports from the dashboard", async () => {
+    const { env, post } = await setup("203.0.113.91");
+    for (const fields of [{ action: "profile", u: "owner", name: "Alex Morgan", email: "alex@example.com", roles: "Data analyst" },
+      { action: "send_now", u: "owner" }, { action: "pause", u: "owner" }, { action: "resume", u: "owner" },
+      { action: "delete", u: "owner", confirm: "yes" }, { action: "assign", u: "owner", recruiter: "" }, { action: "set_key", u: "owner" }]) {
+      const res = await post("/admin/action", fields);
+      expect(res.status, fields.action).not.toBe(200);
+      expect(res.headers.get("Location") || "", fields.action).not.toMatch(/done=(queued|assigned|deleted)/);
+    }
+    await post("/admin/doc", { u: "owner", j: "https://jobs.example.com/1", k: "cover_letter", n: "Analyst" });
+    await post("/admin/skill", { u: "owner", j: "https://jobs.example.com/1", s: "SQL" });
+    expect(valuesWith(env, "queue:")).toEqual([]);
+    expect([...env.FEEDBACK.store.keys()].filter((k) => k.startsWith("event:") || k.startsWith("skilladd:"))).toEqual([]);
+  });
+
+  it("moves only to a real recruit id, never over another admin row or out of the history prefix", async () => {
+    const env = testEnv(ADMIN);
+    await record(env, "owner", "send", "Asked for jobs now");
+    for (const recruit of ["../sam-lee", "owner", "history:x", "a".repeat(41), 7]) {
+      await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: API,
+        body: JSON.stringify({ profiles: [{ ...STAFF, recruit }] }) }), env);
+      expect([...env.FEEDBACK.store.keys()].filter((k) => k.startsWith("history:")), String(recruit)).toHaveLength(1);
+    }
   });
 });

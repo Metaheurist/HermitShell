@@ -410,7 +410,7 @@ function gapChips(items, key, ctx) {
 <input type="hidden" name="u" value="${esc(ctx.profile)}"><input type="hidden" name="j" value="${esc(key)}"><input type="hidden" name="s" value="${esc(skill)}">
 <input type="hidden" name="back" value="${esc(ctx.back)}"><button title="Add ${esc(skill)} to the skills on the CV">${PLUS}${esc(shown)}</button></form>`;
   }).join("");
-  const hint = open ? `<small class="skillhint">Press a skill ${ctx.recipient === "you" ? "you have" : "they have"} to count it as on the CV.</small>` : "";
+  const hint = open ? `<small class="skillhint">Press a skill they have to count it as on the CV.</small>` : "";
   return `<div class="skills gap"><span class="lbl">Missing from the CV</span><div>${chips}</div>${hint}</div>`;
 }
 
@@ -474,14 +474,14 @@ export async function sentPage(status, stats, pid, opts = {}) {
   if (!p) return page("Recruit not found", '<p>HermitShell has not reported this recruit. <a href="/admin">Back to recruits</a></p>', { status: 404 });
   const range = SENT_RANGES[opts.range] ? Number(opts.range) : DEFAULT_RANGE;
   const answer = opts.answer === "none" || ANSWER_LABELS[opts.answer] ? opts.answer : "";
-  const heading = p.owner ? "Jobs sent to you" : `Jobs sent to ${p.name || "this recruit"}`;
+  const heading = `Jobs sent to ${p.name || "this recruit"}`;
   const links = `<a class="small" href="${STATS_URL}?u=${esc(pid)}">Stats</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage recruit</a> &middot; <a class="small" href="${HISTORY_URL}?u=${esc(pid)}">History</a>`;
   const today = zonedToday(status.timezone);
   const first = dayList(today, range)[0];
   const inRange = sentJobs(Array.isArray(opts.sent) ? { sent: opts.sent } : stats).filter((j) => j.day >= first);
   const shown = inRange.filter((j) => !answer || (answer === "none" ? !ANSWER_LABELS[j.answer] : j.answer === answer));
   const open = /^[0-9a-f]{16}$/.test(opts.open || "") ? opts.open : "";
-  const recipient = p.owner ? "you" : cut(String(p.name || "").trim().split(/\s+/)[0], 40) || "this recruit";
+  const recipient = cut(String(p.name || "").trim().split(/\s+/)[0], 40) || "this recruit";
   const ctx = { profile: pid, csrf: opts.csrf || "", docs: opts.docs || [], emailed: opts.emailed || [], recipient,
     pending: opts.pending || new Map(), today, open, currency: p.job?.currency, back: `r=${range}${answer ? `&a=${answer}` : ""}`,
     skills: new Set((Array.isArray(stats?.skills) ? stats.skills : []).map((k) => cleanSkill(k).toLowerCase()).filter(Boolean)) };
@@ -505,7 +505,7 @@ export async function sentPage(status, stats, pid, opts = {}) {
 ${inRange.length ? answerFilter(pid, range, answer, inRange) : ""}${body}
 <p class="muted small">Press a job for everything its email showed, the advert, and its cover letter and tailored CV. Letters and CVs made from
 here are kept to download for a few days, and emailed only when you press &ldquo;Email to ${esc(recipient)}&rdquo; beside one. The last tile sends the job itself
-to ${p.owner ? "you" : "the recruit"}, as its report card.
+to the recruit, as its report card.
 Notes typed on the buttons are never shown here.</p>`, { ...back, refresh: waiting ? 15 : 0 });
 }
 
@@ -514,7 +514,7 @@ export function statsPage(status, stats, pid, rangeParam) {
   const back = { wide: true, before: BACK_TO_RECRUITS };
   if (!p) return page("Recruit not found", '<p>HermitShell has not reported this recruit. <a href="/admin">Back to recruits</a></p>', { status: 404 });
   const range = RANGES[rangeParam] ? Number(rangeParam) : DEFAULT_RANGE;
-  const heading = p.owner ? "Your stats" : `${p.name || "Recruit"}: stats`;
+  const heading = `${p.name || "Recruit"}: stats`;
   const manage = `<a class="small" href="${SENT_URL}?u=${esc(pid)}&amp;r=${range === 365 ? 90 : range}">Jobs sent</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage recruit</a> &middot; <a class="small" href="${HISTORY_URL}?u=${esc(pid)}">History</a>`;
   if (!stats) {
     return page(heading, `<style>${STYLE}</style>${rangeTabs(pid, range)}

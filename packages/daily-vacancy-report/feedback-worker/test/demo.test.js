@@ -102,15 +102,16 @@ describe("demo mode pages", () => {
   it("fill every signed-in page with made-up data and none of the real", async () => {
     const { admin } = await setup();
     await demoOn(admin);
-    const pages = ["/admin", "/admin/profile?u=sam-lee", "/admin/history?u=sam-lee", "/admin/stats?u=owner", "/admin/stats?u=morgan-ellis&r=90",
-      "/admin/sent?u=owner&r=30", "/admin/users", "/admin/settings", "/admin/tasks"];
+    const pages = ["/admin", "/admin/profile?u=sam-lee", "/admin/history?u=sam-lee", "/admin/stats?u=avery-lane", "/admin/stats?u=morgan-ellis&r=90",
+      "/admin/sent?u=avery-lane&r=30", "/admin/users", "/admin/settings", "/admin/tasks"];
     for (const path of pages) {
       const { res, body } = await admin.get(path);
       expect(res.status, path).toBe(200);
       for (const word of REAL_WORDS) expect(body, `${path} shows ${word}`).not.toContain(word);
     }
     const dashboard = (await admin.get("/admin")).body;
-    for (const name of ["Alex Morgan", "Sam Lee", "Jordan Patel", "Morgan Ellis", "Taylor Reid", "Jamie Walsh", "Robin Shaw", "Riley Chen", "Casey Quinn",
+    expect(dashboard).not.toContain("/admin/profile?u=owner");
+    for (const name of ["Alex Morgan", "Avery Lane", "Sam Lee", "Jordan Patel", "Morgan Ellis", "Taylor Reid", "Jamie Walsh", "Robin Shaw", "Riley Chen", "Casey Quinn",
       "Drew Harper"]) expect(dashboard).toContain(name);
     expect(dashboard).toContain("HermitShell is connected");
     expect(dashboard).toContain("scanning now");
@@ -118,7 +119,7 @@ describe("demo mode pages", () => {
     expect(dashboard).toContain('<div class="demoribbon" role="status">');
     expect(dashboard).toContain('href="/admin/settings#demo">Turn off</a>');
     expect((await admin.get("/admin/history?u=sam-lee")).body).toContain("Job report ran");
-    expect((await admin.get("/admin/sent?u=owner&r=30")).body).toContain("jobs.example.com/demo/owner/1000");
+    expect((await admin.get("/admin/sent?u=avery-lane&r=30")).body).toContain("jobs.example.com/demo/avery-lane/1000");
     expect((await admin.get("/admin/tasks")).body).toContain("Rating jobs");
     expect((await admin.get("/admin/users")).body).toContain("Drew Harper");
   });
@@ -126,8 +127,8 @@ describe("demo mode pages", () => {
   it("keep a made-up cover letter that downloads as a PDF", async () => {
     const { admin } = await setup();
     await demoOn(admin);
-    const h = await jobHash("https://jobs.example.com/demo/owner/1000");
-    const { res } = await admin.get(`/admin/doc?u=owner&k=cover_letter&h=${h}`);
+    const h = await jobHash("https://jobs.example.com/demo/avery-lane/1000");
+    const { res } = await admin.get(`/admin/doc?u=avery-lane&k=cover_letter&h=${h}`);
     expect(res.headers.get("Content-Type")).toBe("application/pdf");
     const pdf = new TextDecoder().decode(await res.arrayBuffer());
     expect(pdf.startsWith("%PDF-1.4")).toBe(true);
@@ -165,10 +166,10 @@ describe("demo mode keeps real data apart", () => {
       ["/admin/action", { action: "model_key", provider: "openrouter", key: "test-openrouter-key" }],
       ["/admin/action", { action: "api_key", provider: "tavily", key: "not-a-real-search-key" }],
       ["/admin/users", { op: "add", name: "Demo User", username: "demouser", password: "a-long-demo-password", roles: "recruiter" }],
-      ["/admin/doc", { u: "owner", j: "https://jobs.example.com/demo/owner/1001", k: "tailored_cv", n: "AI Engineer" }],
-      ["/admin/doc", { u: "owner", j: "https://jobs.example.com/demo/owner/1001", k: "cover_letter", n: "AI Engineer", send: "1" }],
+      ["/admin/doc", { u: "avery-lane", j: "https://jobs.example.com/demo/avery-lane/1001", k: "tailored_cv", n: "AI Engineer" }],
+      ["/admin/doc", { u: "avery-lane", j: "https://jobs.example.com/demo/avery-lane/1001", k: "cover_letter", n: "AI Engineer", send: "1" }],
       ["/admin/tasks", { task: "report:jamie-walsh" }],
-      ["/admin/skill", { u: "owner", j: "https://jobs.example.com/demo/owner/1000", s: "Kubernetes" }],
+      ["/admin/skill", { u: "avery-lane", j: "https://jobs.example.com/demo/avery-lane/1000", s: "Kubernetes" }],
       ["/admin/cv", cv],
     ];
     for (const [path, fields] of presses) {

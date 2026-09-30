@@ -116,9 +116,10 @@ export function recruiterOf(p, queue = []) {
   return String(waiting ? waiting.recruiter || "" : p.recruiter || "");
 }
 
-// Admins see everyone; a recruiter sees only their own recruits, never the owner's row.
+// Admins see every recruit; a recruiter sees only their own. The main admin's row is staff, not a recruit, so
+// nobody sees it as one.
 export function canSee(me, p, queue = []) {
-  return Boolean(me.admin || (p && !p.owner && recruiterOf(p, queue) === me.id));
+  return Boolean(p && !p.owner && (me.admin || recruiterOf(p, queue) === me.id));
 }
 
 export function initials(name) {

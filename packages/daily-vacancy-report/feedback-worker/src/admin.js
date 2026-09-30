@@ -12,7 +12,7 @@
 // reach the HermitShell server: HermitShell connects out to /api/live and reads /api/queue with its API token.
 
 import { DEMO_DONE, DEMO_URL, demoEnv, demoMode, demoRibbon, demoSection, demoToggle } from "./demo.js";
-import { HISTORY_URL, historyPage, listed, record, recordReported } from "./history.js";
+import { HISTORY_URL, historyPage, listed, moveOwnerHistory, record, recordReported } from "./history.js";
 import { hubConnect, hubPresence, hubSeen } from "./hub.js";
 import { createInvite, queueItem } from "./join.js";
 import {
@@ -172,7 +172,7 @@ async function queued(env) {
 
 function describe(items) {
   return items.map((i) => i.type === "signup" ? `Sign-up from ${i.name}` : i.type === "unsubscribe"
-    ? `Unsubscribe ${i.u || "owner"}` : `${String(i.action || i.type).replaceAll("_", " ")}${i.u ? ` for ${i.u}` : ""}`);
+    ? `Unsubscribe ${i.u || "from an old report of yours"}` : `${String(i.action || i.type).replaceAll("_", " ")}${i.u ? ` for ${i.u}` : ""}`);
 }
 
 // The recruit `u` when the signed-in user may see it, else null. Recruiters are checked against the recruiter
@@ -183,6 +183,7 @@ function visible(s, current, u) {
 }
 
 function allowed(s, current, u) {
+  if ((current.profiles || []).some((x) => x.id === u && x.owner)) return false;
   return s.me.admin || Boolean(visible(s, current, u));
 }
 
@@ -292,7 +293,6 @@ table.recruits th:first-child{width:34%}
 // The recruiter's initials and a list to pick another; Assign shows once the pick changes (where the browser
 // supports :has, otherwise always).
 function recruiterCell(p, rec, recs, csrf) {
-  if (p.owner) return '<span class="muted">The main admin</span>';
   const r = recs.find((x) => x.id === rec);
   const face = `<span class="avatar rec sm${r ? "" : " none"}" aria-hidden="true">${r ? esc(initials(r.name)) : "?"}</span>`;
   if (p.pending || !recs.length) {
@@ -316,9 +316,9 @@ function pendingRow(p, tz, live, third) {
 }
 
 function profileRow(p, csrf, tz, stats, { admin, third, inPool }) {
-  const status = `<span class="pill${p.owner ? " owner" : p.status === "paused" ? " paused" : ""}">${p.owner ? "owner, " : ""}${esc(p.status)}</span>`
+  const status = `<span class="pill${p.status === "paused" ? " paused" : ""}">${esc(p.status)}</span>`
     + (p.scanning ? ' <span class="pill scanning">scanning now</span>' : "");
-  const remove = p.owner || !admin ? "" : binButton(`del-${p.id}`, `Delete ${p.name}`);
+  const remove = admin ? binButton(`del-${p.id}`, `Delete ${p.name}`) : "";
   const cv = p.has_cv === false ? ' <span class="pill paused">no CV</span>' : "";
   const joined = p.created ? `<div class="muted" title="${esc(when(p.created, tz))}">Joined ${esc(when(p.created, tz).slice(0, 10))}</div>` : "";
   return `<tr${inPool ? ' class="inpool"' : ""}><td><div class="who"><span class="avatar" aria-hidden="true">${esc(initials(p.name))}</span><div>
@@ -339,7 +339,7 @@ function inviteForm(s, recs) {
   const assign = s.me.admin && recs.length
     ? `<select name="recruiter" aria-label="Whose recruit they become" style="width:auto;flex:none">${[["", "Nobody's recruit"], ...recs.map((r) => [r.id, `${r.name}'s recruit`])]
       .map(([id, label]) => `<option value="${esc(id)}"${id === (s.me.recruiter ? s.me.id : "") ? " selected" : ""}>${esc(label)}</option>`).join("")}</select>` : "";
-  return `<h2>Invite someone</h2>
+  return `<h2 id="invite">Invite someone</h2>
 <form method="post" action="/admin/action" class="inline"><input type="hidden" name="csrf" value="${esc(s.csrf)}"><input type="hidden" name="action" value="invite">
 <input name="note" maxlength="80" placeholder="Who it is for (only you see this)">${assign}<button class="small">Create invite link</button></form>
 <p class="muted">Each link works once and expires after 7 days.${s.me.admin ? " The person joins the recruiter picked here." : " The person joins your recruits."}</p>`;
@@ -383,7 +383,7 @@ async function dashboard(request, env, s) {
   const rows = grouped + shown.filter((e) => !listed.has(e)).map((e) => row(e, false)).join("")
     || (all.length ? noMatch(q) : `<tr><td colspan="4" class="muted">${admin ? "HermitShell has not reported any recruits yet."
       : "You have no recruits yet. The people you invite join your recruits, and an admin can assign others to you."}</td></tr>`);
-  const deletes = admin ? shown.filter(({ p }) => !p.owner && !p.pending).map(({ p }) => deleteRecruitModal(p, s.csrf)).join("") : "";
+  const deletes = admin ? shown.filter(({ p }) => !p.pending).map(({ p }) => deleteRecruitModal(p, s.csrf)).join("") : "";
   return page("Recruits", `<style>${LINK_STYLE}${MODAL_STYLE}${CONFIRM_STYLE}${SEARCH_STYLE}${PENDING_STYLE}${TASKS_STYLE}${RECRUITER_STYLE}</style>${nav("profiles", admin)}${done ? note(done) : ""}
 ${lastUpdate(current, waiting, presence, admin)}
 ${admin ? `${problems(current)}${checklist(current)}` : ""}
@@ -406,7 +406,8 @@ async function tasksAction(request, env, s) {
   const task = String(form.get("task") || "").slice(0, 200);
   const row = taskRows(current, queue, held).find((t) => t.id === task);
   const done = await cancelTask(env, task, current, queue);
-  if (row?.u && row.state !== "stopping" && done !== "gone") await record(env, row.u, "cancel", cancelNote(row), { by: displayName(s.me, current) });
+  const recruit = row?.u && row.u !== "owner" && !(current.profiles || []).some((p) => p.owner && p.id === row.u);
+  if (recruit && row.state !== "stopping" && done !== "gone") await record(env, row.u, "cancel", cancelNote(row), { by: displayName(s.me, current) });
   return redirect(`${TASKS_URL}?done=${done}`);
 }
 
@@ -442,7 +443,7 @@ async function docRequest(request, env, s) {
   }
   const fresh = form.get("fresh") === "1";
   const send = !fresh && kind !== "send_job" && form.get("send") === "1";
-  const h = await requestDoc(env, { profile: u, owner: Boolean(p.owner), j, kind, title, fresh, send });
+  const h = await requestDoc(env, { profile: u, j, kind, title, fresh, send });
   const doc = kind === "cover_letter" ? "cover letter" : "tailored CV";
   const asked = kind === "send_job" ? "Emailed the job" : send ? `Emailed the ${doc}` : `Asked for a ${fresh ? "new " : ""}${doc}`;
   await record(env, u, kind, `${asked}: ${title || "a job"}`, { by: displayName(s.me, current) });
@@ -462,7 +463,7 @@ async function skillRequest(request, env, s) {
   if (!p && !s.me.admin) return page(...NOT_FOUND);
   const skill = cleanSkill(given);
   if (!p || !validJobKey(j) || !skill || given.length > 120) return redirect(sentBack(u, form.get("back"), "", "skillbad"));
-  const h = await requestSkill(env, { profile: u, owner: Boolean(p.owner), j, skill });
+  const h = await requestSkill(env, { profile: u, j, skill });
   await record(env, u, "skill", `Added the skill ${skill}, missing from the CV`, { by: displayName(s.me, current) });
   return redirect(sentBack(u, form.get("back"), h.slice(0, 16), "skill"));
 }
@@ -488,7 +489,7 @@ async function action(request, env, s) {
     return page("Unknown recruit", "<p>Reload the admin page and try again.</p>", { status: 400 });
   }
   const current = await status(env);
-  if (["pause", "resume", "send_now", "profile"].includes(act) && !allowed(s, current, u)) return page(...NOT_FOUND);
+  if (["pause", "resume", "send_now", "profile", "delete"].includes(act) && !allowed(s, current, u)) return page(...NOT_FOUND);
   const recs = recruiters(s.acc, current, env);
   if (act === "invite") {
     const chosen = s.me.admin ? String(form.get("recruiter") ?? (s.me.recruiter ? s.me.id : "")) : s.me.id;
@@ -698,10 +699,9 @@ async function signedInRoute(request, env, s, path) {
     if (!allowed(s, current, u)) return page(...NOT_FOUND);
     const [stats, sent, docs, emailed, held, added] = await Promise.all([env.FEEDBACK.get(`stats:${u}`, "json"),
       env.FEEDBACK.get(`sent:${u}`, "json"), docIndex(env, u), emailedIndex(env, u), requests(env), addedSkills(env, u)]);
-    const owner = Boolean((current.profiles || []).find((x) => x.id === u)?.owner);
     const q = (k) => url.searchParams.get(k) || "";
     return sentPage(current, stats, u, { range: q("r"), answer: q("a"), open: q("open"), done: q("done"), csrf: s.csrf,
-      sent: Array.isArray(sent) ? sent : null, docs, emailed, pending: pendingDocs(current, held, u, owner), added });
+      sent: Array.isArray(sent) ? sent : null, docs, emailed, pending: pendingDocs(current, held, u), added });
   }
   if (path === DOC_URL && request.method === "GET") return docDownload(request, env, s);
   if (path === DOC_URL && request.method === "POST") return docRequest(request, env, s);
@@ -752,6 +752,7 @@ export async function handleApi(request, env) {
     }
     const before = await env.FEEDBACK.get("status:profiles", "json");
     await env.FEEDBACK.put("status:profiles", JSON.stringify({ ...status, updated: Date.now() }));
+    await moveOwnerHistory(env, before, status);
     await recordReported(env, before, status);
     return json({ saved: true });
   }

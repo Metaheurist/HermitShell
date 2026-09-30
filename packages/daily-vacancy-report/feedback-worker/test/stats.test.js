@@ -9,7 +9,8 @@ const API = { Authorization: "Bearer api-token" };
 const STATUS = {
   timezone: "Europe/London",
   profiles: [
-    { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, has_cv: true, job: { currency: "£" } },
+    { id: "riley-chen", name: "Riley Chen", email: "riley@example.com", status: "active", has_cv: true, job: { currency: "£" } },
+    { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, recruiter: "", has_cv: false, recruit: "" },
     { id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active", has_cv: true, job: { currency: "£" } },
   ],
 };
@@ -104,9 +105,9 @@ describe("time ranges", () => {
 
 describe("stats page", () => {
   it("shows KPI tiles, charts and change against the period before", () => {
-    const html = statsPage(STATUS, sample(), "owner", "30");
+    const html = statsPage(STATUS, sample(), "riley-chen", "30");
     return html.text().then((body) => {
-      expect(body).toContain("Your stats");
+      expect(body).toContain("Riley Chen: stats");
       expect(body).toMatch(/kpi-num">16<\/div><div class="kpi-label">Rated/);
       expect(body).toMatch(/kpi-num">7\.3<small>\/10<\/small>/);
       expect(body).toContain('class="delta');
@@ -121,18 +122,18 @@ describe("stats page", () => {
 
   it("shows the median salary with the profile's currency symbol and icon", async () => {
     const withCurrency = (currency) => ({ ...STATUS, profiles: [{ ...STATUS.profiles[0], job: { currency } }] });
-    const pound = await statsPage(STATUS, sample(), "owner", "30").text();
+    const pound = await statsPage(STATUS, sample(), "riley-chen", "30").text();
     expect(pound).toMatch(/<svg [^>]*>[^<]*<path d="M3\.85[^"]*"\/><path d="M8 12h4M10 16V9\.5[^"]*"\/><\/svg>Median salary <b>£52k/);
-    const euro = await statsPage(withCurrency("EUR"), sample(), "owner", "30").text();
+    const euro = await statsPage(withCurrency("EUR"), sample(), "riley-chen", "30").text();
     expect(euro).toMatch(/<path d="M7 12h5M15 9\.4[^"]*"\/><\/svg>Median salary <b>€52k/);
-    const plain = await statsPage(withCurrency(""), sample(), "owner", "30").text();
+    const plain = await statsPage(withCurrency(""), sample(), "riley-chen", "30").text();
     expect(plain).toMatch(/<rect width="20" height="12"[^>]*\/>.*<\/svg>Median salary <b>52k/);
-    const odd = await statsPage(withCurrency("<b>"), sample(), "owner", "30").text();
+    const odd = await statsPage(withCurrency("<b>"), sample(), "riley-chen", "30").text();
     expect(odd).toContain("Median salary <b>52k");
   });
 
   it("falls back to 30 days for an unknown range and has no arrows without earlier data", async () => {
-    const body = await statsPage(STATUS, { ...sample(), since: daysAgo(3) }, "owner", "9999").text();
+    const body = await statsPage(STATUS, { ...sample(), since: daysAgo(3) }, "riley-chen", "9999").text();
     expect(body).toContain('aria-current="page">30 days');
     expect(body).not.toContain('class="delta');
   });
@@ -183,17 +184,17 @@ describe("jobs sent page", () => {
   });
 
   it("filters by answer, keeps the filter across ranges and says when nothing matches", async () => {
-    const applied = await sentOf(sample(), "owner", { range: "30", answer: "applied" });
-    expect(applied).toContain("Jobs sent to you");
+    const applied = await sentOf(sample(), "riley-chen", { range: "30", answer: "applied" });
+    expect(applied).toContain("Jobs sent to Riley Chen");
     expect(applied).toContain("Data Engineer");
     expect(applied).not.toContain("Analytics Engineer");
-    expect(applied).toContain('href="/admin/sent?u=owner&amp;r=90&amp;a=applied"');
-    const none = await sentOf(sample(), "owner", { range: "30", answer: "none" });
+    expect(applied).toContain('href="/admin/sent?u=riley-chen&amp;r=90&amp;a=applied"');
+    const none = await sentOf(sample(), "riley-chen", { range: "30", answer: "none" });
     expect(none).toContain("Analytics Engineer");
     expect(none).not.toContain(">Data Engineer<");
-    const nothing = await sentOf(sample(), "owner", { range: "7", answer: "heard_back" });
+    const nothing = await sentOf(sample(), "riley-chen", { range: "7", answer: "heard_back" });
     expect(nothing).toContain("No job sent in this period has that answer.");
-    const odd = await sentOf(sample(), "owner", { range: "365", answer: "bogus" });
+    const odd = await sentOf(sample(), "riley-chen", { range: "365", answer: "bogus" });
     expect(odd).toContain('aria-current="page">30 days');
     expect(odd).toContain(">All <b>3</b>");
   });
@@ -284,9 +285,10 @@ describe("jobs sent page", () => {
     expect(gaps).toContain("<span>&lt;&gt;</span>");
     expect(gaps).toContain("Press a skill they have to count it as on the CV.");
     expect(body).toContain(`<li id="job-${h.slice(0, 16)}"`);
-    const owner = await sentOf(s, "owner", { range: "7", csrf: "c".repeat(32), done: "skill" });
-    expect(owner).toContain("Press a skill you have to count it as on the CV.");
-    expect(owner).toContain("Added. HermitShell counts it as on the CV within a few minutes");
+    const added = await sentOf(s, "riley-chen", { range: "7", csrf: "c".repeat(32), done: "skill" });
+    expect(added).not.toContain("Press a skill you have");
+    expect(added).toContain("Press a skill they have to count it as on the CV.");
+    expect(added).toContain("Added. HermitShell counts it as on the CV within a few minutes");
     const noForm = await sentOf(s, "sam-lee", { range: "7" });
     expect(noForm).not.toContain('action="/admin/skill"');
     expect(noForm).toContain("<span>dbt</span>");
@@ -305,21 +307,21 @@ describe("jobs sent page", () => {
 describe("stats from HermitShell", () => {
   it("stores and removes a profile's stats and shows them behind the dashboard's Stats link", async () => {
     const { env, get } = await setup();
-    expect((await putStats(env, { u: "owner", stats: sample() })).status).toBe(200);
-    expect(JSON.parse(env.FEEDBACK.store.get("stats:owner")).updated).toBeGreaterThan(0);
+    expect((await putStats(env, { u: "riley-chen", stats: sample() })).status).toBe(200);
+    expect(JSON.parse(env.FEEDBACK.store.get("stats:riley-chen")).updated).toBeGreaterThan(0);
     const dashboard = (await get("/admin")).body;
-    expect(dashboard).toContain('href="/admin/stats?u=owner"');
-    expect(dashboard).toMatch(/<a class="statlink" href="\/admin\/sent\?u=owner&amp;r=7"[^>]*><b>6<\/b> sent<\/a>/);
-    expect(dashboard).toMatch(/<a class="statlink" href="\/admin\/stats\?u=owner"[^>]*><svg class="mini"/);
+    expect(dashboard).toContain('href="/admin/stats?u=riley-chen"');
+    expect(dashboard).toMatch(/<a class="statlink" href="\/admin\/sent\?u=riley-chen&amp;r=7"[^>]*><b>6<\/b> sent<\/a>/);
+    expect(dashboard).toMatch(/<a class="statlink" href="\/admin\/stats\?u=riley-chen"[^>]*><svg class="mini"/);
     expect(dashboard).toContain('href="/admin/stats?u=sam-lee"');
     expect(dashboard).not.toContain('href="/admin/sent?u=sam-lee');
-    const stats = (await get("/admin/stats?u=owner&r=7")).body;
-    expect(stats).toContain("Your stats");
-    expect(stats).toContain('href="/admin/sent?u=owner&amp;r=7"');
-    expect((await get("/admin/sent?u=owner&r=7")).body).toContain("Jobs sent to you");
+    const stats = (await get("/admin/stats?u=riley-chen&r=7")).body;
+    expect(stats).toContain("Riley Chen: stats");
+    expect(stats).toContain('href="/admin/sent?u=riley-chen&amp;r=7"');
+    expect((await get("/admin/sent?u=riley-chen&r=7")).body).toContain("Jobs sent to Riley Chen");
     expect((await get("/admin/sent?u=../owner")).res.status).toBe(404);
-    expect((await get("/admin/profile?u=owner")).body).toContain('href="/admin/stats?u=owner"');
-    expect((await putStats(env, { u: "owner", stats: null })).status).toBe(200);
+    expect((await get("/admin/profile?u=riley-chen")).body).toContain('href="/admin/stats?u=riley-chen"');
+    expect((await putStats(env, { u: "riley-chen", stats: null })).status).toBe(200);
     expect(keysWith(env, "stats:")).toEqual([]);
   });
 

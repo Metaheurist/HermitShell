@@ -8,11 +8,13 @@ const API = { Authorization: "Bearer api-token" };
 const CV_TEXT = "Alex Morgan. Data engineer with six years of Python, Airflow and SQL. ".repeat(4);
 const KEYS = await sealingKeys();
 
+// The main admin, staff only: HermitShell reports them so the dashboard can name them.
+const STAFF = { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, recruiter: "", has_cv: false, recruit: "" };
 const STATUS = {
   ...KEYS.status,
   profiles: [
-    { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, crawler: "global",
-      has_cv: false, details: { name: "Alex Morgan", email: "alex@example.com", phone: "", location: "Leeds" },
+    { id: "jordan-patel", name: "Jordan Patel", email: "jordan@example.com", status: "active", crawler: "global",
+      has_cv: false, details: { name: "Jordan Patel", email: "jordan@example.com", phone: "", location: "Leeds" },
       job: { titles: [], region: "", places: [], search_location: "", country: "gb", remote_anywhere: false, level: "any",
         types: ["Permanent", "Contract"], modes: ["Hybrid", "Remote"], min_salary: "0", currency: "£", hide_agency: false } },
     { id: "sam-lee", name: "Sam <b>Lee</b>", email: "sam@example.com", status: "active", crawler: "global", has_cv: true,
@@ -20,6 +22,7 @@ const STATUS = {
       job: { titles: ["Data Analyst", "BI Developer"], region: "North Yorkshire", places: ["York", "Harrogate"],
         search_location: "", country: "gb", remote_anywhere: true, level: "mid", types: ["Permanent"], modes: ["Hybrid"],
         min_salary: "35000", currency: "£", hide_agency: true } },
+    STAFF,
   ],
   email: { host: "smtp.gmail.com", port: "587", user: "", from: "", password_set: false, source: "none", last_test: null },
   keys: { firecrawl: { source: "none", hint: "" }, tavily: { source: "none", hint: "" }, scrapfly: { source: "none", hint: "" } },
@@ -97,33 +100,44 @@ describe("setup checklist", () => {
     expect(body).toContain("Finish setting up");
     expect(body).toContain('href="/admin/settings#email"');
     expect(body).toContain('href="/admin/settings#keys"');
-    expect(body).toContain('href="/admin/profile?u=owner#cv"');
-    expect(body).toContain('href="/admin/profile?u=owner#job"');
+    expect(body).not.toContain("Your CV uploaded");
+    expect(body).not.toContain("u=owner");
     expect(body).toContain("no CV");
+  });
+
+  it("asks for a first recruit, never for the admin's own CV or job search", async () => {
+    const { get } = await setup({ ...STATUS, profiles: [STAFF] });
+    const { body } = await get("/admin");
+    expect(body).toContain("<b>First recruit joined</b>");
+    expect(body).toContain('<a href="#invite">Create an invite link</a>');
+    expect(body).toContain('<h2 id="invite">Invite someone</h2>');
+    expect(body).not.toContain("Job search set");
+    expect(body).toContain("HermitShell has not reported any recruits yet.");
+    expect(body).not.toContain("u=owner");
   });
 
   it("shows progress and each step's state as styled items", async () => {
     const { get } = await setup();
     const { body } = await get("/admin?done=queued");
     expect(body).toContain('<p class="note ok" role="status">Saved. HermitShell applies it within seconds while it is connected.</p>');
-    expect(body).toContain("1 of 6 done");
-    expect(body).toMatch(/role="progressbar"[^>]*aria-valuenow="1"><span style="width:17%"><\/span>/);
+    expect(body).toContain("2 of 5 done");
+    expect(body).toMatch(/role="progressbar"[^>]*aria-valuenow="2"><span style="width:40%"><\/span>/);
     expect(body).toContain('<li class="done"><span class="tick" aria-hidden="true"></span><div><b>HermitShell is connected</b>');
-    expect(body.match(/<li class="todo">/g)).toHaveLength(5);
+    expect(body).toContain('<li class="done"><span class="tick" aria-hidden="true"></span><div><b>First recruit joined</b>');
+    expect(body.match(/<li class="todo">/g)).toHaveLength(3);
   });
 
   it("gives each profile an initials avatar, never markup", async () => {
     const { get } = await setup({ ...STATUS, profiles: [...STATUS.profiles,
       { id: "riley", name: "<img src=x onerror=alert(1)>", email: "r@example.com", status: "active" }] });
     const { body } = await get("/admin");
-    expect(body).toContain('<span class="avatar" aria-hidden="true">AM</span>');
+    expect(body).toContain('<span class="avatar" aria-hidden="true">JP</span>');
     expect(body).toContain('<span class="avatar" aria-hidden="true">SL</span>');
     expect(body).not.toContain("<img");
   });
 
   it("says so when everything is set", async () => {
-    const owner = { ...STATUS.profiles[0], has_cv: true, job: { ...STATUS.profiles[0].job, titles: ["Data Engineer"] } };
-    const { get } = await setup({ ...STATUS, profiles: [owner],
+    const { get } = await setup({ ...STATUS, profiles: [STATUS.profiles[1], STAFF],
       email: { ...STATUS.email, user: "alex@example.com", password_set: true, source: "dashboard", last_test: { ok: true, at: 1, to: "alex@example.com" } },
       keys: { ...STATUS.keys, tavily: { source: "env", hint: "tvly...abcd" } } });
     const { body } = await get("/admin");
@@ -150,7 +164,7 @@ describe("setup checklist", () => {
     const { get } = await setup(null);
     const { body } = await get("/admin");
     expect(body).toContain("HermitShell has not reported yet");
-    expect(body).toContain("Upload your CV once HermitShell has connected");
+    expect(body).toContain("0 of 5 done");
   });
 
   it("warns when HermitShell and the Worker speak different protocols, with the fix for whichever is older", async () => {
@@ -332,10 +346,10 @@ describe("profile page", () => {
 
   it("queues a picked currency, and one that isn't offered as salaries as advertised", async () => {
     const { env, get, act } = await setup();
-    await save(get, act, "owner", { currency: "EUR" });
+    await save(get, act, "jordan-patel", { currency: "EUR" });
     await save(get, act, "sam-lee", { currency: "<script>alert(1)</script>" });
-    expect(valuesWith(env, "queue:").map((i) => [i.u, i.job])).toEqual([["owner", { currency: "EUR" }], ["sam-lee", { currency: "" }]]);
-    expect((await get("/admin/profile?u=owner")).body).toContain('<option value="EUR" selected>');
+    expect(valuesWith(env, "queue:").map((i) => [i.u, i.job])).toEqual([["jordan-patel", { currency: "EUR" }], ["sam-lee", { currency: "" }]]);
+    expect((await get("/admin/profile?u=jordan-patel")).body).toContain('<option value="EUR" selected>');
   });
 
   it("is not found for a profile HermitShell hasn't reported", async () => {
@@ -346,7 +360,7 @@ describe("profile page", () => {
 
   it("needs a signed-in session", async () => {
     const env = testEnv(ADMIN);
-    const body = await (await worker.fetch(new Request(`${BASE}/admin/profile?u=owner`), env)).text();
+    const body = await (await worker.fetch(new Request(`${BASE}/admin/profile?u=jordan-patel`), env)).text();
     expect(body).toContain("Admin sign-in");
   });
 
@@ -367,17 +381,17 @@ describe("profile page", () => {
 
   it("queues only the fields that changed, cleaned", async () => {
     const { env, get, act } = await setup();
-    const saved = await save(get, act, "owner", { email: "alex.m@example.com", phone: "07700 900456",
+    const saved = await save(get, act, "jordan-patel", { email: "alex.m@example.com", phone: "07700 900456",
       titles: "Data Engineer\nAnalytics Engineer\n\nData Engineer", region: "West Yorkshire", places: "Leeds, Bradford",
       remote_anywhere: "1", level: "senior", types: ["Permanent", "Bogus"], modes: ["Remote"], min_salary: "55,000" });
-    expect(saved.headers.get("Location")).toBe("/admin/profile?u=owner&done=saved");
+    expect(saved.headers.get("Location")).toBe("/admin/profile?u=jordan-patel&done=saved");
     const [item] = valuesWith(env, "queue:");
-    expect(item).toMatchObject({ type: "admin", action: "profile", u: "owner" });
+    expect(item).toMatchObject({ type: "admin", action: "profile", u: "jordan-patel" });
     expect(item.details).toEqual({ email: "alex.m@example.com", phone: "07700 900456" });
     expect(item.job).toEqual({ titles: ["Data Engineer", "Analytics Engineer"], region: "West Yorkshire",
       places: ["Leeds", "Bradford"], remote_anywhere: true, level: "senior", types: ["Permanent"], modes: ["Remote"],
       min_salary: "55000" });
-    expect(valuesWith(env, "history:owner:")).toMatchObject([[{ k: "job", by: "Alex Morgan", v: "dashboard",
+    expect(valuesWith(env, "history:jordan-patel:")).toMatchObject([[{ k: "job", by: "Alex Morgan", v: "dashboard",
       t: "Changed Email for reports, Phone, Job titles, Region or city, Towns, Fully remote jobs, Seniority, Employment types, Work location and Minimum salary" }]]);
   });
 
@@ -439,7 +453,7 @@ describe("profile page", () => {
     expect(body).toContain('<option value="gb" selected>United Kingdom</option>');
     expect(body).toContain('<option value="ie">Ireland</option>');
     expect(body).not.toContain('name="search_location"');
-    for (const country of ["IE", "zz", "uk", "g<"]) await save(get, act, "owner", { country });
+    for (const country of ["IE", "zz", "uk", "g<"]) await save(get, act, "jordan-patel", { country });
     expect(valuesWith(env, "queue:").map((i) => i.job.country)).toEqual(["ie", "", "gb", ""]);
     expect(valuesWith(env, "queue:")[0].job).not.toHaveProperty("search_location");
   });
@@ -454,31 +468,31 @@ describe("profile page", () => {
     expect(body).toMatch(/<\/div><\/div><a class="back" href="\/admin"><svg [^>]*aria-hidden="true"><path [^>]*\/><\/svg>Back to recruits<\/a><main class="wide">/);
     expect(body).toMatch(/<body><style>[^<]*<\/style><div class="me" role="region" aria-label="Signed in as /);
     expect(body).not.toMatch(/&larr;|[\u2190-\u21ff]/);
-    expect((await get("/admin/profile?u=owner")).body).toContain('id="min_salary" name="min_salary" value=""');
-    for (const min_salary of ["£45,000", "", "45k"]) await save(get, act, "owner", { min_salary });
+    expect((await get("/admin/profile?u=jordan-patel")).body).toContain('id="min_salary" name="min_salary" value=""');
+    for (const min_salary of ["£45,000", "", "45k"]) await save(get, act, "jordan-patel", { min_salary });
     expect(valuesWith(env, "queue:").map((i) => i.job.min_salary)).toEqual(["45000", "0", "45000"]);
   });
 
   it("refuses a bad email without losing what was typed, and ignores an unknown level or a bad profile id", async () => {
     const { env, get, act } = await setup();
-    const bad = await save(get, act, "owner", { name: "Alex M", email: "nope", location: "Bradford" });
+    const bad = await save(get, act, "jordan-patel", { name: "Alex M", email: "nope", location: "Bradford" });
     expect(bad.status).toBe(400);
     const body = await bad.text();
     expect(body).toContain("A name and a valid email address are needed.");
     expect(body).toContain('value="Alex M"');
     expect(body).toContain('value="Bradford"');
-    expect((await save(get, act, "owner", { name: "" })).status).toBe(400);
+    expect((await save(get, act, "jordan-patel", { name: "" })).status).toBe(400);
     expect((await act({ action: "profile", u: "../etc" })).headers.get("Location")).toBe("/admin?done=profile");
-    const res = await save(get, act, "owner", { level: "wizard", min_salary: "lots" });
-    expect(res.headers.get("Location")).toBe("/admin/profile?u=owner&done=nochange");
+    const res = await save(get, act, "jordan-patel", { level: "wizard", min_salary: "lots" });
+    expect(res.headers.get("Location")).toBe("/admin/profile?u=jordan-patel&done=nochange");
     expect(valuesWith(env, "queue:")).toEqual([]);
   });
 
   it("applies changes still waiting for HermitShell in order", async () => {
     const { get, act } = await setup();
-    await save(get, act, "owner", { titles: "Data Engineer" });
-    await save(get, act, "owner", { titles: "Data Engineer\nML Engineer", location: "York" });
-    const { body } = await get("/admin/profile?u=owner");
+    await save(get, act, "jordan-patel", { titles: "Data Engineer" });
+    await save(get, act, "jordan-patel", { titles: "Data Engineer\nML Engineer", location: "York" });
+    const { body } = await get("/admin/profile?u=jordan-patel");
     expect(body).toContain(">Data Engineer\nML Engineer</textarea>");
     expect(body).toContain('value="York"');
   });
@@ -501,9 +515,9 @@ describe("daily report and Send jobs now", () => {
     expect(body).toContain("When HermitShell sends their report (Europe/London). Each recruit&#39;s report is its own scheduled job.");
     expect(body).not.toContain("Hermes ");
     await save(get, act, "sam-lee", { report_time: "06:45", report_days: "daily" });
-    await save(get, act, "owner", { report_days: "weekdays" });
+    await save(get, act, "jordan-patel", { report_days: "weekdays" });
     expect(valuesWith(env, "queue:").map((i) => [i.u, i.report, i.details, i.job])).toEqual([
-      ["sam-lee", { time: "06:45", days: "daily" }, undefined, undefined], ["owner", { days: "weekdays" }, undefined, undefined]]);
+      ["sam-lee", { time: "06:45", days: "daily" }, undefined, undefined], ["jordan-patel", { days: "weekdays" }, undefined, undefined]]);
     expect((await get("/admin/profile?u=sam-lee")).body).toContain('name="report_time" type="time" value="06:45"');
   });
 
@@ -524,9 +538,9 @@ describe("daily report and Send jobs now", () => {
     expect((await pending.get("/admin")).body).toContain("Daily at 07:00 (moving)");
     expect((await pending.get("/admin/profile?u=sam-lee")).body).toContain("HermitShell moves the report to this time when it next checks in");
     const outside = await setup({ ...scheduled(), scheduler: false });
-    expect((await outside.get("/admin/profile?u=owner")).body).toContain("HermitShell&#39;s scheduler isn&#39;t set up");
+    expect((await outside.get("/admin/profile?u=jordan-patel")).body).toContain("HermitShell&#39;s scheduler isn&#39;t set up");
     const older = await setup({ ...scheduled(), scheduler: undefined, hermes_jobs: false });
-    expect((await older.get("/admin/profile?u=owner")).body).toContain("HermitShell&#39;s scheduler isn&#39;t set up");
+    expect((await older.get("/admin/profile?u=jordan-patel")).body).toContain("HermitShell&#39;s scheduler isn&#39;t set up");
   });
 
   it("queues Send jobs now for one profile, from the dashboard or its page", async () => {
@@ -545,7 +559,7 @@ describe("daily report and Send jobs now", () => {
     const page = (await get("/admin/profile?u=sam-lee&done=sending")).body;
     expect(page).toContain('src="/admin/profile/status?u=sam-lee&amp;n=1"');
     expect((await get("/admin/profile/status?u=sam-lee&n=1")).body).toContain("Starting the scan&hellip;");
-    expect((await get("/admin/profile?u=owner")).body).toContain("Upload a CV first");
+    expect((await get("/admin/profile?u=jordan-patel")).body).toContain("Upload a CV first");
     expect((await act({ action: "send_now", u: "../owner" })).status).toBe(400);
   });
 
@@ -580,7 +594,7 @@ describe("save status box", () => {
     expect(waiting.body).toContain("Waiting for HermitShell to apply it");
     expect(waiting.body).toContain('<body class="wait">');
     expect(waiting.body).toContain('<meta http-equiv="refresh" content="5;url=/admin/profile/status?u=sam-lee&amp;n=2">');
-    expect((await get("/admin/profile/status?u=owner")).body).toContain("Up to date");
+    expect((await get("/admin/profile/status?u=jordan-patel")).body).toContain("Up to date");
     const ids = keysWith(env, "queue:");
     await worker.fetch(new Request(`${BASE}/api/queue/ack`, { method: "POST", headers: API_HEADERS, body: JSON.stringify({ ids }) }), env);
     const applied = await get("/admin/profile/status?u=sam-lee&n=3");
@@ -608,16 +622,16 @@ describe("save status box", () => {
 
   it("says a CV takes longer", async () => {
     const { get, upload } = await setup();
-    await upload({ u: "owner", cv_text: CV_TEXT });
-    expect((await get("/admin/profile/status?u=owner&n=1")).body).toContain("reading the new CV");
+    await upload({ u: "jordan-patel", cv_text: CV_TEXT });
+    expect((await get("/admin/profile/status?u=jordan-patel&n=1")).body).toContain("reading the new CV");
   });
 
   it("can only be framed by the dashboard itself", async () => {
     const { get } = await setup();
-    const { res } = await get("/admin/profile/status?u=owner");
+    const { res } = await get("/admin/profile/status?u=jordan-patel");
     expect(res.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'self'");
     expect(res.headers.get("Cache-Control")).toBe("no-store");
-    const page = await get("/admin/profile?u=owner");
+    const page = await get("/admin/profile?u=jordan-patel");
     expect(page.res.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
     expect(page.res.headers.get("Content-Security-Policy")).toContain("frame-src 'self'");
     expect((await get("/admin/profile/status?u=../x")).res.status).toBe(404);
@@ -628,15 +642,15 @@ describe("CV upload", () => {
   it("stores the file like a sign-up and queues a rebuild", async () => {
     const { env, upload } = await setup();
     const pdf = new File([new TextEncoder().encode("%PDF-1.4 cv")], "Alex Morgan CV.pdf", { type: "application/pdf" });
-    const res = await upload({ u: "owner", roles: "Data engineering" }, pdf);
-    expect(res.headers.get("Location")).toBe("/admin/profile?u=owner&done=cvqueued");
+    const res = await upload({ u: "jordan-patel", roles: "Data engineering" }, pdf);
+    expect(res.headers.get("Location")).toBe("/admin/profile?u=jordan-patel&done=cvqueued");
     const [item] = valuesWith(env, "queue:");
-    expect(item).toMatchObject({ type: "admin", action: "cv", u: "owner", roles: "Data engineering", cv: { kind: "pdf", size: 11, sealed: true } });
+    expect(item).toMatchObject({ type: "admin", action: "cv", u: "jordan-patel", roles: "Data engineering", cv: { kind: "pdf", size: 11, sealed: true } });
     const stored = new Uint8Array(env.FEEDBACK.store.get(item.cv.key));
     expect(new TextDecoder().decode(stored)).not.toContain("%PDF");
     expect(new TextDecoder().decode(await KEYS.openBytes(stored, item.cv.key))).toBe("%PDF-1.4 cv");
     await expect(KEYS.openBytes(stored, "cvfile:another")).rejects.toThrow();
-    expect(valuesWith(env, "history:owner:")).toMatchObject([[{ k: "cv", t: "Uploaded a new CV (Alex Morgan CV.pdf)", by: "Alex Morgan" }]]);
+    expect(valuesWith(env, "history:jordan-patel:")).toMatchObject([[{ k: "cv", t: "Uploaded a new CV (Alex Morgan CV.pdf)", by: "Alex Morgan" }]]);
   });
 
   it("accepts pasted text and refuses too little, the wrong type or too much", async () => {
@@ -657,7 +671,7 @@ describe("CV upload", () => {
     const { env, cookie } = await setup();
     const form = new FormData();
     form.append("csrf", "0".repeat(32));
-    form.append("u", "owner");
+    form.append("u", "jordan-patel");
     form.append("cv_text", CV_TEXT);
     const res = await worker.fetch(new Request(`${BASE}/admin/cv`, { method: "POST", body: form, headers: { Cookie: cookie } }), env);
     expect(res.status).toBe(403);

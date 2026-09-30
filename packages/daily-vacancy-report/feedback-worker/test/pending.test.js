@@ -5,7 +5,7 @@ import { BASE, testEnv } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const API = { Authorization: "Bearer api-token" };
-const OWNER = { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, has_cv: true };
+const OWNER = { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, recruiter: "", has_cv: false, recruit: "" };
 const SIGNUP = { type: "signup", invite: "abc", name: "Riley Chen", email: "Riley.Chen@example.com", location: "Manchester",
   roles: "Data analyst or BI developer, hybrid", cv: "cvfile:1", phone: "07700 900456" };
 
@@ -35,7 +35,8 @@ describe("pending sign-ups", () => {
     expect(row).not.toContain("cvfile");
     expect(row).not.toContain(">Send jobs<");
     expect(body).not.toContain("Sign-up from Riley Chen");
-    expect(body).toContain('<span class="count">2 recruits</span>');
+    expect(body).toContain('<span class="count">1 recruit</span>');
+    expect(body).not.toContain("/admin/profile?u=owner");
     expect(body).not.toContain('id="key-"');
   });
 

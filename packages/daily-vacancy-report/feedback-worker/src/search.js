@@ -18,7 +18,7 @@ const words = (q) => q.toLowerCase().split(" ").filter(Boolean);
 // `recruiter` is the recruit's recruiter ({ name, username }), if they have one.
 export function matchesProfile(p, q, recruiter = null) {
   if (!q) return true;
-  const text = [p.name, p.email, p.id, p.status, p.owner ? "owner" : "", p.details?.location,
+  const text = [p.name, p.email, p.id, p.status, p.details?.location,
     p.scanning ? "scanning" : "", p.has_cv === false ? "no cv" : "", recruiter?.name, recruiter?.username]
     .map((v) => String(v || "")).join(" ").toLowerCase();
   return words(q).every((word) => text.includes(word));

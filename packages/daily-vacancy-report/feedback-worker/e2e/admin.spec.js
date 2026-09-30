@@ -11,7 +11,8 @@ test("a wrong password is refused and the right one opens the recruits", async (
   await signIn(page);
   await expect(page.getByRole("heading", { name: "Recruits" })).toBeVisible();
   const table = page.locator("table.recruits");
-  for (const name of ["Alex Morgan", "Sam Lee", "Jordan Patel"]) await expect(table.getByText(name, { exact: true })).toBeVisible();
+  for (const name of ["Drew Harper", "Sam Lee", "Jordan Patel"]) await expect(table.getByText(name, { exact: true })).toBeVisible();
+  await expect(table.getByText("Alex Morgan", { exact: true })).toHaveCount(0);
   await expect(page.locator("nav.tabs a")).toHaveText(["Recruits", "Users and roles", "Global settings"]);
 });
 

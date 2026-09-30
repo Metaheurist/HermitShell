@@ -81,6 +81,30 @@ export async function recordReported(env, before, after) {
   }
 }
 
+// The main admin is staff, not a recruit: when HermitShell first reports that it moved their own job search to a
+// recruit (the admin row's `recruit`), the history kept for the admin moves with it, month by month.
+export async function moveOwnerHistory(env, before, after) {
+  const ownerOf = (s) => (Array.isArray(s?.profiles) ? s.profiles : []).find((p) => p?.owner) || null;
+  const owner = ownerOf(after);
+  const to = owner?.recruit;
+  if (typeof to !== "string" || !PROFILE_RE.test(to) || to === owner.id || ownerOf(before)?.recruit === to
+    || !PROFILE_RE.test(owner.id || "")) return 0;
+  const from = historyPrefix(owner.id);
+  const { keys } = await env.FEEDBACK.list({ prefix: from, limit: 1000 });
+  let moved = 0;
+  for (const { name } of keys) {
+    const month = name.slice(from.length);
+    if (!MONTH_RE.test(month)) continue;
+    const [mine, theirs] = await Promise.all([env.FEEDBACK.get(name, "json"), env.FEEDBACK.get(`${historyPrefix(to)}${month}`, "json")]);
+    const merged = [...(Array.isArray(mine) ? mine : []), ...(Array.isArray(theirs) ? theirs : [])].filter(validEntry)
+      .sort((a, b) => Number(a.at) - Number(b.at)).slice(-MAX_MONTH);
+    await env.FEEDBACK.put(`${historyPrefix(to)}${month}`, JSON.stringify(merged));
+    await env.FEEDBACK.delete(name);
+    moved += 1;
+  }
+  return moved;
+}
+
 function validEntry(e) {
   return e && typeof e === "object" && Number.isFinite(Number(e.at)) && Number(e.at) > 0 && Object.hasOwn(KINDS, e.k)
     && typeof e.t === "string" && e.t;
@@ -155,8 +179,8 @@ export async function historyPage(env, status, pid, monthParam) {
   const oldest = !all.length || month === all.at(-1);
   const start = oldest && p.created ? `<p class="hstart">Joined HermitShell on ${esc(when(p.created, tz).slice(0, 10))}.</p>` : "";
   const timeline = days.map((d) => `<div class="hday">${esc(dayName(d.date))}</div><ol class="htime">${d.rows.map((e) => entryRow(e, tz)).join("")}</ol>`).join("");
-  const intro = `<p class="muted">Everything done to or for ${p.owner ? "your profile" : "this recruit"}: changes and requests from the dashboard, answers from ${p.owner ? "your" : "their"} email buttons, and the reports HermitShell ran. Kept until ${p.owner ? "the profile is removed" : "they unsubscribe or are deleted"}; letters and CVs are only kept for a short time.</p>`;
-  return page(p.owner ? "Your profile" : p.name, `<style>${HISTORY_STYLE}</style>${profileTabs(pid, "history")}${intro}${picker}
+  const intro = `<p class="muted">Everything done to or for this recruit: changes and requests from the dashboard, answers from their email buttons, and the reports HermitShell ran. Kept until they unsubscribe or are deleted; letters and CVs are only kept for a short time.</p>`;
+  return page(p.name, `<style>${HISTORY_STYLE}</style>${profileTabs(pid, "history")}${intro}${picker}
 ${timeline || '<p class="muted">Nothing recorded yet. Changes, requests, answers and reports show here from now on.</p>'}${start}`,
   { wide: true, before: BACK_TO_RECRUITS });
 }

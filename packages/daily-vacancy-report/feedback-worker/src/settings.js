@@ -65,7 +65,6 @@ export function ownerOf(status) {
 }
 
 export function checklist(status) {
-  const owner = ownerOf(status);
   const email = status.email || {};
   const keys = status.keys || {};
   const items = [
@@ -77,10 +76,8 @@ export function checklist(status) {
       `<a href="${SETTINGS_URL}#email">Send a test email</a> to check the settings.`],
     [Object.values(keys).some((k) => k && k.source && k.source !== "none"), "Web search key set",
       `<a href="${SETTINGS_URL}#keys">Add a web search key</a> in Global settings (Firecrawl, Tavily or Scrapfly; all have free plans).`],
-    [owner?.has_cv, "Your CV uploaded",
-      owner ? `<a href="/admin/profile?u=owner#cv">Upload your CV</a> so jobs can be rated against it.` : "Upload your CV once HermitShell has connected."],
-    [(owner?.job?.titles || []).length > 0, "Job search set",
-      owner ? `<a href="/admin/profile?u=owner#job">Choose the job titles and location</a> to search for.` : "Set the job search once HermitShell has connected."],
+    [(status.profiles || []).some((p) => !p.owner), "First recruit joined",
+      '<a href="#invite">Create an invite link</a> below and send it to someone looking for work. You and your recruiters manage recruits; you have no job search of your own here.'],
   ];
   const todo = items.filter(([ok]) => !ok);
   if (!todo.length) return '<p class="muted">Setup complete.</p>';
@@ -322,7 +319,7 @@ function reportHint(p, status) {
   const zone = status.timezone ? ` (${status.timezone})` : "";
   if (p.report?.pending) return `HermitShell moves the report to this time when it next checks in${zone}.`;
   if ((status.scheduler ?? status.hermes_jobs) === false) return `Saved, but HermitShell's scheduler isn't set up, so the time applies once it is${zone}.`;
-  return `When HermitShell sends ${p.owner ? "your" : "their"} report${zone}. Each recruit's report is its own scheduled job.`;
+  return `When HermitShell sends their report${zone}. Each recruit's report is its own scheduled job.`;
 }
 
 // A report now, rather than at the daily time; the email follows when the scan finishes.
@@ -334,7 +331,7 @@ export function sendButton(p, csrf, fields = {}, label = "Send jobs now") {
 export function sendSection(p, csrf, tz) {
   const state = p.scanning ? `Scanning now (started ${esc(when(p.scanning, tz))}); the email follows when it finishes.`
     : p.has_cv === false ? "Upload a CV first: jobs are rated against it."
-      : `Runs ${p.owner ? "your" : "their"} report straight away instead of waiting for the daily time, and emails it even if nothing new turned up. A scan usually takes 10 to 20 minutes.`;
+      : `Runs their report straight away instead of waiting for the daily time, and emails it even if nothing new turned up. A scan usually takes 10 to 20 minutes.`;
   return `<h2 id="send">Send jobs now</h2><p class="muted">${state}</p>${sendButton(p, csrf, { back: "profile" })}`;
 }
 
@@ -347,8 +344,8 @@ export function profilePage(status, pid, csrf,
   const latest = latestValues(p, queue);
   const v = draft || latest;
   const message = error ? note(error, "bad") : done ? note(done) : "";
-  return page(p.owner ? "Your profile" : p.name, `<style>${LINK_STYLE}</style>${profileTabs(pid, "manage")}
-<p><a class="statlink" href="${STATS_URL}?u=${esc(pid)}">${icon("chart")}${p.owner ? "Your stats" : "View stats"}</a></p>
+  return page(p.name, `<style>${LINK_STYLE}</style>${profileTabs(pid, "manage")}
+<p><a class="statlink" href="${STATS_URL}?u=${esc(pid)}">${icon("chart")}View stats</a></p>
 ${message}<iframe class="saving" src="${STATUS_URL}?u=${esc(pid)}${saving ? "&amp;n=1" : ""}" title="Save status"></iframe>
 ${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
 <form method="post" action="/admin/action">${hidden({ csrf, action: "profile", u: pid, base: JSON.stringify(base || latest) })}

@@ -12,8 +12,9 @@ const PDF = new TextEncoder().encode("%PDF-1.4\nA letter for Northwind\n%%EOF");
 const STATUS = {
   timezone: "Europe/London",
   profiles: [
-    { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true },
     { id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active" },
+    { id: "riley-chen", name: "Riley Chen", email: "riley@example.com", status: "active" },
+    { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, recruiter: "", has_cv: false, recruit: "riley-chen" },
   ],
 };
 const JOB = "https://jobs.example.com/1";
@@ -116,7 +117,7 @@ describe("asking for a letter or CV from the dashboard", () => {
     expect(page).toContain("HermitShell is making it.");
   });
 
-  it("asks for a new one with Regenerate, makes one request for a double press, and uses the owner's own answers", async () => {
+  it("asks for a new one with Regenerate, makes one request for a double press, and never for the admin", async () => {
     const { env, ask } = await setup();
     await ask({ fresh: "1" });
     await ask({ fresh: "1" });
@@ -124,10 +125,9 @@ describe("asking for a letter or CV from the dashboard", () => {
     expect(events).toHaveLength(1);
     expect(events[0].fresh).toBe(1);
     expect(events[0].id).toMatch(/:cn\d+$/);
-    await ask({ u: "owner", k: "tailored_cv" });
-    const [mine] = valuesWith(env, "event:_:");
-    expect(mine).toMatchObject({ a: "tailored_cv", via: "dashboard" });
-    expect(mine.u).toBeUndefined();
+    expect((await ask({ u: "owner", k: "tailored_cv" })).headers.get("Location")).toContain("done=docbad");
+    expect(keysWith(env, "event:_:")).toEqual([]);
+    expect(keysWith(env, "event:owner:")).toEqual([]);
   });
 
   it("emails the kept one with its Email button, and says so on the job and in the history", async () => {
@@ -206,10 +206,12 @@ describe("the email button when one was made", () => {
     expect(events[1].fresh).toBe(1);
   });
 
-  it("uses the owner's documents for the owner's links, which carry no profile", async () => {
+  it("uses the documents of the recruit the admin's job search moved to for old links, which carry no profile", async () => {
     const { env } = await setup();
     await upload(env, { u: "owner" });
     const q = await link("cover_letter", JOB, "Data Engineer");
+    expect(await (await worker.fetch(new Request(`${BASE}/f?${q}`), env)).text()).not.toContain("is ready");
+    await upload(env, { u: "riley-chen" });
     expect(await (await worker.fetch(new Request(`${BASE}/f?${q}`), env)).text()).toContain("Your cover letter is ready");
     expect((await worker.fetch(new Request(`${BASE}/f/doc?${q}`), env)).status).toBe(200);
   });
@@ -258,12 +260,14 @@ describe("emailing a job to its profile from the list of jobs sent", () => {
     expect(page).toMatch(/class="doc ready"[^>]*>[\s\S]*?Emailed to Sam<\/b><small>just now<\/small>[\s\S]*?>Send again<\/button>/);
   });
 
-  it("addresses the owner's own list to you", async () => {
+  it("lists jobs sent only for recruits, never for the admin, and addresses each by first name", async () => {
     const { env, get } = await setup();
     await sentWith(env, "owner");
-    const page = await (await get("/admin/sent?u=owner&r=7")).text();
-    expect(page).toContain("Email to you</b>");
-    expect(page.slice(page.indexOf("<main"))).not.toContain("Alex");
+    await sentWith(env, "riley-chen");
+    expect((await get("/admin/sent?u=owner&r=7")).status).toBe(404);
+    const page = await (await get("/admin/sent?u=riley-chen&r=7")).text();
+    expect(page).toContain("Email to Riley</b>");
+    expect(page).not.toContain("Email to you");
   });
 
   it("only takes the mark from HermitShell's token, for a good profile and job", async () => {

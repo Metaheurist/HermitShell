@@ -121,6 +121,7 @@ export async function demoEnv(env) {
 
 // ------------------------------------------------------------------------- the made-up desk
 
+const ADMIN_NAME = "Alex Morgan";
 const RECRUITERS = [
   { id: "casey", name: "Casey Quinn", roles: ["recruiter"] },
   { id: "drew", name: "Drew Harper", roles: ["admin", "recruiter"] },
@@ -128,10 +129,10 @@ const RECRUITERS = [
 
 // Each recruit: who they are, their search, and the jobs HermitShell found them.
 const PEOPLE = [
-  { id: "owner", name: "Alex Morgan", email: "alex.morgan@example.com", place: "Belfast", owner: true, age: 75, time: "07:30",
+  { id: "avery-lane", name: "Avery Lane", email: "avery.lane@example.com", place: "Belfast", recruiter: "drew", age: 75, time: "07:30",
     titles: ["Automation Engineer", "AI Engineer", "Python Developer"], employers: ["Northwind Traders", "Contoso", "Fabrikam", "Proseware", "Litware"],
     places: ["Belfast", "Lisburn", "Remote (UK)"], salary: 55000, skills: ["Python", "Power Automate", "SQL", "Azure", "REST APIs", "Docker"],
-    gaps: ["Kubernetes", "Terraform"], scale: 1 },
+    gaps: ["Kubernetes", "Terraform"], scale: 1, added: ["Power Automate"] },
   { id: "sam-lee", name: "Sam Lee", email: "sam.lee@example.com", place: "Lisburn", recruiter: "casey", age: 40, time: "08:00",
     titles: ["Data Analyst", "BI Developer"], employers: ["Contoso", "Litware", "Northwind Traders", "Fabrikam", "Proseware"],
     places: ["Belfast", "Lisburn", "Banbridge"], salary: 38000, skills: ["SQL", "Power BI", "Excel", "DAX", "Python"], gaps: ["Azure Synapse", "dbt"],
@@ -230,7 +231,7 @@ function statsFor(p, end, n) {
     .map(([k, v]) => [k, Math.max(1, Math.round(v * p.scale))]));
   return { v: 1, today: isoDay(end), since: isoDay(end - (p.age - 1) * DAY), days,
     ranges: { 7: range(7), 30: range(30), 90: range(90), 365: range(365) }, pipeline, sent,
-    ...(p.owner ? { skills: ["Power Automate"] } : {}), updated: Date.now() };
+    ...(p.added ? { skills: p.added } : {}), updated: Date.now() };
 }
 
 function profileOf(p, now) {
@@ -239,10 +240,10 @@ function profileOf(p, now) {
     remote_anywhere: p.places.some((x) => x.startsWith("Remote")), level: "mid", types: ["Permanent", "Contract"], modes: ["Hybrid", "Remote"],
     min_salary: String(Math.round(p.salary * 0.85 / 1000) * 1000), currency: "GBP", hide_agency: true };
   return {
-    id: p.id, name: p.name, email: p.email, status: p.status || "active", ...(p.owner ? { owner: true } : { recruiter: p.recruiter }),
+    id: p.id, name: p.name, email: p.email, status: p.status || "active", recruiter: p.recruiter,
     has_cv: !p.noCv, created: now - p.age * DAY, last_run: p.age > 1 ? now - (p.status === "paused" ? 6 * DAY : 4 * HOUR) : null,
     cv_updated: p.noCv ? null : now - Math.min(p.age, 20) * DAY, ...(p.scanning ? { scanning: now - 3 * 60000 } : {}),
-    details: { name: p.name, email: p.email, phone: p.owner ? "07700 900123" : "", location: p.place }, job,
+    details: { name: p.name, email: p.email, phone: p.id === "avery-lane" ? "07700 900123" : "", location: p.place }, job,
     report: { time: p.time, days: p.id === "sam-lee" ? "weekdays" : "daily", schedule: `${minutes} ${p.time.slice(0, 2)} * * ${p.id === "sam-lee" ? "1-5" : "*"}`,
       job: true, pending: false },
   };
@@ -251,7 +252,9 @@ function profileOf(p, now) {
 function statusOf(now) {
   return {
     protocol: PROTOCOL, seal: { alg: SEAL_ALG, kid: "", spki: DEMO_SPKI },
-    profiles: PEOPLE.map((p) => profileOf(p, now)),
+    // The main admin is staff: HermitShell reports them only so the dashboard can name them.
+    profiles: [{ id: "owner", name: ADMIN_NAME, email: "alex.morgan@example.com", status: "active", owner: true, recruiter: "", has_cv: false,
+      recruit: "", created: now - 90 * DAY }, ...PEOPLE.map((p) => profileOf(p, now))],
     scheduler: true, timezone: TZ, updated: now - 2 * 60000, problems: [],
     email: { host: "smtp.example.com", port: "587", user: "reports@example.com", from: "", password_set: true, source: "dashboard",
       last_test: { at: now - 2 * DAY, ok: true, to: "alex.morgan@example.com", error: "" } },
@@ -282,7 +285,7 @@ function statusOf(now) {
     tasks: [
       { id: "report:jamie-walsh", kind: "report", u: "jamie-walsh", state: "running", at: now - 3 * 60000, trigger: "schedule",
         stage: "Rating jobs", done: 17, total: 26, expected: 12 * 60000 },
-      { id: "letter:owner:event:_:demo0a1b2c3d4e5f60718293a4b5c6d7e8f9:0a1b2c3d4e5f", kind: "cover_letter", u: "owner", state: "running",
+      { id: "letter:avery-lane:event:avery-lane:demo0a1b2c3d4e5f60718293a4b5c6d7e8f9:0a1b2c3d4e5f", kind: "cover_letter", u: "avery-lane", state: "running",
         at: now - 70000, trigger: "email", title: "AI Engineer", employer: "Contoso", retry: false },
     ],
   };
@@ -325,7 +328,7 @@ async function seed(env) {
   }
 
   // Each recruit's history, in the entries record() writes, one KV value per month.
-  const names = Object.fromEntries([["admin", "Alex Morgan"], ...RECRUITERS.map((r) => [r.id, r.name])]);
+  const names = Object.fromEntries([["admin", ADMIN_NAME], ...RECRUITERS.map((r) => [r.id, r.name])]);
   const months = new Map();
   const log = (pid, k, t, at, { by = "", via = "dashboard" } = {}) => {
     const key = historyKey(pid, at);
@@ -333,9 +336,9 @@ async function seed(env) {
   };
   for (const p of PEOPLE) {
     const created = now - p.age * DAY;
-    if (!p.owner) log(p.id, "assign", `Assigned to ${names[p.recruiter]}`, created + HOUR, { by: "Alex Morgan" });
+    log(p.id, "assign", `Assigned to ${names[p.recruiter]}`, created + HOUR, { by: ADMIN_NAME });
     if (!p.noCv) log(p.id, "cv_read", "Read the new CV and rebuilt the skills jobs are rated against", created + 2 * HOUR, { via: "hermitshell" });
-    if (p.age > 8) log(p.id, "job", "Changed Job titles and Towns", now - 8 * DAY - 3 * HOUR, { by: names[p.recruiter] || "Alex Morgan" });
+    if (p.age > 8) log(p.id, "job", "Changed Job titles and Towns", now - 8 * DAY - 3 * HOUR, { by: names[p.recruiter] || ADMIN_NAME });
     for (let d = Math.min(p.age - 1, 10); d >= 1 && !p.noCv; d--) {
       if (d < pausedFor(p)) break;
       log(p.id, "report", "Job report ran", now - d * DAY - 2 * HOUR, { via: "hermitshell" });
@@ -361,13 +364,13 @@ async function seed(env) {
 
   const first = jobsFor(PEOPLE[0], end)[0];
   const letter = textPdf([
-    "Cover letter (demo)", "", "Alex Morgan, Belfast", "", `Dear Hiring Manager at ${first.employer},`, "",
+    "Cover letter (demo)", "", "Avery Lane, Belfast", "", `Dear Hiring Manager at ${first.employer},`, "",
     `I am writing to apply for the ${first.title} role. Over the last six years I have built Python`,
     "automations, Power Automate flows and Azure-hosted APIs that took hours of manual work out of",
     "busy operations teams, and I would like to bring that experience to yours.", "",
     "This letter is sample output from HermitShell's demo mode: the candidate, the company and the",
-    "role are all made up.", "", "Yours sincerely,", "Alex Morgan",
+    "role are all made up.", "", "Yours sincerely,", "Avery Lane",
   ]);
-  const query = new URLSearchParams({ u: "owner", j: first.key, k: "cover_letter", days: "7", name: `Cover letter - Alex Morgan - ${first.title}` });
+  const query = new URLSearchParams({ u: "avery-lane", j: first.key, k: "cover_letter", days: "7", name: `Cover letter - Avery Lane - ${first.title}` });
   await storeDoc(new Request(`https://demo.invalid/api/doc?${query}`, { method: "POST", body: letter }), env);
 }

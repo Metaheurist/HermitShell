@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { LINK_DAYS, today } from "../src/lib.js";
 import { JOB_TITLE, emailLink, signIn } from "./fixtures.js";
 
-test("an email button asks first, saves once and shows in the history without the note", async ({ page }) => {
+test("an old email button of the admin's asks first, saves once and shows in the history of the recruit it moved to, without the note", async ({ page }) => {
   await page.goto(await emailLink("interested", JOB_TITLE));
   await expect(page.getByText(JOB_TITLE)).toBeVisible();
   await expect(page.getByText("Nothing is saved until you press Confirm.")).toBeVisible();
@@ -18,7 +18,8 @@ test("an email button asks first, saves once and shows in the history without th
   await expect(page.getByRole("heading", { name: "Saved" })).toBeVisible();
 
   await signIn(page);
-  await page.goto("/admin/history?u=owner");
+  expect((await page.goto("/admin/history?u=owner")).status()).toBe(404);
+  await page.goto("/admin/history?u=drew-harper");
   await expect(page.getByText(`Answered Interested: ${JOB_TITLE}`)).toHaveCount(1);
   await expect(page.getByText("from an email button").first()).toBeVisible();
   await expect(page.getByText("Hybrid suits me")).toHaveCount(0);

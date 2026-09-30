@@ -8,7 +8,7 @@ const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const API = { Authorization: "Bearer api-token" };
 const CASEY_PASSWORD = "a long enough passphrase";
 const PROFILES = [
-  { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, has_cv: true },
+  { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, recruiter: "casey", has_cv: false, recruit: "" },
   { id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active", has_cv: true, recruiter: "casey" },
   { id: "jordan-patel", name: "Jordan Patel", email: "jordan@contoso.example", status: "active", has_cv: true },
 ];
@@ -281,7 +281,8 @@ describe("recruiters' pools", () => {
     const board = await admin.text("/admin");
     expect(board).toContain("<th>Recruiter</th>");
     expect(board).toContain('<select name="recruiter" aria-label="Recruiter for Jordan Patel">');
-    expect(board).toContain('<span class="muted">The main admin</span>');
+    expect(board).not.toContain("Alex Morgan</a>");
+    expect(board).not.toContain("/admin/profile?u=owner");
     expect(board).toContain('<button class="iconbtn" title="Pause reports" aria-label="Pause reports for Jordan Patel">');
     expect(board).toContain('<span class="avatar rec sm none" aria-hidden="true">?</span><select name="recruiter" aria-label="Recruiter for Jordan Patel">');
     expect(board).toContain('<span class="avatar rec sm" aria-hidden="true">CQ</span><select name="recruiter" aria-label="Recruiter for Sam Lee">');
@@ -302,7 +303,7 @@ describe("recruiters' pools", () => {
     expect(await admin.text("/admin/tasks")).toContain("Assign to a recruiter");
   });
 
-  it("works out a recruit's recruiter from the queue first, and never lets a recruiter see the owner", () => {
+  it("works out a recruit's recruiter from the queue first, and never lets anyone see the admin as a recruit", () => {
     const p = { id: "sam-lee", recruiter: "casey" };
     const queue = [{ id: "queue:2", type: "admin", action: "assign", u: "sam-lee", recruiter: "riley" },
       { id: "queue:1", type: "admin", action: "assign", u: "sam-lee", recruiter: "" }];
@@ -312,7 +313,7 @@ describe("recruiters' pools", () => {
     expect(canSee({ id: "casey" }, p)).toBe(true);
     expect(canSee({ id: "riley" }, p)).toBe(false);
     expect(canSee({ id: "casey" }, { id: "owner", owner: true, recruiter: "casey" })).toBe(false);
-    expect(canSee({ id: "x", admin: true }, { id: "owner", owner: true })).toBe(true);
+    expect(canSee({ id: "x", admin: true }, { id: "owner", owner: true })).toBe(false);
   });
 });
 
@@ -495,24 +496,21 @@ describe("skills added from the list of jobs sent", () => {
     expect(await admin.text("/admin/sent?u=sam-lee&r=7")).toMatch(/<span class="added"[^>]*><svg [^>]*>.*?<\/svg>dbt<\/span>/);
   });
 
-  it("stores the owner's skill as the owner's answer, and turns away a skill with nothing left once cleaned", async () => {
+  it("gives the admin no skills of their own, and turns away a skill with nothing left once cleaned", async () => {
     const { env, admin } = await setup();
-    expect(await admin.where("/admin/skill", { u: "owner", j: JOB, s: "Power BI" })).toMatch(/done=skill#job-/);
-    const [event] = valuesWith(env, "event:_:dash-");
-    expect(event).toMatchObject({ a: "add_skill", skills: ["Power BI"] });
-    expect(event.u).toBeUndefined();
-    expect(env.FEEDBACK.store.has("skilladd:owner")).toBe(true);
+    expect(await admin.where("/admin/skill", { u: "owner", j: JOB, s: "Power BI" })).toBe("/admin/sent?u=owner&r=7&done=skillbad");
+    expect(env.FEEDBACK.store.has("skilladd:owner")).toBe(false);
     for (const fields of [{ s: "<>;" }, { s: "" }, { s: "x".repeat(121) }, { j: "" }, { j: "a\nb" }, { j: "x".repeat(301) }]) {
-      expect(await admin.where("/admin/skill", { u: "owner", j: JOB, s: "dbt", ...fields })).toBe("/admin/sent?u=owner&r=7&done=skillbad");
+      expect(await admin.where("/admin/skill", { u: "jordan-patel", j: JOB, s: "dbt", ...fields })).toBe("/admin/sent?u=jordan-patel&r=7&done=skillbad");
     }
-    expect(keysWith(env, "event:")).toHaveLength(1);
+    expect(keysWith(env, "event:")).toHaveLength(0);
   });
 });
 
 describe("the signed-in box", () => {
   it("shows who is signed in, Change password and Sign out at the top right of every signed-in page", async () => {
     const { admin, casey } = await setup();
-    for (const path of ["/admin", "/admin/users", "/admin/settings", "/admin/profile?u=owner", "/admin/stats?u=owner", "/admin/sent?u=owner&r=7"]) {
+    for (const path of ["/admin", "/admin/users", "/admin/settings", "/admin/profile?u=jordan-patel", "/admin/stats?u=jordan-patel", "/admin/sent?u=jordan-patel&r=7"]) {
       const body = await admin.text(path);
       expect(body, path).toContain('<div class="me" role="region" aria-label="Signed in as Alex Morgan (admin)">');
       expect(body, path).toContain('<span class="avatar" aria-hidden="true">AM</span><span class="mename"><b>Alex Morgan</b><small>Admin</small></span>');
@@ -527,7 +525,7 @@ describe("the signed-in box", () => {
   it("stays out of pages shown inside another page, the sign-in page and non-HTML answers", async () => {
     const { env, admin } = await setup();
     expect(await admin.text("/admin/tasks")).not.toContain('class="me"');
-    const saving = await admin.get("/admin/profile/status?u=owner");
+    const saving = await admin.get("/admin/profile/status?u=jordan-patel");
     expect(saving.headers.get("Content-Type")).toContain("text/html");
     expect(await saving.text()).not.toContain('class="me"');
     const anon = await worker.fetch(new Request(`${BASE}/admin`), env);
