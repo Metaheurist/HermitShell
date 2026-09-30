@@ -706,16 +706,22 @@ def esc(text) -> str:
     return html.escape(str(text or ""), quote=True)
 
 
-def meter(label: str, value_text: str, pct: int, colour: str) -> str:
-    pct = max(2, min(100, pct))
-    return (
-        f'<td width="33%" valign="top" style="padding:0 8px 0 0">'
-        f'<div style="font-size:11px;color:{C_MUTED};text-transform:uppercase;letter-spacing:.06em">{label}</div>'
-        f'<div style="font-size:16px;font-weight:700;color:{C_INK};margin:2px 0 6px">{value_text}</div>'
-        f'<table width="100%" cellpadding="0" cellspacing="0" style="background:#e2e8f0;border-radius:99px">'
-        f'<tr><td width="{pct}%" style="background:{colour};height:6px;border-radius:99px;font-size:0;line-height:0">&nbsp;</td>'
-        f'<td style="font-size:0;line-height:0">&nbsp;</td></tr></table></td>'
-    )
+def meters(items: list[tuple[str, str, int, str]]) -> str:
+    """(label, value, percent, colour) as columns of label, value and bar. Labels sit in their own row, aligned to
+    the bottom, so the values line up when a label wraps on a phone; the bars are divs because Gmail's apps shrink
+    an empty table cell to a sliver whatever its width says."""
+    cell = 'valign="{}" width="33%" style="padding:0 10px 0 0{}"'
+    labels = "".join(f'<td {cell.format("bottom", "")}><div class="m-label" style="font-size:11px;line-height:14px;'
+                     f'color:{C_MUTED};text-transform:uppercase;letter-spacing:.06em">{label}</div></td>'
+                     for label, _, _, _ in items)
+    values = "".join(f'<td {cell.format("top", f";font-size:16px;line-height:20px;font-weight:700;color:{C_INK}")}>'
+                     f'<div style="margin:2px 0 6px">{value}</div></td>' for _, value, _, _ in items)
+    bars = "".join(f'<td {cell.format("top", "")}><div style="background:#e2e8f0;border-radius:99px;height:6px;'
+                   f'font-size:0;line-height:0"><div style="width:{max(2, min(100, pct))}%;height:6px;background:{colour};'
+                   f'border-radius:99px;font-size:0;line-height:0">&nbsp;</div></div></td>'
+                   for _, _, pct, colour in items)
+    return (f'<table width="100%" cellpadding="0" cellspacing="0" style="margin:14px 0 16px;table-layout:fixed">'
+            f'<tr>{labels}</tr><tr>{values}</tr><tr>{bars}</tr></table>')
 
 
 def chips(items: list[str], fg: str, bg: str, border: str) -> str:
@@ -739,9 +745,9 @@ def company_avatar(name: str, cid: str) -> str:
                 f'style="display:block;width:48px;height:48px;border:0;border-radius:24px">')
     initials = "".join(w[0] for w in re.findall(r"[A-Za-z0-9]+", name)[:2]).upper() or "?"
     colour = AVATAR_COLOURS[sum(map(ord, name)) % len(AVATAR_COLOURS)]
-    return (f'<table cellpadding="0" cellspacing="0"><tr><td width="48" height="48" align="center" valign="middle" '
-            f'style="width:48px;height:48px;border-radius:24px;background:{colour};color:#ffffff;font-size:17px;'
-            f'font-weight:800;text-align:center">{esc(initials)}</td></tr></table>')
+    # A fixed-size block, not a table cell: Gmail's apps squeeze cells to their text on a narrow screen.
+    return (f'<div style="width:48px;height:48px;min-width:48px;line-height:48px;border-radius:24px;'
+            f'background:{colour};color:#ffffff;font-size:17px;font-weight:800;text-align:center">{esc(initials)}</div>')
 
 
 def site_link(url: str) -> str:
@@ -812,15 +818,18 @@ def salary_block(job: dict) -> str:
         return ""
     headline, period, yearly = salary_figure(job["salary"], job.get("salary_range"))
     period_html = f' <span style="font-size:12px;font-weight:600;color:#047857">{period}</span>' if period else ""
-    yearly_html = (f'<td valign="middle" style="padding-left:10px;font-size:12px;color:{C_MUTED}">{yearly}</td>'
+    yearly_html = (f'<td valign="middle" class="m-stack m-below" style="padding-left:10px;font-size:12px;'
+                   f'color:{C_MUTED}">{yearly}</td>'
                    if yearly else "")
+    box_class = ' class="m-inline"' if yearly else ""
     return (f'<table cellpadding="0" cellspacing="0" style="margin:0 0 10px"><tr>'
-            f'<td valign="middle" style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;'
+            f'<td valign="middle"{box_class} style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;'
             f'padding:6px 12px 6px 10px"><table cellpadding="0" cellspacing="0"><tr>'
             f'<td valign="middle" width="20" style="padding-right:8px"><img src="cid:icon-salary" width="20" '
             f'height="20" alt="Salary" style="display:block;width:20px;height:20px;border:0"></td>'
-            f'<td valign="middle" style="font-size:17px;font-weight:800;color:#065f46;white-space:nowrap">'
-            f'{esc(headline)}{period_html}</td></tr></table></td>{yearly_html}</tr></table>')
+            f'<td valign="middle" style="font-size:17px;font-weight:800;color:#065f46">'
+            f'<span style="white-space:nowrap">{esc(headline)}</span>{period_html}</td></tr></table></td>{yearly_html}'
+            f'</tr></table>')
 
 
 def gap_tags(gaps: list[str], link: str) -> str:
@@ -862,30 +871,31 @@ def job_card(job: dict, rank: int | None) -> str:
         note += (f'<div style="font-size:11px;color:{C_MUTED};margin-top:6px">Checked twice: a stricter second look '
                  f'scored it {job["second_opinion"]}/10, so the score shown is the average of the two.</div>'
                  if job["second_opinion"] < job["model_fit"] else "")
+    rating = rating_buttons(job.get("actions") or {})
+    rating_cell = f'<td width="78" valign="top" style="width:78px;padding-left:10px">{rating}</td>' if rating else ""
+    # Salary and tags get a row of their own under the title, beside the thumbs, rather than a column between the
+    # logo and the score: on a phone that column was too narrow. On a wide screen they stay in line with the title.
     return f"""
 <table width="100%" cellpadding="0" cellspacing="0" style="background:{C_CARD};border:1px solid #e2e8f0;border-radius:16px;margin:0 0 18px">
-<tr><td style="padding:22px 24px">
+<tr><td class="m-pad" style="padding:22px 24px">
   <table width="100%" cellpadding="0" cellspacing="0"><tr>
-    <td width="62" valign="top" style="padding-top:2px">{company_avatar(shown, logo)}</td>
+    <td width="60" valign="top" style="width:60px;padding-top:2px">{company_avatar(shown, logo)}</td>
     <td valign="top">
       <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:{C_ACCENT};font-weight:700">{f"#{rank} &middot; " if rank else ""}{esc(job['source'])}</div>
-      <a href="{esc(job['url'])}" style="display:block;font-size:19px;font-weight:700;color:{C_INK};text-decoration:none;line-height:1.3;margin:4px 0">{esc(job['title'])}</a>
-      <div style="font-size:13px;color:#475569;margin-bottom:10px">{meta}</div>
-      {salary_block(job)}
-      <div>{pills}</div>
+      <a href="{esc(job['url'])}" class="m-title" style="display:block;font-size:19px;font-weight:700;color:{C_INK};text-decoration:none;line-height:1.3;margin:4px 0">{esc(job['title'])}</a>
+      <div style="font-size:13px;color:#475569">{meta}</div>
     </td>
-    <td width="84" valign="top" align="right">
-      <table cellpadding="0" cellspacing="0"><tr><td align="center" valign="middle" width="68" height="68"
-        style="width:68px;height:68px;border-radius:34px;background:{colour};color:#ffffff;font-size:24px;font-weight:800;text-align:center">
-        {job['fit']}<span style="font-size:12px;font-weight:600;opacity:.85">/10</span></td></tr></table>
-      {rating_buttons(job.get("actions") or {})}
+    <td width="78" valign="top" style="width:78px;padding-left:10px">
+      <div class="m-score" style="width:68px;height:68px;line-height:68px;margin:0 auto;border-radius:34px;background:{colour};color:#ffffff;font-size:24px;font-weight:800;text-align:center">{job['fit']}<span style="font-size:12px;font-weight:600;opacity:.85">/10</span></div>
     </td>
   </tr></table>
-  <table width="100%" cellpadding="0" cellspacing="0" style="margin:14px 0 16px"><tr>
-    {meter("HermitShell fit", f"{job['fit']}/10", job['fit'] * 10, colour)}
-    {meter("Confidence", f"{job['confidence']}%", job['confidence'], "#6366f1")}
-    {meter("CV keyword match", f"{job['coverage']}%", job['coverage'], "#0ea5e9")}
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:10px"><tr>
+    <td valign="top" class="m-flush" style="padding-left:60px">{salary_block(job)}<div>{pills}</div></td>
+    {rating_cell}
   </tr></table>
+  {meters([("HermitShell fit", f"{job['fit']}/10", job['fit'] * 10, colour),
+           ("Confidence", f"{job['confidence']}%", job['confidence'], "#6366f1"),
+           ("CV keyword match", f"{job['coverage']}%", job['coverage'], "#0ea5e9")])}
   <div style="background:#f8fafc;border-left:3px solid {C_ACCENT};border-radius:8px;padding:12px 14px;font-size:14px;color:#334155;line-height:1.5">{esc(job['reasoning'])}</div>
   {about_block(job)}
   <div style="font-size:11px;color:{C_MUTED};text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px">Strongest matches with your CV ({len(job['matched'])} in total)</div>
@@ -967,7 +977,7 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, pr
                followups: str = "", more: list[dict] | None = None) -> str:
     summary_block = (
         f'<table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e0e7ff;border-radius:16px;margin:22px 0 4px">'
-        f'<tr><td style="padding:18px 22px"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:{C_ACCENT};font-weight:700">HermitShell&rsquo;s take</div>'
+        f'<tr><td class="m-pad" style="padding:18px 22px"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:{C_ACCENT};font-weight:700">HermitShell&rsquo;s take</div>'
         f'<div style="font-size:15px;color:#1e293b;line-height:1.6;margin-top:6px">{esc(summary)}</div></td></tr></table>'
     ) if summary else ""
     cv_block = (
@@ -983,7 +993,7 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, pr
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{EMAIL_HEAD}<title>{esc(CFG.title)}</title></head>
 <body class="body" style="margin:0;padding:0;background:{C_BG};font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:{C_BG}"><tr><td align="center" style="padding:24px 12px">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:{C_BG}"><tr><td align="center" class="m-wrap" style="padding:24px 12px">
 <table width="680" cellpadding="0" cellspacing="0" style="max-width:680px;width:100%">
 {email_header(CFG.region or "Job radar", stats['when'], CFG.title, CFG.tagline,
               [(stats['shown'], "Matches"), (stats['strong'], "Strong fits (7+)"),

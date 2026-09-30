@@ -89,7 +89,7 @@ def job_email(key: str, job: dict, now: datetime | None = None) -> tuple[str, st
     body = f"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{EMAIL_HEAD}<title>{js.esc(card['title'])}</title></head>
 <body class="body" style="margin:0;padding:0;background:{js.C_BG};font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:{js.C_BG}"><tr><td align="center" style="padding:24px 12px">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:{js.C_BG}"><tr><td align="center" class="m-wrap" style="padding:24px 12px">
 <table width="680" cellpadding="0" cellspacing="0" style="max-width:680px;width:100%">
 {header}
 <tr><td>

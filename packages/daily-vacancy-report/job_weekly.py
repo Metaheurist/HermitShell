@@ -106,7 +106,7 @@ def rating_buttons(links: dict[str, str]) -> str:
                      f'style="display:inline-block;vertical-align:middle;border:0;outline:none"></a></td>')
     if not cells:
         return ""
-    return (f'<table cellpadding="0" cellspacing="0" width="68" style="margin-top:10px"><tr>{"".join(cells)}</tr>'
+    return (f'<table cellpadding="0" cellspacing="0" width="68"><tr>{"".join(cells)}</tr>'
             f'</table>')
 
 
@@ -174,7 +174,7 @@ def followup_text(items: list[dict]) -> str:
 
 def _card(title: str, body: str) -> str:
     return (f'<table width="100%" cellpadding="0" cellspacing="0" style="background:{C_CARD};border:1px solid #e2e8f0;'
-            f'border-radius:16px;margin:18px 0 0"><tr><td style="padding:18px 22px">'
+            f'border-radius:16px;margin:18px 0 0"><tr><td class="m-pad" style="padding:18px 22px">'
             f'<div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:{C_ACCENT};font-weight:700;'
             f'margin-bottom:8px">{title}</div>{body}</td></tr></table>')
 
@@ -275,7 +275,7 @@ def build_weekly(data: dict, when: str, title: str, eyebrow: str, now: float,
     body = f"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{EMAIL_HEAD}<title>{esc(title)}: weekly roll-up</title></head>
 <body class="body" style="margin:0;padding:0;background:{C_BG};font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:{C_BG}"><tr><td align="center" style="padding:24px 12px">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:{C_BG}"><tr><td align="center" class="m-wrap" style="padding:24px 12px">
 <table width="680" cellpadding="0" cellspacing="0" style="max-width:680px;width:100%">
 {email_header(eyebrow, when, "Your week in jobs", f"{title} weekly roll-up",
               [(s['rated'], "Jobs rated"), (s['emailed'], "Emailed to you"), (s['avg_fit'], "Average fit"),

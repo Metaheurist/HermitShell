@@ -550,7 +550,7 @@ def _email(header: str, blocks: list[str], footer: str = "") -> str:
     return (f'<!doctype html><html><head><meta charset="utf-8">{EMAIL_HEAD}</head>'
             f'<body class="body" style="margin:0;background:#eef1f7;font-family:-apple-system,Segoe UI,Roboto,Helvetica,'
             f'Arial,sans-serif;color:#0f172a"><table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" '
-            f'style="padding:24px 12px"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px">'
+            f'class="m-wrap" style="padding:24px 12px"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px">'
             f'{header}{cards}<tr><td style="padding:14px 6px;font-size:11px;line-height:18px;color:#64748b;'
             f'text-align:center">{footer}'
             f'</td></tr></table></td></tr></table></body></html>')

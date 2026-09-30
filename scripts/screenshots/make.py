@@ -191,7 +191,7 @@ def email_page(inner_rows: str) -> str:
     return (f'<!doctype html><html><head><meta charset="utf-8">{EMAIL_HEAD}</head><body class="body" '
             f'style="margin:0;background:#eef1f7;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,'
             f'sans-serif"><table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" '
-            f'style="padding:24px 12px"><table width="680" cellpadding="0" cellspacing="0" style="max-width:680px;'
+            f'class="m-wrap" style="padding:24px 12px"><table width="680" cellpadding="0" cellspacing="0" style="max-width:680px;'
             f'width:100%"><tr><td>{inner_rows}</td></tr></table></td></tr></table></body></html>')
 
 
@@ -350,6 +350,17 @@ def capture(chrome: str, profile: Path, html: Path, png: Path, width: int, heigh
     save_png(image, png)
 
 
+def capture_phone(chrome: str, profile: Path, html: Path, png: Path, width: int = 390, height: int = 1900) -> None:
+    """The top of an email as a phone shows it. Headless Chrome's window is at least 500px wide, so the email is
+    put in a frame as wide as a phone, where its media queries apply, and the shot is cut to the frame."""
+    from PIL import Image
+    frame = html.with_name(f"{html.stem}-phone-frame.html")
+    frame.write_text(f'<html><body style="margin:0;background:#eef1f7"><iframe src="{html.name}" width="{width}" '
+                     f'height="{height}" style="border:0;display:block"></iframe></body></html>', encoding="utf-8")
+    capture(chrome, profile, frame, png, 500, height)
+    save_png(Image.open(png).crop((0, 0, width * 2, height * 2)), png)
+
+
 def _row(image, y: int):
     return (image.getpixel((x, y)) for x in range(0, image.width, 7))
 
@@ -378,6 +389,9 @@ def main() -> int:
             print(f"emails/{pdf.stem}.png")
         capture(chrome, profile, html_dir / "emails" / "daily-report.html", args.out / "daily-vacancy-report.png",
                 760, 1100)
+        capture_phone(chrome, profile, html_dir / "emails" / "daily-report.html",
+                      args.out / "emails" / "daily-report-phone.png")
+        print("emails/daily-report-phone.png")
         for html in sorted((html_dir / "worker").glob("*.html")):
             capture(chrome, profile, html, args.out / "worker" / f"{html.stem}.png",
                     1440 if html.stem == "admin-signed-in" else

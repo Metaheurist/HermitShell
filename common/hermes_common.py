@@ -600,11 +600,29 @@ class WebClient:
 # Gmail's dark mode (iOS/Android) inverts text colours but not background images, so light
 # text on a gradient header turns dark-on-dark. Blend-mode wrappers, matched only inside
 # Gmail via "u + .body", undo the inversion; other clients are told to stay in light mode.
+# The second block narrows the m-* classed parts on phones. Gmail drops a whole <style> block it
+# can't parse, so it is kept apart, and !important is needed to win over the inline styles.
 EMAIL_HEAD = """<meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light only">
 <style>
 :root { color-scheme: light only; supported-color-schemes: light only; }
 u + .body .gmail-screen { background:#000000; mix-blend-mode:screen; }
 u + .body .gmail-difference { background:#000000; mix-blend-mode:difference; }
+</style>
+<style>
+@media only screen and (max-width:540px) {
+.m-wrap { padding:10px 4px !important; }
+.m-pad { padding:16px 14px !important; }
+.m-head { padding:20px 18px 18px !important; }
+.m-stack { display:block !important; width:100% !important; text-align:left !important; }
+.m-sep { padding-left:10px !important; }
+.m-num { font-size:22px !important; line-height:28px !important; }
+.m-flush { padding-left:0 !important; }
+.m-below { padding:4px 0 0 !important; }
+.m-inline { display:inline-block !important; }
+.m-title { font-size:17px !important; }
+.m-score { width:52px !important; height:52px !important; line-height:52px !important; font-size:20px !important; border-radius:26px !important; }
+.m-label { font-size:10px !important; letter-spacing:.02em !important; }
+}
 </style>"""
 
 
@@ -619,23 +637,26 @@ def email_header(eyebrow: str, meta: str, title: str, subtitle: str, stats: list
     def esc(text: object) -> str:
         return html.escape(str(text), quote=True)
 
+    sep = ' class="m-sep" style="border-left:1px solid #334155;padding-left:18px"'
     cells = "".join(
         f'<td valign="top" width="{100 // len(stats)}%" style="padding-top:18px">'
-        f'<div style="{"border-left:1px solid #334155;padding-left:18px" if i else ""}">'
-        f'<div style="font-size:26px;line-height:32px;font-weight:700;letter-spacing:-.01em;'
+        f'<div{sep if i else ""}>'
+        f'<div class="m-num" style="font-size:26px;line-height:32px;font-weight:700;letter-spacing:-.01em;'
         f'color:{"#6ee7b7" if i == highlight else "#f8fafc"}">{esc(value)}</div>'
         f'<div style="font-size:12px;line-height:18px;color:#94a3b8;margin-top:2px">{esc(label)}</div></div></td>'
         for i, (value, label) in enumerate(stats))
     inner = (
         f'<table width="100%" cellpadding="0" cellspacing="0"><tr>'
-        f'<td style="font-size:13px;line-height:20px;font-weight:600;color:#a5b4fc">{esc(eyebrow)}</td>'
-        f'<td align="right" style="font-size:13px;line-height:20px;color:#94a3b8">{esc(meta)}</td></tr></table>'
+        f'<td class="m-stack" style="font-size:13px;line-height:20px;font-weight:600;color:#a5b4fc">{esc(eyebrow)}</td>'
+        f'<td class="m-stack" align="right" style="font-size:13px;line-height:20px;color:#94a3b8">{esc(meta)}</td></tr>'
+        f'</table>'
         f'<div style="font-size:28px;line-height:34px;font-weight:700;letter-spacing:-.02em;color:#f8fafc;'
         f'margin-top:14px">{esc(title)}</div>'
         f'<div style="font-size:15px;line-height:22px;color:#cbd5e1;margin-top:4px">{esc(subtitle)}</div>'
         f'<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:22px;border-top:1px solid #334155">'
         f'<tr>{cells}</tr></table>')
-    return (f'<tr><td style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:26px 28px 24px">'
+    return (f'<tr><td class="m-head" style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;'
+            f'padding:26px 28px 24px">'
             f'{gmail_dark_safe(inner)}</td></tr>')
 
 

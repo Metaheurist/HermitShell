@@ -243,7 +243,7 @@ def email_bodies(job: dict, paragraphs: list[str], filename: str, note: str,
     body = f"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{EMAIL_HEAD}<title>{esc(subject)}</title></head>
 <body class="body" style="margin:0;padding:0;background:{C_BG};font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:{C_BG}"><tr><td align="center" style="padding:24px 12px">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:{C_BG}"><tr><td align="center" class="m-wrap" style="padding:24px 12px">
 <table width="680" cellpadding="0" cellspacing="0" style="max-width:680px;width:100%">
 <tr><td style="background:#1e1b4b;border-radius:20px;padding:26px 28px">
   <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#c4b5fd;font-weight:700">{eyebrow}</div>
@@ -252,13 +252,13 @@ def email_bodies(job: dict, paragraphs: list[str], filename: str, note: str,
 </td></tr>
 <tr><td style="padding-top:18px">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:{C_CARD};border:1px solid #e2e8f0;border-radius:16px">
-<tr><td style="padding:22px 24px">
+<tr><td class="m-pad" style="padding:22px 24px">
   <div style="font-size:14px;color:#334155;line-height:1.5">{intro.format(file=esc(filename))}</div>{note_block}
   <table cellpadding="0" cellspacing="0" style="margin:16px 0">{table}</table>
   {view}
 </td></tr></table>
 <table width="100%" cellpadding="0" cellspacing="0" style="background:{C_CARD};border:1px solid #e2e8f0;border-radius:16px;margin-top:18px">
-<tr><td style="padding:22px 24px">
+<tr><td class="m-pad" style="padding:22px 24px">
   <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:{C_ACCENT};font-weight:700;margin-bottom:10px">{preview_label}</div>
   {preview}
 </td></tr></table>

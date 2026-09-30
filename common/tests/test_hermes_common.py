@@ -182,6 +182,25 @@ def test_email_header_escapes_text_and_highlights_one_figure():
     assert header.index("#6ee7b7") > header.index(">8<")
 
 
+def test_email_head_narrows_the_email_on_phones_in_its_own_style_block():
+    blocks = re.findall(r"<style>(.*?)</style>", hc.EMAIL_HEAD, flags=re.S)
+    assert len(blocks) == 2 and "@media" not in blocks[0]
+    phone = blocks[1]
+    assert phone.strip().startswith("@media only screen and (max-width:540px)")
+    for cls in ("m-wrap", "m-pad", "m-head", "m-stack", "m-sep", "m-num", "m-flush", "m-title", "m-score", "m-label"):
+        assert f".{cls} {{" in phone, cls
+    rules = re.findall(r"\.m-[a-z]+ \{([^}]*)\}", phone)
+    assert rules and all(all(d.strip().endswith("!important") for d in r.split(";") if d.strip()) for r in rules)
+    assert len(phone) <= hc.STYLE_BLOCK_MAX and not re.search(r"url\(|gradient|background-image", phone)
+    assert sum(len(b) for b in blocks) + hc.STYLE_TOTAL_MAX <= 16_384
+
+
+def test_email_header_stacks_its_top_line_on_phones():
+    header = hc.email_header("Northern Ireland", "Tuesday 29 September", "Report", "Roles", [(1, "A"), (2, "B")])
+    assert header.count('class="m-stack"') == 2 and 'class="m-head"' in header
+    assert header.count('class="m-num"') == 2 and header.count('class="m-sep"') == 1
+
+
 def test_gmail_dark_safe_wraps_content_in_blend_layers():
     wrapped = hc.gmail_dark_safe("<b>hi</b>")
     assert wrapped.startswith('<div class="gmail-screen"><div class="gmail-difference">')
@@ -215,7 +234,7 @@ def test_compact_html_moves_repeated_styles_into_gmail_safe_classes():
     assert hc.html_size(small) < hc.html_size(page) * 0.7
     assert hc.html_to_text(small) == hc.html_to_text(page)
     blocks = re.findall(r"<style>(.*?)</style>", small, flags=re.S)
-    added = blocks[1:]
+    added = blocks[hc.EMAIL_HEAD.count("<style>"):]
     assert added and all(len(b) <= hc.STYLE_BLOCK_MAX for b in added)
     assert sum(len(b) for b in added) <= hc.STYLE_TOTAL_MAX
     assert not any(re.search(r"url\(|gradient|background-image", b) for b in added)

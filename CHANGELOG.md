@@ -628,6 +628,12 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The daily report on a phone.** In Gmail's apps a card's columns were squeezed: initials shrank to a
+  coloured strip over the title, the fit circle became a tall capsule, the salary wrapped and the three
+  meters' bars were a one-pixel tick. The initials and the circle are now fixed-size blocks, the salary and
+  tags have a row of their own beside the thumbs, and the meters are a grid of labels, values and div bars.
+  Every email also gets a small phone stylesheet (under 540 pixels: tighter margins, a stacked header line,
+  a smaller circle and title). `make.py` adds a phone-width screenshot, `emails/daily-report-phone.png`.
 - **Moving from Hermes, in the order that works.** The guide now imports the jobs before the container's
   first start and while they are still active in Hermes (the import copies paused states, and a first start
   adds the standard schedule, which ran the daily report twice), stops Hermes' `profiles.py listen`, notes

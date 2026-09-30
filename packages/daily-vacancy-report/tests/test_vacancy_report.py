@@ -409,6 +409,32 @@ def test_report_renders_new_card_parts():
     assert "Generate cover letter: https://fb.example.workers.dev/f?" in plain
 
 
+def test_card_keeps_its_shape_on_a_phone():
+    import job_scanner
+
+    job = {**report_job(), "salary": "£350 - £400 per day", "salary_range": parse_salary("£350 - £400 per day")}
+    card = job_scanner.job_card(job, 1)
+    # Initials and the score are fixed-size blocks, not table cells Gmail's apps can squeeze to their text.
+    initials = re.search(r'<div style="width:48px;height:48px;min-width:48px;[^"]*">A</div>', card)
+    assert initials and "<td width=\"48\"" not in card
+    assert re.search(r'<div class="m-score" style="width:68px;height:68px;line-height:68px;', card)
+    # Salary and tags sit in their own row beside the thumbs, not in the title's column.
+    assert card.index("AI Engineer</a>") < card.index('class="m-flush"') < card.index("£350 - £400")
+    assert card.index("£350 - £400") < card.index("a=good_match") < card.index("HermitShell fit")
+    assert 'class="m-inline"' in card and 'class="m-stack m-below"' in card
+    for cls in ('class="m-pad"', 'class="m-title"'):
+        assert cls in card
+    # The meters are a grid of labels, values and bars, the bars divs at their real width.
+    meters = job_scanner.meters([("Fit", "8/10", 80, "#111111"), ("Low", "0%", 0, "#222222")])
+    assert meters.count("<tr>") == 3 and "table-layout:fixed" in meters
+    assert meters.count('valign="bottom"') == 2 and meters.count('class="m-label"') == 2
+    assert '<div style="width:80%;height:6px;background:#111111;' in meters
+    assert '<div style="width:2%;height:6px;background:#222222;' in meters
+    assert "<td width=\"80%\"" not in meters
+    plain = job_scanner.salary_block({**report_job(), "salary": "£60,000", "salary_range": parse_salary("£60,000")})
+    assert "m-inline" not in plain and "m-below" not in plain
+
+
 def test_report_footer_is_three_short_lines():
     import job_scanner
 
