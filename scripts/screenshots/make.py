@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Regenerate the documentation screenshots: every email, PDF and feedback Worker page.
 
-Everything is rendered by the real code with fictional data (Alex Morgan, Northwind, Contoso...), in a
+Everything is rendered by the real code with fictional data (the recruit Avery Lane, the admin Alex Morgan, Northwind,
+Contoso...), in a
 temporary HermitShell home, so nothing from your own .env, profile or server is used. Emails and PDFs come
 from the Python builders, Worker pages from worker_pages.mjs (Node 18+), and headless Chrome or
 Chromium takes the pictures.
@@ -41,10 +42,10 @@ CHROME_PATHS = [
 SETTINGS = {
     "JOB_REPORT_TITLE": "Daily Vacancy Report", "JOB_REPORT_TAGLINE": "Roles matched to your CV",
     "JOB_REGION_NAME": "Greater Manchester", "JOB_REGION_PLACES": "Manchester,Salford,Stockport,Trafford",
-    "JOB_LEVEL": "mid", "JOB_MIN_SALARY": "40000", "JOB_SALARY_CURRENCY": "GBP", "JOB_CANDIDATE_NAME": "Alex Morgan",
-    "JOB_FEEDBACK_URL": FEEDBACK_URL, "JOB_FEEDBACK_SECRET": SECRET, "HERMES_TIMEZONE": "Europe/London",
-    "ALERT_EMAIL": "alex.morgan@example.com",
-    "COVER_LETTER_CONTACT": "alex.morgan@example.com  ·  07700 900123  ·  Manchester",
+    "JOB_LEVEL": "mid", "JOB_MIN_SALARY": "40000", "JOB_SALARY_CURRENCY": "GBP", "JOB_CANDIDATE_NAME": "Avery Lane",
+    "JOB_PROFILE_ID": "avery-lane", "JOB_FEEDBACK_URL": FEEDBACK_URL, "JOB_FEEDBACK_SECRET": SECRET, "HERMES_TIMEZONE": "Europe/London",
+    "ALERT_EMAIL": "avery.lane@example.com",
+    "COVER_LETTER_CONTACT": "avery.lane@example.com  ·  07700 900123  ·  Manchester",
 }
 
 
@@ -90,14 +91,14 @@ def jobs(js) -> list[dict]:
             about="Builds route-planning and warehouse software for UK retailers.",
             matched=["Python", "Airflow", "SQL", "dbt", "Docker", "PostgreSQL", "AWS"], gaps=["Snowflake", "Terraform"],
             reasoning="Strong match: the role centres on Python and Airflow pipelines feeding a dbt warehouse, which is "
-                      "Alex's day-to-day work. Snowflake is new but close to the PostgreSQL and dbt experience."),
+                      "Avery's day-to-day work. Snowflake is new but close to the PostgreSQL and dbt experience."),
         job(key="contoso-ml-engineer", title="Machine Learning Engineer", company="Contoso Health",
             location="Dublin", employment_type="Full-time permanent", work_mode="Hybrid", salary="€65,000 - €75,000",
             fit=8, model_fit=9, second_opinion=7, confidence=80, coverage=64, days_left=2,
             company_site="https://contoso-health.example", company_profile="Health tech · 1,200 staff",
             matched=["Python", "PyTorch", "scikit-learn", "Docker", "LLM applications"],
             gaps=["Kubernetes", "MLflow", "Azure ML"],
-            reasoning="Deploying and monitoring models for clinical triage fits Alex's LLM and deployment work. "
+            reasoning="Deploying and monitoring models for clinical triage fits Avery's LLM and deployment work. "
                       "Kubernetes and MLflow are listed as essential and are gaps worth mentioning honestly."),
         job(key="fabrikam-automation", title="Automation Engineer (Contract)", company="Proseware Recruitment",
             employer="Fabrikam", employer_site="https://fabrikam.example", agency=True,
@@ -105,19 +106,19 @@ def jobs(js) -> list[dict]:
             location="Trafford Park", employment_type="Contract", work_mode="On-site", salary="£400 - £450 per day",
             fit=7, confidence=74, coverage=70, days_left=None, also_advertised_by=["Litware Talent"],
             matched=["Python", "MQTT", "REST APIs", "GitHub Actions"], gaps=["PLC programming", "OPC UA"],
-            reasoning="Six-month contract automating device provisioning with Python and MQTT, close to Alex's IoT "
+            reasoning="Six-month contract automating device provisioning with Python and MQTT, close to Avery's IoT "
                       "projects. On-site five days a week, which is less than ideal."),
         job(key="tailspin-solutions", title="Senior Solutions Engineer, AI Platform", company="Tailspin Toys",
             location="Remote (UK)", employment_type="Full-time permanent", work_mode="Remote", salary="",
             seniority="Senior-level stretch", fit=6, model_fit=7, confidence=50, coverage=55, snippet_only=True,
             matched=["Python", "LLM applications", "FastAPI"], gaps=["Pre-sales", "Kubernetes"],
             reasoning="Customer-facing AI platform role. The engineering overlaps well, but it is a senior title "
-                      "with pre-sales duties Alex has not done."),
+                      "with pre-sales duties Avery has not done."),
         job(key="adventureworks-platform", title="Data Platform Engineer", company="Adventure Works",
             location="Stockport", employment_type="Full-time permanent", work_mode="On-site", salary="£45,000",
             fit=5, confidence=66, coverage=45, days_left=20,
             matched=["SQL", "Python", "Docker"], gaps=["Spark", "Databricks", "Scala", "Kafka"],
-            reasoning="Adjacent: a Spark and Databricks platform team. Alex covers the SQL and Python side but "
+            reasoning="Adjacent: a Spark and Databricks platform team. Avery covers the SQL and Python side but "
                       "would need to pick up the streaming stack."),
     ]
 
@@ -160,7 +161,7 @@ LETTER = [
     "to be productive quickly. I would welcome the chance to talk about how I could help your data team.",
 ]
 CV = {
-    "name": "Alex Morgan", "headline": "Data engineer: Python, Airflow and dbt pipelines",
+    "name": "Avery Lane", "headline": "Data engineer: Python, Airflow and dbt pipelines",
     "contact": SETTINGS["COVER_LETTER_CONTACT"],
     "summary": "Software engineer with five years of experience building data pipelines, internal automation and "
                "LLM-powered tools. Owns Python services, Airflow orchestration and dbt models end to end.",
@@ -253,10 +254,10 @@ def render_emails(out: Path) -> dict[str, str]:
                                               "Greater Manchester", now, unsub)[1]
 
     letter_job = {**top[0], "closing": "2026-10-11"}
-    filename = "Cover letter - Alex Morgan - Data Engineer (Python, Airflow).pdf"
+    filename = "Cover letter - Avery Lane - Data Engineer (Python, Airflow).pdf"
     pages["cover-letter"] = cover_letter.email_bodies(letter_job, LETTER, filename, "Mention my Airflow migration")[1]
     preview = [CV["headline"], CV["summary"], "Skills: " + ", ".join(CV["skills"])]
-    pages["tailored-cv"] = cover_letter.email_bodies(letter_job, preview, "CV - Alex Morgan - Data Engineer.pdf", "",
+    pages["tailored-cv"] = cover_letter.email_bodies(letter_job, preview, "CV - Avery Lane - Data Engineer.pdf", "",
                                                      kind="tailored_cv")[1]
     pages["job-email"] = job_mail.job_email(letter_job["key"], letter_job,
                                             datetime(2026, 9, 29, 14, 5, tzinfo=ZoneInfo("Europe/London")))[1]
@@ -265,7 +266,8 @@ def render_emails(out: Path) -> dict[str, str]:
     profiles.send = lambda to, subject, html_body, text: sent.append(html_body)
     profiles._today = lambda: TODAY
     people = [{"id": "owner", "owner": True, "name": "Alex Morgan", "email": "alex.morgan@example.com",
-               "status": "active"},
+               "status": "active", "recruit": "avery-lane"},
+              {"id": "avery-lane", "name": "Avery Lane", "email": "avery.lane@example.com", "status": "active"},
               {"id": "sam-lee", "name": "Sam Lee", "email": "sam.lee@example.com", "status": "active"},
               {"id": "jordan-patel", "name": "Jordan Patel", "email": "jordan.patel@example.net", "status": "paused"}]
     profiles.all_profiles = lambda: people
@@ -290,8 +292,8 @@ def render_emails(out: Path) -> dict[str, str]:
     for name, body in pages.items():
         (out / f"{name}.html").write_text(cid_to_file(body), encoding="utf-8")
 
-    pdfs = {"cover-letter-pdf": cover_letter.build_pdf(letter_job, "Alex Morgan", LETTER, datetime(2026, 9, 29)),
-            "tailored-cv-pdf": cv_pdf(CV, title="CV - Alex Morgan - Data Engineer")}
+    pdfs = {"cover-letter-pdf": cover_letter.build_pdf(letter_job, "Avery Lane", LETTER, datetime(2026, 9, 29)),
+            "tailored-cv-pdf": cv_pdf(CV, title="CV - Avery Lane - Data Engineer")}
     for name, data in pdfs.items():
         (out / f"{name}.pdf").write_bytes(data)
     return pages

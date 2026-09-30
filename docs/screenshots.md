@@ -141,7 +141,7 @@ apply, and says when the advert has already closed.
 
 ## Recruit emails
 
-Sent by `profiles.py` when you use [extra profiles](feedback-worker.md#recruits-and-the-admin-page).
+Sent by `profiles.py` when you use [recruits](feedback-worker.md#recruits-and-the-admin-page).
 
 <table>
 <tr><th>Welcome (to the new person)</th><th>New recruit (to you)</th></tr>
@@ -160,9 +160,9 @@ Sent by `profiles.py` when you use [extra profiles](feedback-worker.md#recruits-
   the person can reply if something is wrong. It is sent again as "Recruit updated" when they
   send a new CV.
 - **Notices to you** share one layout, with a count of active and paused profiles and a
-  **Manage recruits** link: new recruit, recruit updated, unsubscribed (with their feedback),
-  your own CV rebuilt from the dashboard, and sign-ups that couldn't be applied.
-- **Goodbye** is the last email an extra profile gets: it confirms that their profile, CV and
+  **Manage recruits** link: new recruit, recruit updated, unsubscribed (with their feedback) and
+  sign-ups that couldn't be applied.
+- **Goodbye** is the last email a recruit gets: it confirms that their profile, CV and
   history are deleted and their name and email removed from the logs.
 
 ## Test emails
@@ -234,16 +234,16 @@ After **Confirm**:
 ### Unsubscribe
 
 <table>
-<tr><th>Extra profile</th><th>Your own reports</th><th>Confirmed</th></tr>
+<tr><th>Recruit</th><th>A report you got before your search moved</th><th>Confirmed</th></tr>
 <tr>
-<td><img src="images/worker/confirm-unsubscribe.png" alt="Unsubscribe an extra profile" width="260"></td>
-<td><img src="images/worker/confirm-unsubscribe-owner.png" alt="Pause your own reports" width="260"></td>
+<td><img src="images/worker/confirm-unsubscribe.png" alt="Unsubscribe a recruit" width="260"></td>
+<td><img src="images/worker/confirm-unsubscribe-owner.png" alt="Pause the recruit your old reports moved to" width="260"></td>
 <td><img src="images/worker/saved-unsubscribe.png" alt="Unsubscribed" width="260"></td>
 </tr>
 </table>
 
-For an extra profile it deletes the profile, CV and history; for you (the owner) it only pauses
-your reports.
+For a recruit it deletes the profile, CV and history. The link in a report you got before your own
+job search moved to a recruit only pauses that recruit.
 
 ### Link problems
 
@@ -337,14 +337,14 @@ buttons. On a phone everything is in one column.
 | **Tasks** (loading circle + number, admins only) | Opens the [task list](#tasks): everything HermitShell is doing or has waiting. The ring turns while something runs and the number in the corner says how many tasks there are |
 | Search (magnifying glass) | Slides out a search box. Type part of a name, email, place, status (**paused**, **scanning**, **no cv**) or recruiter and press Enter: only the recruits with every word are listed, with **1 of 3 recruits** above the table. Searching a recruiter lists them first, followed by all their recruits. **&times;** shows everyone again |
 | **pending** (orange) | Someone who has sent the invite form. They stay in the table, with when they signed up and what they're looking for, while HermitShell reads their CV, then the row becomes their profile |
-| Recruit, Status | Name, email and the date they joined, **no CV** when there is none yet; owner, active or paused; **scanning now** while a report runs; when the last report ran (hover for the exact time) and the report time, **Daily at 08:00** or **Weekdays at 08:15** |
+| Recruit, Status | Name, email and the date they joined, **no CV** when there is none yet; active or paused; **scanning now** while a report runs; when the last report ran (hover for the exact time) and the report time, **Daily at 08:00** or **Weekdays at 08:15** |
 | **Send jobs** | Runs that recruit's report straight away and emails it when the scan finishes, even if nothing new turned up. Shows **Scanning…** while a report runs; missing without a CV |
 | **Manage** | Opens [that profile's page](#a-recruits-page): details, job search, report time and CV |
 | Stats line (the little chart) | This week's jobs sent, day by day; opens [that profile's stats and charts](#a-recruits-stats) |
 | **24 sent** | How many jobs were sent this week; opens [the list of those jobs](#the-jobs-sent-to-a-recruit) |
-| Recruiter + **Assign** (admins only) | The recruiter's initials and a list showing whose pool the recruit is in, or **?** and **Unassigned**. Pick another recruiter and **Assign** appears next to the list; the owner's row says **The main admin** |
+| Recruiter + **Assign** (admins only) | The recruiter's initials and a list showing whose pool the recruit is in, or **?** and **Unassigned**. Pick another recruiter and **Assign** appears next to the list |
 | Pause / play button | Pauses or resumes that recruit's reports (hover says which) |
-| Bin button (red, admins only) | Opens a window to confirm deleting the recruit. Tick **Delete their CV and history** and press **Delete** to remove their CV and history from your server; **Cancel** or &times; closes it. The owner can't be deleted |
+| Bin button (red, admins only) | Opens a window to confirm deleting the recruit. Tick **Delete their CV and history** and press **Delete** to remove their CV and history from your server; **Cancel** or &times; closes it |
 | **Recruits** / **Users and roles** / **Global settings** tabs | Switch between the recruits, [who can sign in](#users-and-roles) and the [settings shared by the whole tool](#global-settings). Recruiters only have **Recruits** |
 | Invite someone + recruiter list + **Create invite link** | Makes a one-time `/join` link; the note is only for you. Admins pick whose recruit the person becomes; a recruiter's invites join their own pool |
 | **Revoke** | Cancels an unused invite |
@@ -405,7 +405,7 @@ found**; admin pages answer **Admins only**.
 </table>
 
 The checklist stays until HermitShell has connected, the email server is set and a test worked, a web
-search key is in, and your CV and job search are set. **HermitShell could not apply** lists changes
+search key is in, and the first recruit has joined (its item links to **Create invite link**). **HermitShell could not apply** lists changes
 HermitShell rejected in the last day, with the reason.
 
 ### Tasks

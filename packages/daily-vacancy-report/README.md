@@ -60,8 +60,9 @@ light and dark modes.
 8. **Weekly roll-up.** `job_weekly.py` (or `job_scanner.py --weekly`) emails a Sunday summary from
    `state/job_tracker.db`: best jobs of the week, applications and replies, common gaps, who's
    hiring and source health ([screenshot](../../docs/images/emails/weekly.png)).
-9. **Extra profiles.** Invite other people from the feedback Worker's `/admin` page; they upload a
-   CV and get their own daily report (their own scheduled job, at a time you set on the
+9. **Recruits.** Invite people looking for work from the feedback Worker's `/admin` page (you and
+   your recruiters are staff who manage them, never recruits yourselves); they upload a
+   CV and get their own job search and daily report (their own scheduled job, at a time you set on the
    dashboard), buttons, cover letters and roll-up. **Send jobs now** on the dashboard runs anyone's
    report at once. Each row's little chart opens that person's jobs, answers and applications as
    charts over 7 days to 12 months ([screenshot](../../docs/images/worker/admin-stats.png)), and its
@@ -85,8 +86,8 @@ definitely ruled out; ratings that fail are retried on the next runs, up to 4 at
 | `job_tracker.py` | `state/job_tracker.db` (jobs, feedback, reminders, runs, cover letter requests) and the feedback Worker sync |
 | `cover_letter.py` | Cover letter requests: writes each letter with the model and emails it as a PDF; entry point for the 5-minute job |
 | `letter_pdf.py` | Dependency-free A4 PDF writer for the letters |
-| `profiles.py` | Extra profiles: sign-ups from the Worker become profiles built from the CV, unsubscribes, admin changes, each profile's report job, Send jobs now; entry point for the 5-minute job |
-| `profile_report.py` | One extra profile's daily report: the script of its `vacancy-report-<id>` job |
+| `profiles.py` | Recruits: sign-ups from the Worker become profiles built from the CV, unsubscribes, admin changes, each profile's report job, Send jobs now; entry point for the 5-minute job |
+| `profile_report.py` | One recruit's daily report: the script of its `vacancy-report-<id>` job |
 | `key_usage.py` | The credits left on each web search and AI model key (OpenRouter, BazaarLink, Featherless, Hugging Face), from each provider's account endpoint, for the dashboard's Global settings (`python3 key_usage.py` prints them) |
 | `profile_stats.py` | A profile's daily counts, top lists and recent jobs sent from its tracker, for the dashboard's stats and jobs sent pages |
 | `maintenance.py` | Nightly retention, encryption of older files, file permissions and encrypted backups; `--restore`, `--decrypt`, `--new-key` ([data protection](../../docs/configuration.md#data-protection)) |

@@ -210,8 +210,8 @@ minutes and silent when idle, and nightly maintenance
 
 Each person you invite gets one more job, `vacancy-report-<id>`, created, paused and removed with
 their profile by `profiles.py`; it runs `profile_report.py` from their profile folder. The
-dashboard's **Daily report** box sets any profile's time, yours included (it moves the wizard's
-job), and **Send jobs now** runs a report at once
+dashboard's **Daily report** box sets each recruit's time (the admin, as staff, has no report of
+their own), and **Send jobs now** runs a report at once
 ([feedback-worker.md](feedback-worker.md#send-jobs-now)).
 
 ## Data protection
@@ -245,11 +245,11 @@ This is how it is carried out:
   copies (archives from an install inside Hermes, `hermes-*`, are rotated with them). Keep [a second copy](#a-second-copy-of-the-backups) on another disk.
   Restore with `python3 maintenance.py --restore FILE --to EMPTY_DIR`, then copy back
   what you need.
-- **Unsubscribe and deletion.** An extra profile's unsubscribe link, or Delete on `/admin`,
+- **Unsubscribe and deletion.** A recruit's unsubscribe link, or Delete on `/admin`,
   removes its folder (profile, CV, tracker, letters, keys) within about a minute, drops its
   answers still waiting on the Worker, replaces its name, email address and profile id with
-  `[deleted]` in the logs, and emails the person a confirmation. Your own unsubscribe link only
-  pauses your reports. `profiles.py --delete ID` does the same from the command line.
+  `[deleted]` in the logs, and emails the person a confirmation. The link in a report you got
+  before your own job search moved to a recruit only pauses that recruit. `profiles.py --delete ID` does the same from the command line.
 
 ### A second copy of the backups
 

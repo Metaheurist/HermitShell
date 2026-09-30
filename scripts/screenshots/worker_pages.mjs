@@ -117,9 +117,9 @@ const JOB = { titles: ["Data Engineer", "Analytics Engineer", "Python Developer"
 const STATUS = {
   ...(await sealingKeys()).status,
   profiles: [
-    { id: "owner", name: "Alex Morgan", email: "alex.morgan@example.com", status: "active", owner: true,
+    { id: "avery-lane", name: "Avery Lane", email: "avery.lane@example.com", status: "active", recruiter: "admin",
       has_cv: true, created: now - 60 * day, last_run: now - 3 * 3600000, cv_updated: now - 20 * day,
-      details: { name: "Alex Morgan", email: "alex.morgan@example.com", phone: "07700 900123", location: "Salford" }, job: JOB,
+      details: { name: "Avery Lane", email: "avery.lane@example.com", phone: "07700 900123", location: "Salford" }, job: JOB,
       report: { time: "08:00", days: "daily", schedule: "0 8 * * *", job: true, pending: false } },
     { id: "sam-lee", name: "Sam Lee", email: "sam.lee@example.com", status: "active", recruiter: "casey",
       has_cv: true, created: now - 12 * day, last_run: now - 3 * 3600000, scanning: now - 4 * 60000,
@@ -130,6 +130,9 @@ const STATUS = {
       has_cv: true, created: now - 30 * day, last_run: now - 9 * day,
       details: { name: "Jordan Patel", email: "jordan.patel@example.net", phone: "", location: "Leeds" }, job: JOB,
       report: { time: "08:30", days: "daily", schedule: "30 8 * * *", job: true, pending: false } },
+    // The main admin: staff, with no job search of their own (HermitShell moved theirs to Avery Lane).
+    { id: "owner", name: "Alex Morgan", email: "alex.morgan@example.com", status: "active", owner: true, recruiter: "",
+      has_cv: false, recruit: "avery-lane", created: now - 60 * day },
   ],
   scheduler: true,
   email: { host: "smtp.gmail.com", port: "587", user: "alex.morgan@example.com", from: "", password_set: true,
@@ -164,9 +167,9 @@ const STATUS = {
   tasks: [
     { id: "report:sam-lee", kind: "report", u: "sam-lee", state: "running", at: now - 4 * 60000, trigger: "schedule",
       stage: "Rating jobs", done: 14, total: 25, expected: 18 * 60000 },
-    { id: "letter:owner:event:_:5f0c2a9e1b7d4c3a8e6f0b2d4a6c8e1f:1a2b3c4d5e6f", kind: "cover_letter", u: "owner", state: "running",
+    { id: "letter:avery-lane:event:avery-lane:5f0c2a9e1b7d4c3a8e6f0b2d4a6c8e1f:1a2b3c4d5e6f", kind: "cover_letter", u: "avery-lane", state: "running",
       at: now - 90000, trigger: "email", title: "Data Engineer (Python, Airflow)", employer: "Northwind Traders", retry: false },
-    { id: "letter:owner:event:_:7d1e3b5c9a2f4e6d8c0b1a3e5d7f9c2b:6f5e4d3c2b1a", kind: "tailored_cv", u: "owner", state: "waiting",
+    { id: "letter:avery-lane:event:avery-lane:7d1e3b5c9a2f4e6d8c0b1a3e5d7f9c2b:6f5e4d3c2b1a", kind: "tailored_cv", u: "avery-lane", state: "waiting",
       at: now - 60000, trigger: "email", title: "Analytics Engineer (dbt, Snowflake)", employer: "Contoso", retry: false },
   ],
 };
@@ -234,8 +237,8 @@ function fakeStats(daysBack, scale, seed) {
     ranges: { 7: range(7), 30: range(30), 90: range(90), 365: range(365) },
     pipeline: { interested: 9, good_match: 4, not_for_me: 12, applied: 6, heard_back: 3, rejected: 2 }, sent };
 }
-// The owner already counts Snowflake as on the CV (added from an earlier email).
-for (const [u, stats] of [["owner", { ...fakeStats(75, 1, 7), skills: ["Snowflake"] }], ["sam-lee", fakeStats(12, 0.6, 11)]]) {
+// Avery Lane already counts Snowflake as on the CV (added from an earlier email).
+for (const [u, stats] of [["avery-lane", { ...fakeStats(75, 1, 7), skills: ["Snowflake"] }], ["sam-lee", fakeStats(12, 0.6, 11)]]) {
   await call("/api/stats", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: { u, stats } });
 }
 await save("link-profile-removed", await call(`/f?${new URLSearchParams(await link("interested", TITLE, { profile: "casey-quinn" }))}`));
@@ -263,7 +266,7 @@ const admin = (path, options = {}) => call(path, { ...options, headers: { Cookie
 const dashboard = await (await admin("/admin")).text();
 const csrf = dashboard.match(/name="csrf" value="([^"]+)"/)[1];
 // Dashboard users: Casey Quinn recruits Sam Lee, Drew Harper is a second admin, and the main admin
-// (Alex Morgan) also has the Recruiter role, with Jordan Patel in their pool.
+// (Alex Morgan) also has the Recruiter role, with Avery Lane and Jordan Patel in their pool.
 await admin("/admin/users", { method: "POST", form: { csrf, op: "admin_roles", roles: "recruiter" } });
 await admin("/admin/users", { method: "POST", form: { csrf, op: "add", name: "Casey Quinn", username: "casey", password: "docs-recruiter-password", roles: "recruiter" } });
 await admin("/admin/users", { method: "POST", form: { csrf, op: "add", name: "Drew Harper", username: "drew", password: "docs-pw", roles: "admin" } });
@@ -294,7 +297,7 @@ await save("admin-user-reset-modal", await withOpenModal("/admin/users", "reset-
 await save("admin-password-modal", await withOpenModal("/admin", "password", casey));
 await save("admin-delete-modal", await withOpenModal("/admin", "del-jordan-patel"));
 await save("admin-global-key-modal", await withOpenModal("/admin/settings", "gkey-scrapfly"));
-await save("admin-profile", await framed(await admin("/admin/profile?u=owner"), admin));
+await save("admin-profile", await framed(await admin("/admin/profile?u=avery-lane"), admin));
 await save("admin-profile-scanning", await framed(await admin("/admin/profile?u=sam-lee"), admin));
 await save("admin-settings", await admin("/admin/settings"));
 // Firecrawl's card pressed open: its main and backup keys with what is left of each.
@@ -308,30 +311,30 @@ await save("admin-model-key-modal", await withOpenModal("/admin/settings", "mkey
 // The server button's panel, as hovering over it shows it.
 await save("admin-server-panel", new Response((await (await admin("/admin")).text())
   .replace("</head>", "<style>.me .srv .srvpanel{display:block}</style></head>")));
-await save("admin-stats", await admin("/admin/stats?u=owner"));
-await save("admin-stats-90-days", await admin("/admin/stats?u=owner&r=90"));
+await save("admin-stats", await admin("/admin/stats?u=avery-lane"));
+await save("admin-stats-90-days", await admin("/admin/stats?u=avery-lane&r=90"));
 await save("admin-stats-new-profile", await admin("/admin/stats?u=sam-lee&r=7"));
 await save("admin-stats-empty", await admin("/admin/stats?u=jordan-patel"));
-await save("admin-sent", await admin("/admin/sent?u=owner&r=7"));
-await save("admin-sent-applied", await admin("/admin/sent?u=owner&r=30&a=applied"));
+await save("admin-sent", await admin("/admin/sent?u=avery-lane&r=7"));
+await save("admin-sent-applied", await admin("/admin/sent?u=avery-lane&r=30&a=applied"));
 
 // A cover letter already made for the newest job (kept for download) and its CV asked for from the
 // dashboard (being made), shown on its opened card and on the email button's page.
 const FIRST = "https://jobs.example.com/ad/1000";
 const FIRST_TITLE = "Senior Data Engineer (Python, Airflow) at Northwind Traders";
-await worker.fetch(new Request(`${BASE}/api/doc?${new URLSearchParams({ u: "owner", j: FIRST, k: "cover_letter", days: "7",
-  name: "Cover letter - Alex Morgan - Senior Data Engineer.pdf" })}`, { method: "POST",
+await worker.fetch(new Request(`${BASE}/api/doc?${new URLSearchParams({ u: "avery-lane", j: FIRST, k: "cover_letter", days: "7",
+  name: "Cover letter - Avery Lane - Senior Data Engineer.pdf" })}`, { method: "POST",
   headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/pdf" }, body: "%PDF-1.4\n%%EOF" }), env, {});
-await admin("/admin/doc", { method: "POST", form: { csrf, u: "owner", j: FIRST, k: "tailored_cv", n: "Senior Data Engineer (Python, Airflow)", back: "r=7" } });
+await admin("/admin/doc", { method: "POST", form: { csrf, u: "avery-lane", j: FIRST, k: "tailored_cv", n: "Senior Data Engineer (Python, Airflow)", back: "r=7" } });
 // Terraform just added from its missing-skill chip, not yet counted by HermitShell.
-await admin("/admin/skill", { method: "POST", form: { csrf, u: "owner", j: FIRST, s: "Terraform", back: "r=7" } });
+await admin("/admin/skill", { method: "POST", form: { csrf, u: "avery-lane", j: FIRST, s: "Terraform", back: "r=7" } });
 const firstId = (await jobHash(FIRST)).slice(0, 16);
-const opened = (await (await admin(`/admin/sent?u=owner&r=7&open=${firstId}`)).text()).replace(/<meta http-equiv="refresh"[^>]*>/, "");
+const opened = (await (await admin(`/admin/sent?u=avery-lane&r=7&open=${firstId}`)).text()).replace(/<meta http-equiv="refresh"[^>]*>/, "");
 await save("admin-sent-open", new Response(opened));
-await save("confirm-cover-letter-ready", await call(`/f?${new URLSearchParams(await link("cover_letter", FIRST_TITLE, { job: FIRST }))}`));
+await save("confirm-cover-letter-ready", await call(`/f?${new URLSearchParams(await link("cover_letter", FIRST_TITLE, { job: FIRST, profile: "avery-lane" }))}`));
 
 // A fresh install: HermitShell has connected, nothing else is set yet.
-const fresh = { ...STATUS, profiles: [{ ...STATUS.profiles[0], has_cv: false, job: { ...JOB, titles: [], region: "", places: [] } }],
+const fresh = { ...STATUS, profiles: STATUS.profiles.filter((p) => p.owner).map((p) => ({ ...p, recruit: "" })),
   email: { host: "smtp.gmail.com", port: "587", user: "", from: "", password_set: false, source: "none", last_test: null },
   keys: { firecrawl: { source: "none", hint: "" }, tavily: { source: "none", hint: "" }, scrapfly: { source: "none", hint: "" } },
   problems: [{ at: now - 600000, what: "email", error: "invalid email server settings" }] };
@@ -361,12 +364,12 @@ async function profileForm(u) {
   if (v.hide_agency) form.append("hide_agency", "1");
   return form;
 }
-const mine = await profileForm("owner");
-const theirs = await profileForm("owner");
-theirs.set("email", "alex.m@example.com");
+const mine = await profileForm("avery-lane");
+const theirs = await profileForm("avery-lane");
+theirs.set("email", "avery.l@example.com");
 await admin("/admin/action", { method: "POST", form: theirs });
-await save("admin-profile-saved", await framed(await admin("/admin/profile?u=owner&done=saved"), admin));
-mine.set("email", "alex@example.org");
+await save("admin-profile-saved", await framed(await admin("/admin/profile?u=avery-lane&done=saved"), admin));
+mine.set("email", "avery@example.org");
 mine.set("titles", `${mine.get("titles")}\nData Platform Engineer`);
 await save("admin-profile-conflict", await framed(await admin("/admin/action", { method: "POST", form: mine }), admin));
 

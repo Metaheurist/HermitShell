@@ -18,13 +18,13 @@ using [Semantic Versioning](https://semver.org/).
   and that no real names show, and Playwright covers it on a phone.
 - **Email a kept cover letter or tailored CV from Jobs sent.** Generating one from the dashboard keeps it
   for download only, so it never reached the recruit's inbox. A kept one now has **Email to Sam**
-  (**Email to you**) beside **Download**: HermitShell emails that same PDF, without the model, and the tile
+  beside **Download**: HermitShell emails that same PDF, without the model, and the tile
   says **Emailing to Sam…** until it has gone. The request carries `send: 1`, kept by the tracker as a
   new `send` flag instead of the download-only `quiet`. It is CSRF-checked, limited to a recruiter's own
   pool, written in the recruit's History and saves nothing in demo mode.
 - **Cancels in History.** Stopping or cancelling a task from the Tasks window is written in that recruit's
-  History with who did it (**Cancelled the tailored CV: …**, **Stopped the job report**); global settings
-  changes go in the owner's.
+  History with who did it (**Cancelled the tailored CV: …**, **Stopped the job report**); a cancelled global
+  settings change belongs to no recruit and is not kept.
 - **Cloud AI models for servers that can't run one.** OpenRouter, BazaarLink, Featherless and Hugging Face
   (all OpenAI-compatible) can rate jobs and write letters and CVs instead of, or before, the local Ollama
   (`common/llm_providers.py`). Keys and models are added on Global settings under **AI model API keys**,
@@ -632,6 +632,22 @@ using [Semantic Versioning](https://semver.org/).
 - Settings changed from the dashboard are limited to the `ALERT_`, `COVER_LETTER_`,
   `FIRECRAWL_`, `JOB_`, `SCRAPFLY_`, `SMTP_` and `TAVILY_` families; paths, file names,
   `JOB_FEEDBACK_*` and `JOB_PROFILE_ID` can only be set in `.env`.
+- **The admin and recruiters are staff, never recruits.** With the Worker linked (`JOB_FEEDBACK_URL` and
+  `JOB_FEEDBACK_API_TOKEN` set), the main admin's `owner` row has no CV, job search, report, stats or
+  history of its own, and no dashboard page, action, count, search or pool shows it as a recruit
+  (`profiles.admin_is_staff`, `users.canSee`, `admin.allowed`). A job search still set up in the
+  server's `.env` moves once to a normal recruit with the same name and email, taking the CV, tracker,
+  seen jobs, answers, letters and report time with it (`profiles.move_owner_search`); the Worker moves
+  the history kept for the admin to it (`history.moveOwnerHistory`). Buttons in reports sent before the
+  move store their answers, letters and CVs under that recruit, and their unsubscribe link pauses it.
+  The setup's `job_scanner.py` job only starts the recruits' roll-ups and letters. Without the Worker,
+  a single-person setup works as before.
+- **Each recruit has their own job search.** Recruits no longer inherit the region, places, titles, salary
+  or searches in the server's `.env`: new recruits' searches start from the town they signed up with,
+  and recruits that were sharing the `.env` search each get their own copy of it once
+  (`profiles.give_recruits_own_search`), so editing one recruit never changes another.
+- The setup checklist's last item is **First recruit joined**, linking to **Create invite link**, in place of
+  uploading your own CV and job search. **Jobs sent** addresses every list to the recruit by first name.
 
 ### Changed
 

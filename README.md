@@ -43,9 +43,10 @@ Every email, PDF and page, with what each part does: [docs/screenshots.md](docs/
 - **Cover letters and tailored CVs** on request: press the button and an A4 PDF arrives by email
   within minutes, written only from facts in your real CV.
 - **Weekly roll-up** every Sunday: best jobs, applications and common gaps.
-- **Extra profiles**: invite people from the Worker's `/admin` page; their CV becomes their own
-  daily report. Send anyone's jobs now, and open their stats: KPIs and charts over 7 days to 12
-  months.
+- **Recruits**: invite people looking for work from the Worker's `/admin` page; their CV becomes
+  their own daily report and job search. You and your recruiters are staff who manage them, never
+  recruits yourselves. Send anyone's jobs now, and open their stats: KPIs and charts over 7 days to
+  12 months.
 - **Automatic Cloudflare setup**: the wizard deploys the free Worker behind the buttons, `/admin`
   and sign-up links from a Cloudflare API token ([guide](docs/cloudflare-setup.md)).
 
@@ -105,8 +106,8 @@ on (missing Python packages, an Ollama container if there's no Ollama yet, and t
   - the run times.
 
   Everything else is set on the Worker's `/admin` page: the email server, web search keys
-  ([how to get them, free](docs/api-keys.md)), your CV and the job search. A checklist there
-  shows what's left.
+  ([how to get them, free](docs/api-keys.md)) and invite links for your first recruits, whose CV
+  and job search are set there too. A checklist there shows what's left.
 - **Without Cloudflare, or with `--advanced`**, the wizard asks everything itself:
   - email (SMTP) details and web search API keys (Firecrawl, Tavily, Scrapfly);
   - your job search: region, towns, country, remote, level, employment types, work modes,

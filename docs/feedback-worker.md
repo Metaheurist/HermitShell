@@ -317,9 +317,10 @@ python3 job_scanner.py --remove-skill "Kubernetes"
 
 ## Recruits and the admin page
 
-One HermitShell can send reports to other people too, each built from their own CV. The admin page
-calls them **recruits** (on the server each one is a profile under `state/profiles/<id>/`). You manage them
-from the Worker's admin page; HermitShell applies the changes, since the Worker can't reach your server.
+One HermitShell sends reports to people looking for work, each built from their own CV. The admin page
+calls them **recruits** (on the server each one is a profile under `state/profiles/<id>/`). You and your
+recruiters are staff: you manage recruits from the Worker's admin page and are never recruits yourselves.
+HermitShell applies the changes, since the Worker can't reach your server.
 
 ```
 /admin (you) ──> invite link ──> /join (them: details + CV) ──> KV ──> profiles.py (checks every 15 s)
@@ -382,11 +383,13 @@ From then on each recruit has their own daily report: a scheduled job named
 from their folder. It is paused while the recruit is and removed when they are deleted, so
 `python3 scheduler.py list` shows every recruit's report, when it last ran and whether it worked,
 and one recruit's slow or failed run doesn't hold up the others. A new recruit's report starts 15
-minutes after the latest one (yours is the setup's `job_scanner.py` job); change any recruit's time
-on their page. Weekly roll-ups and cover letters still run for each active recruit once your own
-run has finished. Without the scheduler (no `cron/jobs.json`), your daily run runs everyone's
-reports one after the other instead. Each recruit keeps their own seen jobs, tracker, feedback buttons
-and skills pool. They share your region, sources and model settings, and every
+minutes after the latest one; change any recruit's time on their page. The setup's own
+`job_scanner.py` job no longer searches for anyone: it only starts the weekly roll-ups and cover
+letters for each active recruit. Without the scheduler (no `cron/jobs.json`), that daily run runs
+everyone's reports one after the other instead. Each recruit keeps their own job search (region,
+places, titles, salary, job types; a new recruit's searches start from the town they signed up
+with, and any region is set on their page), seen jobs, tracker, feedback buttons and skills pool.
+They share the server's job sources, search keys and model settings, and every
 model request (ratings, cover letters, CVs, sign-ups, for all recruits) waits in one shared queue,
 so the model only ever gets one request at a time; see
 [configuration](configuration.md#where-settings-come-from). A sign-up
@@ -397,14 +400,19 @@ one recruit.
 CVs are read in a separate process with a time and memory limit, so a broken or hostile file
 can't stall the server.
 
-You are the `owner` profile: your `.env`, `job_profile.md` and `cv_keywords.json` stay exactly as
-they are. `profiles.py` registers you on its first run.
+The main admin is the `owner` row: staff, with no CV, job search or report of their own. Once the
+Worker is linked (`JOB_FEEDBACK_URL` and `JOB_FEEDBACK_API_TOKEN` set), `profiles.py` moves a job
+search still set up in the server's `.env` (from before recruits, or from a single-person setup) to a
+normal recruit once: same name, email, CV, job history, answers and report time, then manages it like
+any other. Links in reports sent before the move still work: their answers, letters and CVs go to that
+recruit, and their unsubscribe link pauses it. Recruits that were sharing the `.env` search each get
+their own copy of it once, so changing one recruit's search never changes another's.
 
 ### The admin page
 
 Once the wizard has deployed the Worker, everything else can be set here: the email server, the
-web search keys, your job search and your CV. Three tabs split it up: **Recruits** (everyone's
-details, job search and CV), **Users and roles** (who else can sign in, and as what) and **Global
+web search keys, and each recruit's details, job search and CV. Three tabs split it up: **Recruits** (each
+recruit's details, job search and CV), **Users and roles** (who else can sign in, and as what) and **Global
 settings** (the email server and web search keys the whole tool shares). Recruiters see only the
 **Recruits** tab, with only their own pool in it; see [Users and roles](#users-and-roles).
 
@@ -416,11 +424,11 @@ settings** (the email server and web search keys the whole tool shares). Recruit
   your timezone (`HERMES_TIMEZONE`). If it hasn't checked in for 45 minutes, a warning asks you to
   check its `vacancy-profiles` job.
 - **Finish setting up**: a progress bar and checklist until HermitShell has connected, the email server is set and a
-  test email worked, there is a web search key, and your CV and job search are in. Each item links
-  to its form.
+  test email worked, there is a web search key, and the first recruit has joined. Each item links
+  to its form, the last one to **Create invite link**.
 - **HermitShell could not apply**: changes HermitShell rejected in the last day (a mistyped SMTP server,
   for example), with the reason.
-- **Recruits**: everyone HermitShell reports, with the date they joined, their status, when their
+- **Recruits**: every recruit HermitShell reports (never you or another dashboard user), with the date they joined, their status, when their
   last report ran (hover it for the exact time), their report time (**Daily at 08:00** or
   **Weekdays at 08:15**) and a **no CV** tag when there is none yet. The buttons sit on one line at
   the end of the row. **Send jobs** runs that recruit's report straight away (see
@@ -430,7 +438,7 @@ settings** (the email server and web search keys the whole tool shares). Recruit
   [stats page](#stats) and **24 sent** the [list of jobs sent](#jobs-sent). The pause and play
   buttons pause or resume their reports, and the red bin button deletes them: it opens a window where you tick **Delete their CV and history** and press **Delete**.
   Deleting removes their CV and history from your server, their answers still waiting in KV and
-  their name and email from the logs; the owner can't be deleted.
+  their name and email from the logs.
 - **Pending sign-ups**: someone who has sent the invite form gets a **pending** row straight away
   (name, email, when and what they're looking for), while HermitShell reads their CV and sets them
   up. HermitShell reports the new recruit before it takes the sign-up off the queue, so the row
@@ -619,7 +627,7 @@ under it. Details, job search and the daily report time are one form with one **
 button; **Send jobs now** and the CV's **Upload CV** have their own.
 
 - **Details**: name, the email address their reports go to, phone and home town (shown on cover
-  letters). For you, the address is `ALERT_EMAIL`.
+  letters).
 - **Job search**: up to 8 job titles, region or city (web searches use it), country (picked from a
   list), the towns that count as local, whether fully remote jobs elsewhere count, seniority,
   minimum salary (empty means no minimum; `45000`, `45k` and `£45,000` all work), the salary
@@ -628,8 +636,8 @@ button; **Send jobs now** and the CV's **Upload CV** have their own.
   employer. Saving rebuilds the web search queries and the title filter when the titles or
   location change.
 - **Daily report**: the time (in `HERMES_TIMEZONE`) and days (every day, or weekdays) HermitShell sends
-  this recruit's report. HermitShell moves the recruit's scheduled job, or for you the setup's
-  `job_scanner.py` job, when it applies the save; until then the dashboard says the time is moving.
+  this recruit's report. HermitShell moves the recruit's scheduled job when it applies the
+  save; until then the dashboard says the time is moving.
   A schedule set by hand with `scheduler.py edit` shows here too, and a cron expression that isn't a
   plain time leaves the box empty until you pick one.
 - **Send jobs now**: see below.
@@ -727,8 +735,8 @@ turning smoothly as the list refreshes:
 - Answers to the email buttons are not tasks and can't be removed here.
 
 Each cancel is written in that recruit's [history](#history) with who pressed it, for example
-**Cancelled the tailored CV: Data Engineer at Northwind** or **Stopped the job report**. Global
-settings changes go in the owner's history; a cancelled sign-up has no recruit yet, so it is not kept.
+**Cancelled the tailored CV: Data Engineer at Northwind** or **Stopped the job report**. A
+cancelled global settings change or sign-up belongs to no recruit, so it is not kept.
 
 Recruiters don't get the button or the window, and `/admin/tasks` answers them with 403; the status line
 still tells them how many of their changes are **Waiting for HermitShell**.
@@ -775,7 +783,7 @@ and the details its email card showed (kept apart as `sent:<id>` so the stats pa
 Email addresses, phone numbers and the recruit's name and email are removed from that text first.
 A deleted recruit's stats are removed with them. The page is drawn on the Worker as plain SVG and CSS,
 without JavaScript, and its icons and charts animate in unless your system asks for reduced motion.
-`python3 profile_stats.py` prints the owner's numbers on the server.
+`python3 profile_stats.py state/profiles/<id>/state/job_tracker.db` prints a recruit's numbers on the server.
 
 #### Jobs sent
 
@@ -804,14 +812,14 @@ and a **Tailored CV**:
   emailed; it waits here for download.
 - **Download** appears once one has been made for that job in the last `COVER_LETTER_KEEP_DAYS`
   days (7 by default), from here or from an email button.
-- **Email to Sam** (**Email to you** on your own list) sits beside **Download** and has HermitShell
+- **Email to Sam** (the recruit's first name) sits beside **Download** and has HermitShell
   email the one kept to that recruit, as an email button would: the same PDF, with no model used
   (a new one is written only if the file has gone from your server). The tile says
   **Emailing to Sam…** until it has gone. The request carries `send: 1`, which HermitShell's tracker
   keeps as the `send` flag in place of the download-only `quiet`.
 - **Regenerate** writes a new one, replacing the one kept.
 
-The third tile, **Email to Sam** (**Email to you** on your own list), sends the job itself to that
+The third tile, **Email to Sam**, sends the job itself to that
 recruit's address: **Send** asks HermitShell, which emails it within 5 minutes as the card it had in
 the daily report, with its buttons (applied, cover letter, tailored CV and the rest) signed for that
 profile. No model is used. A loading circle shows while it goes, then **Emailed to Sam** with when,
@@ -869,8 +877,9 @@ Every daily report and weekly roll-up ends with an **Unsubscribe** link (signed 
 with a confirmation page). For a recruit the Worker drops their answers still waiting in
 KV and their [history](#history) straight away, and the next `profiles.py` run deletes the profile, CV, tracker and letters,
 replaces their name and email address with `[deleted]` in the logs, emails them a confirmation and
-tells you (without their address). For the owner it only pauses your own reports (the others keep
-running) until you resume from `/admin` or with `profiles.py --resume owner`.
+tells you (without their address). The unsubscribe link in a report you received before your own job
+search moved to a recruit only pauses that recruit (the others keep running) until you resume it from
+`/admin` or with `profiles.py --resume <id>`.
 
 ### Privacy notice
 
