@@ -234,6 +234,28 @@ def ollama_reply(content="from ollama"):
     return Reply({"message": {"content": content}})
 
 
+@pytest.mark.parametrize("task, temp", [("letter", 0.4), ("cv_tailor", 0.2), ("summary", 0.3), ("rating", 0),
+                                        ("cv_read", 0), ("other", 0)])
+def test_writing_gets_a_little_variety_and_scoring_none(monkeypatch, seen, task, temp):
+    use(monkeypatch, "huggingface")
+    seen.replies[url("huggingface")] = [answer("ok")]
+    seen.replies["http://ollama:11434/api/chat"] = [ollama_reply()]
+    hc.ollama_chat("http://ollama:11434", "m", "s", "u", None, task=task)
+    monkeypatch.delenv("HUGGINGFACE_API_KEY")
+    hc.ollama_chat("http://ollama:11434", "m", "s", "u", None, task=task)
+    assert seen[0]["body"]["temperature"] == temp and seen[1]["body"]["options"]["temperature"] == temp
+
+
+def test_openrouter_is_asked_to_think_briefly_on_the_many_small_tasks_only(monkeypatch, seen):
+    use(monkeypatch, "openrouter", "huggingface")
+    seen.replies[url("openrouter")] = [answer("ok")]
+    for task in ("triage", "rating", "verify", "summary", "brief", "letter", "cv_tailor"):
+        lp.chat("s", "u", task=task)
+    reasoning = [s["body"].get("reasoning") for s in seen]
+    assert reasoning == [{"effort": "low", "exclude": True}] * 5 + [None, None]
+    assert "reasoning" not in lp._body("huggingface", "s", "u", None, 100, False, "rating")
+
+
 def test_ollama_chat_asks_the_cloud_first_and_skips_ollama(monkeypatch, seen):
     use(monkeypatch, "openrouter")
     seen.replies[url("openrouter")] = [answer("Strong \u2014 apply")]

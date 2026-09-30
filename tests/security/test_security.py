@@ -397,6 +397,22 @@ def test_the_scanners_saved_reports_are_encrypted_with_a_data_key(tmp_path, monk
     assert "<html" in hc.read_private_text(report)
 
 
+def test_the_rating_brief_cache_keeps_only_a_hash_of_the_profile_and_is_encrypted(tmp_path, monkeypatch):
+    pytest.importorskip("cryptography")
+    import job_extras
+    monkeypatch.setenv(hc.DATA_KEY_ENV, hc.new_data_key())
+    profile = "Skills: Python; SQL\n" + "\n".join(f"- Delivered the Contoso rollout {n} for Alex Morgan using Python and SQL"
+                                                for n in range(80))
+    brief = "Delivers client rollouts using Python and SQL. " * 6
+    monkeypatch.setattr(job_extras, "ollama_chat", lambda *a, **k: brief)
+    cache = tmp_path / "rating_brief.json"
+    assert job_extras.rating_profile(profile, ["Python", "SQL"], ("http://ollama:11434", "m", None), cache) == brief.strip()
+    raw = cache.read_bytes()
+    assert hc.is_sealed(cache) and b"Python" not in raw and b"Alex Morgan" not in raw
+    kept = json.loads(hc.read_private_text(cache))
+    assert set(kept) == {"profile", "brief"} and "Alex Morgan" not in json.dumps(kept)
+
+
 @POSIX
 def test_backups_are_owner_only_and_encrypted(tmp_path, monkeypatch):
     pytest.importorskip("cryptography")

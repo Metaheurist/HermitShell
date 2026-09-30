@@ -53,6 +53,9 @@ LAST_EVERY = 60
 _DAILY = re.compile(r"per[- ]?day|daily|free-models-per-day|quota", re.I)
 _THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.I)
+# Short, many-a-day tasks: a reasoning model behind OpenRouter is asked to think briefly, which saves the most
+# tokens of anything (its thinking is billed and counted like any reply).
+LIGHT_TASKS = {"triage", "rating", "verify", "summary", "brief"}
 
 
 def key(name: str) -> str:
@@ -163,15 +166,18 @@ def extract_json(text: str) -> str:
     return ""
 
 
-def _body(name: str, system: str, user: str, fmt: dict | None, num_predict: int, schema_in_prompt: bool) -> dict:
+def _body(name: str, system: str, user: str, fmt: dict | None, num_predict: int, schema_in_prompt: bool,
+          task: str = "other") -> dict:
     if fmt and schema_in_prompt:
         system = f"{system}\n\nReply with only a JSON object matching this JSON schema:\n{json.dumps(fmt)}"
-    body = {"model": model(name), "temperature": 0,
+    body = {"model": model(name), "temperature": hc.temperature(task),
             # Reasoning models spend part of the budget thinking before they answer.
             "max_tokens": max(num_predict * 3, num_predict + 2048),
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     if fmt and not schema_in_prompt:
         body["response_format"] = {"type": "json_schema", "json_schema": {"name": "reply", "strict": False, "schema": fmt}}
+    if name == "openrouter" and task in LIGHT_TASKS:
+        body["reasoning"] = {"effort": "low", "exclude": True}
     return body
 
 
@@ -212,10 +218,10 @@ def ask(name: str, system: str, user: str, fmt: dict | None, num_predict: int, s
     """One provider's answer, "" when it gave none (and it rests when the failure was the provider's)."""
     started = time.monotonic()
     try:
-        resp = _post(name, _body(name, system, user, fmt, num_predict, False))
+        resp = _post(name, _body(name, system, user, fmt, num_predict, False, task))
         # Not every model behind a router supports structured output: ask again with the schema in the prompt.
         if fmt and resp.status_code in (400, 422):
-            resp = _post(name, _body(name, system, user, fmt, num_predict, True))
+            resp = _post(name, _body(name, system, user, fmt, num_predict, True, task))
     except requests.RequestException as exc:
         state[name]["rest_until"], state[name]["why"] = rest_for(0, "", "", now)
         _count(state, name, now, False)

@@ -921,6 +921,14 @@ def _free_model_slot(fcntl, slots: int) -> tuple[int, int] | None:
     return None
 
 
+# Writing gets a little variety so letters don't all read alike; scoring and copying facts stay deterministic.
+TASK_TEMPERATURE = {"letter": 0.4, "cv_tailor": 0.2, "summary": 0.3}
+
+
+def temperature(task: str) -> float:
+    return TASK_TEMPERATURE.get(task, 0.0)
+
+
 def ollama_chat(host: str, model: str, system: str, user: str, num_ctx: int | None,
                 fmt: dict | None = None, num_predict: int = 500, task: str = "other") -> str:
     """One chat request: to the cloud models when a key is set (llm_providers.py), else or when none of them
@@ -958,7 +966,7 @@ def _ollama_request(host: str, model: str, system: str, user: str, num_ctx: int 
     import llm_usage
     started = time.monotonic()
     try:
-        reply = _ollama_post(host, model, system, user, num_ctx, fmt, num_predict)
+        reply = _ollama_post(host, model, system, user, num_ctx, fmt, num_predict, temperature(task))
     except requests.RequestException:
         llm_usage.record(task, 0, 0, (time.monotonic() - started) * 1000, ok=False)
         raise
@@ -972,7 +980,7 @@ def _ollama_request(host: str, model: str, system: str, user: str, num_ctx: int 
 
 
 def _ollama_post(host: str, model: str, system: str, user: str, num_ctx: int | None,
-                 fmt: dict | None, num_predict: int) -> dict:
+                 fmt: dict | None, num_predict: int, temp: float = 0.0) -> dict:
     import autofit
     body = {"model": model, "stream": False, "keep_alive": "30m",
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
@@ -981,7 +989,7 @@ def _ollama_post(host: str, model: str, system: str, user: str, num_ctx: int | N
     chars = len(system) + len(user)
     with model_turn(slots=autofit.slots(host)) as slot:
         target, extra = autofit.choose(host, model, num_ctx, chars, num_predict, slot)
-        body["options"] = {"temperature": 0, "num_predict": num_predict, **extra}
+        body["options"] = {"temperature": temp, "num_predict": num_predict, **extra}
         try:
             resp = requests.post(f"{target}/api/chat", json=body, timeout=600)
             resp.raise_for_status()
@@ -991,7 +999,7 @@ def _ollama_post(host: str, model: str, system: str, user: str, num_ctx: int | N
                 raise
             log(f"{target} failed ({exc.__class__.__name__}); trying {host}")
             target, extra = autofit.choose(host, model, num_ctx, chars, num_predict, 0)
-            body["options"] = {"temperature": 0, "num_predict": num_predict, **extra}
+            body["options"] = {"temperature": temp, "num_predict": num_predict, **extra}
             resp = requests.post(f"{target}/api/chat", json=body, timeout=600)
             resp.raise_for_status()
         reply = resp.json()

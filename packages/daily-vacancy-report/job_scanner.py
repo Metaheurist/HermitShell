@@ -54,7 +54,8 @@ from hermes_common import (BROWSER_HEADERS, EMAIL_HEAD, STATE_DIR, WebClient, co
                            email_header, env_bool, env_int, first_sentences, html_to_text, inline_images,
                            load_env_file, log, ollama_chat)
 from job_extras import (below_min_salary, closing_date, combined_level, days_left, group_agency_posts,
-                        parse_salary, rating_failed, repost_key, second_opinion, triage_titles)
+                        parse_salary, rating_failed, rating_profile, repost_key, second_opinion, trim_listing,
+                        triage_titles)
 from job_tracker import (ACTIONS, FOLLOWUP_ACTIONS, Tracker, card_links, prompt_examples, skill_link, skills_text,
                          sync_feedback, unsubscribe_link)
 from job_weekly import (ICON_DIR, card_action_bar, build_weekly, closing_pill, followup_section, followup_text,
@@ -62,6 +63,7 @@ from job_weekly import (ICON_DIR, card_action_bar, build_weekly, closing_pill, f
 
 hc.LOG_TAG = "job_radar"
 SEEN_FILE = STATE_DIR / "job_scanner_seen.json"
+BRIEF_FILE = STATE_DIR / "rating_brief.json"
 RETRY_FILE = STATE_DIR / "job_scanner_retry.json"
 TRACKER_FILE = STATE_DIR / "job_tracker.db"
 MAX_RATING_ATTEMPTS = 4
@@ -476,8 +478,7 @@ def clean_listing(md: str) -> str:
             md = md[:idx]
     md = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", md)
     md = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", md)
-    md = re.sub(r"\n{3,}", "\n\n", md)
-    return md.strip()
+    return trim_listing(md)
 
 
 def header_facts(md: str) -> dict:
@@ -592,7 +593,7 @@ def rate_job(host: str, model: str, num_ctx: int | None, profile: str, cv_keywor
         "JOB LISTING\n"
         f"Title: {job['title']}\nURL: {job['url']}\nSource: {job['source']}\n"
         f"Structured facts from the page:\n{fact_lines}\n"
-        f"Listing text:\n{job['text'][:MAX_LISTING_CHARS]}"
+        f"Listing text:\n{trim_listing(job['text'])[:MAX_LISTING_CHARS]}"
     )
     for num_predict in (900, 1600):
         try:
@@ -1172,6 +1173,7 @@ def run(args: argparse.Namespace) -> int:
         return 4
     cv_kw, other_kw = with_added_skills(cv_kw, other_kw, tracker.skills())
     profile = "\n\n".join(x for x in (profile, skills_text(tracker)) if x)
+    profile = rating_profile(profile, list(cv_kw), (host, model, num_ctx), BRIEF_FILE)
     cv_lower = {k.lower() for k in cv_kw}
     nijobs_kw, queries = CFG.nijobs_keywords, CFG.queries
     max_scrape = args.limit or env_int("JOB_SCANNER_MAX_SCRAPE", 25)

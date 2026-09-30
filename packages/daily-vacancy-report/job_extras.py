@@ -1,17 +1,144 @@
 """Daily Vacancy Report helpers: salary and closing-date parsing, seniority, title triage,
-a second opinion on top picks, and grouping of recruitment-agency adverts.
+a second opinion on top picks, grouping of recruitment-agency adverts, and trimming what the model is sent
+(advert boilerplate, and a compact profile or a short brief of a long one).
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import date, datetime
+from pathlib import Path
 
 import requests
 
+import hermes_common as hc
 from hermes_common import log, ollama_chat
 from money import SYMBOLS, currency_code
+from writing_checks import honest
+
+# --------------------------------------------------------------------------- what the model is sent
+
+# Lines of a scraped advert that say nothing about the job: site navigation, buttons, cookie and legal notices.
+_BOILERPLATE = re.compile(
+    r"^(?:apply|apply now|apply for this (?:job|role)|quick apply|easy apply|save|save (?:this )?job|saved|share|"
+    r"share this (?:job|role)|print|email|email (?:this )?job|report (?:this )?job|back to (?:search|results|jobs)|"
+    r"sign in|log ?in|register|create (?:a )?(?:free )?(?:job )?alert|get (?:similar )?job alerts?|upload (?:your )?cv|"
+    r"view all jobs|see all jobs|show (?:more|less)|read (?:more|less)|skip to (?:main )?content|menu|home|search|"
+    r"search jobs|cookie settings|accept(?: all)?(?: cookies)?|reject all|manage (?:cookies|preferences)|close|"
+    r"previous|next)\W*$"
+    r"|.*\b(?:we use cookies|(?:site|website) uses cookies|cookie (?:policy|notice)|privacy (?:policy|notice)|"
+    r"terms (?:and|&) conditions|all rights reserved)\b"
+    r"|.*(?:\u00a9|\bcopyright \d{4})"
+    r"|(?:follow us|connect with us|share on)\b"
+    r"|.*\bequal opportunit(?:y|ies) employer\b", re.I)
+_RULE = re.compile(r"^[\s|:*_=\-]*$")
+
+
+def trim_listing(text: str) -> str:
+    """The advert without boilerplate lines, repeats and runs of blank lines, so more of the job fits the model's
+    share of it in fewer tokens."""
+    kept, seen = [], set()
+    for raw in (text or "").splitlines():
+        line = " ".join(raw.split())
+        bare = re.sub(r"^[#>*\-\d.)\s]+", "", line).strip()
+        if not line:
+            if kept and kept[-1]:
+                kept.append("")
+            continue
+        if _RULE.match(line) and len(line) > 2 or _BOILERPLATE.match(bare) or re.fullmatch(r"https?://\S+", bare):
+            continue
+        key = bare.lower()
+        if len(key) > 3 and key in seen:
+            continue
+        seen.add(key)
+        kept.append(line)
+    return "\n".join(kept).strip()
+
+
+def compact_profile(text: str) -> str:
+    """The profile with each bullet list folded onto its heading's line and empty entries dropped: the same facts
+    in fewer tokens."""
+    out: list[str] = []
+    items: list[str] = []
+    heading = ""
+
+    def flush() -> None:
+        nonlocal items, heading
+        if heading and items:
+            out.append(f"{heading}: {'; '.join(items)}")
+        elif heading:
+            out.append(heading)
+        else:
+            out.extend(items)
+        items, heading = [], ""
+
+    for raw in (text or "").splitlines():
+        line = " ".join(raw.split())
+        if not line or re.fullmatch(r"[-*]\s*none stated\.?", line, re.I):
+            continue
+        if line.startswith("#"):
+            flush()
+            heading = line.lstrip("#").strip()
+        elif re.match(r"^[-*]\s+", line):
+            items.append(re.sub(r"^[-*]\s+", "", line))
+        else:
+            flush()
+            out.append(line)
+    flush()
+    return "\n".join(out)
+
+
+BRIEF_FROM = 3500
+BRIEF_MAX = 1800
+BRIEF_SYSTEM = ("You condense a job candidate's profile for a job-matching assistant. Keep only facts the profile "
+                "states, with skill and tool names exactly as written. UK English. Plain text only.")
+
+
+def brief_prompt(profile: str) -> str:
+    return (f"PROFILE:\n{profile}\n\nWrite a brief of at most 220 words as short 'Label: values' lines: target job "
+            "titles; seniority and years of experience; current or latest role; core skills and tools (exact names, "
+            "most important first); sectors and domains; qualifications and certifications; location and working "
+            "preferences; what they do not want. Leave out anything the profile does not say.")
+
+
+def brief_ok(brief: str, profile: str, keywords: list[str]) -> bool:
+    """Shorter than the profile, no figures it lacks, and most of the CV keywords it names are still there."""
+    named = [k for k in keywords if re.search(rf"(?<![\w+#]){re.escape(k)}(?![\w+#])", profile, re.I)]
+    kept = [k for k in named if re.search(rf"(?<![\w+#]){re.escape(k)}(?![\w+#])", brief, re.I)]
+    return (200 <= len(brief) <= min(BRIEF_MAX, len(profile) - 200) and honest(brief, profile)
+            and len(kept) * 10 >= len(named) * 7)
+
+
+def rating_profile(profile: str, keywords: list[str], model_info, cache: Path) -> str:
+    """What the rating, triage and second-opinion prompts get: the compact profile, or for a long one a brief
+    written once by the model and kept in `cache` until the profile changes. Falls back to the compact profile."""
+    compact = compact_profile(profile)
+    if len(compact) < BRIEF_FROM:
+        return compact
+    digest = hashlib.sha256(compact.encode()).hexdigest()
+    try:
+        cached = json.loads(hc.read_private_text(cache))
+    except (OSError, ValueError, hc.DataKeyError):
+        cached = {}
+    if isinstance(cached, dict) and cached.get("profile") == digest and isinstance(cached.get("brief"), str):
+        return cached["brief"] or compact
+    host, model, num_ctx = model_info
+    try:
+        brief = ollama_chat(host, model, BRIEF_SYSTEM, brief_prompt(compact), num_ctx, num_predict=500, task="brief")
+    except requests.RequestException as exc:
+        log(f"could not shorten the profile for ratings ({exc.__class__.__name__}); sending it whole")
+        return compact
+    brief = "\n".join(" ".join(line.split()) for line in brief.splitlines() if line.strip())
+    ok = brief_ok(brief, profile, keywords)
+    if not ok:
+        log("the profile brief left out too much; ratings get the whole profile")
+    try:
+        hc.write_private(cache, json.dumps({"profile": digest, "brief": brief if ok else ""}).encode())
+    except OSError as exc:
+        log(f"could not keep the profile brief: {exc.__class__.__name__}")
+    return brief if ok else compact
 
 # --------------------------------------------------------------------------- salary
 
