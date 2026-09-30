@@ -651,6 +651,12 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **New recruit emails are laid out, not one paragraph.** The **New recruit** and **Recruit updated**
+  emails to you list email, location and what they are looking for as labelled rows, with an **Open
+  Sam's profile** button beside **Manage recruits**. The job titles searched and the skills read from the CV
+  each get their own card of chips with a count, like the welcome email. The plain-text version keeps one
+  line each. The email is built in one place (`profiles.send_new_recruit`), which the screenshots use too.
+  Tests check the layout, the plain text and that every field and the profile link are escaped.
 - **Demo mode is a switch.** Global settings shows an on/off switch with **Demo mode** and Off, or On and
   since when, instead of the Turn on and Turn off buttons. It is still a plain form (no scripts), read out
   as a switch (`role="switch"`, `aria-checked`), and the knob slides over on the page shown after it is

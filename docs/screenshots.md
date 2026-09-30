@@ -147,7 +147,7 @@ Sent by `profiles.py` when you use [recruits](feedback-worker.md#recruits-and-th
 <tr><th>Welcome (to the new person)</th><th>New recruit (to you)</th></tr>
 <tr>
 <td><img src="images/emails/welcome.png" alt="Welcome email" width="400"></td>
-<td><img src="images/emails/owner-new-profile.png" alt="New recruit notice" width="400"></td>
+<td><img src="images/emails/owner-new-profile.png" alt="New recruit notice: email, location and what they want as rows, an Open profile button, then the job titles searched and the CV's skills as chips" width="400"></td>
 </tr>
 <tr><th>Unsubscribed (to you)</th><th>Goodbye (to the person who left)</th></tr>
 <tr>
