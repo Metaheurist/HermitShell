@@ -540,7 +540,7 @@ describe("AI models and the server panel", () => {
     }
     const panel = serverBox(status);
     expect(panel).not.toContain("smeter");
-    expect([...panel.matchAll(/<li[^>]*>.*?<b>([^<]+)<\/b>/g)].map((m) => m[1])).toEqual(["OpenRouter", "Local Ollama"]);
+    expect([...panel.matchAll(/<li[^>]*>.*?<b>([^<]+)<\/b>/g)].map((m) => m[1])).toEqual(["OpenRouter", "Server model"]);
   });
 
   it("never lets a recruiter see the server, and never queues a model key from a recruiter", async () => {

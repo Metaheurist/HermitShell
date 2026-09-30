@@ -10,7 +10,7 @@ test("the server button shows the machine and the models on hover, and on focus 
   await expect(panel).toBeVisible();
   await expect(panel).toContainText("Contoso Server CPU");
   await expect(panel).toContainText("8 threads");
-  await expect(panel.locator(".smodels li")).toHaveText([/OpenRouter/, /Local Ollama/]);
+  await expect(panel.locator(".smodels li")).toHaveText([/OpenRouter/, /Server model/]);
   await expect(panel).toContainText("Last answer from OpenRouter");
   await page.mouse.move(5, 500);
   await expect(panel).toBeHidden();

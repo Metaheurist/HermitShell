@@ -51,7 +51,7 @@ async function setup(status = STATUS) {
 const card = (html, name) => html.split(/<(?:details class="keycard|div class="keyrow)/).find((r) => r.startsWith(` cr-${name}"`));
 
 describe("AI model keys in Global settings", () => {
-  it("lists each provider with its logo, masked key, model, state and usage, then the local Ollama", async () => {
+  it("lists each provider with its logo, masked key, model, state and usage, then the server model", async () => {
     const { settings } = await setup();
     expect(settings).toContain('<h2 id="models">AI model API keys</h2>');
     const or = card(settings, "openrouter");
@@ -68,7 +68,7 @@ describe("AI model keys in Global settings", () => {
     expect(hf).not.toContain("model_key_clear");
     expect(card(settings, "featherless")).toContain('<a class="addkey" href="#mkey-featherless">');
     const local = card(settings, "ollama");
-    expect(local).toContain("<b>Local Ollama</b>");
+    expect(local).toContain("<b>Server model</b>");
     expect(local).toContain('<span class="crtag env">fallback</span>');
     expect(local).toContain("last ran at 8192 context, on the GPU");
     expect(local).toContain('this machine suits <code class="mname">qwen2.5:1.5b-instruct</code>');
@@ -117,7 +117,7 @@ describe("AI model keys in Global settings", () => {
     ]);
   });
 
-  it("draws Cloud first with a cloud and Local first with a computer", async () => {
+  it("draws Cloud first with a cloud and Server first with a computer", async () => {
     const { settings } = await setup();
     const choice = (value) => settings.split('<label class="crchoice">').find((c) => c.includes(`value="${value}"`));
     expect(choice("cloud")).toContain(CLOUD_ICON);
@@ -146,15 +146,15 @@ describe("the admin's server panel", () => {
     expect(box).toMatch(/<b>GPU<\/b>.*?<div class="sbar low"/s);
     expect(box).toContain("488 GB free of 977 GB");
     const order = [...box.matchAll(/<li[^>]*>.*?<b>([^<]+)<\/b>/g)].map((m) => m[1]);
-    expect(order).toEqual(["OpenRouter", "BazaarLink", "Hugging Face", "Local Ollama"]);
+    expect(order).toEqual(["OpenRouter", "BazaarLink", "Hugging Face", "Server model"]);
     expect(box).toContain("Last answer from OpenRouter");
     expect(box).toContain('href="/admin/settings#models"');
     expect(dash).toContain(".srv:hover .srvpanel,.srv:focus-within .srvpanel{display:block}");
   });
 
-  it("puts the local Ollama first when it is asked first", () => {
+  it("puts the server model first when it is asked first", () => {
     const html = serverBox({ ...STATUS, llm: { ...STATUS.llm, order: "local" } });
-    expect([...html.matchAll(/<li[^>]*>.*?<b>([^<]+)<\/b>/g)].map((m) => m[1])[0]).toBe("Local Ollama");
+    expect([...html.matchAll(/<li[^>]*>.*?<b>([^<]+)<\/b>/g)].map((m) => m[1])[0]).toBe("Server model");
   });
 
   it("is not shown to recruiters", async () => {

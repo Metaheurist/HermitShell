@@ -599,17 +599,17 @@ model, what is left (OpenRouter's free requests today or dollars of credit, Baza
 Featherless's plan, Hugging Face's account) and whether it is ready or resting, and opens to the
 key's usage like the web search keys.
 
-HermitShell asks the providers with a key in turn and uses the local Ollama when none has a key or
+HermitShell asks the providers with a key in turn and uses the server model when none has a key or
 credits left. A provider that runs out of credits or hits its daily limit rests until the next day
-(UTC), a rejected key for six hours and a rate limit for as long as it asks. The **Local Ollama** row
+(UTC), a rejected key for six hours and a rate limit for as long as it asks. The **Server model** row
 shows the model it runs, where it last ran and, when it differs, the model that suits the machine
 ([how it's picked](configuration.md#autofit-gpu-cpu-and-context-chosen-for-you)). **Cloud first**
-or **Local first** sets which is asked first; with **Local first** the cloud is only used when
-Ollama doesn't answer. Cloud models are sent each recruit's CV and the adverts it is compared with,
+or **Server first** sets which is asked first; with **Server first** the cloud is only used when
+the server model (its own Ollama) doesn't answer. Cloud models are sent each recruit's CV and the adverts it is compared with,
 and free models may keep what they are sent, which the [privacy notice](#privacy-notice) says.
 [Where to get each key](api-keys.md#cloud-models).
 
-<img src="images/worker/admin-settings-models.png" alt="The AI model API keys section: OpenRouter opened to its key's usage, BazaarLink, Featherless, Hugging Face, the local Ollama and the order" width="720">
+<img src="images/worker/admin-settings-models.png" alt="The AI model API keys section: OpenRouter opened to its key's usage, BazaarLink, Featherless, Hugging Face, the server model and the order" width="720">
 
 <img src="images/worker/admin-model-key-modal.png" alt="The AI model key window: pick the provider, paste the key and an optional model" width="420">
 

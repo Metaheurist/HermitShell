@@ -710,6 +710,8 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The dashboard calls the server's own Ollama the **Server model** instead of **Local Ollama**, and the order
+  choice **Server first** instead of **Local first** (`LLM_ORDER=local` is unchanged).
 - Shared code in one place: the Worker's profile id pattern, hex and cache hashes, hidden form fields and
   short month names now live in `lib.js` instead of being copied into several files, and `autofit.py`
   and `llm_usage.py` lock their state files with `hermes_common.file_lock` like `llm_providers.py`.

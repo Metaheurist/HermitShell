@@ -1,5 +1,5 @@
 // The AI models: the cloud model keys on the Global settings page (OpenRouter, BazaarLink, Featherless and Hugging
-// Face, for servers that can't run a model themselves), the local Ollama's row and which is asked first, and the
+// Face, for servers that can't run a model themselves), the server model's row (Ollama) and which is asked first, and the
 // admin's server button beside Sign out, whose panel (shown on hover or focus, since pages run no JavaScript) has
 // the machine's CPU, memory, GPUs and disk and the model that answers. Everything comes from HermitShell's status
 // (llm_providers.py, key_usage.py, autofit.py) and is checked field by field before it is shown; keys only ever
@@ -23,7 +23,7 @@ const obj = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {});
 const text = (v, max = 80) => (typeof v === "string" ? v.slice(0, max) : "");
 const modelName = (v) => (typeof v === "string" && MODEL_RE.test(v) ? v : "");
 const whole = (v, max = 1e9) => (Number.isFinite(v) && v >= 0 && v <= max ? Math.round(v) : null);
-const label = (name) => (name === "ollama" ? "the local Ollama" : MODEL_PROVIDERS[name]?.label || "");
+const label = (name) => (name === "ollama" ? "the server model" : MODEL_PROVIDERS[name]?.label || "");
 
 // ------------------------------------------------------------------------- Global settings: model keys
 
@@ -66,7 +66,7 @@ function localRow(llm) {
   const facts = [where ? `last ran at ${esc(where)}` : "not used yet",
     suggested && suggested !== model ? `this machine suits <code class="mname">${esc(suggested)}</code>` : ""].filter(Boolean).join(" &middot; ");
   return `<div class="keyrow cr-ollama"><span class="crlogo">${logo("ollama")}</span><div class="keyinfo">
-<b>Local Ollama</b> <span class="crtag env">${llm.order === "local" ? "asked first" : "fallback"}</span>
+<b>Server model</b> <span class="crtag env">${llm.order === "local" ? "asked first" : "fallback"}</span>
 ${model ? `<code class="keyhint">${esc(model)}</code>` : '<div class="muted">No model yet</div>'}
 <div class="muted small">${facts}</div></div></div>`;
 }
@@ -77,7 +77,7 @@ function orderForm(llm, csrf, pending = "") {
 <span>${logo(value === "local" ? "computer" : "cloud")}<i class="mtext"><b>${title}</b><small>${detail}</small></i></span></label>`;
   return `<form method="post" action="/admin/action" class="morder"><input type="hidden" name="csrf" value="${esc(csrf)}">
 <input type="hidden" name="action" value="model_order">
-<div class="crchoices">${choice("cloud", "Cloud first", "Ollama when no key or credits are left", !local)}${choice("local", "Local first", "The cloud only when Ollama doesn&rsquo;t answer", local)}</div>
+<div class="crchoices">${choice("cloud", "Cloud first", "The server model when no key or credits are left", !local)}${choice("local", "Server first", "The cloud only when the server model doesn&rsquo;t answer", local)}</div>
 <button class="small">Save order</button>${pending ? ` ${savingTag()}` : ""}</form>`;
 }
 
@@ -87,7 +87,7 @@ export function modelsSection(status, csrf, saving = { providers: new Set(), ord
   const llm = obj(status.llm);
   return `<h2 id="models">AI model API keys</h2>
 <p class="muted">For servers that can&rsquo;t run a model themselves. HermitShell asks the providers with a key in this order, and the
-local Ollama when none has a key or credits left. They are sent each recruit&rsquo;s CV and the adverts it is compared with,
+server model when none has a key or credits left. They are sent each recruit&rsquo;s CV and the adverts it is compared with,
 and free models may keep what they are sent.</p>
 <div class="keyrows">${Object.entries(MODEL_PROVIDERS).map(([name, info]) => modelRow(name, info, obj(models[name]), csrf, saving.providers.has(name))).join("")}${localRow(llm)}</div>
 ${orderForm(llm, csrf, saving.order)}`;
@@ -233,7 +233,7 @@ function modelFacts(status) {
     if (name === "ollama") {
       const model = modelName(local.model);
       const where = text(local.where);
-      return `<li>${logo("ollama")}<span><b>Local Ollama</b> <code class="mname">${esc(model || "no model")}</code>${where ? `<small>${esc(where)}</small>` : ""}</span></li>`;
+      return `<li>${logo("ollama")}<span><b>Server model</b> <code class="mname">${esc(model || "no model")}</code>${where ? `<small>${esc(where)}</small>` : ""}</span></li>`;
     }
     const m = obj(models[name]);
     return `<li class="cr-${name}">${logo(name)}<span><b>${esc(MODEL_PROVIDERS[name].label)}</b> <code class="mname">${esc(modelName(m.model) || MODEL_PROVIDERS[name].model)}</code><small>${state(m)}</small></span></li>`;
