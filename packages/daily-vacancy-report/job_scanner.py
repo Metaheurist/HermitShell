@@ -911,7 +911,6 @@ def job_card(job: dict, rank: int | None) -> str:
   {gaps_block}
   {note}
   {card_action_bar(job['url'], job.get("actions") or {})}
-  <div style="font-size:11px;color:{C_MUTED};word-break:break-all">{esc(job['url'])}</div>
 </td></tr></table>"""
 
 

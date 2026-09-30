@@ -545,6 +545,9 @@ def test_card_buttons_are_grouped_rating_by_the_score_then_actions_then_document
     order = [page.index(s) for s in ("a=good_match", "a=not_for_me", "HermitShell fit", '<span style="color:#ffffff">View job</span></a>', "a=applied",
                                      "a=interested", "Made for this job", "a=cover_letter", "a=tailored_cv")]
     assert order == sorted(order)
+    url = job_scanner.esc(report_job()["url"])
+    assert f'href="{url}"' in page and f">{url}<" not in page and "break-all" not in page
+    assert report_job()["url"] in job_scanner.build_text([report_job()], "Summary.")
     assert "HermitShell fit" in page and "Hermes" not in page + job_scanner.build_text([report_job()], "Summary.")
     bare = job_scanner.card_action_bar("https://jobs.example.com/1", {})
     assert '<span style="color:#ffffff">View job</span></a>' in bare and "Made for this job" not in bare
