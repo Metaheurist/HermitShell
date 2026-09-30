@@ -718,6 +718,9 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **View job readable in Gmail.** Gmail painted the purple **View job** button's text in its own link blue
+  (#1155cc), which barely showed. The label is now a white span inside the link (`hermes_common.white_label`),
+  which Gmail leaves alone, in the daily report and the cover letter and tailored CV emails.
 - **The daily report on a phone.** In Gmail's apps a card's columns were squeezed: initials shrank to a
   coloured strip over the title, the fit circle became a tall capsule, the salary wrapped and the three
   meters' bars were a one-pixel tick. The initials and the circle are now fixed-size blocks, the salary and

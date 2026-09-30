@@ -397,6 +397,11 @@ def test_write_atomic_creates_private_files_private(tmp_path):
         assert path.stat().st_mode & 0o777 == 0o600
 
 
+def test_white_label_keeps_button_text_white_and_escaped():
+    assert hc.white_label("View job") == '<span style="color:#ffffff">View job</span>'
+    assert hc.white_label("<b>x</b>") == '<span style="color:#ffffff">&lt;b&gt;x&lt;/b&gt;</span>'
+
+
 def test_run_lock_is_exclusive(tmp_path):
     with hc.run_lock(tmp_path / "x.lock") as first:
         assert first

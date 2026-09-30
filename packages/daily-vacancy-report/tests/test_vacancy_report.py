@@ -542,12 +542,12 @@ def test_card_buttons_are_grouped_rating_by_the_score_then_actions_then_document
     import job_scanner
 
     page = job_scanner.build_html([report_job()], [], REPORT_STATS, "Summary.")
-    order = [page.index(s) for s in ("a=good_match", "a=not_for_me", "HermitShell fit", "View job</a>", "a=applied",
+    order = [page.index(s) for s in ("a=good_match", "a=not_for_me", "HermitShell fit", '<span style="color:#ffffff">View job</span></a>', "a=applied",
                                      "a=interested", "Made for this job", "a=cover_letter", "a=tailored_cv")]
     assert order == sorted(order)
     assert "HermitShell fit" in page and "Hermes" not in page + job_scanner.build_text([report_job()], "Summary.")
     bare = job_scanner.card_action_bar("https://jobs.example.com/1", {})
-    assert "View job</a>" in bare and "Made for this job" not in bare
+    assert '<span style="color:#ffffff">View job</span></a>' in bare and "Made for this job" not in bare
     for html_page in (page, job_scanner.build_html([], [], REPORT_STATS, "", [], "", more=[report_job()])):
         assert "&rarr;" not in html_page and "\u2192" not in html_page
     assert job_scanner.rating_buttons({}) == ""
@@ -573,7 +573,7 @@ def test_report_fits_gmail_by_listing_the_lowest_ranked_jobs_on_one_line(monkeyp
     page = job_scanner.fitted_html(top, maybe, REPORT_STATS, "Summary.")
     assert hermes_common.html_size(hermes_common.compact_html(page)) <= budget
     assert "More matches" in page and "#6 Maybe role 2" in page
-    assert page.count("View job</a>") < 6
+    assert page.count('<span style="color:#ffffff">View job</span></a>') < 6
     assert all(f"Top role {i}" in page and f"Maybe role {i}" in page for i in range(3))
     assert "/f?j=m2&amp;a=not_for_me" in page
     more = page[page.index("More matches"):]

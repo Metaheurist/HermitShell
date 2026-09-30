@@ -628,6 +628,12 @@ u + .body .gmail-difference { background:#000000; mix-blend-mode:difference; }
 </style>"""
 
 
+def white_label(text: str) -> str:
+    """A button's text on a dark background. Gmail paints some links in its own blue (#1155cc) whatever their
+    style, but leaves a coloured span inside the link alone."""
+    return f'<span style="color:#ffffff">{html.escape(text)}</span>'
+
+
 def gmail_dark_safe(inner_html: str) -> str:
     """Wrap light-on-dark content (e.g. a gradient header) so it stays readable in Gmail dark mode."""
     return f'<div class="gmail-screen"><div class="gmail-difference">{inner_html}</div></div>'
