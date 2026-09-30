@@ -8,6 +8,13 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Playwright browser tests and workflow.** A new **Playwright** workflow (`.github/workflows/playwright.yml`)
+  runs 26 Chromium tests of the feedback Worker's pages on every push and pull request (`e2e/`, `npm run e2e`).
+  The Worker runs locally under `wrangler dev` with fictional recruits and throwaway secrets, so no Cloudflare
+  account is needed. They cover sign-in and sign-out, search, the dashboard tabs, a recruit's Manage and History
+  tabs, saving, Send jobs now, pausing, email buttons, invite sign-up, recruiters and their access, phone and
+  wide layouts, and security (cookie flags, CSP, forged CSRF tokens, the API token, escaped input). A failed run
+  uploads the HTML report and traces. Vitest now only picks up `test/` (`vitest.config.js`).
 - **History tab on each recruit's page.** A timeline of everything done on the account, newest first and
   grouped by day, saying who did it: profile saves (which fields), CV uploads, Send jobs now, pausing,
   resuming and assigning, cover letters, tailored CVs, emailed jobs and skills asked for, every email button

@@ -73,3 +73,27 @@ changing your own password and admin resets, and that a recruiter can reach only
 on every route.
 `test/hub.test.js` runs the real `Hub` class on an in-memory Durable Object state: pushes, the
 WebSocket upgrade, presence on the dashboard and saves that still work without the binding.
+
+### Browser tests
+
+```bash
+npx playwright install chromium   # once
+npm run e2e
+```
+
+`e2e/` drives the pages in Chromium with Playwright. `playwright.config.js` starts the Worker with
+`wrangler dev` (the real workerd runtime, local KV and Durable Objects) on a fresh state folder with
+throwaway secrets, and `e2e/global-setup.js` reports three fictional recruits to it as HermitShell would.
+No Cloudflare account is needed. The tests run one at a time in file order, since they share one KV:
+
+| File | What it checks |
+| --- | --- |
+| `admin.spec.js` | Sign-in (wrong password, then right), the recruits list, search, the dashboard tabs, sign-out closing every page |
+| `email.spec.js` | An email button asks first, saves once and shows in History without the note; changed and expired links; the privacy notice |
+| `join.spec.js` | An invite link signs someone up once and they show as pending; a missing CV keeps what was typed |
+| `layout.spec.js` | No admin page scrolls sideways on a phone, the recruits table becomes cards, and grows past 900px on a wide screen |
+| `recruit.spec.js` | A recruit's Manage and History tabs; a saved change stays in the form and is recorded; Send jobs now and pausing, newest first |
+| `security.spec.js` | Cookie flags, CSP and no-store headers, a forged CSRF token refused, the API token, markup in an invite note shown as text |
+| `users.spec.js` | Adding a recruiter, assigning a recruit (recorded in History), and a recruiter seeing only their own recruits |
+
+The Playwright workflow runs them on every push and uploads the HTML report and traces when one fails.
