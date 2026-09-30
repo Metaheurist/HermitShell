@@ -117,6 +117,8 @@ common/autofit.py          picks the model size for the machine, and GPU or CPU,
                            server per model request
 common/llm_providers.py    cloud models (OpenRouter, BazaarLink, Featherless, Hugging Face) tried in turn before or
                            after Ollama, resting a provider that is out of credits
+common/worker_link.py      the one client for the feedback Worker: https only, no redirects, retries, signed requests
+common/worker_seal.py      the key pair the Worker seals dashboard passwords, API keys and CVs with
 common/doctor.py           checks and sets up prerequisites: packages, scheduler, Ollama and its model, data key
 common/scheduler.py        runs each script on its cron schedule (the service, or a tick from cron)
 common/tests/              unit tests for the shared library, the scheduler and the doctor
@@ -176,6 +178,12 @@ job runs one of them.
   scrubs them from the logs and confirms by email. What invited people are told is in
   [PRIVACY.md](PRIVACY.md); how it works is in
   [docs/configuration.md](docs/configuration.md#data-protection).
+- **A locked-down link to the Worker.** Every request to the feedback Worker goes over HTTPS, is signed
+  (HMAC over the method, path, body and time, with a one-time nonce) and is refused if it is older than five
+  minutes or replayed, so a leaked token alone is no use. Passwords, API keys and CVs entered on the
+  dashboard are encrypted for your server before they reach Cloudflare's storage, and the dashboard warns
+  when HermitShell and the Worker are different versions. See
+  [docs/feedback-worker.md](docs/feedback-worker.md#how-it-stays-safe).
 - **Dry runs.** `--dry-run` runs the whole pipeline, writes the email HTML to `state/` and sends
   nothing.
 

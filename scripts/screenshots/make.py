@@ -413,7 +413,8 @@ def main() -> int:
                     860 if html.stem == "admin-model-key-modal" else
                     # A wide window, where the signed-in box sits beside the card; only the top is kept.
                     240 if html.stem == "admin-signed-in" else
-                    700 if html.stem == "admin-server-panel" else None)
+                    700 if html.stem == "admin-server-panel" else
+                    430 if html.stem == "admin-settings-mismatch" else None)
             print(f"worker/{html.stem}.png")
         for stem in ("admin-dashboard", "admin-users"):
             capture_phone(chrome, profile, html_dir / "worker" / f"{stem}.html", args.out / "worker" / f"{stem}-phone.png",

@@ -34,7 +34,7 @@ using [Semantic Versioning](https://semver.org/).
   answer. HermitShell adds the machine and models to its status; they don't count as a change, so the
   Worker's KV writes stay within the free plan.
 - **Playwright browser tests and workflow.** A new **Playwright** workflow (`.github/workflows/playwright.yml`)
-  runs 30 Chromium tests of the feedback Worker's pages on every push and pull request (`e2e/`, `npm run e2e`).
+  runs 31 Chromium tests of the feedback Worker's pages on every push and pull request (`e2e/`, `npm run e2e`).
   The Worker runs locally under `wrangler dev` with fictional recruits and throwaway secrets, so no Cloudflare
   account is needed. They cover sign-in and sign-out, search, the dashboard tabs, a recruit's Manage and History
   tabs, saving, Send jobs now, pausing, email buttons, invite sign-up, recruiters and their access, phone and
@@ -765,7 +765,39 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Security
 
-A review of the whole app; none of these were known to be exploited.
+- **Signed requests to the feedback Worker.** Every request HermitShell makes to `/events`, `/ack` and
+  `/api/*` carries, besides the API token, an HMAC-SHA256 signature over the method, path and query, a
+  timestamp, a one-time nonce and the SHA-256 of the body, under a key derived from `JOB_FEEDBACK_SECRET`
+  (`common/worker_link.py`, `feedback-worker/src/apiauth.js`). The Worker refuses signatures more than five
+  minutes from its clock, nonces it has seen (kept for ten minutes in the live link's Durable Object, in
+  SQLite) and altered requests. After the first signed request it refuses the token alone for good (KV key
+  `api:signed`), so an older HermitShell keeps working until it updates but a leaked token or a copied
+  request is refused. Unknown `/api/` paths answer a JSON 404, and only after the caller is known.
+- **Passwords, API keys and CVs sealed for your server.** HermitShell keeps an RSA-3072 key pair
+  (`common/worker_seal.py`, `state/worker_seal.json`, encrypted with `HERMES_DATA_KEY` when set) and sends
+  the public key in its status. The Worker (`src/seal.js`) encrypts SMTP passwords, web search and model API
+  keys, pasted CV text and uploaded CV files before they reach KV (RSA-OAEP-SHA-256 wrapping a fresh
+  AES-256-GCM key, bound to the field or CV key as associated data, so a value can't be moved to another
+  field); HermitShell opens them when it collects them. The Worker refuses to save a password or key until
+  HermitShell has sent its key (**Not saved: HermitShell hasn't sent the key...**), and still takes
+  sign-ups. `python3 worker_seal.py --rotate` makes a new key; the old one opens older values for 30 days.
+  Without the `cryptography` package no key is sent, so nothing is stored in plain text.
+- **One hardened client for the Worker.** `profiles.py`, `job_tracker.py` and `cover_letter.py` now share
+  `worker_link.Link`: HTTPS only (plain http only to `localhost`), never follows a redirect with the
+  token, retries 429, 500, 502, 503 and 504 answers and dropped connections up to three times with backoff
+  honouring `Retry-After` (at most 30 seconds; creating an invite is never repeated), sends
+  `User-Agent: HermitShell/2`, and its errors never include the token or URL.
+- **Protocol version handshake.** HermitShell and the Worker both state protocol 2
+  (`X-HermitShell-Protocol` on every API answer, and `protocol` in HermitShell's status). When they differ,
+  the dashboard and Global settings say which is older and how to update it, HermitShell logs it, and
+  `doctor.py` warns.
+- Tests: Python unit tests for the client and sealing, Vitest for signatures (vectors shared with Python,
+  expiry, replay, latch, 413) and sealing, security tests that run the Worker's own `seal.js` and
+  `apiauth.js` under Node against the Python side, and Playwright tests that a saved key reaches the queue
+  sealed and a replayed request is refused by the real Durable Object. A new screenshot shows the version
+  warning.
+
+The rest come from a review of the whole app; none of these were known to be exploited.
 
 - Key usage checks go only to the three providers' HTTPS endpoints, without following redirects, with an
   8-second timeout and replies capped at 64 KB. The cache and the dashboard get a masked hint and a hash of

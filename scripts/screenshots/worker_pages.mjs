@@ -4,7 +4,9 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { PROTOCOL } from "../../packages/daily-vacancy-report/feedback-worker/src/apiauth.js";
 import worker from "../../packages/daily-vacancy-report/feedback-worker/src/index.js";
+import { sealingKeys } from "../../packages/daily-vacancy-report/feedback-worker/test/helpers.js";
 import { LINK_DAYS, sign, today } from "../../packages/daily-vacancy-report/feedback-worker/src/lib.js";
 import { jobHash } from "../../packages/daily-vacancy-report/feedback-worker/src/docs.js";
 import { record } from "../../packages/daily-vacancy-report/feedback-worker/src/history.js";
@@ -113,6 +115,7 @@ const JOB = { titles: ["Data Engineer", "Analytics Engineer", "Python Developer"
   places: ["Manchester", "Salford", "Stockport", "Trafford"], country: "gb", remote_anywhere: true,
   level: "mid", types: ["Permanent", "Contract"], modes: ["Hybrid", "Remote"], min_salary: "45000", currency: "GBP", hide_agency: true };
 const STATUS = {
+  ...(await sealingKeys()).status,
   profiles: [
     { id: "owner", name: "Alex Morgan", email: "alex.morgan@example.com", status: "active", owner: true,
       has_cv: true, created: now - 60 * day, last_run: now - 3 * 3600000, cv_updated: now - 20 * day,
@@ -334,6 +337,9 @@ const fresh = { ...STATUS, profiles: [{ ...STATUS.profiles[0], has_cv: false, jo
   problems: [{ at: now - 600000, what: "email", error: "invalid email server settings" }] };
 await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: fresh });
 await save("admin-dashboard-setup", await admin("/admin"));
+// HermitShell updated but its Worker not yet redeployed: the warning at the top of the admin pages.
+await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: { ...STATUS, protocol: PROTOCOL + 1 } });
+await save("admin-settings-mismatch", await admin("/admin/settings"));
 await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: STATUS });
 
 for (let i = 0; i < 5; i++) await call("/admin/login", { method: "POST", form: { username: "admin", password: `wrong-${i}` } });

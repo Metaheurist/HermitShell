@@ -443,8 +443,13 @@ Applied…) are never listed and can't be cancelled here.
 
 <img src="images/worker/admin-global-key-modal.png" alt="The Add key window: Firecrawl, Tavily or Scrapfly, and the API key" width="380">
 
-Keys are shown only as `fc-...1234`. Keys typed here are removed from the Worker after 2 days if
-HermitShell hasn't collected them.
+Keys are shown only as `fc-...1234`. Keys typed here are encrypted for your server before they are
+stored, and removed from the Worker after 2 days if HermitShell hasn't collected them.
+
+<img src="images/worker/admin-settings-mismatch.png" alt="Global settings with a warning that the Worker (protocol 2) is older than HermitShell (protocol 3) and the command that redeploys it" width="620">
+
+When HermitShell and the Worker are different versions, the dashboard and Global settings say which is
+older and how to update it ([why](feedback-worker.md#how-it-stays-safe)).
 
 <img src="images/worker/admin-settings-models.png" alt="AI model API keys: OpenRouter opened to its free requests left today, BazaarLink, Featherless and Hugging Face, the local Ollama and Cloud first or Local first" width="620">
 

@@ -39,7 +39,34 @@ email button ──> Worker /f (confirm page) ──> KV ──> HermitShell GET
 - **Nothing is saved on click.** Opening a link only shows a confirmation page (with an
   optional note). Mail scanners that open every link can't record answers; only pressing
   **Confirm** saves one.
-- **Private API.** `/events`, `/ack` and `/api/*` need `Authorization: Bearer <JOB_FEEDBACK_API_TOKEN>`.
+- **Private, signed API.** `/events`, `/ack` and `/api/*` need `Authorization: Bearer <JOB_FEEDBACK_API_TOKEN>`
+  and, from HermitShell, an HMAC-SHA256 signature over the method, path and query, a timestamp, a one-time
+  nonce and a hash of the body, under a key derived from `JOB_FEEDBACK_SECRET` (`X-HermitShell-Time`,
+  `-Nonce` and `-Signature` headers). The Worker refuses a signature more than five minutes old or ahead, a
+  nonce it has seen in the last ten minutes (kept in the live link's Durable Object) and anything altered on
+  the way. After the first signed request it refuses requests with the token alone (KV key `api:signed`), so
+  an older HermitShell keeps working until it updates, and after that a leaked token or a copied request is
+  no use on its own. HermitShell only talks to the Worker over `https://` (plain http only to
+  `localhost`), never follows a redirect with the token, and retries 429 and 5xx answers and dropped
+  connections with backoff, honouring `Retry-After` (`common/worker_link.py`).
+- **Secrets sealed for your server.** Passwords, API keys and CVs typed or uploaded into the dashboard or the
+  sign-up form are encrypted in the Worker before they reach KV, with a public key HermitShell sends in its
+  status (RSA-OAEP-3072 wrapping a fresh AES-256-GCM key per value, bound to the field or CV it belongs to).
+  Only your server holds the private key (`state/worker_seal.json`, encrypted with `HERMES_DATA_KEY` when that
+  is set), so KV and anyone who can read it in your Cloudflare account only see ciphertext. Until HermitShell
+  has sent its key the Worker refuses to save a password or API key (**Not saved: HermitShell hasn't sent the
+  key...**); sign-ups and CVs are still taken and stored as before. To change the key, run
+  `python3 worker_seal.py --rotate` in HermitShell's `scripts` folder (`docker exec hermitshell python3
+  /data/scripts/worker_seal.py --rotate` in the container); the old key opens anything sealed before for 30
+  more days.
+- **Versions that match.** HermitShell and the Worker both state a protocol number
+  (`X-HermitShell-Protocol`). When they differ, the dashboard and Global settings say which one is older and
+  how to update it, and `doctor.py` warns too.
+
+<img src="images/worker/admin-settings-mismatch.png" alt="Global settings with a warning that the Worker is older than HermitShell and the command to redeploy it" width="720">
+
+*A Worker older than HermitShell, until it is redeployed.*
+
 - **Protected admin page.** `/admin` is off until you set `ADMIN_PASSWORD`, and can sit behind
   Cloudflare Access (an emailed one-time code) as well; see
   [Recruits](#recruits-and-the-admin-page).
@@ -56,6 +83,8 @@ email button ──> Worker /f (confirm page) ──> KV ──> HermitShell GET
   the Worker itself (a plain SVG with no scripts or links).
 - **No secrets in git.** The two secrets live only in HermitShell's `.env` and in the Worker's
   encrypted secrets. Your KV namespace ID goes in an untracked `wrangler.local.jsonc`.
+  `JOB_FEEDBACK_SECRET` signs both the email links and HermitShell's API requests, so it must match on
+  both sides.
 
 ## What you need
 
@@ -186,7 +215,10 @@ The next email has buttons under each job. Press one, confirm, and the following
 | Symptom | Fix |
 | --- | --- |
 | "Link not valid" when pressing a button | The Worker's `JOB_FEEDBACK_SECRET` differs from `.env`. Put it again with `wrangler secret put`. |
-| Report banner: "feedback Worker unreachable (HTTP 401)" | The API token differs. Put `JOB_FEEDBACK_API_TOKEN` again. |
+| Report banner: "feedback Worker unreachable (HTTP 401)" | The API token or `JOB_FEEDBACK_SECRET` (which signs every request) differs. Put both again, or check with `npx wrangler tail`: `bad signature` means the secret, `unauthorised` the token. `signature expired` means the server's clock is more than five minutes out. |
+| "Not saved: HermitShell hasn't sent the key..." on Global settings | HermitShell is older than the Worker, or not connected yet. Update it (the container updates itself); the key arrives with its next status. |
+| "HermitShell and this Worker don't match" | Update whichever it says is older: `docker exec hermitshell /app/entrypoint.sh worker` redeploys the Worker. |
+| Log: "JOB_FEEDBACK_URL must start with https://" | HermitShell never sends the token over plain http. Use the `https://` address the wizard printed. |
 | TLS or handshake errors right after the first deploy | A new `workers.dev` subdomain takes a few minutes to get its certificate. Wait and retry. |
 | No buttons in the email | `JOB_FEEDBACK_URL` or `JOB_FEEDBACK_SECRET` is empty in `.env`. |
 | Answers never arrive | Check requests with `npx wrangler tail`, or the Workers Observability MCP / dashboard logs. |
