@@ -69,6 +69,13 @@ describe("dashboard users", () => {
     expect(page).toContain('<div class="modal" id="user-new"');
     expect(page).toContain('<div class="modal" id="user-casey"');
     expect(page).toContain('<a class="binbtn" href="#deluser-casey" title="Delete Casey Quinn"');
+    expect(page).toContain('<div class="actions iconrow"><a class="iconbtn edit" href="#user-casey" title="Edit Casey Quinn" aria-label="Edit Casey Quinn"><svg');
+    expect(page).toContain('<a class="iconbtn key" href="#reset-casey" title="Reset Casey Quinn&#39;s password" aria-label="Reset Casey Quinn&#39;s password"><svg');
+    expect(page).toContain('<a class="iconbtn key" href="/admin#password" title="Change your password" aria-label="Change your password"><svg');
+    expect(page).toContain('<a class="iconbtn edit" href="#user-admin" title="Edit Alex Morgan"');
+    expect(page).not.toContain('>Edit</a>');
+    expect(page).not.toContain('>Change password</a>');
+    expect(page).not.toContain('Reset password</a>');
     expect(page).toContain('<div class="modal" id="deluser-casey"');
     expect(page).toContain("Delete Casey Quinn&#39;s dashboard account");
     expect(page).not.toContain('href="#deluser-admin"');
@@ -436,7 +443,7 @@ describe("passwords", () => {
     await admin.where("/admin/users", { op: "add", name: "Riley Chen", username: "riley", password: "another good one", roles: "admin" });
     const riley = client(env, (await signIn(env, "riley", "another good one", "203.0.113.25")).cookie);
     expect(await riley.text("/admin/users")).not.toContain('href="#reset-riley"');
-    expect(await riley.text("/admin/users")).toContain('<a class="small quiet" href="/admin#password">Change password</a>');
+    expect(await riley.text("/admin/users")).toContain('<a class="iconbtn key" href="/admin#password" title="Change your password"');
     expect(await riley.where("/admin/users", { op: "reset", id: "riley", password: "reset by an admin", again: "reset by an admin" }))
       .toBe("/admin/users?done=ownpass");
     expect(await riley.where("/admin/users", { op: "reset", id: "casey", password: "reset by riley", again: "reset by riley" }))

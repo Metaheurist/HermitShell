@@ -11,7 +11,7 @@
 // user changes their own from the Recruits page with their current password (five wrong ones lock that for 15
 // minutes). The main admin's password is the ADMIN_PASSWORD secret, so it is changed with wrangler.
 
-import { CONFIRM_STYLE, binButton, deleteModal } from "./confirm.js";
+import { CONFIRM_STYLE, binButton, deleteModal, iconButton } from "./confirm.js";
 import { queueItem } from "./join.js";
 import { esc, hmacHex, newId, note, page, redirect, when } from "./lib.js";
 import { MODAL_STYLE } from "./keys.js";
@@ -133,6 +133,7 @@ const ROLE_ICONS = {
   recruiter: '<circle cx="10" cy="8" r="3.5"/><path d="M3.5 20c.8-3.8 3.3-5.5 6.5-5.5 1.3 0 2.5.3 3.5.8M19 14v6M16 17h6"/>',
 };
 
+const EDIT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.2 6.8a2.8 2.8 0 0 0-4-4L3.8 16.2a2 2 0 0 0-.5.8L2 21.4a.5.5 0 0 0 .6.6l4.4-1.3a2 2 0 0 0 .8-.5z"/><path d="m15 5 4 4"/></svg>';
 export const KEY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.8-9.8M16.5 6.5l3 3M14 9l2.5 2.5"/></svg>';
 
 function roleIcon(role) {
@@ -246,15 +247,15 @@ ${newPasswordFields(`ur-${u.id}`)}<button>Reset password</button></form>`, KEY_I
 function userRow(u, count, me, csrf, tz) {
   const self = u.id === me.id;
   const remove = self || u.main ? "" : binButton(`deluser-${u.id}`, `Delete ${u.name}`);
-  const password = self ? `<a class="small quiet" href="/admin#password">Change password</a>`
-    : u.main ? "" : `<a class="small quiet keybtn" href="#reset-${esc(u.id)}">${KEY_ICON}Reset password</a>`;
+  const password = self ? iconButton("/admin#password", "Change your password", KEY_ICON, "key")
+    : u.main ? "" : iconButton(`#reset-${u.id}`, `Reset ${u.name}'s password`, KEY_ICON, "key");
   const weak = u.weak ? ' <span class="role weak" title="Shorter than the recommended length">short password</span>' : "";
   return `<tr><td><div class="who"><span class="avatar${u.roles.includes("recruiter") ? " rec" : ""}" aria-hidden="true">${esc(initials(u.name))}</span><div>
 <b>${esc(u.name)}</b>${self ? ' <span class="muted">(you)</span>' : ""}<div class="muted"><code>${esc(u.username)}</code></div>
 <div class="muted">${u.main ? "main admin, from the Worker's secrets" : `since ${esc(when(u.created, tz))}`}</div></div></div></td>
 <td>${pills(u.roles)}${weak}</td>
 <td>${u.roles.includes("recruiter") ? `<b>${count}</b> <span class="muted">recruit${count === 1 ? "" : "s"}</span>` : '<span class="muted">not a recruiter</span>'}</td>
-<td><div class="actions"><a class="small" href="#user-${esc(u.id)}">Edit</a>${password}${remove}</div></td></tr>`;
+<td><div class="actions iconrow">${iconButton(`#user-${u.id}`, `Edit ${u.name}`, EDIT_ICON, "edit")}${password}${remove}</div></td></tr>`;
 }
 
 function deleteUserModal(u, csrf) {
@@ -377,6 +378,6 @@ export const USERS_STYLE = `
 .role.weak{color:#b45309;background:#fffbeb}
 .avatar.rec{background:linear-gradient(135deg,#2dd4bf,#0891b2);box-shadow:0 6px 14px -8px rgba(8,145,178,.9)}
 .addkey svg{width:16px;height:16px}
-.keybtn{display:inline-flex;align-items:center;gap:5px}.keybtn svg{width:14px;height:14px}
+
 @media (max-width:640px){.rolecards{grid-template-columns:1fr}}
 `;
