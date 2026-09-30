@@ -139,7 +139,7 @@ function pendingEmail(email, queue) {
     : { ...e, host: i.host || e.host, port: i.port || e.port, user: i.user || e.user, from: i.from ?? e.from }, email);
 }
 
-export function settingsPage(status, csrf, { done = "", queued = [], queue = [] } = {}) {
+export function settingsPage(status, csrf, { done = "", queued = [], queue = [], demo = "" } = {}) {
   const waiting = queued.filter((q) => /^(email|test email|api keys|model keys)$/.test(q));
   return page("Global settings", `<style>${MODAL_STYLE}${KEY_STYLE}${MODEL_STYLE}</style>${nav("settings")}
 ${done ? note(done) : ""}${versionNote(status)}${waiting.length ? `<p class="muted">Waiting for HermitShell: ${esc(waiting.join("; "))}.</p>` : ""}
@@ -147,7 +147,8 @@ ${done ? note(done) : ""}${versionNote(status)}${waiting.length ? `<p class="mut
 and CV are on their own page under <a href="/admin">Recruits</a>.</p>
 ${emailSection({ ...status, email: pendingEmail(status.email || {}, queue) }, csrf)}
 ${keysSection(status, csrf)}
-${modelsSection(status, csrf)}`, { wide: true, before: keyModals(csrf) + modelModals(csrf) });
+${modelsSection(status, csrf)}
+${demo}`, { wide: true, before: keyModals(csrf) + modelModals(csrf) });
 }
 
 // ------------------------------------------------------------------------- one profile's page

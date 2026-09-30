@@ -8,9 +8,10 @@
 // route below checks that, not just the links on the page. Signed-in pages create invite links, show the recruits
 // HermitShell reports, and queue changes that HermitShell applies as soon as the live link tells it (settings pages:
 // settings.js; each recruit's stats page: stats.js; web search keys: keys.js; recruit search: search.js; the task
-// list: tasks.js; the live link: hub.js). Nothing here can reach the HermitShell server: HermitShell connects out to
-// /api/live and reads /api/queue with its API token.
+// list: tasks.js; the live link: hub.js; demo mode, made-up data on every signed-in page: demo.js). Nothing here can
+// reach the HermitShell server: HermitShell connects out to /api/live and reads /api/queue with its API token.
 
+import { DEMO_DONE, DEMO_URL, demoEnv, demoMode, demoRibbon, demoSection, demoToggle } from "./demo.js";
 import { HISTORY_URL, historyPage, listed, record, recordReported } from "./history.js";
 import { hubConnect, hubPresence, hubSeen } from "./hub.js";
 import { createInvite, queueItem } from "./join.js";
@@ -62,6 +63,7 @@ const DONE = {
   pwlocked: "Too many wrong current passwords. Try again in 15 minutes.",
   mainpass: "The main admin's password is the ADMIN_PASSWORD secret; change it with wrangler.",
   ...SETTINGS_DONE,
+  ...DEMO_DONE,
   badpass: USERS_DONE.badpass,
   mismatch: USERS_DONE.mismatch,
 };
@@ -576,7 +578,14 @@ export async function handleAdmin(request, env, ctx) {
     return redirect("/admin", { "Set-Cookie": cookieHeader("", 0) });
   }
   if (!s) return loginPage();
-  return withSignedIn(await signedInRoute(request, env, s, path), env, s, path, request.method);
+  // The switch and each user's own password are real whether or not demo mode is on.
+  if (path === DEMO_URL && request.method === "POST") return demoToggle(request, env, s);
+  if (path === PASSWORD_URL && request.method === "POST") return passwordRequest(request, env, s);
+  const demo = await demoMode(env);
+  if (!demo) return withSignedIn(await signedInRoute(request, env, s, path), env, s, path, request.method);
+  const pretend = await demoEnv(env);
+  const seen = { ...s, acc: await accounts(pretend), demo };
+  return withSignedIn(await signedInRoute(request, pretend, seen, path), pretend, seen, path, request.method);
 }
 
 const LOGOUT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h3.5A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5H14"/><path d="M10 16.5 5.5 12 10 7.5M5.5 12H15"/></svg>';
@@ -622,7 +631,8 @@ async function withSignedIn(res, env, s, path, method) {
   if (method === "GET" && [TASKS_URL, STATUS_URL].includes(path)) return res;
   if (!(res.headers.get("Content-Type") || "").startsWith("text/html")) return res;
   const [html, current] = await Promise.all([res.text(), status(env)]);
-  return new Response(html.replace("<body>", () => `<body>${signedInBox(s, current)}`), { status: res.status, headers: res.headers });
+  const ribbon = s.demo ? demoRibbon(s.me.admin) : "";
+  return new Response(html.replace("<body>", () => `<body>${signedInBox(s, current)}${ribbon}`), { status: res.status, headers: res.headers });
 }
 
 async function signedInRoute(request, env, s, path) {
@@ -633,7 +643,6 @@ async function signedInRoute(request, env, s, path) {
       async (u, what) => record(env, u, "cv", what, { by: displayName(s.me, await status(env)) }));
   }
   if (path === USERS_URL && ["GET", "POST"].includes(request.method)) return usersRequest(request, env, s);
-  if (path === PASSWORD_URL && request.method === "POST") return passwordRequest(request, env, s);
   if (path === TASKS_URL && !s.me.admin) return page(...ADMINS_ONLY);
   if (path === TASKS_URL && request.method === "POST") return tasksAction(request, env, s);
   if (path === TASKS_URL && request.method === "GET") {
@@ -646,7 +655,8 @@ async function signedInRoute(request, env, s, path) {
     if (!s.me.admin) return page(...ADMINS_ONLY);
     const url = new URL(request.url);
     const [current, queue] = await Promise.all([status(env), queued(env)]);
-    return settingsPage(current, s.csrf, { done: DONE[url.searchParams.get("done")] || "", queued: describe(queue), queue });
+    return settingsPage(current, s.csrf, { done: DONE[url.searchParams.get("done")] || "", queued: describe(queue), queue,
+      demo: demoSection(s.demo, s.csrf, current.timezone) });
   }
   const url = new URL(request.url);
   const u = url.searchParams.get("u") || "";
