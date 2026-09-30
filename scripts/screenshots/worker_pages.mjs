@@ -154,7 +154,7 @@ const MORE = [
     about: "Build and run the batch and streaming pipelines behind Northwind's pricing and logistics data, working with "
       + "analysts and the platform team.",
     profile: "Wholesale food distributor, 2,000 staff", site: "https://northwind.example",
-    matched: ["Python", "Airflow", "SQL", "dbt", "AWS", "Docker"], gaps: ["Kubernetes", "Terraform"] },
+    matched: ["Python", "Airflow", "SQL", "dbt", "AWS", "Docker"], gaps: ["Kubernetes", "Terraform", "Snowflake"] },
   { type: "Permanent", seniority: "Mid", published: "today", confidence: 80, coverage: 70,
     reasoning: "dbt and Snowflake experience lines up with the modelling work described.",
     matched: ["dbt", "Snowflake", "SQL"], gaps: ["Looker"] },
@@ -207,7 +207,8 @@ function fakeStats(daysBack, scale, seed) {
     ranges: { 7: range(7), 30: range(30), 90: range(90), 365: range(365) },
     pipeline: { interested: 9, good_match: 4, not_for_me: 12, applied: 6, heard_back: 3, rejected: 2 }, sent };
 }
-for (const [u, stats] of [["owner", fakeStats(75, 1, 7)], ["sam-lee", fakeStats(12, 0.6, 11)]]) {
+// The owner already counts Snowflake as on the CV (added from an earlier email).
+for (const [u, stats] of [["owner", { ...fakeStats(75, 1, 7), skills: ["Snowflake"] }], ["sam-lee", fakeStats(12, 0.6, 11)]]) {
   await call("/api/stats", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: { u, stats } });
 }
 await save("link-profile-removed", await call(`/f?${new URLSearchParams(await link("interested", TITLE, { profile: "casey-quinn" }))}`));
@@ -284,6 +285,8 @@ await worker.fetch(new Request(`${BASE}/api/doc?${new URLSearchParams({ u: "owne
   name: "Cover letter - Alex Morgan - Senior Data Engineer.pdf" })}`, { method: "POST",
   headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/pdf" }, body: "%PDF-1.4\n%%EOF" }), env, {});
 await admin("/admin/doc", { method: "POST", form: { csrf, u: "owner", j: FIRST, k: "tailored_cv", n: "Senior Data Engineer (Python, Airflow)", back: "r=7" } });
+// Terraform just added from its missing-skill chip, not yet counted by HermitShell.
+await admin("/admin/skill", { method: "POST", form: { csrf, u: "owner", j: FIRST, s: "Terraform", back: "r=7" } });
 const firstId = (await jobHash(FIRST)).slice(0, 16);
 const opened = (await (await admin(`/admin/sent?u=owner&r=7&open=${firstId}`)).text()).replace(/<meta http-equiv="refresh"[^>]*>/, "");
 await save("admin-sent-open", new Response(opened));

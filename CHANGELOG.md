@@ -17,6 +17,11 @@ using [Semantic Versioning](https://semver.org/).
   Frankfurter (no key), fetched once a day and cached (`money.py`, `JOB_FX_URL`, `off` to turn it off).
   Adverts can write `US$`, `C$`, `A$`, `NZ$` or an ISO code (`50,000 EUR`); a bare `$` is the profile's
   dollar, else the search country's. Old `£`, `€` and `$` settings keep working as `GBP`, `EUR` and `USD`.
+- **Add missing skills from the dashboard.** On the jobs sent list, each amber **Missing from the CV** skill
+  of an opened job is now a button: an admin, or the recruiter whose pool it is, presses one the recruit has
+  and it is stored as the email's **Add to my skills** answer, so HermitShell counts it as on the CV for
+  ratings, cover letters and tailored CVs. It shows with a dashed tick until HermitShell's stats list it
+  (`skills` in the stats, from the tracker's skills pool), then with a solid tick.
 - **The salary icon shows the currency.** Emails and the dashboard draw the salary with a £, € or $ badge
   (Lucide) for the figure's currency, and a banknote when it has none.
 - **Every image build is attached to a GitHub release.** The Image workflow's new release job gives a version
@@ -561,6 +566,9 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Icon buttons on Users and roles.** Each user's actions are now matching square icon buttons, named when
+  pointed at and to screen readers: a pencil for **Edit**, a key for **Reset password** (or **Change password**
+  on your own row) and the red bin for **Delete**, instead of text links.
 - **Tasks are for admins only.** Recruiters no longer get the **Tasks** button, its window or the
   **Waiting for HermitShell** link, and `/admin/tasks` answers them with 403 (viewing and cancelling).
   Their status line still says how many of their changes are waiting.
@@ -701,6 +709,10 @@ using [Semantic Versioning](https://semver.org/).
 
 A review of the whole app; none of these were known to be exploited.
 
+- Adding a skill from the dashboard (`POST /admin/skill`) needs a signed-in session and the form's CSRF
+  token, answers "not found" for a recruit outside a recruiter's pool, and keeps only the skill cleaned to
+  the characters the email's form allows (60 at most); skills in the stats are checked before they are
+  stored and escaped when shown.
 - Exchange rates are only fetched over HTTPS, without following redirects, capped at 64 KB and checked
   (finite, positive, sane rates for known currencies only); a bad reply or tampered cache converts nothing.
   The dashboard can't change `JOB_FX_URL`, and a profile's currency must be one of the offered codes.

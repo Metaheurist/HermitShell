@@ -271,6 +271,9 @@ you want to add. After you confirm:
   them to the profile the model rates jobs against;
 - cover letters may mention them as general skills, never as work done at a named employer.
 
+The same can be done from the dashboard's list of jobs sent, by pressing a missing skill on an
+opened job ([below](#jobs-sent)); it needs a signed-in session and the form's CSRF token.
+
 The skill list is part of the link's signature, so a link can't be edited to offer other
 skills; typed skills are limited to letters, numbers and `+ # . / & ( ) -`. Your CV files are
 never changed. To review or undo:
@@ -430,10 +433,13 @@ secret, as before, and always has the Admin role. Everyone else gets an account 
 - **Add user** opens a window for a name, a username (2 to 32 lower-case letters, numbers, `-` or
   `_`) and a password, and the roles. Passwords shorter than 12 characters are allowed but marked
   **short password** on the list.
-- **Edit** changes a user's name and roles.
+- Each row's actions are icon buttons, with their name when you point at them: the pencil,
+  the key and the red bin.
+- **Edit** (the pencil) changes a user's name and roles.
 - **Reset password** (the key button) opens a window for a new password, typed twice. The user is
   signed out everywhere at once and signs in with the new password; it isn't emailed, so tell them
-  yourself. It isn't offered for your own account or the main admin's.
+  yourself. It isn't offered for the main admin's account; on your own row the key opens
+  **Change password** instead.
 - The red bin button opens a window to confirm; tick the box and press **Delete** to sign the user
   out, delete their unused invites and leave their recruits unassigned. You can't delete or demote
   the account you are signed in with.
@@ -654,7 +660,12 @@ pressed. Filters above the list show **All**, **No answer yet** or one answer (*
 Click a job to open its full card, like the one in the email: the advertiser if an agency posted
 it, contract type, seniority, when it was posted and closes, the score's confidence and CV keyword
 match, why it was rated a fit, what the role and company are, the skills matched and missing, and
-links to the advert and the employer's site. Below that are three tiles. For both a **Cover letter**
+links to the advert and the employer's site. Each amber **Missing from the CV** skill is a button:
+press one the recruit has and it is stored as the email's **Add to my skills** answer, so it joins
+their skills pool at HermitShell's next sync and counts as on the CV from then on (see
+[Adding missing skills](#adding-missing-skills)). It then shows as added (dashed, with a tick) until
+HermitShell's next stats update, at most 30 minutes later, lists it with a solid tick. Admins can do this for
+any recruit, a recruiter only for their own pool. Below that are three tiles. For both a **Cover letter**
 and a **Tailored CV**:
 
 - **Generate** asks HermitShell for one. It is made within 5 minutes (a loading circle shows

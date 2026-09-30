@@ -359,8 +359,8 @@ deleted ([data protection](configuration.md#data-protection)).
 | Role cards | **Admin**: everything. **Recruiter**: only their own pool, the people they invite and the recruits assigned to them |
 | Users table | Each user's name, username, roles, how many recruits they have, and **short password** when their password is under 12 characters. The main admin (`ADMIN_USER`) is always first |
 | **Add user** | Opens a window for a name, username, password and roles |
-| **Edit** | Changes the name and roles. On your own row it adds or removes your Recruiter role |
-| **Reset password** (key) | Opens a window for a new password, typed twice. The user is signed out everywhere at once; tell them the new password yourself. Not on your own row (that has **Change password**) or the main admin's |
+| **Edit** (pencil) | Changes the name and roles. On your own row it adds or removes your Recruiter role |
+| **Reset password** (key) | Opens a window for a new password, typed twice. The user is signed out everywhere at once; tell them the new password yourself. On your own row the key opens **Change password** instead; not on the main admin's row |
 | Bin button (red) | Opens a window to confirm; tick the box and press **Delete** to sign the user out, delete their unused invites and leave their recruits unassigned |
 
 <table>
@@ -515,7 +515,7 @@ it to the profile:
 | **HermitShell fit** / **Confidence** / **CV keyword match** | The score out of 10, how sure the model was, and the share of the advert's skills your CV shows |
 | Why | Why it was rated a fit, with anything it lacks (contact details and your name are removed) |
 | **About the company** | The employer, what it does, its website, what the role is, and the agency when one posted it |
-| **Strongest matches** / **Missing from the CV** | The skills found, and the ones the advert wants that your CV doesn't show |
+| **Strongest matches** / **Missing from the CV** | The skills found, and the ones the advert wants that your CV doesn't show. Press a missing skill the profile has (**+**) to count it as on the CV, as the email's missing-skill tag does: it shows dashed with a tick until HermitShell's next stats update, then with a solid tick |
 | **Cover letter** / **Tailored CV** | **Generate** has one made (not emailed), shown with a loading circle until it is ready. **Download** gets the one made in the last `COVER_LETTER_KEEP_DAYS` days (7 by default), from here or an email button; **Regenerate** replaces it |
 | **Email to Sam** (**Email to you**) | **Send** has HermitShell email the job to the profile as its report card, with a loading circle while it goes; then **Emailed to Sam** with when, and **Send again** |
 | **View the advert** | Opens the advert in a new tab, when the report had a link |
