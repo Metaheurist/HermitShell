@@ -153,7 +153,9 @@ python3 job_weekly.py --dry-run                  # weekly roll-up, written to st
 ```
 
 A dry run writes the rendered email to `state/job_scanner_last.html` and the raw results to
-`state/job_scanner_last.json`.
+`state/job_scanner_last.json`. Like CVs and letters they are readable by their owner only and, with
+`HERMES_DATA_KEY` set, encrypted; `python3 maintenance.py --decrypt state/job_scanner_last.html --out /tmp/report.html`
+gives a copy to open.
 
 ### Schedule it
 
