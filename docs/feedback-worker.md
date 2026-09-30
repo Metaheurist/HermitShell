@@ -437,6 +437,10 @@ settings** (the email server and web search keys the whole tool shares). Recruit
   job search, report time and CV). The sent button has two halves: the little chart opens its
   [stats page](#stats) and **24 sent** the [list of jobs sent](#jobs-sent). The pause and play
   buttons pause or resume their reports, and the red bin button deletes them: it opens a window where you tick **Delete their CV and history** and press **Delete**.
+  A pause, resume, delete, assignment or send shows on the row at once with a tag (**pausing&hellip;**,
+  **deleting&hellip;**), and the page reloads itself, keeping where you had scrolled, until HermitShell has
+  applied it (the same timings as [Global settings](#global-settings)). Recruiters only see their own
+  recruits' changes. Sign-ups and new CVs take minutes and show their own progress, so they don't reload the page.
   Deleting removes their CV and history from your server, their answers still waiting in KV and
   their name and email from the logs.
 - **Pending sign-ups**: someone who has sent the invite form gets a **pending** row straight away
@@ -590,8 +594,14 @@ and free models may keep what they are sent, which the [privacy notice](#privacy
 <img src="images/worker/admin-model-key-modal.png" alt="The AI model key window: pick the provider, paste the key and an optional model" width="420">
 
 Keys and passwords are stored on the HermitShell server (`state/dashboard.json`, mode 600) and shown only as their last four characters. Changes wait in KV and
-are applied by `profiles.py`, within seconds over the live link ("Waiting for HermitShell" shows
-what is pending). Until then the email server form shows what you saved rather than the old values.
+are applied by `profiles.py`, within seconds over the live link. Until then a **Saving** bar at the top
+says what is pending, the key or model being changed carries a **saving&hellip;** tag, a new model order
+is shown picked, and the email server form shows what you saved rather than the old values. The page
+reloads itself (no JavaScript: a refresh tag that keeps you at the keys, models or email section) every
+4 seconds for the first 45, then every 20, and once HermitShell has applied the change it shows it with
+**Applied by HermitShell**. After 5 minutes it stops and says HermitShell may be offline, so an offline
+server doesn't use up KV's daily list operations. Entrance animations are off while it reloads, so the
+page doesn't flicker.
 Passwords and keys typed into the page are deleted from KV after 2 days if HermitShell hasn't collected
 them.
 

@@ -764,6 +764,17 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Saved changes show without a reload.** Adding a key, changing a model or the email server, or
+  pausing, resuming, deleting, assigning or sending from the dashboard looked like it did nothing until
+  the page was reloaded, because HermitShell applies them a few seconds later. Now the change shows at
+  once: a **Saving** bar at the top, a **saving&hellip;** tag on the key or model (**pausing&hellip;**,
+  **deleting&hellip;** on a recruit's row, with the pause or resume already flipped), and the new model
+  order picked. The page reloads itself (still no JavaScript) every 4 seconds, then every 20, until
+  HermitShell has applied it, then says **Applied by HermitShell**. It stops after 5 minutes and says
+  HermitShell may be offline. Reloads keep your section and scroll, and entrance animations are off
+  while it waits so nothing flickers. The same fix makes Jobs sent really reload while a letter or CV is
+  being made: its address ended in `#job-…`, and a refresh to an address with a `#` only scrolled. Unit,
+  security (hostile queue items, recruiters only see their own) and Playwright tests added.
 - **Score rings drew short.** A ring's dash pattern repeated every 100 plus the score's share, so the
   part past its starting point fell in the gap and a 9 out of 10 filled about two thirds of the circle.
   Rings on the stats page and Jobs sent now fill exactly their share, and a test checks the pattern.
