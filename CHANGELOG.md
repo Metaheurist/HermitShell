@@ -665,6 +665,15 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Smaller rating prompts.** Adverts are trimmed of menus, buttons, cookie and legal lines, share links and
+  repeated lines before the first 5,000 characters are taken, so more of the job fits. The profile sent to
+  title screening, ratings and second opinions is compacted, and a long one (over 3,500 characters) is
+  briefed once by the model and kept in `state/rating_brief.json` until it changes. A brief that drops
+  searched skills or adds figures or job titles isn't used. See
+  [Smaller prompts for ratings](docs/configuration.md#smaller-prompts-for-ratings).
+- **Temperature per task.** Scoring stays at 0; cover letters use 0.4, tailored CVs 0.2 and summaries 0.3,
+  on Ollama and cloud providers alike. On OpenRouter, the small bulk tasks ask reasoning models for low
+  effort with the reasoning left out of the reply.
 - **New recruit emails are laid out, not one paragraph.** The **New recruit** and **Recruit updated**
   emails to you list email, location and what they are looking for as labelled rows, with an **Open
   Sam's profile** button beside **Manage recruits**. The job titles searched and the skills read from the CV

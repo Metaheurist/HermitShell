@@ -105,13 +105,34 @@ server button the machine, the models in order and the last one that answered. K
 
 Every model request adds its prompt and reply tokens to `llm_usage.json` (`llm_usage.py`) in the shared
 state folder, beside the dashboard settings, so every recruit's runs count together. They are kept under
-the task that asked: title screening, job ratings, second opinions, report summaries, profiles from CVs,
-reading CVs, cover letters, tailored CVs and skills added to CVs. The counts are the provider's own: a
+the task that asked: title screening, job ratings, second opinions, profile briefs, report summaries,
+profiles from CVs, reading CVs, cover letters, tailored CVs and skills added to CVs. The counts are the provider's own: a
 cloud provider's `usage`, and Ollama's `prompt_eval_count` (which leaves out a prompt start it had cached)
 and `eval_count`. Where a provider doesn't say, they are estimated at about four characters a token and
 marked as estimates. Only counts are kept, never a prompt, a reply, a model's name or a key, and days
 older than 31 are dropped. `python3 llm_usage.py` prints today and the last 7 days, and Global settings
 shows them ([Model tokens used](feedback-worker.md#model-tokens-used)).
+
+### Smaller prompts for ratings
+
+Ratings are most of the model requests, so their prompts are kept short without losing what matters:
+
+- **Adverts are trimmed** (`trim_listing` in `job_extras.py`) before the first 5,000 characters are taken:
+  menus, buttons, cookie and legal lines, share links, bare links and lines the page repeats are dropped,
+  so more of the actual job fits.
+- **The profile is compacted**: bullets are folded onto their heading (`Skills: Python; SQL`) and empty
+  entries dropped.
+- **A long profile is briefed once.** When the compacted profile is still over 3,500 characters, the model
+  writes a brief of at most 1,800, kept in `state/rating_brief.json` until the profile changes, and used by
+  title screening, ratings and second opinions. The brief is only used if it keeps at least 70% of the
+  skills searched for and adds no figure or job title the profile doesn't have; otherwise, or when no
+  model answers, the compacted profile is sent. The file holds a hash of the profile and the brief, and is
+  encrypted with a data key like the other saved files.
+
+Scoring and screening run at temperature 0, so the same advert gets the same score. Writing gets a little
+variety: cover letters 0.4, tailored CVs 0.2 and report summaries 0.3. On OpenRouter, the many small tasks
+(screening, ratings, second opinions, summaries and briefs) ask reasoning models to think briefly and
+leave the reasoning out of the reply, which saves tokens on the tasks that need it least.
 
 ### Testing prompts and models
 
