@@ -566,6 +566,11 @@ using [Semantic Versioning](https://semver.org/).
   - `JOB_REMOTE_ANYWHERE` lets fully remote jobs through the region filter.
   - The model is told the target level, types, modes and region when scoring, and its rubric no
     longer assumes an AI / ML role.
+- **`SECURITY.md`**: how to report a vulnerability privately (GitHub's private reporting), which
+  versions get fixes, what is in scope, and a summary of how HermitShell protects data. The README's
+  Security section links to it.
+- **A "For recruitment teams" section in the README**: invite links, each recruiter's own pool, stats,
+  jobs sent and history, how candidate data is kept, and how one server grows with the desk.
 ### Removed
 
 - **Recruits' own crawler keys.** Web search keys are global: the dashboard's **Crawler** column and

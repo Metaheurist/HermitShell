@@ -49,6 +49,29 @@ Every email, PDF and page, with what each part does: [docs/screenshots.md](docs/
 - **Automatic Cloudflare setup**: the wizard deploys the free Worker behind the buttons, `/admin`
   and sign-up links from a Cloudflare API token ([guide](docs/cloudflare-setup.md)).
 
+## For recruitment teams
+
+One HermitShell server can run the daily reports for a whole desk of candidates:
+
+- **Invite candidates with a link.** They sign up with their details and CV, and get their own
+  daily matches, feedback buttons, cover letters and tailored CVs at the time you choose
+  ([recruits](docs/feedback-worker.md#recruits-and-the-admin-page)).
+- **Each recruiter has their own pool.** Admins see everyone; a recruiter signs in and sees only
+  the candidates they invited or were given. They edit details and CVs, pause or resume reports and
+  send jobs now ([users and roles](docs/feedback-worker.md#users-and-roles)).
+- **See what's working.** Every candidate has a stats page (jobs found, answers, match scores, the
+  application funnel, top employers and titles, over 7 days to 12 months), a list of every job
+  sent with their answer, and a history of everything done for them
+  ([stats](docs/feedback-worker.md#stats), [jobs sent](docs/feedback-worker.md#jobs-sent),
+  [history](docs/feedback-worker.md#history)).
+- **Candidate data stays in your hands.** It's self-hosted and encrypted at rest; candidates see a
+  privacy notice when they sign up; old data is deleted after a set time; and unsubscribing deletes
+  everything. With a local model, CVs never leave your server ([PRIVACY.md](PRIVACY.md),
+  [SECURITY.md](SECURITY.md)).
+- **Grows with the desk.** Every candidate's requests share one queue (anyone waiting is served
+  first), spread over every GPU or Ollama server you add, with cloud models to take the overflow.
+  The model is sized to the machine, from a small server to a GPU box.
+
 ## Quick start
 
 As a container, on any Docker host (the image is built and published by
@@ -235,3 +258,5 @@ Four GitHub Actions workflows run on every push and pull request:
 Nothing in this repo contains credentials. `.gitignore` excludes `.env`, `job_profile.md`,
 `cv_keywords.json` and `state/`, and the feedback Worker's own `.gitignore` excludes
 `wrangler.local.jsonc` and `.dev.vars`. Keep your filled-in copies on the HermitShell host only.
+
+To report a vulnerability, and for what HermitShell protects and how, see [SECURITY.md](SECURITY.md).
