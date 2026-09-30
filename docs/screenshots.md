@@ -462,6 +462,12 @@ older and how to update it ([why](feedback-worker.md#how-it-stays-safe)).
 
 <img src="images/worker/admin-model-key-modal.png" alt="The AI model key window: OpenRouter, BazaarLink, Featherless or Hugging Face, the API key and an optional model" width="420">
 
+<img src="images/worker/admin-settings-usage.png" alt="Model tokens used: each task's requests, tokens in and out, tokens a request and time over the last 7 days" width="620">
+
+| Control | What it does |
+| --- | --- |
+| **Model tokens used** | One row per task that asked a model anything in the last 7 days: requests today / over the week and any that failed, tokens in and out, tokens a request and the average time, with a bar for its share of the week's tokens. **~** marks counts estimated from the text ([more](feedback-worker.md#model-tokens-used)) |
+
 #### Demo mode
 
 <img src="images/worker/admin-settings-demo.png" alt="Global settings with the demo mode switch on" width="620">

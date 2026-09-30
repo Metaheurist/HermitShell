@@ -101,6 +101,35 @@ Global settings shows each key's usage (`key_usage.py`, every `WEB_KEY_USAGE_MIN
 server button the machine, the models in order and the last one that answered. Keys and setup:
 [Cloud models](api-keys.md#cloud-models).
 
+### Tokens used
+
+Every model request adds its prompt and reply tokens to `llm_usage.json` (`llm_usage.py`) in the shared
+state folder, beside the dashboard settings, so every recruit's runs count together. They are kept under
+the task that asked: title screening, job ratings, second opinions, report summaries, profiles from CVs,
+reading CVs, cover letters, tailored CVs and skills added to CVs. The counts are the provider's own: a
+cloud provider's `usage`, and Ollama's `prompt_eval_count` (which leaves out a prompt start it had cached)
+and `eval_count`. Where a provider doesn't say, they are estimated at about four characters a token and
+marked as estimates. Only counts are kept, never a prompt, a reply, a model's name or a key, and days
+older than 31 are dropped. `python3 llm_usage.py` prints today and the last 7 days, and Global settings
+shows them ([Model tokens used](feedback-worker.md#model-tokens-used)).
+
+### Testing prompts and models
+
+`scripts/llm_bench.py` runs HermitShell's real prompts on the configured models with made-up CVs and
+adverts (`scripts/bench/cases.json`). Each case rates a CV against an advert and checks the score lands
+in the expected range; the good matches also get a cover letter and a tailored CV, checked without a
+model (`writing_checks.py`) for figures and job titles the CV doesn't have, stock phrases, length and how
+many of the advert's requirements they cover. Tokens are counted in a throwaway file, so a changed
+prompt or a smaller model can be judged on quality and tokens before it goes live. Nothing is emailed or
+saved.
+
+```bash
+python3 scripts/llm_bench.py                      # every case: ratings, letters and CVs
+python3 scripts/llm_bench.py --tasks rating       # ratings only
+python3 scripts/llm_bench.py --json bench.json    # also keep the full results
+docker exec hermitshell python3 /app/scripts/llm_bench.py   # in the container
+```
+
 ## Shared settings
 
 Full template: [`.env.example`](../.env.example).

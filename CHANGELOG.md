@@ -8,6 +8,20 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Model tokens used, per task.** Every model request, cloud or local, now counts its prompt and reply
+  tokens under the task that asked (job ratings, title screening, second opinions, summaries, profiles,
+  reading CVs, cover letters, tailored CVs, skills), in `llm_usage.json` in the shared state folder
+  (`common/llm_usage.py`). Global settings has a **Model tokens used** table with each task's requests,
+  tokens in and out, tokens a request, time and share of the week, so it's clear where trimming prompts pays
+  off. Counts come from the provider (Ollama's evaluated tokens, a cloud provider's `usage`) or are estimated
+  and marked. Only counts are kept, never a prompt, reply, model name or key; `python3 llm_usage.py`
+  prints them.
+- **A bench for prompts and models.** `scripts/llm_bench.py` runs the real rating, cover letter and
+  tailored CV prompts on the configured models with made-up CVs and adverts (`scripts/bench/cases.json`),
+  checks ratings land in range and scores letters and CVs without a model (`writing_checks.py`: figures and
+  job titles the CV doesn't have, stock phrases, length, requirements covered), with the tokens each task
+  used. Nothing is emailed, saved or added to the real counts.
+
 - **Demo mode.** The **Demo mode** switch on Global settings (admins only) fills every dashboard page
   with a made-up desk: fictional recruits in every state, recruiters, invites, a sign-up waiting, tasks,
   a cover letter PDF, and months of stats, jobs sent and history (`feedback-worker/src/demo.js`). Pages

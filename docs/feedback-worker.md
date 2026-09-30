@@ -593,6 +593,17 @@ and free models may keep what they are sent, which the [privacy notice](#privacy
 
 <img src="images/worker/admin-model-key-modal.png" alt="The AI model key window: pick the provider, paste the key and an optional model" width="420">
 
+##### Model tokens used
+
+Below the model keys, **Model tokens used** shows what each task sent to the models and got back over
+the last 7 days, for every recruit together: requests today and over the week (with any that failed),
+tokens in and out, tokens a request and the average time a request took. A bar under each task shows its
+share of the week's tokens, so the task worth trimming stands out; counts a provider didn't report are
+estimated and marked **~**. It comes from HermitShell's status ([how it's counted](configuration.md#tokens-used))
+and never holds a prompt, a reply or a key.
+
+<img src="images/worker/admin-settings-usage.png" alt="Model tokens used: job ratings, title screening, second opinions, summaries, cover letters and tailored CVs, each with requests, tokens in and out, tokens a request and time" width="720">
+
 Keys and passwords are stored on the HermitShell server (`state/dashboard.json`, mode 600) and shown only as their last four characters. Changes wait in KV and
 are applied by `profiles.py`, within seconds over the live link. Until then a **Saving** bar at the top
 says what is pending, the key or model being changed carries a **saving&hellip;** tag, a new model order

@@ -144,6 +144,7 @@ common/autofit.py          picks the model size for the machine, and GPU or CPU,
                            server per model request
 common/llm_providers.py    cloud models (OpenRouter, BazaarLink, Featherless, Hugging Face) tried in turn before or
                            after Ollama, resting a provider that is out of credits
+common/llm_usage.py        the tokens each task sends to the models and gets back, per day (counts only)
 common/worker_link.py      the one client for the feedback Worker: https only, no redirects, retries, signed requests
 common/worker_seal.py      the key pair the Worker seals dashboard passwords, API keys and CVs with
 common/doctor.py           checks and sets up prerequisites: packages, scheduler, Ollama and its model, data key
@@ -156,6 +157,7 @@ packages/daily-vacancy-report/feedback-worker/
 scripts/setup.py           interactive wizard: install, API keys, job search, profile, Worker, schedules
 scripts/cloudflare_worker.py
                            deploys or updates the Worker with a Cloudflare API token
+scripts/llm_bench.py       scores the configured models on ratings, letters and CVs with made-up cases (bench/)
 scripts/tests/             unit tests for the wizard, the Worker deploy and the .env.example files
 scripts/install.sh         copies common + the package flat into $HERMITSHELL_HOME/scripts
 scripts/install-service.sh installs it as a systemd service (or cron) on any Linux server
