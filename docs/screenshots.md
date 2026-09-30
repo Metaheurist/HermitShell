@@ -464,11 +464,11 @@ older and how to update it ([why](feedback-worker.md#how-it-stays-safe)).
 
 #### Demo mode
 
-<img src="images/worker/admin-settings-demo.png" alt="Global settings with demo mode on and Turn off demo mode" width="620">
+<img src="images/worker/admin-settings-demo.png" alt="Global settings with the demo mode switch on" width="620">
 
 | Control | What it does |
 | --- | --- |
-| **Turn on demo mode** / **Turn off demo mode** | Admins only. Every dashboard page shows a made-up desk for everyone signed in; presses work but save nothing and reach neither KV nor HermitShell ([more](feedback-worker.md#demo-mode)) |
+| **Demo mode** switch | Admins only; shows Off, or On and since when. Every dashboard page shows a made-up desk for everyone signed in; presses work but save nothing and reach neither KV nor HermitShell ([more](feedback-worker.md#demo-mode)) |
 | Demo mode ribbon | At the foot of every page while it is on; admins get a **Turn off** link |
 
 <img src="images/worker/admin-dashboard-demo.png" alt="The recruits list in demo mode with made-up recruits and the ribbon" width="620">

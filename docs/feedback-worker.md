@@ -597,14 +597,16 @@ them.
 
 ##### Demo mode
 
-**Turn on demo mode**, at the foot of Global settings, fills every dashboard page with a made-up
+The **Demo mode** switch, at the foot of Global settings, fills every dashboard page with a made-up
 recruitment desk instead of the real one, so HermitShell can be shown to someone without showing
 anyone's data. It has fictional recruits (active, paused, scanning, without a CV and waiting to be set
 up), recruiters, invites, tasks, a cover letter to download, and months of stats, jobs sent and history.
-Only admins can switch it, and it applies to everyone signed in until an admin turns it off, from Global
-settings or the **Turn off** link on the ribbon at the foot of each page.
+Only admins can switch it, and it applies to everyone signed in until an admin turns it off, with the
+switch (which says since when it has been on) or the **Turn off** link on the ribbon at the foot of each
+page. The switch is a plain form, so it works without scripts, and screen readers hear it as a switch
+that is on or off.
 
-<img src="images/worker/admin-settings-demo.png" alt="Global settings with demo mode on: what it does, when it was turned on and Turn off demo mode" width="720">
+<img src="images/worker/admin-settings-demo.png" alt="Global settings with the demo mode switch on: what it does and when it was turned on" width="720">
 
 <img src="images/worker/admin-dashboard-demo.png" alt="The recruits list in demo mode: made-up recruits, recruiters and invites, and the demo mode ribbon" width="720">
 

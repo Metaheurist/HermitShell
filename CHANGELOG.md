@@ -8,7 +8,7 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **Demo mode.** **Turn on demo mode** on Global settings (admins only) fills every dashboard page
+- **Demo mode.** The **Demo mode** switch on Global settings (admins only) fills every dashboard page
   with a made-up desk: fictional recruits in every state, recruiters, invites, a sign-up waiting, tasks,
   a cover letter PDF, and months of stats, jobs sent and history (`feedback-worker/src/demo.js`). Pages
   read and write a copy of that data made for each request, so presses work but save nothing, queue
@@ -651,6 +651,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Demo mode is a switch.** Global settings shows an on/off switch with **Demo mode** and Off, or On and
+  since when, instead of the Turn on and Turn off buttons. It is still a plain form (no scripts), read out
+  as a switch (`role="switch"`, `aria-checked`), and the knob slides over on the page shown after it is
+  pressed. Unit and Playwright tests updated; settings screenshots updated.
 - **Livelier stats page, one colour scale for scores, bigger icons.** Match scores use the same colours
   everywhere (green from 8, amber from 6, orange at 5, grey below): the best-match rings, the match
   scores chart and the rings on Jobs sent. Rings sit on a tinted disc, sweep in when the page opens and
