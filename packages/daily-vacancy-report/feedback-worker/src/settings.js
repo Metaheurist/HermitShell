@@ -5,8 +5,10 @@
 
 import { COUNTRIES, countryCode } from "./countries.js";
 import { CURRENCIES, currencyCode, currencySymbol } from "./currency.js";
-import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem } from "./join.js";
-import { BACK_TO_RECRUITS, CSP, SECURITY_HEADERS, ago, esc, limitedForm, newId, note, page, redirect, safeEqual, when } from "./lib.js";
+import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem, storeCv } from "./join.js";
+import { PROTOCOL } from "./apiauth.js";
+import { sealInfo, sealItem } from "./seal.js";
+import { BACK_TO_RECRUITS, CSP, SECURITY_HEADERS, ago, esc, limitedForm, note, page, redirect, safeEqual, when } from "./lib.js";
 import { KEY_STYLE, MODAL_STYLE, PROVIDERS, keyModals, keysSection } from "./keys.js";
 import { MODEL_KEY_RE, MODEL_PROVIDERS, MODEL_RE, MODEL_STYLE, modelModals, modelsSection } from "./models.js";
 import { LINK_STYLE, STATS_URL, icon } from "./stats.js";
@@ -91,8 +93,19 @@ export function checklist(status) {
 
 export function problems(status) {
   const recent = (status.problems || []).slice(-5);
-  return recent.length ? `<div class="warn"><b>HermitShell could not apply:</b><ul>${recent.map((p) =>
-    `<li>${esc(p.what)}: ${esc(p.error)} <span class="muted">(${esc(when(p.at, status.timezone))})</span></li>`).join("")}</ul></div>` : "";
+  return versionNote(status) + (recent.length ? `<div class="warn"><b>HermitShell could not apply:</b><ul>${recent.map((p) =>
+    `<li>${esc(p.what)}: ${esc(p.error)} <span class="muted">(${esc(when(p.at, status.timezone))})</span></li>`).join("")}</ul></div>` : "");
+}
+
+// Once HermitShell has reported, a warning when it and this Worker speak different protocols (apiauth.js).
+export function versionNote(status) {
+  if (!Number.isFinite(status.updated)) return "";
+  const theirs = Number.isInteger(status.protocol) ? status.protocol : 1;
+  if (theirs === PROTOCOL) return "";
+  const fix = theirs < PROTOCOL
+    ? `HermitShell (protocol ${theirs}) is older than this Worker (protocol ${PROTOCOL}), so passwords and API keys can't be saved here until it is updated. The container updates itself; a service install needs <code>git pull</code> and <code>install.sh</code>.`
+    : `This Worker (protocol ${PROTOCOL}) is older than HermitShell (protocol ${theirs}). Redeploy it: <code>docker exec hermitshell /app/entrypoint.sh worker</code>, or <code>python3 scripts/cloudflare_worker.py</code>.`;
+  return `<div class="warn"><b>HermitShell and this Worker don&rsquo;t match:</b> ${fix}</div>`;
 }
 
 export function emailSection(status, csrf) {
@@ -129,7 +142,7 @@ function pendingEmail(email, queue) {
 export function settingsPage(status, csrf, { done = "", queued = [], queue = [] } = {}) {
   const waiting = queued.filter((q) => /^(email|test email|api keys|model keys)$/.test(q));
   return page("Global settings", `<style>${MODAL_STYLE}${KEY_STYLE}${MODEL_STYLE}</style>${nav("settings")}
-${done ? note(done) : ""}${waiting.length ? `<p class="muted">Waiting for HermitShell: ${esc(waiting.join("; "))}.</p>` : ""}
+${done ? note(done) : ""}${versionNote(status)}${waiting.length ? `<p class="muted">Waiting for HermitShell: ${esc(waiting.join("; "))}.</p>` : ""}
 <p class="muted">These apply to the whole of HermitShell and every recruit. Where each person's reports go, their job search
 and CV are on their own page under <a href="/admin">Recruits</a>.</p>
 ${emailSection({ ...status, email: pendingEmail(status.email || {}, queue) }, csrf)}
@@ -511,16 +524,17 @@ export async function cvUpload(request, env, s, allow = async () => true, record
   const file = form.get("cv");
   const cvText = String(form.get("cv_text") ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").trim().slice(0, MAX_CV_TEXT);
   let cv = null;
+  const info = sealInfo(await env.FEEDBACK.get("status:profiles", "json"));
   if (file && typeof file === "object" && file.size) {
     if (file.size > MAX_CV_BYTES) return back("cvsize");
     const bytes = await file.arrayBuffer();
     const kind = cvKind(file, bytes);
     if (!kind) return back("cvtype");
-    cv = { key: `cvfile:${newId()}`, kind, name: file.name.slice(0, 120), size: file.size };
-    await env.FEEDBACK.put(cv.key, bytes, { expirationTtl: 60 * 60 * 24 * 30 });
+    cv = await storeCv(env, info, bytes, { kind, name: file.name.slice(0, 120), size: file.size }, 60 * 60 * 24 * 30);
   }
   if (!cv && cvText.length < 200) return back("cvmissing");
-  await queueItem(env, { type: "admin", action: "cv", u, cv, cv_text: cvText, roles: field(form, "roles", 300) });
+  const item = { type: "admin", action: "cv", u, cv, cv_text: cvText, roles: field(form, "roles", 300) };
+  await queueItem(env, info ? await sealItem(info, item) : item);
   await recorded(u, cv ? `Uploaded a new CV (${cv.name})` : "Pasted new CV text");
   return back("cvqueued");
 }
@@ -528,6 +542,7 @@ export async function cvUpload(request, env, s, allow = async () => true, record
 export const SETTINGS_DONE = {
   bademail: "Check the email settings: the server, port, username and addresses must be valid.",
   badmodel: "Choose a provider and paste its API key or a model name (letters, numbers and . _ : / @ + -).",
+  nokey: "Not saved: HermitShell hasn't sent the key that keeps passwords and API keys encrypted until it collects them. Save again once it is connected and up to date.",
   baddetails: "A name and a valid email address are needed.",
   profile: "Unknown recruit. Reload the admin page and try again.",
   cvsize: "The CV file is larger than 5 MB.",

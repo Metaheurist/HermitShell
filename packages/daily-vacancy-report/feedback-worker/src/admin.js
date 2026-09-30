@@ -26,6 +26,7 @@ import {
 import { CONFIRM_STYLE, binButton, deleteModal } from "./confirm.js";
 import { MODAL_STYLE } from "./keys.js";
 import { SERVER_STYLE, serverBox } from "./models.js";
+import { needsSeal, sealInfo, sealItem } from "./seal.js";
 import { SEARCH_STYLE, matchesProfile, noMatch, recruiterHits, recruiterRow, searchBar, searchQuery } from "./search.js";
 import {
   DOC_URL, REQUEST_KINDS, SKILL_URL, addedSkills, docIndex, emailedIndex, markEmailed, pdfResponse, pendingDocs, readDoc, requestDoc,
@@ -511,7 +512,13 @@ async function action(request, env, s) {
     const back = `${SETTINGS_URL}?done=`;
     const anchor = act.startsWith("api_key") ? "#keys" : act.startsWith("model_") ? "#models" : "#email";
     if (setting.error) return redirect(`${back}${setting.error}${anchor}`);
-    await queueItem(env, setting.item, setting.ttl);
+    let item = setting.item;
+    if (needsSeal(item)) {
+      const info = sealInfo(current);
+      if (!info) return redirect(`${back}nokey${anchor}`);
+      item = await sealItem(info, item);
+    }
+    await queueItem(env, item, setting.ttl);
     return redirect(`${back}queued${anchor}`);
   }
   if (act === "delete") {

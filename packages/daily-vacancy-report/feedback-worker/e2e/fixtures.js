@@ -1,7 +1,9 @@
 // Shared settings and helpers for the Playwright tests. Everything here is made up: the Worker runs locally
 // under `wrangler dev` with these throwaway secrets and an empty local KV.
 
+import { PROTOCOL, signature } from "../src/apiauth.js";
 import { sign, today } from "../src/lib.js";
+import { sealingKeys } from "../test/helpers.js";
 
 export const PORT = 8787;
 export const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -26,6 +28,7 @@ function person(id, name, email, location, extra = {}) {
 // What HermitShell reports every few minutes (profiles.py), for three fictional recruits.
 export function hermitShellStatus({ samRecruiter = "" } = {}) {
   return {
+    protocol: PROTOCOL,
     profiles: [
       person("owner", "Alex Morgan", "alex.morgan@example.com", "Salford", { owner: true }),
       person("sam-lee", "Sam Lee", "sam.lee@example.com", "York", { recruiter: samRecruiter }),
@@ -50,8 +53,30 @@ export function hermitShellStatus({ samRecruiter = "" } = {}) {
   };
 }
 
+let keys;
+// This test process's sealing key pair; the Worker seals for whichever process reported its status last.
+export async function sealing() {
+  keys ??= await sealingKeys();
+  return keys;
+}
+
+// The headers common/worker_link.py sends: the token, the protocol and a fresh signature.
+export async function signedHeaders(method, path, body = "") {
+  const stamp = Date.now();
+  const nonce = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const mac = await signature(LINK_SECRET, method, path, stamp, nonce, body ? new TextEncoder().encode(body) : null);
+  return { Authorization: `Bearer ${API_TOKEN}`, "X-HermitShell-Protocol": String(PROTOCOL), "X-HermitShell-Time": String(stamp),
+    "X-HermitShell-Nonce": nonce, "X-HermitShell-Signature": `v1=${mac}`, ...(body ? { "Content-Type": "application/json" } : {}) };
+}
+
+// A call to HermitShell's API, signed as HermitShell signs it.
+export async function hermitShellApi(request, method, path, data) {
+  const body = data === undefined ? "" : JSON.stringify(data);
+  return request.fetch(path, { method, headers: await signedHeaders(method, path, body), ...(body ? { data: body } : {}) });
+}
+
 export async function reportStatus(request, status = hermitShellStatus()) {
-  const res = await request.post("/api/status", { headers: { Authorization: `Bearer ${API_TOKEN}` }, data: status });
+  const res = await hermitShellApi(request, "POST", "/api/status", { ...status, seal: (await sealing()).seal });
   if (!res.ok()) throw new Error(`/api/status answered ${res.status()}`);
 }
 

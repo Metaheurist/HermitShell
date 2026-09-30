@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import worker from "../src/index.js";
 import { SECRET_TTL_SECONDS } from "../src/join.js";
-import { BASE, keysWith, testEnv, valuesWith } from "./helpers.js";
+import { BASE, keysWith, sealingKeys, testEnv, valuesWith } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const API = { Authorization: "Bearer api-token" };
 const CV_TEXT = "Alex Morgan. Data engineer with six years of Python, Airflow and SQL. ".repeat(4);
+const KEYS = await sealingKeys();
 
 const STATUS = {
+  ...KEYS.status,
   profiles: [
     { id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true, crawler: "global",
       has_cv: false, details: { name: "Alex Morgan", email: "alex@example.com", phone: "", location: "Leeds" },
@@ -151,6 +153,16 @@ describe("setup checklist", () => {
     expect(body).toContain("Upload your CV once HermitShell has connected");
   });
 
+  it("warns when HermitShell and the Worker speak different protocols, with the fix for whichever is older", async () => {
+    const older = (await (await setup({ ...STATUS, protocol: undefined })).get("/admin")).body;
+    expect(older).toContain("HermitShell and this Worker don&rsquo;t match:");
+    expect(older).toContain("HermitShell (protocol 1) is older than this Worker (protocol 2)");
+    const newer = (await (await setup({ ...STATUS, protocol: 3 })).get("/admin/settings")).body;
+    expect(newer).toContain("This Worker (protocol 2) is older than HermitShell (protocol 3). Redeploy it");
+    expect((await (await setup()).get("/admin")).body).not.toContain("don&rsquo;t match");
+    expect((await (await setup(null)).get("/admin")).body).not.toContain("don&rsquo;t match");
+  });
+
   it("shows changes HermitShell rejected, escaped", async () => {
     const { get } = await setup({ ...STATUS, problems: [{ at: Date.now(), what: "email", error: "invalid <script>" }] });
     const { body } = await get("/admin");
@@ -214,9 +226,21 @@ describe("email server", () => {
     const res = await act({ action: "email", host: "smtp.gmail.com", port: "587", user: "alex@example.com",
       password: "abcd efgh ijkl mnop", from: "" });
     expect(res.headers.get("Location")).toBe("/admin/settings?done=queued#email");
-    expect(valuesWith(env, "queue:")).toMatchObject([{ type: "admin", action: "email", host: "smtp.gmail.com", port: "587",
-      user: "alex@example.com", password: "abcd efgh ijkl mnop" }]);
+    const [item] = valuesWith(env, "queue:");
+    expect(item).toMatchObject({ type: "admin", action: "email", host: "smtp.gmail.com", port: "587", user: "alex@example.com",
+      sealed: ["password"] });
+    expect(JSON.stringify(item)).not.toContain("abcd efgh");
+    expect(await KEYS.open(item.password, "password")).toBe("abcd efgh ijkl mnop");
     expect(ttlOf(env, "queue:")).toBe(SECRET_TTL_SECONDS);
+  });
+
+  it("refuses to queue a password before HermitShell has sent its sealing key", async () => {
+    const { env, act } = await setup({ ...STATUS, seal: undefined });
+    const res = await act({ action: "email", host: "smtp.gmail.com", port: "587", user: "alex@example.com", password: "abcd efgh ijkl mnop" });
+    expect(res.headers.get("Location")).toBe("/admin/settings?done=nokey#email");
+    expect(valuesWith(env, "queue:")).toEqual([]);
+    const settings = await act({ action: "email", host: "smtp.gmail.com", port: "587", user: "alex@example.com", password: "" });
+    expect(settings.headers.get("Location")).toBe("/admin/settings?done=queued#email");
   });
 
   it("keeps the saved password when the box is left empty", async () => {
@@ -262,8 +286,11 @@ describe("web search keys", () => {
     withTtls(env);
     const res = await act({ action: "api_keys", firecrawl: "fc-aaaa1111, fc-bbbb2222", tavily: "tvly-cccc3333", scrapfly: "" });
     expect(res.headers.get("Location")).toBe("/admin/settings?done=queued#keys");
-    expect(valuesWith(env, "queue:")).toMatchObject([{ action: "api_keys", firecrawl: ["fc-aaaa1111", "fc-bbbb2222"], tavily: "tvly-cccc3333" }]);
-    expect(valuesWith(env, "queue:")[0]).not.toHaveProperty("scrapfly");
+    const [item] = valuesWith(env, "queue:");
+    expect(item).toMatchObject({ action: "api_keys", sealed: ["firecrawl", "tavily"] });
+    expect(await Promise.all(item.firecrawl.map((v) => KEYS.open(v, "firecrawl")))).toEqual(["fc-aaaa1111", "fc-bbbb2222"]);
+    expect(await KEYS.open(item.tavily, "tavily")).toBe("tvly-cccc3333");
+    expect(item).not.toHaveProperty("scrapfly");
     expect(ttlOf(env, "queue:")).toBe(SECRET_TTL_SECONDS);
   });
 
@@ -604,8 +631,11 @@ describe("CV upload", () => {
     const res = await upload({ u: "owner", roles: "Data engineering" }, pdf);
     expect(res.headers.get("Location")).toBe("/admin/profile?u=owner&done=cvqueued");
     const [item] = valuesWith(env, "queue:");
-    expect(item).toMatchObject({ type: "admin", action: "cv", u: "owner", roles: "Data engineering", cv: { kind: "pdf", size: 11 } });
-    expect(new TextDecoder().decode(new Uint8Array(env.FEEDBACK.store.get(item.cv.key)))).toBe("%PDF-1.4 cv");
+    expect(item).toMatchObject({ type: "admin", action: "cv", u: "owner", roles: "Data engineering", cv: { kind: "pdf", size: 11, sealed: true } });
+    const stored = new Uint8Array(env.FEEDBACK.store.get(item.cv.key));
+    expect(new TextDecoder().decode(stored)).not.toContain("%PDF");
+    expect(new TextDecoder().decode(await KEYS.openBytes(stored, item.cv.key))).toBe("%PDF-1.4 cv");
+    await expect(KEYS.openBytes(stored, "cvfile:another")).rejects.toThrow();
     expect(valuesWith(env, "history:owner:")).toMatchObject([[{ k: "cv", t: "Uploaded a new CV (Alex Morgan CV.pdf)", by: "Alex Morgan" }]]);
   });
 
@@ -617,7 +647,9 @@ describe("CV upload", () => {
     expect(keysWith(env, "cvfile:")).toEqual([]);
     expect(keysWith(env, "history:")).toEqual([]);
     await upload({ u: "sam-lee", cv_text: CV_TEXT });
-    expect(valuesWith(env, "queue:")).toMatchObject([{ action: "cv", u: "sam-lee", cv: null }]);
+    const queued = valuesWith(env, "queue:");
+    expect(queued).toMatchObject([{ action: "cv", u: "sam-lee", cv: null, sealed: ["cv_text"] }]);
+    expect(await KEYS.open(queued[0].cv_text, "cv_text")).toBe(CV_TEXT.trim());
     expect(valuesWith(env, "history:sam-lee:")).toMatchObject([[{ k: "cv", t: "Pasted new CV text" }]]);
   });
 

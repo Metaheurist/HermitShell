@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import worker from "../src/index.js";
 import { MODEL_PROVIDERS, modelModals, modelsSection, serverBox } from "../src/models.js";
-import { BASE, testEnv, valuesWith } from "./helpers.js";
+import { BASE, sealingKeys, testEnv, valuesWith } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const API = { Authorization: "Bearer api-token" };
@@ -90,10 +90,14 @@ describe("AI model keys in Global settings", () => {
     }
   });
 
-  it("queues a key, a model, a clear and the order, and refuses anything else", async () => {
-    const { env, act } = await setup();
+  it("queues a sealed key, a model, a clear and the order, and refuses anything else", async () => {
+    const keys = await sealingKeys();
+    const { env, act } = await setup({ ...STATUS, ...keys.status });
     const at = async (fields) => (await act(fields)).headers.get("Location");
     expect(await at({ action: "model_key", provider: "openrouter", key: "test-openrouter-key" })).toBe("/admin/settings?done=queued#models");
+    const [sealed] = valuesWith(env, "queue:");
+    expect(sealed.sealed).toEqual(["key"]);
+    expect(await keys.open(sealed.key, "key")).toBe("test-openrouter-key");
     expect(await at({ action: "model_key", provider: "featherless", model: "meta-llama/Llama-3.1-8B-Instruct" })).toBe("/admin/settings?done=queued#models");
     expect(await at({ action: "model_key_clear", provider: "huggingface" })).toBe("/admin/settings?done=queued#models");
     expect(await at({ action: "model_order", order: "local" })).toBe("/admin/settings?done=queued#models");
@@ -102,8 +106,9 @@ describe("AI model keys in Global settings", () => {
       { action: "model_key_clear", provider: "__proto__" }, { action: "model_order", order: "sideways" }]) {
       expect(await at(bad)).toBe("/admin/settings?done=badmodel#models");
     }
-    expect(valuesWith(env, "queue:").map(({ action, provider, key, model, clear, order }) => ({ action, provider, key, model, clear, order }))).toEqual([
-      { action: "model_keys", provider: "openrouter", key: "test-openrouter-key", model: undefined, clear: undefined, order: undefined },
+    expect(valuesWith(env, "queue:").map(({ action, provider, key, model, clear, order }) =>
+      ({ action, provider, key: key === sealed.key ? "<sealed>" : key, model, clear, order }))).toEqual([
+      { action: "model_keys", provider: "openrouter", key: "<sealed>", model: undefined, clear: undefined, order: undefined },
       { action: "model_keys", provider: "featherless", key: undefined, model: "meta-llama/Llama-3.1-8B-Instruct", clear: undefined, order: undefined },
       { action: "model_keys", provider: "huggingface", key: undefined, model: undefined, clear: true, order: undefined },
       { action: "model_keys", provider: undefined, key: undefined, model: undefined, clear: undefined, order: "local" },

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import worker from "../src/index.js";
 import { queueItem } from "../src/join.js";
-import { BASE, keysWith, testEnv, valuesWith } from "./helpers.js";
+import { BASE, keysWith, sealingKeys, testEnv, valuesWith } from "./helpers.js";
 
 describe("queue order", () => {
   it("keeps changes saved in the same millisecond in the order they were saved", async () => {
@@ -84,6 +84,23 @@ describe("invite sign-up", () => {
       cv: { kind: "pdf", name: "Sam Lee CV.pdf", size: 13 } });
     const bytes = new Uint8Array(env.FEEDBACK.store.get(item.cv.key));
     expect(new TextDecoder().decode(bytes)).toBe("%PDF-1.4 test");
+  });
+
+  it("seals the CV file and pasted CV text once HermitShell has sent its key", async () => {
+    const env = testEnv();
+    const keys = await sealingKeys();
+    await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: API, body: JSON.stringify({ ...keys.status, profiles: [] }) }), env);
+    const pdf = new File([new TextEncoder().encode("%PDF-1.4 test")], "Sam Lee CV.pdf", { type: "application/pdf" });
+    expect((await worker.fetch(joinForm(await invite(env), { phone: "07700 900123" }, pdf), env)).status).toBe(200);
+    expect((await worker.fetch(joinForm(await invite(env), { email: "sam2@example.com", cv_text: CV_TEXT }), env)).status).toBe(200);
+    const [file, text] = valuesWith(env, "queue:");
+    expect(file).toMatchObject({ type: "signup", phone: "07700 900123", cv: { kind: "pdf", size: 13, sealed: true } });
+    const stored = new Uint8Array(env.FEEDBACK.store.get(file.cv.key));
+    expect(new TextDecoder().decode(stored)).not.toContain("%PDF");
+    expect(new TextDecoder().decode(await keys.openBytes(stored, file.cv.key))).toBe("%PDF-1.4 test");
+    expect(text.sealed).toEqual(["cv_text"]);
+    expect(JSON.stringify(text)).not.toContain("Data analyst with five years");
+    expect(await keys.open(text.cv_text, "cv_text")).toBe(CV_TEXT.trim());
   });
 
   it("refuses files that are not what they claim, and sign-ups without a CV", async () => {
@@ -209,7 +226,8 @@ describe("admin gateway", () => {
 
   it("lists reported profiles and queues pause, delete and global key changes", async () => {
     const env = testEnv(ADMIN);
-    const status = { profiles: [
+    const keys = await sealingKeys();
+    const status = { ...keys.status, profiles: [
       { id: "owner", name: "Owner", email: "owner@example.com", status: "active", owner: true },
       { id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active" },
     ], keys: { firecrawl: { source: "env", hint: "fc-...0001" } } };
@@ -248,7 +266,9 @@ describe("admin gateway", () => {
     await adminAction(env, cookie, csrf, { action: "api_keys_clear" });
     expect((await adminAction(env, cookie, csrf, { action: "pause", u: "../etc" })).status).toBe(400);
 
-    const queued = valuesWith(env, "queue:").map(({ action, u, key, firecrawl, clear }) => ({ action, u, key, firecrawl, clear }));
+    const open = async (list) => list && Promise.all(list.map((v) => keys.open(v, "firecrawl")));
+    const queued = await Promise.all(valuesWith(env, "queue:").map(async ({ action, u, key, firecrawl, clear }) =>
+      ({ action, u, key, firecrawl: await open(firecrawl), clear })));
     expect(queued).toEqual([
       { action: "pause", u: "sam-lee", key: undefined, firecrawl: undefined, clear: undefined },
       { action: "delete", u: "sam-lee", key: undefined, firecrawl: undefined, clear: undefined },

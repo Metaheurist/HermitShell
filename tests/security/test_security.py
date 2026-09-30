@@ -3,9 +3,11 @@
 Run from the repository root:  python -m pytest tests/security
 """
 
+import base64
 import io
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -125,15 +127,15 @@ def test_job_email_marks_go_only_over_tls_with_the_token(monkeypatch, capsys):
 
     token = "mark-token-0123456789abcdef"
     seen = []
-    monkeypatch.setattr(cover_letter.requests, "post", lambda url, params, timeout, headers: seen.append((url, headers))
-                        or type("R", (), {"raise_for_status": lambda self: None})())
+    monkeypatch.setattr(cover_letter.requests, "post", lambda url, headers, allow_redirects, **kw: seen.append(
+        (url, headers["Authorization"])) or allow_redirects or type("R", (), {"status_code": 200})())
     monkeypatch.setenv("JOB_FEEDBACK_API_TOKEN", token)
     for base in ("http://w.example", "ftp://w.example", "w.example"):
         monkeypatch.setenv("JOB_FEEDBACK_URL", base)
         assert cover_letter.record_emailed("k1") == "" and seen == []
     monkeypatch.setenv("JOB_FEEDBACK_URL", "https://w.example")
     assert cover_letter.record_emailed("k1") == ""
-    assert seen == [("https://w.example/api/emailed", {"Authorization": f"Bearer {token}"})]
+    assert seen == [("https://w.example/api/emailed", f"Bearer {token}")]
     assert token not in capsys.readouterr().out
 
 
@@ -147,7 +149,7 @@ def test_the_live_link_keeps_tls_and_never_logs_the_api_token(capsys):
         response = type("Response", (), {"status_code": 401})()
 
     def connect(url, **options):
-        assert options["additional_headers"] == {"Authorization": f"Bearer {token}"}
+        assert options["additional_headers"]["Authorization"] == f"Bearer {token}"
         raise Refused(f"server rejected WebSocket connection: HTTP 401 ({url})")
     assert profiles.listen(api, 60, connect=connect, sleep=lambda s: None, stamp=lambda: 1) == "unavailable"
     out = capsys.readouterr()
@@ -743,3 +745,104 @@ def test_a_profiles_currency_is_one_of_the_offered_codes():
     for raw in (HOSTILE, "GBP<script>", "£ GBP", "../", 7, ["GBP"]):
         assert job_settings.clean_form({"currency": raw})["currency"] == ""
     assert job_settings.form_values({"JOB_SALARY_CURRENCY": HOSTILE}.get)["currency"] == ""
+
+
+# --------------------------------------------------------------------------- the Worker link: signing and sealing
+
+WORKER_SRC = PACKAGE / "feedback-worker" / "src"
+NODE = shutil.which("node")
+
+
+def _node(script: str, payload) -> object:
+    """Runs `script` as an ES module beside the Worker's source; it reads JSON from stdin and prints JSON."""
+    done = subprocess.run([NODE, "--input-type=module", "-e", script], input=json.dumps(payload), capture_output=True,
+                          text=True, encoding="utf-8", timeout=60, cwd=str(WORKER_SRC))
+    assert done.returncode == 0, done.stderr[-2000:]
+    return json.loads(done.stdout)
+
+
+@pytest.fixture
+def sealing_keys(tmp_path, monkeypatch):
+    import worker_seal
+    monkeypatch.setattr(hc, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(worker_seal, "KEY_BITS", 2048)
+    worker_seal._public.clear()
+    return worker_seal
+
+
+@pytest.mark.skipif(not NODE, reason="needs node for the Worker's seal.js")
+def test_what_the_worker_seals_only_this_server_opens(sealing_keys):
+    ws = sealing_keys
+    script = """
+import { sealItem, sealBytes } from "./seal.js";
+let input = ""; for await (const chunk of process.stdin) input += chunk;
+const { spki, item } = JSON.parse(input);
+const info = { spki };
+const out = await sealItem(info, item);
+const file = await sealBytes(info, new TextEncoder().encode("%PDF-1.4 private cv"), "cvfile:abc");
+console.log(JSON.stringify({ out, file: Buffer.from(file).toString("base64") }));
+"""
+    item = {"type": "admin", "action": "email", "host": "smtp.example.com", "password": "abcd efgh ijkl mnop",
+            "firecrawl": ["fc-one11111", "fc-two22222"], "cv_text": "Alex Morgan, data engineer"}
+    got = _node(script, {"spki": ws.public_key()["spki"], "item": item})
+    sealed = got["out"]
+    assert sealed["sealed"] == ["password", "firecrawl", "cv_text"]
+    for secret in ("abcd efgh", "fc-one", "Alex Morgan"):
+        assert secret not in json.dumps(sealed)
+    assert ws.open_item(sealed) == item
+    blob = base64.b64decode(got["file"])
+    assert b"%PDF" not in blob and ws.open_bytes(blob, "cvfile:abc") == b"%PDF-1.4 private cv"
+    with pytest.raises(ws.SealError):
+        ws.open_bytes(blob, "cvfile:other")
+    ws.rotate()
+    assert ws.open_item(sealed) == item, "a value sealed just before a rotation still opens"
+
+
+@pytest.mark.skipif(not NODE, reason="needs node for the Worker's apiauth.js")
+def test_the_worker_and_hermitshell_sign_identically():
+    import secrets as pysecrets
+
+    import worker_link
+    cases = [{"secret": pysecrets.token_urlsafe(24), "method": method, "target": target, "stamp": 1_790_000_000_000 + n,
+              "nonce": pysecrets.token_hex(16), "body": body}
+             for n, (method, target, body) in enumerate([("GET", "/api/queue?full=1&limit=50", ""),
+                                                         ("POST", "/ack", '{"ids":["event:_:1:abc"]}'),
+                                                         ("POST", "/api/doc?t=Northwind%20Ltd", "%PDF-1.4 \u00e9\u2014"),
+                                                         ("GET", "/api/live", "")])]
+    script = """
+import { signature } from "./apiauth.js";
+let input = ""; for await (const chunk of process.stdin) input += chunk;
+const out = [];
+for (const c of JSON.parse(input)) out.push(await signature(c.secret, c.method, c.target, c.stamp, c.nonce,
+  c.body ? new TextEncoder().encode(c.body) : null));
+console.log(JSON.stringify(out));
+"""
+    theirs = _node(script, cases)
+    ours = [worker_link.signature(worker_link.signing_key(c["secret"]), c["method"], c["target"], c["stamp"], c["nonce"],
+                                  c["body"].encode()) for c in cases]
+    assert theirs == ours and len(set(ours)) == len(ours)
+
+
+def test_the_api_token_never_leaves_over_plain_http(monkeypatch):
+    import worker_link
+    sent = []
+    monkeypatch.setattr(worker_link.requests, "get", lambda url, **kw: sent.append(kw))
+    monkeypatch.setattr(worker_link.requests, "post", lambda url, **kw: sent.append(kw))
+    for url in ("http://fb.example.workers.dev", "http://10.0.0.5:8787", "//fb.example.workers.dev", "file:///etc/passwd"):
+        with pytest.raises(worker_link.WorkerError):
+            worker_link.Link(url, "test-api-token-0001")
+    monkeypatch.setenv("JOB_FEEDBACK_URL", "http://fb.example.workers.dev")
+    monkeypatch.setenv("JOB_FEEDBACK_API_TOKEN", "test-api-token-0001")
+    assert profiles.api_from_env() is None and sent == []
+
+
+def test_a_redirect_is_never_followed_with_the_token(monkeypatch):
+    import worker_link
+
+    class Moved:
+        status_code, headers = 301, {"Location": "https://collector.example/"}
+    calls = []
+    monkeypatch.setattr(worker_link.requests, "get", lambda url, **kw: calls.append(kw) or Moved())
+    with pytest.raises(worker_link.WorkerError, match="redirected"):
+        worker_link.Link("https://fb.example.workers.dev", "test-api-token-0001", secret="").request("GET", "/api/queue")
+    assert len(calls) == 1 and calls[0]["allow_redirects"] is False

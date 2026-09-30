@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import worker from "../src/index.js";
 import { PROVIDERS, keyModals, keysSection } from "../src/keys.js";
-import { BASE, testEnv, valuesWith } from "./helpers.js";
+import { BASE, sealingKeys, testEnv, valuesWith } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const API = { Authorization: "Bearer api-token" };
@@ -103,8 +103,9 @@ describe("web search keys in Global settings", () => {
     for (const name of ["firecrawl", "tavily", "scrapfly"]) expect(keyModals("c")).toContain(`value="${name}"`);
   });
 
-  it("queues the key for the chosen provider, several Firecrawl keys at once, and refuses anything else", async () => {
-    const { env, act } = await setup();
+  it("queues the key for the chosen provider, sealed, several Firecrawl keys at once, and refuses anything else", async () => {
+    const keys = await sealingKeys();
+    const { env, act } = await setup({ ...STATUS, ...keys.status });
     const at = async (fields) => (await act({ action: "api_key", ...fields })).headers.get("Location");
     expect(await at({ provider: "tavily", key: "tvly-new-key-123" })).toBe("/admin/settings?done=queued#keys");
     expect(await at({ provider: "firecrawl", key: "fc-one11111, fc-two22222" })).toBe("/admin/settings?done=queued#keys");
@@ -113,11 +114,22 @@ describe("web search keys in Global settings", () => {
       { provider: "scrapfly", key: "" }]) {
       expect(await at(bad)).toBe("/admin/settings?done=badkey#keys");
     }
-    expect(valuesWith(env, "queue:").map(({ action, firecrawl, tavily }) => ({ action, firecrawl, tavily }))).toEqual([
-      { action: "api_keys", firecrawl: undefined, tavily: "tvly-new-key-123" },
-      { action: "api_keys", firecrawl: ["fc-one11111", "fc-two22222"], tavily: undefined },
-      { action: "api_keys", firecrawl: ["fc-default-provider"], tavily: undefined },
+    const queued = valuesWith(env, "queue:");
+    expect(JSON.stringify(queued)).not.toMatch(/tvly-new|fc-one|fc-default/);
+    const open = async (values, field) => values && Promise.all([values].flat().map((v) => keys.open(v, field)));
+    expect(await Promise.all(queued.map(async ({ action, firecrawl, tavily, sealed }) =>
+      ({ action, sealed, firecrawl: await open(firecrawl, "firecrawl"), tavily: (await open(tavily, "tavily"))?.[0] })))).toEqual([
+      { action: "api_keys", sealed: ["tavily"], firecrawl: undefined, tavily: "tvly-new-key-123" },
+      { action: "api_keys", sealed: ["firecrawl"], firecrawl: ["fc-one11111", "fc-two22222"], tavily: undefined },
+      { action: "api_keys", sealed: ["firecrawl"], firecrawl: ["fc-default-provider"], tavily: undefined },
     ]);
+  });
+
+  it("refuses to save a key until HermitShell has sent its sealing key, so no key sits in plain text", async () => {
+    const { env, act } = await setup();
+    expect((await act({ action: "api_key", provider: "tavily", key: "tvly-new-key-123" })).headers.get("Location"))
+      .toBe("/admin/settings?done=nokey#keys");
+    expect(valuesWith(env, "queue:")).toEqual([]);
   });
 
   it("has no per-recruit crawler keys any more: no Crawler column, no key modals, set_key refused", async () => {

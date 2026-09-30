@@ -3,7 +3,8 @@
 // Email buttons link to GET /f with a signed token. The link only shows a confirmation page, so
 // mail scanners that open every link cannot record answers; pressing Confirm POSTs the answer,
 // which is kept in Workers KV (30 days) until HermitShell fetches it from GET /events and deletes it
-// with POST /ack. Secrets: JOB_FEEDBACK_SECRET (link signing) and JOB_FEEDBACK_API_TOKEN (API).
+// with POST /ack. Secrets: JOB_FEEDBACK_SECRET (signs links, and HermitShell's API requests) and
+// JOB_FEEDBACK_API_TOKEN (API); apiauth.js checks both on /events, /ack and /api/*.
 // A confirmed "cover_letter" answer is a request: HermitShell's cover_letter.py polls every few minutes,
 // writes the letter on the HermitShell server and emails it as a PDF. "add_skill" links carry the job's
 // missing skills (signed, parameter s); the ones you tick, plus any you type, join your skills pool.
@@ -12,6 +13,7 @@
 // Invite sign-ups (/join) and the admin gateway (/admin) are in join.js and admin.js.
 
 import { handleAdmin, handleApi } from "./admin.js";
+import { verifyApi, withProtocol } from "./apiauth.js";
 import { DOC_KINDS, DOC_STYLE, OWNER_ID, docFor, jobHash, pdfResponse, readDoc } from "./docs.js";
 import { listed, record } from "./history.js";
 import { handleJoin, queueItem } from "./join.js";
@@ -234,6 +236,21 @@ async function route(request, env, ctx) {
     return text("Method not allowed", 405, { Allow: "GET, POST" });
   }
 
+  if (url.pathname === "/events" || url.pathname === "/ack" || url.pathname.startsWith("/api/")) {
+    const auth = await verifyApi(request, env);
+    return withProtocol(auth.ok ? await apiRoute(auth.request, env, url) : json({ error: auth.error }, auth.status));
+  }
+
+  if ((url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") && request.method === "GET") return favicon();
+  if (url.pathname === "/privacy") return privacyPage();
+  if (url.pathname === "/join") return handleJoin(request, env);
+  if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return handleAdmin(request, env, ctx);
+  if (url.pathname === "/") return text("HermitShell feedback endpoint.");
+  return text("Not found", 404);
+}
+
+// HermitShell's API, once apiauth.js has checked the token and the signature.
+async function apiRoute(request, env, url) {
   if (url.pathname === "/events" && request.method === "GET") {
     if (!authorised(request, env)) return json({ error: "unauthorised" }, 401);
     const profile = url.searchParams.get("u") || "";
@@ -254,14 +271,8 @@ async function route(request, env, ctx) {
     if (ids.length) await forgetRequests(env, ids);
     return json({ deleted: ids.length });
   }
-
-  if ((url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") && request.method === "GET") return favicon();
-  if (url.pathname === "/privacy") return privacyPage();
-  if (url.pathname === "/join") return handleJoin(request, env);
-  if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return handleAdmin(request, env, ctx);
   if (url.pathname.startsWith("/api/")) return handleApi(request, env);
-  if (url.pathname === "/") return text("HermitShell feedback endpoint.");
-  return text("Not found", 404);
+  return json({ error: "not found" }, 404);
 }
 
 export default {

@@ -4,10 +4,13 @@
 // The WebSocket is hibernatable and HermitShell's "ping" is answered by the runtime without waking the object,
 // so an idle link costs nothing on the free plan. Without the binding (or when the free daily Durable Object
 // allowance runs out) everything still works: HermitShell falls back to polling /api/queue/flag.
+// It also remembers the nonces of signed API requests (apiauth.js) for ten minutes, so none is accepted twice.
 
 const NAME = "hub";
 // HermitShell pings every 30 seconds; a link with no ping for this long is treated as dropped.
 export const LIVE_MS = 90 * 1000;
+// SIGN_WINDOW_MS in apiauth.js, which imports this file.
+const NONCE_WINDOW_MS = 5 * 60 * 1000;
 
 function hub(env) {
   return env.HUB ? env.HUB.get(env.HUB.idFromName(NAME)) : null;
@@ -24,6 +27,12 @@ async function call(env, path, init) {
     console.error(`hub ${path}: ${err?.name || "Error"}`);
     return null;
   }
+}
+
+// Whether a signed API request's nonce is new (apiauth.js); true when there is no hub to ask.
+export async function hubNonce(env, nonce) {
+  const got = await call(env, "/nonce", { method: "POST", body: JSON.stringify({ nonce }) });
+  return got?.fresh !== false;
 }
 
 export function hubBump(env, flag) {
@@ -64,6 +73,21 @@ export class Hub {
     });
   }
 
+  // A signed API request's nonce (apiauth.js): false when it was used within twice the signature window. Kept in the
+  // object's SQLite storage, which is on the free plan; without it (an older runtime) every nonce counts as fresh.
+  nonce(value) {
+    const sql = this.state.storage.sql;
+    if (!sql || !/^[0-9a-f]{32}$/.test(value)) return /^[0-9a-f]{32}$/.test(value);
+    sql.exec("CREATE TABLE IF NOT EXISTS nonces (n TEXT PRIMARY KEY, at INTEGER NOT NULL)");
+    sql.exec("DELETE FROM nonces WHERE at < ?", Date.now() - 2 * NONCE_WINDOW_MS);
+    try {
+      sql.exec("INSERT INTO nonces (n, at) VALUES (?, ?)", value, Date.now());
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async presence() {
     return { live: this.open().length > 0, seen: (await this.state.storage.get("seen")) || 0 };
   }
@@ -98,6 +122,7 @@ export class Hub {
       return Response.json(await this.presence());
     }
     if (path === "/presence") return Response.json(await this.presence());
+    if (path === "/nonce" && request.method === "POST") return Response.json({ fresh: this.nonce(String((await request.json())?.nonce || "")) });
     return new Response("Not found", { status: 404 });
   }
 

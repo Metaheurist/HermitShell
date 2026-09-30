@@ -1,4 +1,30 @@
+import { PROTOCOL } from "../src/apiauth.js";
 import { Hub } from "../src/hub.js";
+import { SEAL_ALG, SEAL_PREFIX, fieldAad } from "../src/seal.js";
+
+// What a current HermitShell adds to its status: its protocol and the public key the Worker seals secrets with.
+export async function sealingKeys() {
+  const pair = await crypto.subtle.generateKey({ name: "RSA-OAEP", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]),
+    hash: "SHA-256" }, true, ["encrypt", "decrypt"]);
+  const spki = new Uint8Array(await crypto.subtle.exportKey("spki", pair.publicKey));
+  const seal = { alg: SEAL_ALG, kid: "", spki: btoa(String.fromCharCode(...spki)) };
+  // worker_seal.open_bytes, in JavaScript.
+  async function openBytes(blob, aad) {
+    const bytes = new Uint8Array(blob);
+    if (String.fromCharCode(...bytes.subarray(0, 3)) !== "HS1") throw new Error("not sealed");
+    const size = (bytes[11] << 8) | bytes[12];
+    const raw = await crypto.subtle.decrypt({ name: "RSA-OAEP" }, pair.privateKey, bytes.subarray(13, 13 + size));
+    const key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
+    return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.subarray(13 + size, 25 + size),
+      additionalData: new TextEncoder().encode(aad) }, key, bytes.subarray(25 + size)));
+  }
+  async function open(value, field) {
+    if (!String(value).startsWith(SEAL_PREFIX)) throw new Error(`not sealed: ${value}`);
+    const b64 = value.slice(SEAL_PREFIX.length).replace(/-/g, "+").replace(/_/g, "/");
+    return new TextDecoder().decode(await openBytes(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)), fieldAad(field)));
+  }
+  return { seal, status: { protocol: PROTOCOL, seal }, open, openBytes };
+}
 
 export const BASE = "https://vacancy-feedback.example.workers.dev";
 
@@ -14,12 +40,31 @@ export class FakeSocket {
   close() { this.readyState = 3; }
 }
 
-// The HUB binding: the real Hub class on an in-memory Durable Object state.
-export function memoryHub() {
+// Just enough of a Durable Object's SQLite storage for the hub's nonce table.
+function memorySql() {
+  const rows = new Map();
+  return {
+    rows,
+    exec(query, ...args) {
+      if (query.startsWith("CREATE TABLE")) return;
+      if (query.startsWith("DELETE FROM nonces")) { for (const [n, at] of rows) if (at < args[0]) rows.delete(n); return; }
+      if (query.startsWith("INSERT INTO nonces")) {
+        if (rows.has(args[0])) throw new Error("UNIQUE constraint failed: nonces.n");
+        rows.set(args[0], args[1]);
+        return;
+      }
+      throw new Error(`unexpected SQL: ${query}`);
+    },
+  };
+}
+
+// The HUB binding: the real Hub class on an in-memory Durable Object state, with SQLite storage when asked.
+export function memoryHub({ sql = false } = {}) {
   const storage = new Map();
   const sockets = [];
   const state = {
-    storage: { async get(key) { return storage.get(key); }, async put(key, value) { storage.set(key, value); } },
+    storage: { async get(key) { return storage.get(key); }, async put(key, value) { storage.set(key, value); },
+      ...(sql ? { sql: memorySql() } : {}) },
     sockets,
     acceptWebSocket(ws) { sockets.push(ws); },
     getWebSockets() { return sockets.filter((ws) => ws.readyState !== 3); },

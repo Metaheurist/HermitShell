@@ -18,7 +18,7 @@
     { "tag": "v1", "new_sqlite_classes": ["Hub"] }
   ]
   // Secrets, set with `npx wrangler secret put <NAME>` (never commit them):
-  //   JOB_FEEDBACK_SECRET     signs the email links (same value as in HermitShell's .env)
+  //   JOB_FEEDBACK_SECRET     signs the email links and HermitShell's API requests (same value as in HermitShell's .env)
   //   JOB_FEEDBACK_API_TOKEN  protects /events, /ack and /api/* (same value as in HermitShell's .env)
   //   ADMIN_PASSWORD          password for the /admin page (optional; /admin is off without it)
   //   ADMIN_USER              username for /admin (optional, defaults to "admin")

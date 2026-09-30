@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import worker, { sign } from "../src/index.js";
 import { record } from "../src/history.js";
 import { today } from "../src/lib.js";
-import { BASE, memoryHub, testEnv, valuesWith } from "./helpers.js";
+import { BASE, memoryHub, sealingKeys, testEnv, valuesWith } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const HOSTILE = `<script>alert(1)</script>"'><img src=x onerror=alert(2)>`;
@@ -287,9 +287,10 @@ describe("authentication", () => {
     expect((await get("/admin/sent?u=..%2Fowner", env, { Cookie: cookie })).status).toBe(404);
   });
 
-  it("only queues a global key from the modal with an admin session and its CSRF token, and never shows it back", async () => {
+  it("only queues a global key from the modal with an admin session and its CSRF token, sealed, and never shows it back", async () => {
     const env = testEnv(ADMIN);
-    await env.FEEDBACK.put("status:profiles", JSON.stringify({ keys: { firecrawl: { source: "dashboard", hint: HOSTILE } },
+    const keys = await sealingKeys();
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ ...keys.status, keys: { firecrawl: { source: "dashboard", hint: HOSTILE } },
       profiles: [{ id: "sam-lee", name: HOSTILE, has_cv: true, provider: HOSTILE, key_hint: HOSTILE }] }));
     const secret = "tvly-never-shown-back-0001";
     const noSession = await worker.fetch(new Request(`${BASE}/admin/action`, {
@@ -316,6 +317,11 @@ describe("authentication", () => {
     for (const path of ["/admin?done=queued", "/admin/settings?done=queued"]) {
       expect(await (await get(path, env, { Cookie: cookie })).text()).not.toContain(secret);
     }
+    const stored = [...env.FEEDBACK.store.values()].join("\n");
+    expect(stored).not.toContain(secret);
+    const [item] = valuesWith(env, "queue:");
+    expect(await keys.open(item.tavily, "tavily")).toBe(secret);
+    await expect(keys.open(item.tavily, "firecrawl")).rejects.toThrow();
   });
 
   it("shows a pending sign-up only to a session, without its phone, CV or invite, and escaped", async () => {

@@ -1,8 +1,10 @@
 // Invite-only sign-up: /join?i=<invite id> shows a form for a new profile with a CV upload.
-// The answers and the CV wait in KV until HermitShell collects them from /api/queue.
+// The answers and the CV wait in KV until HermitShell collects them from /api/queue; the CV file and pasted CV
+// text are sealed for HermitShell once it has sent its key (seal.js).
 
 import { hubBump } from "./hub.js";
 import { esc, limitedForm, newId, note, page, text } from "./lib.js";
+import { sealBytes, sealInfo, sealItem } from "./seal.js";
 
 export const INVITE_DAYS = 7;
 export const QUEUE_TTL_SECONDS = 60 * 60 * 24 * 30;
@@ -29,6 +31,15 @@ export async function queueItem(env, item, ttl = QUEUE_TTL_SECONDS) {
   await env.FEEDBACK.put("flag:queue", id, { expirationTtl: QUEUE_TTL_SECONDS });
   await hubBump(env, id);
   return id;
+}
+
+// A CV file kept until HermitShell collects it: sealed for HermitShell when it has sent its key (seal.js), so KV
+// only holds ciphertext. Returns the queue item's `cv`.
+export async function storeCv(env, info, bytes, meta, ttl) {
+  const cv = { key: `cvfile:${newId()}`, ...meta };
+  const data = info ? await sealBytes(info, new Uint8Array(bytes), cv.key) : bytes;
+  await env.FEEDBACK.put(cv.key, data, { expirationTtl: ttl });
+  return info ? { ...cv, sealed: true } : cv;
 }
 
 // `recruiter` is the dashboard user whose pool the person joins ("" for nobody's).
@@ -118,19 +129,20 @@ export async function handleJoin(request, env) {
 
   const file = data.get("cv");
   let cv = null;
+  const info = sealInfo(await env.FEEDBACK.get("status:profiles", "json"));
   if (file && typeof file === "object" && file.size) {
     if (file.size > MAX_CV_BYTES) return retry("The CV file is larger than 5 MB.");
     const bytes = await file.arrayBuffer();
     const kind = cvKind(file, bytes);
     if (!kind) return retry("The CV must be a PDF, a Word .docx file or a text file.");
-    cv = { key: `cvfile:${newId()}`, kind, name: file.name.slice(0, 120), size: file.size };
-    await env.FEEDBACK.put(cv.key, bytes, { expirationTtl: QUEUE_TTL_SECONDS });
+    cv = await storeCv(env, info, bytes, { kind, name: file.name.slice(0, 120), size: file.size }, QUEUE_TTL_SECONDS);
   }
   if (!cv && values.cv_text.length < 200) return retry("Please upload your CV or paste it (at least a few lines).");
 
   await env.FEEDBACK.delete(`invite:${invite.id}`);
-  await queueItem(env, { type: "signup", invite: invite.id, note: invite.note,
-    ...(invite.recruiter ? { recruiter: invite.recruiter } : {}), ...values, cv });
+  const item = { type: "signup", invite: invite.id, note: invite.note,
+    ...(invite.recruiter ? { recruiter: invite.recruiter } : {}), ...values, cv };
+  await queueItem(env, info ? await sealItem(info, item) : item);
   return page("Thanks, you're in", `<p>Thanks ${esc(values.name)}. HermitShell is setting up your profile from your CV and will email
 ${esc(values.email)} when it is ready. Your first report arrives with the next daily run.</p><p>You can close this tab.</p>`);
 }
