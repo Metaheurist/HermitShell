@@ -524,11 +524,7 @@ def create_profile(item: dict, api, model_info_factory=lambda: connect_model("JO
     log(f"{'Rebuilt' if existing else 'Created'} profile {pid} ({len(built['skills'])} skills, "
         f"{len(built['titles'])} titles)")
     notify(lambda: send_welcome(profile, built, bool(existing)))
-    notify(lambda: send_owner(f"New recruit: {name}" if not existing else f"Recruit updated: {name}",
-                              [f"{name} <{email}> {'joined' if not existing else 'sent a new CV'}.",
-                               f"Looking for: {profile['roles']}",
-                               f"Searching for: {', '.join(built['titles'])}",
-                               f"Skills read from the CV: {', '.join(profile['skills'])}"]))
+    notify(lambda: send_new_recruit(profile, built, bool(existing)))
     return profile
 
 
@@ -731,21 +727,53 @@ def send_welcome(profile: dict, built: dict, updated: bool) -> None:
          _email(header, blocks, footer), text)
 
 
-def send_owner(subject: str, lines: list[str]) -> None:
+def send_new_recruit(profile: dict, built: dict, updated: bool) -> None:
+    name = profile["name"]
+    send_owner(f"Recruit updated: {name}" if updated else f"New recruit: {name}",
+               [f"{name} {'sent a new CV' if updated else 'joined'}."],
+               facts=[("Email", profile.get("email")), ("Location", profile.get("location")),
+                      ("Looking for", profile.get("roles"))],
+               chips=[("Searching for", built["titles"], "indigo"),
+                      ("Skills read from the CV", [s["name"] for s in built["skills"]], "green")],
+               action=(f"/admin/profile?u={profile['id']}", f"Open {name.split()[0]}'s profile"))
+
+
+_TONES = {"indigo": ("#4f46e5", "#3730a3", "#eef2ff"), "green": ("#047857", "#065f46", "#ecfdf5")}
+_LABEL = "font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em"
+
+
+def send_owner(subject: str, lines: list[str], facts: list[tuple[str, str]] = (),
+               chips: list[tuple[str, list[str], str]] = (), action: tuple[str, str] | None = None) -> None:
+    """`facts` are (label, value) rows under the lines, `chips` are (label, items, tone) groups that each get their
+    own card, and `action` is a (Worker path, label) button next to Manage recruits."""
     owner = load(OWNER) or {}
     to = owner.get("email") or env("ALERT_EMAIL")
     if not to:
         return
     admin = (env("JOB_FEEDBACK_URL", "") or "").rstrip("/")
-    body = "".join(f'<p style="margin:0 0 8px;font-size:14px;line-height:21px;color:#334155">{html.escape(x)}</p>'
+    facts = [(k, str(v)) for k, v in facts if v]
+    chips = [(label, items, tone) for label, items, tone in chips if items]
+    body = "".join(f'<p style="margin:0 0 8px;font-size:15px;line-height:22px;color:#0f172a">{html.escape(x)}</p>'
                    for x in lines)
-    link = f'<p style="margin:10px 0 0"><a href="{html.escape(admin)}/admin" style="color:#4f46e5">Manage recruits</a></p>' \
-        if admin else ""
+    rows = "".join(f'<tr><td style="padding:9px 14px 9px 0;border-top:1px solid #eef1f6;vertical-align:top;width:104px;'
+                   f'{_LABEL};color:#64748b">{html.escape(k)}</td><td style="padding:8px 0;border-top:1px solid #eef1f6;'
+                   f'font-size:14px;line-height:21px;color:#1e293b">{html.escape(v)}</td></tr>' for k, v in facts)
+    table = f'<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px">{rows}</table>' if rows else ""
+    button = (f'<a href="{html.escape(admin + action[0])}" style="display:inline-block;background:#4f46e5;color:#ffffff;'
+              f'border-radius:10px;padding:10px 18px;margin:0 14px 6px 0;font-size:14px;font-weight:600;text-decoration:none;'
+              f'vertical-align:middle">{hc.white_label(action[1])}</a>') if admin and action else ""
+    link = (f'<p style="margin:16px 0 0;font-size:14px">{button}<a href="{html.escape(admin)}/admin" style="color:#4f46e5">'
+            f'Manage recruits</a></p>') if admin else ""
+    groups = [f'<div style="{_LABEL};color:{_TONES[tone][0]}">{html.escape(label)} <span style="color:#94a3b8">'
+              f'{len(items)}</span></div><div style="margin-top:10px">{_chips(items, *_TONES[tone][1:])}</div>'
+              for label, items, tone in chips]
+    text = "\n".join([*lines, *(f"{k}: {v}" for k, v in facts), *(f"{label}: {', '.join(items)}" for label, items, _ in chips)])
     profiles = [p for p in all_profiles() if not p.get("owner")]
     header = email_header("Recruits", _today(), subject, "People getting reports from your HermitShell",
                           [(sum(p.get("status") == "active" for p in profiles), "Active"),
                            (sum(p.get("status") == "paused" for p in profiles), "Paused")], highlight=0)
-    send(to, f"{FROM_NAME}: {subject}", _email(header, [body + link]), "\n".join(lines) + (f"\n\n{admin}/admin" if admin else ""))
+    send(to, f"{FROM_NAME}: {subject}", _email(header, [body + table + link, *groups]),
+         text + (f"\n\n{admin}/admin" if admin else ""))
 
 
 # --------------------------------------------------------------------------- Worker API

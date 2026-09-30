@@ -106,6 +106,19 @@ def test_goodbye_email_escapes_the_name(monkeypatch):
     assert sent and "<script>" not in sent[0] and "<img" not in sent[0]
 
 
+def test_new_recruit_email_escapes_every_field_and_the_profile_link(monkeypatch):
+    sent = []
+    monkeypatch.setattr(profiles, "send", lambda to, subject, html_body, text: sent.append(html_body))
+    monkeypatch.setattr(profiles, "load", lambda pid: {"email": "owner@example.com"})
+    monkeypatch.setattr(profiles, "all_profiles", lambda: [])
+    monkeypatch.setenv("JOB_FEEDBACK_URL", "https://w.example")
+    built = {"titles": [HOSTILE], "skills": [{"name": HOSTILE}]}
+    profiles.send_new_recruit({"id": f'x"{HOSTILE}', "name": f"{HOSTILE} Lee", "email": HOSTILE, "location": HOSTILE,
+                               "roles": HOSTILE}, built, False)
+    assert sent and "<script>" not in sent[0] and "<img" not in sent[0]
+    assert 'href="https://w.example/admin/profile?u=x&quot;&lt;script&gt;' in sent[0]
+
+
 def test_job_card_buttons_escape_their_links():
     import job_weekly
 

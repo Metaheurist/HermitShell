@@ -126,9 +126,32 @@ def test_signup_builds_a_profile_from_the_cv(home):
     assert owner_note["to"] == "owner@example.com" and "New recruit: Sam Lee" in owner_note["subject"]
     assert "Recruits" in owner_note["html"] and "Profiles" not in owner_note["html"]
     assert '/admin" style="color:#4f46e5">Manage recruits</a>' in owner_note["html"]
+    assert f'/admin/profile?u={pid}"' in owner_note["html"] and "Open Sam&#x27;s profile" in owner_note["html"]
+    assert ">Looking for</td>" in owner_note["html"] and ">Data analyst or BI developer, hybrid</td>" in owner_note["html"]
+    assert ">Location</td>" in owner_note["html"] and ">Lisburn</td>" in owner_note["html"]
+    assert "Skills read from the CV <span" in owner_note["html"] and "border-radius:99px" in owner_note["html"]
+    assert "Sam Lee <sam@example.com>" not in owner_note["text"] and "Email: sam@example.com" in owner_note["text"]
     assert profiles.os.environ["ALERT_EMAIL"] == "owner@example.com"
     ids = [p["id"] for p in api.statuses[-1]["profiles"]]
     assert ids == ["owner", pid]
+
+
+def test_the_new_recruit_email_is_sections_not_one_paragraph(home):
+    _, sent = home
+    built = {"titles": ["Data Analyst", "<b>BI</b>"], "skills": [{"name": "SQL"}, {"name": "Power BI"}, {"name": "Excel"}]}
+    profiles.send_new_recruit({"id": "sam-lee", "name": "Sam <i>Lee</i>", "email": "sam@example.com",
+                               "location": "", "roles": "Analyst <script>"}, built, True)
+    note = sent[-1]
+    assert "Recruit updated: Sam <i>Lee</i>" in note["subject"]
+    body = note["html"]
+    assert "<i>" not in body and "<script>" not in body and "<b>BI</b>" not in body
+    assert "Sam &lt;i&gt;Lee&lt;/i&gt; sent a new CV." in body and "&lt;b&gt;BI&lt;/b&gt;" in body
+    assert ">Location</td>" not in body
+    assert body.count("border-radius:99px") == 5
+    assert "Searching for <span" in body and ">2</span>" in body and ">3</span>" in body
+    assert note["text"].splitlines()[:5] == ["Sam <i>Lee</i> sent a new CV.", "Email: sam@example.com",
+                                            "Looking for: Analyst <script>", "Searching for: Data Analyst, <b>BI</b>",
+                                            "Skills read from the CV: SQL, Power BI, Excel"]
 
 
 def test_a_new_profile_reaches_the_worker_before_its_signup_leaves_the_queue(home):
