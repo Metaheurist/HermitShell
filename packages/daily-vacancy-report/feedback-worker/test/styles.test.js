@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { page, phaseStyle } from "../src/lib.js";
 import { tasksPage } from "../src/tasks.js";
+import { styled } from "./helpers.js";
 
 const SRC = new URL("../src/", import.meta.url);
 const sources = () => readdirSync(SRC).filter((f) => f.endsWith(".js")).map((f) => [f, readFileSync(new URL(f, SRC), "utf8")]);
@@ -37,7 +38,7 @@ describe("page styles", () => {
   });
 
   it("cross-fade between pages and keep the loops in phase", async () => {
-    const html = await page("Recruits", "<p>x</p>").text();
+    const html = styled(await page("Recruits", "<p>x</p>").text());
     expect(html).toContain("@view-transition{navigation:auto}");
     expect(html).toMatch(/:root\{--phase:-[\d.]+s;--drift:-[\d.]+s\}/);
     expect(html).toContain("@media (prefers-reduced-motion:reduce)");

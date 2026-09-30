@@ -937,6 +937,10 @@ using [Semantic Versioning](https://semver.org/).
 - A signed poll of `/api/queue/flag` checks its nonce and records HermitShell's check-in in one call
   to the live link's Durable Object instead of two, halving that object's requests when HermitShell
   polls.
+- The recruits list reads every recruit's sparkline from one KV key and its invites from one list,
+  instead of one read per recruit and per invite.
+- Styles shared by every page moved from each page (about 15 KB) into `/app.css`, which the browser
+  keeps until it changes, so pages and waiting-page updates are smaller.
 
 ### Security
 

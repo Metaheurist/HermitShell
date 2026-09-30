@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import worker from "../src/index.js";
 import { jobHash } from "../src/docs.js";
 import { FIELDS, scoreTone, sentPage, splitStats, statsPage, totals, validStats, windowFor, zonedToday } from "../src/stats.js";
-import { BASE, keysWith, testEnv } from "./helpers.js";
+import { BASE, keysWith, styled, testEnv } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const API = { Authorization: "Bearer api-token" };
@@ -167,7 +167,7 @@ describe("stats page", () => {
     expect(body).toMatch(/class="bar score k-green"/);
     expect(body).not.toMatch(/class="bar score" fill=/);
     expect(body).toContain("@keyframes halo");
-    expect(body).toContain("prefers-reduced-motion");
+    expect(styled(body)).toContain("prefers-reduced-motion");
   });
 
   it("gives every card a tinted icon badge and every chip a round icon", async () => {

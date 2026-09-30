@@ -14,6 +14,7 @@ const HOSTILE = `<script>alert(1)</script>"'><img src=x onerror=alert(2)>`;
 function onlyOwnScript(csp) {
   expect(csp).toContain("default-src 'none'; script-src 'self'; connect-src 'self';");
   expect(csp.match(/script-src[^;]*/g)).toEqual(["script-src 'self'"]);
+  expect(csp.match(/style-src[^;]*/g)).toEqual(["style-src 'self' 'unsafe-inline'"]);
 }
 
 async function signed(action, key, title, profile = "") {
@@ -1070,5 +1071,23 @@ describe("a cover letter's length and tone", () => {
     expect(event).toMatchObject({ a: "cover_letter", u: "sam-lee", r: "", len: "short", tone: "formal" });
     expect(event.send).toBeUndefined();
     expect(event.id).toMatch(/^event:sam-lee:dash-[0-9a-f]{20}:cglstf\d+$/);
+  });
+});
+
+describe("the shared stylesheet", () => {
+  it("is linked from this Worker only, and public pages still run no script", async () => {
+    const res = await worker.fetch(new Request(`${BASE}/join?i=${"0".repeat(32)}`), testEnv());
+    const csp = res.headers.get("Content-Security-Policy");
+    expect(csp.match(/style-src[^;]*/g)).toEqual(["style-src 'self' 'unsafe-inline'"]);
+    expect(csp).not.toContain("script-src");
+    const links = [...(await res.text()).matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map((m) => m[1]);
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatch(/^\/app\.css\?v=[0-9a-f]{8}$/);
+  });
+
+  it("holds no script, import or outside address", async () => {
+    const css = await (await worker.fetch(new Request(`${BASE}/app.css`), testEnv())).text();
+    expect(css.length).toBeGreaterThan(1000);
+    expect(css).not.toMatch(/<\/?script|@import|expression\(|url\((?!#)|https?:/i);
   });
 });

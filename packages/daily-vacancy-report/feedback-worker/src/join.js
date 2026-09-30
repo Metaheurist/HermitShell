@@ -54,8 +54,16 @@ export async function createInvite(env, note = "", recruiter = "") {
   const id = newId();
   const invite = { id, note: String(note).slice(0, 80), created: Date.now(), expires: Date.now() + INVITE_DAYS * 86400000,
     ...(recruiter ? { recruiter: String(recruiter).slice(0, 32) } : {}) };
-  await env.FEEDBACK.put(`invite:${id}`, JSON.stringify(invite), { expirationTtl: INVITE_DAYS * 86400 });
+  await env.FEEDBACK.put(`invite:${id}`, JSON.stringify(invite), { expirationTtl: INVITE_DAYS * 86400, metadata: invite });
   return invite;
+}
+
+// Every open invite (at most 100), from one list: each carries itself as the key's metadata. Invites made before
+// that are read one by one.
+export async function openInvites(env, now = Date.now()) {
+  const { keys } = await env.FEEDBACK.list({ prefix: "invite:", limit: 100 });
+  const all = await Promise.all(keys.map((k) => k.metadata?.id ? k.metadata : env.FEEDBACK.get(k.name, "json")));
+  return all.filter((i) => i && i.expires > now);
 }
 
 async function openInvite(env, id) {

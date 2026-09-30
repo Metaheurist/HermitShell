@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import worker from "../src/index.js";
 import { MAX_QUERY, matchesProfile, searchQuery } from "../src/search.js";
-import { BASE, testEnv } from "./helpers.js";
+import { BASE, styled, testEnv } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const API = { Authorization: "Bearer api-token" };
@@ -112,7 +112,7 @@ describe("profile search", () => {
 
   it("widens the recruits card to the screen and stacks each row on narrow screens", async () => {
     const get = await setup();
-    const board = await get();
+    const board = styled(await get());
     expect(board).toContain('<main class="wide full">');
     expect(board).toContain('<table class="list stack recruits"><tr class="head"><th>Recruit</th>');
     expect(board).toContain("main.full{max-width:min(1320px,calc(100vw - 48px))}");

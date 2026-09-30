@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { PROTOCOL } from "../../packages/daily-vacancy-report/feedback-worker/src/apiauth.js";
 import worker from "../../packages/daily-vacancy-report/feedback-worker/src/index.js";
 import { sealingKeys } from "../../packages/daily-vacancy-report/feedback-worker/test/helpers.js";
-import { LINK_DAYS, sign, today } from "../../packages/daily-vacancy-report/feedback-worker/src/lib.js";
+import { LINK_DAYS, STYLE_URL, sign, stylesheet, today } from "../../packages/daily-vacancy-report/feedback-worker/src/lib.js";
 import { jobHash } from "../../packages/daily-vacancy-report/feedback-worker/src/docs.js";
 import { record } from "../../packages/daily-vacancy-report/feedback-worker/src/history.js";
 import { zonedToday } from "../../packages/daily-vacancy-report/feedback-worker/src/stats.js";
@@ -57,8 +57,12 @@ async function call(path, { method = "GET", form, json, headers = {} } = {}) {
   return worker.fetch(new Request(`${BASE}${path}`, init), env, {});
 }
 
+// The screenshots open the pages as files, so the shared stylesheet goes back inline.
+const STYLESHEET = await stylesheet().text();
+
 async function save(name, response) {
-  writeFileSync(join(out, `${name}.html`), await response.text());
+  const html = await response.text();
+  writeFileSync(join(out, `${name}.html`), html.replace(`<link rel="stylesheet" href="${STYLE_URL}">`, () => `<style>${STYLESHEET}</style>`));
 }
 
 // A profile page with its save-status frame inlined, since the screenshots open the pages as files.

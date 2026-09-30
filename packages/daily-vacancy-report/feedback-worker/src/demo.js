@@ -16,7 +16,7 @@
 import { PROTOCOL } from "./apiauth.js";
 import { DOC_KINDS, markEmailed, storeDoc } from "./docs.js";
 import { historyKey } from "./history.js";
-import { esc, limitedForm, newId, page, redirect, safeEqual, when } from "./lib.js";
+import { esc, limitedForm, newId, page, redirect, rememberWeek, safeEqual, when } from "./lib.js";
 import { SEAL_ALG } from "./seal.js";
 import { SETTINGS_URL } from "./settings.js";
 import { splitStats, zonedToday } from "./stats.js";
@@ -559,6 +559,7 @@ async function seed(env) {
     const { stats, sent } = splitStats(statsFor(p, end, n));
     await put(env, `stats:${p.id}`, stats);
     await put(env, `sent:${p.id}`, sent);
+    await rememberWeek(env, p.id, stats, now);
   }
 
   // Each recruit's history, in the entries record() writes, one KV value per month.

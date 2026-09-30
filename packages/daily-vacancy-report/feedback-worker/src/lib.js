@@ -8,7 +8,7 @@ export const SECURITY_HEADERS = {
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
 };
-export const CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; form-action 'self'; frame-ancestors 'none'";
+export const CSP = "default-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self'; form-action 'self'; frame-ancestors 'none'";
 
 // The HermitShell mark: a spiral shell on the brand's indigo-to-violet tile, lit from the top left like the buttons.
 // It is the tab icon and sits next to "HermitShell" on every page (inline there, so pages load nothing more).
@@ -385,12 +385,32 @@ export function savingTag(label = "saving") {
   return `<span class="savingtag keepanim">${esc(label)}&hellip;</span>`;
 }
 
+function fnv(text) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
+  return h.toString(16).padStart(8, "0");
+}
+
+// Every page's shared styles, fetched once and then cached for good: the URL changes whenever they do.
+export const STYLE_PATH = "/app.css";
+export const STYLE_URL = `${STYLE_PATH}?v=${fnv(STYLE)}`;
+
+export function stylesheet() {
+  return new Response(STYLE, {
+    headers: {
+      "Content-Type": "text/css; charset=utf-8",
+      "Cache-Control": "public, max-age=31536000, immutable",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
 // `before` goes outside the card: main's entrance animation would otherwise pin a fixed element to the card.
 export function page(heading, body, { status = 200, wide = false, headers = {}, before = "", refresh = 0, refreshTo = "" } = {}) {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">${
   refresh > 0 ? `<meta http-equiv="refresh" content="${Math.trunc(refresh)}${refreshTo ? `;url=${esc(refreshTo)}` : ""}">` : ""}
-<link rel="icon" href="/favicon.svg" type="image/svg+xml"><style>${phaseStyle()}</style><title>${esc(heading)}</title><style>${STYLE}</style></head><body${refresh > 0 ? ' class="still"' : ""}>${before}<main${wide === "full" ? ' class="wide full"' : wide ? ' class="wide"' : ""}>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><style>${phaseStyle()}</style><title>${esc(heading)}</title><link rel="stylesheet" href="${STYLE_URL}"></head><body${refresh > 0 ? ' class="still"' : ""}>${before}<main${wide === "full" ? ' class="wide full"' : wide ? ' class="wide"' : ""}>
 <div class="eyebrow">${BRAND_MARK}HermitShell</div><h1>${esc(heading)}</h1>${body}</main></body></html>`;
   return new Response(html, {
     status,
@@ -449,6 +469,29 @@ async function deletePrefix(env, prefix) {
   } while (cursor);
 }
 
+// The last few days of every recruit's stats in one key, for the dashboard's sparklines: one read instead of one per
+// recruit. Rewritten only when a recruit's days change; profiles.py sends stats one recruit at a time, so two updates
+// never race. A recruit missing from it (stats sent before it existed) is read from "stats:<id>".
+export const WEEKS_KEY = "statsweeks";
+const WEEK_KEEP_DAYS = 9;
+
+export async function rememberWeek(env, profile, stats, now = Date.now()) {
+  const all = (await env.FEEDBACK.get(WEEKS_KEY, "json")) || {};
+  const from = new Date(now - WEEK_KEEP_DAYS * 86400000).toISOString().slice(0, 10);
+  const next = stats ? { days: Object.fromEntries(Object.entries(stats.days || {}).filter(([d]) => d >= from)) } : undefined;
+  if (JSON.stringify(all[profile]) === JSON.stringify(next)) return;
+  if (next) all[profile] = next;
+  else delete all[profile];
+  await env.FEEDBACK.put(WEEKS_KEY, JSON.stringify(all));
+}
+
+// The recent stats of each profile id, in order; null for none.
+export async function recentStats(env, ids) {
+  const all = (await env.FEEDBACK.get(WEEKS_KEY, "json")) || {};
+  return Promise.all(ids.map((u) => !/^[a-z0-9-]{1,40}$/.test(u || "") ? null
+    : Object.hasOwn(all, u) ? all[u] : env.FEEDBACK.get(`stats:${u}`, "json")));
+}
+
 // An extra profile that unsubscribes or is deleted: its answers not yet collected by HermitShell, its stats, its
 // list of jobs sent, the skills added from it, the letters and CVs kept for download and its history are dropped.
 export async function purgeProfileEvents(env, profile) {
@@ -457,7 +500,7 @@ export async function purgeProfileEvents(env, profile) {
   await Promise.all((Array.isArray(docs) ? docs : []).filter((d) => d && /^[0-9a-f]{32}$/.test(d.h) && /^[a-z_]{1,20}$/.test(d.k))
     .map((d) => env.FEEDBACK.delete(docKey(profile, d.k, d.h))));
   await Promise.all([env.FEEDBACK.delete(docIndexKey(profile)), env.FEEDBACK.delete(emailedKey(profile)), env.FEEDBACK.delete(skillAddKey(profile)),
-    env.FEEDBACK.delete(`sent:${profile}`), env.FEEDBACK.delete(`stats:${profile}`)]);
+    env.FEEDBACK.delete(`sent:${profile}`), env.FEEDBACK.delete(`stats:${profile}`), rememberWeek(env, profile, null)]);
   await Promise.all([deletePrefix(env, eventPrefix(profile)), deletePrefix(env, historyPrefix(profile))]);
   await env.FEEDBACK.delete(eventFlag(profile));
 }

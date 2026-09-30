@@ -16,10 +16,10 @@ import { HISTORY_URL, historyPage, listed, moveOwnerHistory, record, recordRepor
 import { hasCheckedIn } from "./apiauth.js";
 import { POLL_PATH, hubConnect, hubPresence, hubSeen } from "./hub.js";
 import { enhance, enhancedCsp } from "./enhance.js";
-import { createInvite, queueItem } from "./join.js";
+import { createInvite, openInvites, queueItem } from "./join.js";
 import {
   CSP, SECURITY_HEADERS, accessUser, ago, authorised, cleanSkill, deleteAndUnflag, esc, flaggedItems, hmacHex, json, limitedForm, limitedJson, listFlagged,
-  purgeProfileEvents,
+  purgeProfileEvents, recentStats, rememberWeek,
   APPLIED, note, page, redirect, safeEqual, savingTag, secretEqual, text, waitBar, waitRefresh, when,
 } from "./lib.js";
 import {
@@ -360,7 +360,7 @@ async function dashboard(request, env, s) {
   const url = new URL(request.url);
   const admin = s.me.admin;
   const [current, invites, queue, presence, held] = await Promise.all([
-    status(env), env.FEEDBACK.list({ prefix: "invite:", limit: 100 }), queued(env), hubPresence(env), requests(env)]);
+    status(env), openInvites(env), queued(env), hubPresence(env), requests(env)]);
   const recs = recruiters(s.acc, current, env);
   const byId = new Map(recs.map((r) => [r.id, r]));
   const tasks = admin ? tasksButton(taskRows(current, queue, held).length) : "";
@@ -371,9 +371,8 @@ async function dashboard(request, env, s) {
   const busy = new Map(quick.filter((i) => i.u).map((i) => [String(i.u), i.action]));
   const waiting = describe(mine.filter((i) => !signups.some((p) => i.type === "signup" && p.email === String(i.email || ""))));
   const profiles = (current.profiles || []).filter((p) => canSee(s.me, p));
-  const stats = await Promise.all(profiles.map((p) => PROFILE_RE.test(p.id || "") ? env.FEEDBACK.get(`stats:${p.id}`, "json") : null));
-  const inviteRows = (await Promise.all(invites.keys.map((k) => env.FEEDBACK.get(k.name, "json"))))
-    .filter((i) => i && (admin || i.recruiter === s.me.id))
+  const stats = await recentStats(env, profiles.map((p) => p.id));
+  const inviteRows = invites.filter((i) => admin || i.recruiter === s.me.id)
     .map((i) => `<tr><td>${esc(i.note || "No note")}</td>${admin ? `<td class="muted">${i.recruiter && byId.get(i.recruiter)
       ? `joins ${esc(byId.get(i.recruiter).name)}` : "no recruiter"}</td>` : ""}<td class="muted">expires ${esc(when(i.expires, current.timezone))}</td>
 <td>${button(s.csrf, "revoke", "Revoke", { invite: i.id })}</td></tr>`).join("");
@@ -804,13 +803,13 @@ export async function handleApi(request, env) {
     const u = typeof body?.u === "string" ? body.u : "";
     if (!PROFILE_RE.test(u)) return json({ error: "bad profile" }, 400);
     if (body.stats === null) {
-      await Promise.all([env.FEEDBACK.delete(`stats:${u}`), env.FEEDBACK.delete(`sent:${u}`)]);
+      await Promise.all([env.FEEDBACK.delete(`stats:${u}`), env.FEEDBACK.delete(`sent:${u}`), rememberWeek(env, u, null)]);
       return json({ deleted: true });
     }
     if (!validStats(body.stats)) return json({ error: "invalid stats" }, 400);
     const { stats, sent } = splitStats(body.stats);
     await Promise.all([env.FEEDBACK.put(`stats:${u}`, JSON.stringify({ ...stats, updated: Date.now() })),
-      env.FEEDBACK.put(`sent:${u}`, JSON.stringify(sent))]);
+      env.FEEDBACK.put(`sent:${u}`, JSON.stringify(sent)), rememberWeek(env, u, stats)]);
     return json({ saved: true });
   }
   // A cover letter or tailored CV HermitShell has made, kept encrypted for download (docs.js).

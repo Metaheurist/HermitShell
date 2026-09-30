@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import worker, { sign } from "../src/index.js";
-import { ago, today, when } from "../src/lib.js";
-import { BASE, testEnv, valuesWith } from "./helpers.js";
+import { STYLE_URL, ago, today, when } from "../src/lib.js";
+import { BASE, styled, testEnv, valuesWith } from "./helpers.js";
 
 // Same values as the KNOWN_* constants in packages/daily-vacancy-report/tests/test_vacancy_report.py.
 const KNOWN_SIGNATURE = "bf5b2947e5f2b792d5a56680ef7d8ab8";
@@ -303,10 +303,14 @@ describe("feedback worker", () => {
   it("animates with CSS only, and not for people who ask for reduced motion", async () => {
     const env = testEnv({ ADMIN_PASSWORD: "correct horse battery" });
     const res = await worker.fetch(new Request(`${BASE}/admin`), env);
-    const body = await res.text();
+    const body = styled(await res.text());
     expect(body).toContain("@keyframes rise");
     expect(body).toMatch(/@media \(prefers-reduced-motion:reduce\)\{\*,\*::before,\*::after\{animation:none!important/);
     expect(body.replace('<link rel="icon" href="/favicon.svg" type="image/svg+xml">', "")).not.toMatch(/<script|<link|@import|url\((?!#hs-[tls]\))/);
+    const css = await worker.fetch(new Request(`${BASE}${STYLE_URL}`), env);
+    expect(css.headers.get("Content-Type")).toBe("text/css; charset=utf-8");
+    expect(css.headers.get("Cache-Control")).toContain("immutable");
+    expect(css.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(res.headers.get("Content-Security-Policy")).not.toContain("script-src");
   });
 

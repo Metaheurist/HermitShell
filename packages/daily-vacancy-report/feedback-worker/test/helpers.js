@@ -1,5 +1,6 @@
 import { PROTOCOL } from "../src/apiauth.js";
 import { Hub } from "../src/hub.js";
+import { STYLE_URL, stylesheet } from "../src/lib.js";
 import { SEAL_ALG, SEAL_PREFIX, fieldAad } from "../src/seal.js";
 
 // What a current HermitShell adds to its status: its protocol and the public key the Worker seals secrets with.
@@ -77,9 +78,15 @@ export function memoryHub({ sql = false } = {}) {
 
 export function memoryKV() {
   const store = new Map();
+  const metadata = new Map();
   return {
     store,
-    async put(key, value) { store.set(key, value); },
+    metadata,
+    async put(key, value, options) {
+      store.set(key, value);
+      if (options?.metadata) metadata.set(key, structuredClone(options.metadata));
+      else metadata.delete(key);
+    },
     async get(key, type) {
       const value = store.get(key);
       if (value == null) return null;
@@ -88,10 +95,17 @@ export function memoryKV() {
       return value;
     },
     async list({ prefix, limit = 1000 }) {
-      return { keys: [...store.keys()].filter((k) => k.startsWith(prefix)).sort().slice(0, limit).map((name) => ({ name })) };
+      return { keys: [...store.keys()].filter((k) => k.startsWith(prefix)).sort().slice(0, limit)
+        .map((name) => (metadata.has(name) ? { name, metadata: structuredClone(metadata.get(name)) } : { name })) };
     },
-    async delete(key) { store.delete(key); },
+    async delete(key) { store.delete(key); metadata.delete(key); },
   };
+}
+
+// A page with the shared stylesheet it links to put back inline, for checking its styles.
+const STYLESHEET = await stylesheet().text();
+export function styled(html) {
+  return html.replace(`<link rel="stylesheet" href="${STYLE_URL}">`, () => `<style>${STYLESHEET}</style>`);
 }
 
 export function testEnv(extra = {}) {

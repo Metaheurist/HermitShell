@@ -12,6 +12,18 @@ test("the session cookie is HttpOnly, Secure and SameSite=Strict", async ({ page
   expect(cookie.path).toBe("/");
 });
 
+test("the shared stylesheet loads under the page's policy, and is kept by the browser", async ({ page }) => {
+  const refused = [];
+  page.on("console", (m) => { if (/Content Security Policy/i.test(m.text())) refused.push(m.text()); });
+  const css = page.waitForResponse((r) => r.url().includes("/app.css?v="));
+  await page.goto("/privacy");
+  const res = await css;
+  expect(res.status()).toBe(200);
+  expect(res.headers()["cache-control"]).toContain("immutable");
+  expect(await page.locator("main").evaluate((el) => getComputedStyle(el).borderTopLeftRadius)).toBe("22px");
+  expect(refused).toEqual([]);
+});
+
 test("pages send a locked-down Content-Security-Policy and no-store", async ({ page }) => {
   for (const path of ["/admin", "/privacy"]) {
     const res = await page.goto(path);

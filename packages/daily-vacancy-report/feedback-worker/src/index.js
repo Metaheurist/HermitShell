@@ -20,7 +20,7 @@ import { listed, record } from "./history.js";
 import { handleJoin, queueItem } from "./join.js";
 import {
   CONTROL_RE, EVENT_TTL_SECONDS, LINK_DAYS, MAX_SKILL, ago, authorised, cleanSkill, deleteAndUnflag, esc, eventFlag, eventPrefix, favicon, json, limitedForm,
-  limitedJson, listFlagged, page, purgeProfileEvents, safeEqual, setFlag, sha256Hex, sign, text, today,
+  limitedJson, listFlagged, page, purgeProfileEvents, safeEqual, setFlag, sha256Hex, sign, STYLE_PATH, stylesheet, text, today,
 } from "./lib.js";
 import { memoKV } from "./memo.js";
 import { privacyPage } from "./privacy.js";
@@ -261,6 +261,7 @@ async function route(request, env, ctx) {
 
   if ((url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") && request.method === "GET") return favicon();
   if (url.pathname === ENHANCE_PATH && request.method === "GET") return enhanceScript();
+  if (url.pathname === STYLE_PATH && request.method === "GET") return stylesheet();
   if (url.pathname === "/privacy") return privacyPage();
   if (url.pathname === "/join") return handleJoin(request, env);
   if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return handleAdmin(request, env, ctx);

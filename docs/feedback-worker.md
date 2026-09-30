@@ -80,7 +80,9 @@ email button ──> Worker /f (confirm page) ──> KV ──> HermitShell GET
 - **No outside content, and one script of its own.** Every page's Content-Security-Policy blocks
   anything loaded from elsewhere and all inline script. The HermitShell mark at the top of each page is
   drawn inline, and the tab icon, `/favicon.svg` (the same mark), comes from the Worker itself (a plain
-  SVG with no scripts or links). Public pages (email buttons, sign-up, privacy) run no JavaScript at all.
+  SVG with no scripts or links). Styles shared by every page come from the Worker's own `/app.css`
+  (`style-src 'self'`, cached by the browser until they change). Public pages (email buttons, sign-up,
+  privacy) run no JavaScript at all.
   Signed-in dashboard pages may load one file, `/enhance.js` (`script-src 'self'`), which updates a
   waiting page in place and stops a form being sent twice; every page works the same without it.
 - **No secrets in git.** The two secrets live only in HermitShell's `.env` and in the Worker's
@@ -966,7 +968,10 @@ seconds. Admin pages also skip the listing when the flag says the queue is empty
 last set, and a listing that finds nothing under a flag set over two minutes ago takes it down (KV lists can
 show a deleted key for about a minute), so a flag can't stay on after its items have gone and cost a list on
 every poll. Each request reads a KV key at most once (`src/memo.js`: later reads, and reads after
-the request's own writes, come from memory, and each caller gets its own parsed copy). Status reports
+the request's own writes, come from memory, and each caller gets its own parsed copy). The recruits
+list reads its sparklines from one key (`statsweeks`: the last nine days of each recruit's counts,
+rewritten only when they change) and its invites from one list (each invite key carries the invite as
+metadata), instead of a read per recruit and per invite. Status reports
 from HermitShell are only written when something changed or every 15 minutes (at most 96 of the
 1,000 writes a day), plus two per report (when it starts and when it ends), about one a minute for
 a report's progress while it runs (a 20-minute scan adds about 20), and one per cover letter or
