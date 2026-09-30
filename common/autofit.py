@@ -19,6 +19,9 @@ The watchdog steps down after out-of-memory errors or when RAM runs low (a leane
 then the CPU only) and back up one step at a time once requests have gone well for half an hour. What it learns is
 kept in state/autofit.json. HERMES_AUTOFIT=off sends requests exactly as the scripts ask.
 
+- The model: with no OLLAMA_MODEL set, suggested_model() picks the largest of a small, the default and a large
+  model that fits the GPU or RAM, which doctor.py downloads and the scripts prefer.
+
     python3 autofit.py               what it knows about this machine and what it would do now
     python3 autofit.py --json
     python3 autofit.py --calibrate   loads the model at a few context sizes to learn what fits on the GPU
@@ -186,6 +189,33 @@ def hardware(now: float | None = None) -> dict:
                 "ollama_gpu": seen if seen in ("ok", "lost", "none") else ""}
     return {"source": "this machine", "age": 0, "cpu": local_cpu(), "gpus": local_gpus(), "ram_mb": memory,
             "ollama_gpu": ""}
+
+
+# The model to download for the local Ollama when none is configured, largest first: (model, download MB, enough
+# when one GPU has this much VRAM, or when the machine has this much RAM). The mixture-of-experts model reads only a
+# few billion weights per token, so it stays quick on a CPU with the RAM to hold it.
+SIZES = (
+    ("qwen3:30b-a3b-instruct-2507-q4_K_M", 18600, 24000, 48000),
+    (hc.DEFAULT_MODEL, 2500, 4000, 6000),
+    ("qwen2.5:1.5b-instruct", 990, 0, 0),
+)
+
+
+def suggested_model(hw: dict | None = None) -> str:
+    """The largest model that fits this machine (the default when autofit is off or the memory is unknown)."""
+    if not enabled():
+        return hc.DEFAULT_MODEL
+    hw = hardware() if hw is None else hw
+    vram = max((g["vram_mb"] for g in hw["gpus"]), default=0)
+    ram = hw["ram_mb"]["total"]
+    if not vram and not ram:
+        return hc.DEFAULT_MODEL
+    return next((name for name, _, need_vram, need_ram in SIZES
+                 if (need_vram and vram >= need_vram) or ram >= need_ram), SIZES[-1][0])
+
+
+def download_mb(model: str) -> int:
+    return next((mb for name, mb, _, _ in SIZES if name == model), 0)
 
 
 def memory_low(hw: dict) -> bool:
@@ -519,12 +549,27 @@ def describe(host: str, model: str, num_ctx: int | None = None) -> dict:
             "loaded": {"ctx": placed[0], "size_mb": placed[1], "gpu_mb": placed[2]} if placed else None}
 
 
+def _place(pct: int) -> str:
+    return "on the GPU" if pct >= 100 else "on the CPU" if pct == 0 else f"{pct}% on the GPU, the rest on the CPU"
+
+
 def where(loaded: dict | None) -> str:
     if not loaded or not loaded["size_mb"]:
         return "not loaded right now"
-    pct = round(100 * loaded["gpu_mb"] / loaded["size_mb"])
-    place = "on the GPU" if pct >= 100 else "on the CPU" if pct == 0 else f"{pct}% on the GPU, the rest on the CPU"
-    return f"loaded at {loaded['ctx']} context, {place}"
+    return f"loaded at {loaded['ctx']} context, {_place(round(100 * loaded['gpu_mb'] / loaded['size_mb']))}"
+
+
+def known(hosts: list[str]) -> dict:
+    """What autofit last learned about the first of `hosts` it has used, without asking Ollama: where the model
+    went at its last load, the step it is on and a typical rating's seconds; {} before any request."""
+    with _lock:
+        state = _load()
+    for host in hosts:
+        h = state["hosts"].get(host.rstrip("/"))
+        if h and h["ctx"]:
+            return {"where": f"{h['ctx']} context, {_place(round(100 * h['share']))}", "level": LEVELS[h["level"]],
+                    "seconds": round(h["cost"], 1) or None}
+    return {}
 
 
 def calibrate(host: str, model: str, num_ctx: int | None) -> list[str]:

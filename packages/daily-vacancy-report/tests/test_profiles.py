@@ -645,6 +645,66 @@ def test_child_env_replaces_the_owners_personal_settings(home):
     assert environ["JOB_FEEDBACK_SECRET"] == "test-secret"
 
 
+def test_a_cloud_model_key_from_the_dashboard_is_used_and_shown_masked(home):
+    api = FakeApi([{"id": "queue:4:c", "type": "admin", "action": "model_keys", "provider": "openrouter",
+                    "key": "sk-or-v1-test-000000001", "model": "meta-llama/llama-3.3-70b-instruct:free"}])
+    profiles.sync(api)
+    assert profiles.os.environ["OPENROUTER_API_KEY"] == "sk-or-v1-test-000000001"
+    assert profiles.dashboard_env()["OPENROUTER_MODEL"] == "meta-llama/llama-3.3-70b-instruct:free"
+    status = api.statuses[-1]
+    assert status["models"]["openrouter"]["source"] == "dashboard"
+    assert status["models"]["openrouter"]["model"] == "meta-llama/llama-3.3-70b-instruct:free"
+    assert status["models"]["openrouter"]["keys"] == [{"hint": "sk-...0001", "role": "main"}]
+    assert status["llm"]["cloud"] == ["openrouter"] and status["llm"]["order"] == "cloud"
+    assert "sk-or-v1-test-000000001" not in json.dumps(status)
+    profiles.sync(FakeApi([{"id": "queue:5:d", "type": "admin", "action": "model_keys", "order": "local"}]))
+    assert profiles.os.environ["LLM_ORDER"] == "local"
+    profiles.sync(FakeApi([{"id": "queue:6:e", "type": "admin", "action": "model_keys", "provider": "openrouter", "clear": True}]))
+    assert "OPENROUTER_API_KEY" not in profiles.dashboard_env() and "OPENROUTER_MODEL" not in profiles.dashboard_env()
+
+
+@pytest.mark.parametrize("item", [
+    {"provider": "openrouter", "key": "has spaces in it 0001"},
+    {"provider": "openai", "key": "sk-test-000000000001"},
+    {"provider": "featherless", "model": "../../etc/passwd"},
+    {"order": "sideways"},
+    {"provider": "openrouter", "clear": "yes"},
+])
+def test_a_bad_model_setting_changes_nothing(home, item):
+    with pytest.raises(profiles.ProfileError):
+        profiles.apply_model_keys(item)
+    assert not any(k.startswith(("OPENROUTER_", "OPENAI_", "FEATHERLESS_", "LLM_")) for k in profiles.dashboard_env())
+
+
+def test_the_status_shows_the_local_model_and_the_server(home, monkeypatch):
+    monkeypatch.setattr(profiles.hc, "suggested_model", lambda: "qwen2.5:1.5b-instruct")
+    monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+    monkeypatch.delenv("JOB_SCANNER_MODEL", raising=False)
+    status = profiles.status_payload()
+    assert status["llm"]["local"]["suggested"] == "qwen2.5:1.5b-instruct"
+    assert status["llm"]["cloud"] == [] and set(status["models"]) == set(profiles.llm_providers.PROVIDERS)
+    server = status["server"]
+    assert server["cpu"]["cores"] >= 1 and "total" in server["ram_mb"] and isinstance(server["gpus"], list)
+
+
+def test_the_server_load_and_request_counts_alone_do_not_resend_the_status(home, monkeypatch):
+    api = FakeApi()
+    profiles.ensure_owner()
+    profiles.push_status(api)
+    real = profiles.status_payload
+
+    def busier():
+        payload = real()
+        payload["server"]["load"] = 99.0
+        payload["llm"]["last"] = {"provider": "ollama", "model": "m", "at": 1}
+        payload["models"]["openrouter"]["today"] = 42
+        return payload
+
+    monkeypatch.setattr(profiles, "status_payload", busier)
+    profiles.push_status(api)
+    assert len(api.statuses) == 1
+
+
 def test_status_is_only_pushed_when_it_changes(home, monkeypatch):
     api = FakeApi()
     profiles.ensure_owner()

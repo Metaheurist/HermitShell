@@ -657,6 +657,88 @@ def test_a_tampered_key_usage_cache_is_not_trusted(monkeypatch, tmp_path, cache)
     assert key_usage._read(tmp_path / key_usage.USAGE_FILE) == {}
 
 
+# --------------------------------------------------------------------------- cloud models
+
+MODEL_KEYS = {"openrouter": "sk-or-v1-secret-do-not-leak-01", "bazaarlink": "sk-bl-secret-do-not-leak-0001",
+              "featherless": "rc-secret-do-not-leak-000001", "huggingface": "hf_secretdonotleak0000001"}
+
+
+class _ModelReply(_Usage):
+    text = ""
+    headers: dict = {}
+
+
+@pytest.fixture
+def model_keys(monkeypatch, tmp_path):
+    monkeypatch.setattr(hc, "STATE_DIR", tmp_path)
+    for name, value in MODEL_KEYS.items():
+        monkeypatch.setenv(f"{name.upper()}_API_KEY", value)
+    return MODEL_KEYS
+
+
+def test_model_key_usage_is_only_asked_of_the_providers_over_https_without_redirects(monkeypatch, tmp_path, model_keys):
+    calls = []
+    monkeypatch.setattr(key_usage.requests, "get", lambda url, **kw: calls.append((url, kw)) or _Usage({}, 401))
+    key_usage.report(key_usage.model_keys(), tmp_path, 60, 1_790_000_000.0)
+    assert {u for u, _ in calls} == {"https://openrouter.ai/api/v1/key", "https://api.bazaarlink.ai/v1/credits",
+                                    "https://api.featherless.ai/v1/plan", "https://huggingface.co/api/whoami-v2"}
+    assert all(kw["allow_redirects"] is False and kw["timeout"] <= 10 for _, kw in calls)
+
+
+def test_each_model_key_only_goes_to_its_own_provider_over_https(monkeypatch, model_keys):
+    import llm_providers
+    calls = []
+
+    def post(url, json=None, headers=None, timeout=None, allow_redirects=None):
+        calls.append((url, headers["Authorization"], allow_redirects))
+        return _ModelReply({}, 503)
+
+    monkeypatch.setattr(llm_providers.requests, "post", post)
+    assert llm_providers.chat("system", "Alex Morgan's CV") is None
+    assert len(calls) == 4
+    for url, auth, redirects in calls:
+        name = next(n for n, p in llm_providers.PROVIDERS.items() if url.startswith(p["base"] + "/"))
+        assert url.startswith("https://") and auth == f"Bearer {model_keys[name]}" and redirects is False
+
+
+def test_model_keys_never_reach_the_state_status_or_logs(monkeypatch, tmp_path, model_keys, capsys):
+    import llm_providers
+
+    def post(url, **kw):
+        raise llm_providers.requests.ConnectionError(f"{url} {kw['headers']['Authorization']}")
+
+    monkeypatch.setattr(llm_providers.requests, "post", post)
+    llm_providers.chat("s", "u")
+    text = (tmp_path / llm_providers.STATE_FILE).read_text() + json.dumps(llm_providers.summary()) + capsys.readouterr().err
+    assert not any(k in text or k[:-4] in text for k in model_keys.values())
+
+
+def test_model_settings_from_the_dashboard_are_limited_to_model_names(monkeypatch):
+    for allowed in ("OPENROUTER_API_KEY", "HUGGINGFACE_MODEL", "LLM_ORDER"):
+        assert hc.dashboard_key_allowed(allowed)
+    for denied in ("OLLAMA_HOST", "HERMES_DATA_KEY", "OPENROUTER_API_KEY_FILE", "LLM_STATE_DIR"):
+        assert not hc.dashboard_key_allowed(denied)
+    for hostile in ({"provider": "openrouter", "key": "sk-x\nHERMES_DATA_KEY=1"},
+                    {"provider": "openrouter", "model": "x\nOLLAMA_HOST=http://evil"}, {"provider": "__proto__", "key": "k" * 20}):
+        with pytest.raises(profiles.ProfileError):
+            profiles.apply_model_keys(hostile)
+
+
+def test_hostile_model_replies_and_usage_are_cleaned(monkeypatch, model_keys):
+    import llm_providers
+    monkeypatch.setattr(key_usage.requests, "get", lambda url, **kw: _Usage({"data": {
+        "total_credits": float("inf"), "total_usage": -5}}))
+    with pytest.raises(key_usage.UsageError):
+        key_usage.check("bazaarlink", model_keys["bazaarlink"])
+    monkeypatch.setattr(key_usage.requests, "get", lambda url, **kw: _Usage({"name": HOSTILE}))
+    assert not set(key_usage.check("featherless", model_keys["featherless"])["plan"]) & set("<>\"'=/")
+
+    reply = _ModelReply({"model": HOSTILE * 10, "choices": [{"message": {"content": "ok"}}]})
+    reply.content = b"x" * (llm_providers.MAX_BYTES + 1)
+    monkeypatch.setattr(llm_providers.requests, "post", lambda url, **kw: reply)
+    assert llm_providers.chat("s", "u") is None
+
+
 def test_a_profiles_currency_is_one_of_the_offered_codes():
     for raw in (HOSTILE, "GBP<script>", "£ GBP", "../", 7, ["GBP"]):
         assert job_settings.clean_form({"currency": raw})["currency"] == ""

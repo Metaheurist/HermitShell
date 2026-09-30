@@ -11,6 +11,7 @@ os.environ.update({"HERMITSHELL_HOME": str(_HOME), "HERMES_HOME": str(_HOME), "H
 for _key in [k for k in os.environ if k.startswith(("JOB_", "SMTP_", "FIRECRAWL_", "TAVILY_", "SCRAPFLY_", "ALERT_",
                                                     "COVER_LETTER_", "CLOUDFLARE_", "OLLAMA_", "HERMITSHELL_JOB_",
                                                     "HERMITSHELL_CATCHUP_", "HERMES_MODEL_CONCURRENCY",
-                                                    "HERMES_AUTOFIT_"))]:
+                                                    "HERMES_AUTOFIT_", "OPENROUTER_", "BAZAARLINK_", "FEATHERLESS_",
+                                                    "HUGGINGFACE_", "LLM_"))]:
     del os.environ[_key]
 os.environ.pop("HERMES_DASHBOARD_APPLIED", None)

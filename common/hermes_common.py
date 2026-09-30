@@ -85,7 +85,8 @@ DASHBOARD_FILE = Path(os.environ.get("HERMES_DASHBOARD_FILE") or SCRIPT_DIR / "s
 _ENV_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
 # The dashboard may only change report, search, email and crawler settings, never paths, the Worker secrets or
 # the exchange-rate address the server fetches from.
-_DASHBOARD_PREFIXES = ("ALERT_", "COVER_LETTER_", "FIRECRAWL_", "JOB_", "SCRAPFLY_", "SMTP_", "TAVILY_")
+_DASHBOARD_PREFIXES = ("ALERT_", "BAZAARLINK_", "COVER_LETTER_", "FEATHERLESS_", "FIRECRAWL_", "HUGGINGFACE_", "JOB_",
+                       "LLM_", "OPENROUTER_", "SCRAPFLY_", "SMTP_", "TAVILY_")
 _DASHBOARD_DENIED = re.compile(r"^JOB_FEEDBACK_|_(FILE|DIR|PATH)$|^JOB_PROFILE_ID$|^JOB_FX_")
 
 
@@ -791,11 +792,29 @@ def ollama_hosts(cfg: dict) -> list[str]:
     return [h.rstrip("/") for h in dict.fromkeys(hosts) if h]
 
 
+def suggested_model() -> str:
+    """The model that fits this machine (autofit.suggested_model), or the default when autofit can't tell."""
+    try:
+        import autofit
+        return autofit.suggested_model()
+    except Exception:
+        return DEFAULT_MODEL
+
+
 def connect_model(override_env: str) -> tuple[str, str, int | None]:
-    """Resolve (host, model, num_ctx): `override_env`'s model, else OLLAMA_MODEL, else the default."""
+    """Resolve (host, model, num_ctx): `override_env`'s model, else OLLAMA_MODEL, else the one that fits the machine,
+    else the default. With no Ollama reachable but a cloud model key set, host is "" and every request goes to the
+    cloud (llm_providers.py)."""
     cfg = model_config()
-    models = [env(override_env), cfg["model"], DEFAULT_MODEL]
-    host, model = pick_ollama_host(ollama_hosts(cfg), [m for m in dict.fromkeys(models) if m])
+    models = [m for m in dict.fromkeys([env(override_env), cfg["model"], suggested_model(), DEFAULT_MODEL]) if m]
+    try:
+        host, model = pick_ollama_host(ollama_hosts(cfg), models)
+    except RuntimeError:
+        import llm_providers
+        if not llm_providers.configured():
+            raise
+        log("No local Ollama with a model; using the cloud models only")
+        return "", models[0], cfg["num_ctx"] or 8192
     # The configured num_ctx matches the model instance other programs keep loaded, instead of forcing a reload.
     num_ctx = cfg["num_ctx"] if model == cfg["model"] else 8192
     return host, model, num_ctx
@@ -898,7 +917,37 @@ def _free_model_slot(fcntl, slots: int) -> tuple[int, int] | None:
 
 def ollama_chat(host: str, model: str, system: str, user: str, num_ctx: int | None,
                 fmt: dict | None = None, num_predict: int = 500) -> str:
-    """One chat request, on the instance, context size and GPU/CPU split autofit picks (see autofit.py)."""
+    """One chat request: to the cloud models when a key is set (llm_providers.py), else or when none of them
+    answers to the local Ollama (host "" means there is none). LLM_ORDER=local asks Ollama first."""
+    import llm_providers
+    cloud = bool(llm_providers.configured())
+    if cloud and (not host or not llm_providers.local_first()):
+        if (found := llm_providers.chat(system, user, fmt, num_predict)) is not None:
+            return _tidy(found[0], fmt)
+    if not host:
+        raise requests.ConnectionError("no cloud model answered and there is no local Ollama")
+    try:
+        content = _ollama_request(host, model, system, user, num_ctx, fmt, num_predict)
+    except requests.RequestException:
+        if cloud and llm_providers.local_first() and (found := llm_providers.chat(system, user, fmt, num_predict)):
+            return _tidy(found[0], fmt)
+        raise
+    llm_providers.used_local(model)
+    return _tidy(content, fmt)
+
+
+def _tidy(content: str, fmt: dict | None) -> str:
+    if fmt:
+        try:
+            return json.dumps(_undash(json.loads(content)), ensure_ascii=False)
+        except ValueError:
+            return content
+    return plain_dashes(content)
+
+
+def _ollama_request(host: str, model: str, system: str, user: str, num_ctx: int | None,
+                    fmt: dict | None, num_predict: int) -> str:
+    """One chat request to Ollama, on the instance, context size and GPU/CPU split autofit picks (see autofit.py)."""
     import autofit
     body = {"model": model, "stream": False, "keep_alive": "30m",
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
@@ -922,13 +971,7 @@ def ollama_chat(host: str, model: str, system: str, user: str, num_ctx: int | No
             resp.raise_for_status()
         reply = resp.json()
         autofit.record(target, model, extra, reply)
-    content = reply["message"]["content"]
-    if fmt:
-        try:
-            return json.dumps(_undash(json.loads(content)), ensure_ascii=False)
-        except ValueError:
-            return content
-    return plain_dashes(content)
+    return reply["message"]["content"]
 
 
 def plain_dashes(text: str) -> str:

@@ -46,9 +46,11 @@ from zoneinfo import ZoneInfo
 import requests
 
 import cv_text
+import autofit
 import hermes_common as hc
 import job_settings
 import key_usage
+import llm_providers
 import money
 import profile_stats
 from hermes_common import EMAIL_HEAD, STATE_DIR, connect_model, email_header, env, load_env_file, log, ollama_chat
@@ -778,6 +780,31 @@ def apply_api_keys(item: dict) -> None:
     log(f"API keys updated from the dashboard: {', '.join(sorted(updates))}")
 
 
+def apply_model_keys(item: dict) -> None:
+    """A cloud model provider's key and model from the dashboard (llm_providers.py; a blank model is the
+    provider's default), clearing one, or whether the cloud or the local Ollama is asked first."""
+    updates: dict[str, str | None] = {}
+    name = str(item.get("provider") or "")
+    if name in llm_providers.PROVIDERS:
+        var = name.upper()
+        if item.get("clear") is True:
+            updates |= {f"{var}_API_KEY": None, f"{var}_MODEL": None}
+        else:
+            key, model = item.get("key"), item.get("model")
+            if isinstance(key, str) and llm_providers.KEY_RE.match(key):
+                updates[f"{var}_API_KEY"] = key
+            if model == "":
+                updates[f"{var}_MODEL"] = None
+            elif isinstance(model, str) and llm_providers.MODEL_RE.match(model):
+                updates[f"{var}_MODEL"] = model
+    if item.get("order") in ("cloud", "local"):
+        updates["LLM_ORDER"] = "local" if item["order"] == "local" else None
+    if not updates:
+        raise ProfileError("no valid model keys")
+    update_dashboard_env(updates)
+    log(f"Model settings updated from the dashboard: {', '.join(sorted(updates))}")
+
+
 def apply_email(item: dict) -> None:
     if item.get("clear"):
         update_dashboard_env(dict.fromkeys(SMTP_KEYS))
@@ -892,6 +919,8 @@ def admin_action(item: dict, api=None) -> None:
     action, pid = item.get("action"), str(item.get("u") or "")
     if action == "api_keys":
         return apply_api_keys(item)
+    if action == "model_keys":
+        return apply_model_keys(item)
     if action == "email":
         return apply_email(item)
     if action == "test_email":
@@ -1017,7 +1046,63 @@ def status_payload() -> dict:
         keys[name]["keys"] = rows
     problems = [{"at": _ms(p["at"]), "what": p.get("what", ""), "error": p.get("error", "")} for p in recent_problems()]
     return {"profiles": profiles, "email": email, "keys": keys, "problems": problems, "timezone": timezone_name(),
-            "scheduler": jobs is not None, "tasks": tasks()}
+            "scheduler": jobs is not None, "tasks": tasks(), "models": models_info(every), "llm": llm_info(),
+            "server": server_info()}
+
+
+def models_info(every: int) -> dict:
+    """Each cloud model provider: where its key comes from (masked), its model, whether it is resting and why,
+    requests today and, when set, what is left of its allowance."""
+    summary = llm_providers.summary()["providers"]
+    rows = key_usage.report(key_usage.model_keys(), STATE_DIR, every)
+    out = {}
+    for name in llm_providers.order():
+        out[name] = _key_info(f"{name.upper()}_API_KEY") | summary[name]
+        if name in rows:
+            out[name]["keys"] = rows[name]
+    return out
+
+
+def llm_info() -> dict:
+    """Which models answer, in order: the cloud providers with a key and the local Ollama (its model, the one
+    that fits this machine and where it ran last), plus the model that answered last."""
+    cfg = hc.model_config()
+    suggested = hc.suggested_model()
+    summary = llm_providers.summary()
+    return {"order": summary["order"], "cloud": llm_providers.configured(),
+            "local": {"model": env("JOB_SCANNER_MODEL") or cfg["model"] or suggested, "suggested": suggested,
+                      **autofit.known(hc.ollama_hosts(cfg))},
+            "last": summary["last"]}
+
+
+def server_info() -> dict:
+    """The machine HermitShell and its Ollama run on, for the admin's server panel."""
+    hw = autofit.hardware()
+    try:
+        load = round(os.getloadavg()[0], 2)
+    except (AttributeError, OSError):
+        load = None
+    try:
+        disk = shutil.disk_usage(STATE_DIR if STATE_DIR.is_dir() else hc.APP_HOME)
+        disk_mb = {"total": disk.total >> 20, "free": disk.free >> 20}
+    except OSError:
+        disk_mb = None
+    return {"cpu": {"model": hw["cpu"]["model"], "cores": hw["cpu"]["logical"]}, "load": load, "ram_mb": hw["ram_mb"],
+            "gpus": [{"name": g["name"], "vram_mb": g["vram_mb"], "free_mb": g["free_mb"]} for g in hw["gpus"][:4]],
+            "disk_mb": disk_mb}
+
+
+def _stable(payload: dict) -> dict:
+    """The status without what changes by itself (the server's load, requests counted, the model that answered
+    last), so those alone send it at most every STATUS_EVERY seconds."""
+    stable = {k: v for k, v in payload.items() if k != "server"}
+    if isinstance(payload.get("llm"), dict):
+        llm = payload["llm"]
+        stable["llm"] = {k: v for k, v in llm.items() if k not in ("last", "local")} | {"local": llm["local"].get("model")}
+    if isinstance(payload.get("models"), dict):
+        stable["models"] = {n: {k: v for k, v in m.items() if k not in ("today", "failed", "last_ok")}
+                            for n, m in payload["models"].items()}
+    return stable
 
 
 def timezone_name() -> str:
@@ -1081,7 +1166,7 @@ def push_stats(api: Api, now_for: str = "") -> None:
 def push_status(api: Api, force: bool = False, stats_for: str = "") -> None:
     push_stats(api, stats_for)
     payload = status_payload()
-    digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    digest = hashlib.sha256(json.dumps(_stable(payload), sort_keys=True).encode()).hexdigest()
     marker = PROFILES_DIR / ".status"
     last = read_json(marker, {})
     if not force and last.get("digest") == digest and time.time() - last.get("at", 0) < STATUS_EVERY:

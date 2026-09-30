@@ -320,6 +320,40 @@ def test_describe_and_where_say_where_the_model_runs(fit):
     assert autofit.where(None) == "not loaded right now"
 
 
+def test_known_says_where_the_model_ran_last_without_asking_ollama(fit, monkeypatch):
+    assert autofit.known([HOST]) == {}
+    fit.report()
+    chat(fit)
+    monkeypatch.setattr(hc.requests, "get", lambda *a, **k: pytest.fail("known() must not ask Ollama"))
+    info = autofit.known(["http://elsewhere:11434", HOST])
+    assert info["where"] == "8192 context, 95% on the GPU, the rest on the CPU" and info["level"] == "normal"
+    assert info["seconds"]
+
+
+def _machine(ram, *vram):
+    return {"gpus": [{**GTX, "vram_mb": v} for v in vram], "ram_mb": {"total": ram, "available": ram // 2}}
+
+
+@pytest.mark.parametrize("hw,expected", [
+    (_machine(4000), "qwen2.5:1.5b-instruct"),
+    (_machine(4000, 2048), "qwen2.5:1.5b-instruct"),
+    (_machine(4000, 4096), hc.DEFAULT_MODEL),
+    (_machine(16000), hc.DEFAULT_MODEL),
+    (_machine(32000, 12288), hc.DEFAULT_MODEL),
+    (_machine(64000), "qwen3:30b-a3b-instruct-2507-q4_K_M"),
+    (_machine(16000, 8192, 24576), "qwen3:30b-a3b-instruct-2507-q4_K_M"),
+    (_machine(0), hc.DEFAULT_MODEL),
+])
+def test_the_suggested_model_fits_the_machine(fit, hw, expected):
+    assert autofit.suggested_model(hw) == expected
+
+
+def test_the_suggested_model_is_the_default_when_autofit_is_off(fit, monkeypatch):
+    monkeypatch.setenv("HERMES_AUTOFIT", "off")
+    assert autofit.suggested_model(_machine(4000)) == hc.DEFAULT_MODEL
+    assert autofit.download_mb(hc.DEFAULT_MODEL) == 2500 and autofit.download_mb("other:1b") == 0
+
+
 def test_calibrate_learns_each_standard_size(fit):
     fit.report()
     lines = autofit.calibrate(HOST, MODEL, 65536)

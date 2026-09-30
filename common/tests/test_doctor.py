@@ -140,6 +140,23 @@ def test_ollama_down_fails_with_a_hint(home, monkeypatch):
     assert statuses(report) == [("ollama", "fail")] and "OLLAMA_HOST" in report.items[0]["fix"]
 
 
+def test_ollama_down_with_a_cloud_model_key_only_warns(home, monkeypatch):
+    fake_ollama(monkeypatch, {})
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test-000000001")
+    report = doctor.Report(as_json=True)
+    doctor.check_ollama(report, fix=True)
+    assert statuses(report) == [("ollama", "warn")] and "OpenRouter" in report.items[0]["message"]
+    assert "sk-or" not in json.dumps(report.items)
+
+
+def test_ollama_downloads_the_model_that_fits_the_machine(home, monkeypatch):
+    monkeypatch.setattr(hc, "suggested_model", lambda: "qwen2.5:1.5b-instruct")
+    fake_ollama(monkeypatch, {"http://localhost:11434": []})
+    report = doctor.Report(as_json=True)
+    doctor.check_ollama(report, fix=False)
+    assert report.items[0]["wanted"] == "qwen2.5:1.5b-instruct" and "about 1.0 GB" in report.items[0]["fix"]
+
+
 def test_ollama_uses_the_model_and_host_in_the_settings(home, monkeypatch):
     monkeypatch.setenv("OLLAMA_HOST", "http://gpu:11434/")
     monkeypatch.setenv("OLLAMA_MODEL", "llama3:8b")

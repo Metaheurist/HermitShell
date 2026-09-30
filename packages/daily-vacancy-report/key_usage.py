@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""How much of each web search key's allowance is left, for the dashboard's Global settings.
+"""How much of each web search and cloud model key's allowance is left, for the dashboard's Global settings.
 
-check() asks the provider's own account endpoint, which spends no search credits: Firecrawl's credit usage,
-Tavily's usage and Scrapfly's account. report() does it for every key at most every WEB_KEY_USAGE_MINUTES (60 by
+check() asks the provider's own account endpoint, which spends no credits: Firecrawl's credit usage, Tavily's
+usage and Scrapfly's account, and for the models OpenRouter's key, BazaarLink's credits, Featherless' plan and
+Hugging Face's account. report() does it for every key at most every WEB_KEY_USAGE_MINUTES (60 by
 default; 0 turns it off), and keeps the answers in state/key_usage.json under a hash of each key, never the key.
 A failed check is tried again after RETRY seconds. Only HTTPS is used, redirects are not followed and replies over
 MAX_BYTES are ignored.
@@ -17,15 +18,22 @@ import math
 import re
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
 
 import hermes_common as hc
+import llm_providers
 
 FIRECRAWL_USAGE = "https://api.firecrawl.dev/v2/team/credit-usage"
 TAVILY_USAGE = "https://api.tavily.com/usage"
 SCRAPFLY_ACCOUNT = "https://api.scrapfly.io/account"
+OPENROUTER_KEY = "https://openrouter.ai/api/v1/key"
+BAZAARLINK_CREDITS = "https://api.bazaarlink.ai/v1/credits"
+FEATHERLESS_PLAN = "https://api.featherless.ai/v1/plan"
+HUGGINGFACE_WHOAMI = "https://huggingface.co/api/whoami-v2"
+UNITS = ("credits", "requests", "usd", "plan")
 USAGE_FILE = "key_usage.json"
 EVERY_MINUTES = 60
 MAX_MINUTES = 1440
@@ -43,10 +51,15 @@ class UsageError(Exception):
     """The provider did not say how much is left; the message is shown on the dashboard."""
 
 
-def _count(value) -> int | None:
+def _count(value, unit: str = "credits") -> int | float | None:
+    if isinstance(value, str):
+        try:
+            value = float(value)
+        except ValueError:
+            return None
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
         return None
-    return int(value)
+    return round(float(value), 2) if unit == "usd" else int(value)
 
 
 def _day(value) -> str:
@@ -58,17 +71,19 @@ def _plan(value) -> str:
     return " ".join(re.sub(r"[^\w .+()-]", "", str(value or "")).split())[:MAX_PLAN]
 
 
-def usage(used=None, limit=None, left=None, plan="", resets="") -> dict:
+def usage(used=None, limit=None, left=None, plan="", resets="", unit="credits") -> dict:
     """Credits used, the allowance and what is left (each worked out from the other two when missing), the plan's
-    name and when the allowance resets."""
-    used, limit, left = _count(used), _count(limit), _count(left)
+    name, when the allowance resets and what is counted: credits, requests, usd (dollars, to the cent) or plan
+    (only the plan's name is known)."""
+    unit = unit if unit in UNITS else "credits"
+    used, limit, left = _count(used, unit), _count(limit, unit), _count(left, unit)
     if left is None and used is not None and limit is not None:
-        left = max(limit - used, 0)
+        left = max(round(limit - used, 2), 0)
     if used is None and left is not None and limit is not None:
-        used = max(limit - left, 0)
-    if left is None and used is None:
+        used = max(round(limit - left, 2), 0)
+    if left is None and used is None and not (unit == "plan" and _plan(plan)):
         raise UsageError("no usage in the reply")
-    return {"used": used, "limit": limit, "left": left, "plan": _plan(plan), "resets": _day(resets)}
+    return {"used": used, "limit": limit, "left": left, "plan": _plan(plan), "resets": _day(resets), "unit": unit}
 
 
 def _get(url: str, headers: dict | None = None, params: dict | None = None) -> dict:
@@ -115,6 +130,33 @@ def check(provider: str, key: str) -> dict:
         scrape = _part(_part(sub, "usage"), "scrape")
         return usage(scrape.get("current"), scrape.get("limit"), scrape.get("remaining"), sub.get("plan_name"),
                      _part(sub, "period").get("end"))
+    return check_model(provider, key)
+
+
+def _tomorrow() -> str:
+    return datetime.fromtimestamp(time.time() + 86400, timezone.utc).strftime("%Y-%m-%d")
+
+
+def check_model(provider: str, key: str) -> dict:
+    """A cloud model key's usage: free requests left today (OpenRouter's free models), dollars left (OpenRouter,
+    BazaarLink) or only the plan (Featherless, Hugging Face)."""
+    auth = {"Authorization": f"Bearer {key}"}
+    if provider == "openrouter":
+        data = _part(_get(OPENROUTER_KEY, auth), "data")
+        free, model = _part(data, "free_model_daily_requests"), llm_providers.model("openrouter")
+        if (model.endswith(":free") or model == "openrouter/free") and _count(free.get("limit")):
+            return usage(free.get("used"), free.get("limit"), free.get("remaining"), "Free models", _tomorrow(), "requests")
+        plan = "Free tier" if data.get("is_free_tier") is True else "Credits"
+        return usage(data.get("usage"), data.get("limit"), data.get("limit_remaining"), plan, unit="usd")
+    if provider == "bazaarlink":
+        data = _part(_get(BAZAARLINK_CREDITS, auth), "data")
+        return usage(data.get("total_usage"), data.get("total_credits"), plan="Credits", unit="usd")
+    if provider == "featherless":
+        body = _get(FEATHERLESS_PLAN, auth)
+        return usage(plan=body.get("name") or body.get("id"), unit="plan")
+    if provider == "huggingface":
+        body = _get(HUGGINGFACE_WHOAMI, auth)
+        return usage(plan="PRO" if body.get("isPro") is True else "Free", unit="plan")
     raise UsageError("unknown provider")
 
 
@@ -135,7 +177,7 @@ def _clean_entry(entry) -> dict | None:
         return None
     try:
         return {"at": float(at), "usage": usage(found.get("used"), found.get("limit"), found.get("left"),
-                                                 found.get("plan"), found.get("resets"))}
+                                                 found.get("plan"), found.get("resets"), found.get("unit") or "credits")}
     except UsageError:
         return None
 
@@ -195,14 +237,20 @@ def configured_keys() -> dict[str, list[str]]:
             "scrapfly": [k for k in [hc.env("SCRAPFLY_API_KEY")] if k]}
 
 
+def model_keys() -> dict[str, list[str]]:
+    """The cloud model keys, one per provider, in the order they are tried."""
+    return {n: [llm_providers.key(n)] for n in llm_providers.configured()}
+
+
 def main() -> int:
     hc.load_env_file()
-    found = report(configured_keys(), hc.STATE_DIR, minutes(hc.env("WEB_KEY_USAGE_MINUTES", str(EVERY_MINUTES))) or 1)
-    for provider, rows in found.items():
+    every = minutes(hc.env("WEB_KEY_USAGE_MINUTES", str(EVERY_MINUTES))) or 1
+    for provider, rows in (report(configured_keys(), hc.STATE_DIR, every) | report(model_keys(), hc.STATE_DIR, every)).items():
         for row in rows:
             u = row.get("usage") or {}
-            left = f"{u.get('left')} of {u.get('limit')} left" if u else row.get("error", "not checked")
-            print(f"{provider:9} {row['role']:6} {row['hint']:12} {left}")
+            left = (u.get("plan") if u.get("unit") == "plan" else f"{u.get('left')} of {u.get('limit')} {u.get('unit')} left") \
+                if u else row.get("error", "not checked")
+            print(f"{provider:11} {row['role']:6} {row['hint']:12} {left}")
     return 0
 
 

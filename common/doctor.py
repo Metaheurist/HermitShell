@@ -194,9 +194,27 @@ def ollama_plan(hc) -> tuple[list[str], list[str], str]:
     # A config.yaml model with no Ollama host (a cloud provider's name) is not one Ollama can have.
     if not cfg["host"] and not hc.env("OLLAMA_MODEL"):
         cfg["model"] = ""
-    models = [m for m in dict.fromkeys([hc.env("JOB_SCANNER_MODEL"), cfg["model"], hc.DEFAULT_MODEL]) if m]
-    wanted = hc.env("JOB_SCANNER_MODEL") or hc.env("OLLAMA_MODEL") or hc.DEFAULT_MODEL
+    suggested = hc.suggested_model()
+    models = [m for m in dict.fromkeys([hc.env("JOB_SCANNER_MODEL"), cfg["model"], suggested, hc.DEFAULT_MODEL]) if m]
+    wanted = hc.env("JOB_SCANNER_MODEL") or hc.env("OLLAMA_MODEL") or suggested
     return hc.ollama_hosts(cfg), models, wanted
+
+
+def autofit_download_mb(model: str) -> int:
+    try:
+        import autofit
+    except ImportError:
+        return 0
+    return autofit.download_mb(model)
+
+
+def cloud_models() -> list[str]:
+    """The cloud model providers with a key (llm_providers.py), by name."""
+    try:
+        import llm_providers
+    except ImportError:
+        return []
+    return [llm_providers.PROVIDERS[n]["label"] for n in llm_providers.configured()]
 
 
 def ollama_models(hc, host: str) -> list[str] | None:
@@ -239,6 +257,12 @@ def check_ollama(report: Report, fix: bool, model: str | None = None, pull: bool
     if model:
         models, wanted = [model], model
     reachable = {h: names for h in hosts if (names := ollama_models(hc, h)) is not None}
+    cloud = cloud_models()
+    if not reachable and cloud:
+        report.add("ollama", "warn", f"no Ollama server answers, so every request goes to {', '.join(cloud)}",
+                   "start Ollama too, so reports still run when the cloud models are out of credits",
+                   host="", model="", wanted=wanted)
+        return
     if not reachable:
         report.add("ollama", "fail", f"no Ollama server answers at {', '.join(hosts)}",
                    "start Ollama (the wizard can start a container for it) or set OLLAMA_HOST in .env",
@@ -251,8 +275,10 @@ def check_ollama(report: Report, fix: bool, model: str | None = None, pull: bool
             return
     host = next(iter(reachable))
     if not (fix and pull):
-        report.add("ollama", "fail", f"Ollama at {host} has none of {', '.join(models)}",
-                   f"run: python3 doctor.py --fix --only ollama   (downloads {wanted}, about 2.5 GB for the default)",
+        mb = autofit_download_mb(wanted)
+        size = f"about {mb / 1000:.1f} GB" if mb else "a few GB"
+        report.add("ollama", "warn" if cloud else "fail", f"Ollama at {host} has none of {', '.join(models)}",
+                   f"run: python3 doctor.py --fix --only ollama   (downloads {wanted}, {size}, picked for this machine)",
                    host=host, model="", wanted=wanted)
         return
     report.progress(f"downloading {wanted} to Ollama at {host} (a few GB; this can take a while)")

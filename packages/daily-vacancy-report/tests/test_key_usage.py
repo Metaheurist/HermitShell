@@ -54,7 +54,7 @@ def calls(monkeypatch):
 
 def test_firecrawl_reports_what_is_left_of_the_plan(calls):
     assert key_usage.check("firecrawl", "fc-test-key-000000001") == {
-        "used": 1800, "limit": 3000, "left": 1200, "plan": "", "resets": "2026-10-01"}
+        "used": 1800, "limit": 3000, "left": 1200, "plan": "", "resets": "2026-10-01", "unit": "credits"}
     url, kw = calls[0]
     assert url == "https://api.firecrawl.dev/v2/team/credit-usage"
     assert kw["headers"]["Authorization"] == "Bearer fc-test-key-000000001"
@@ -63,15 +63,64 @@ def test_firecrawl_reports_what_is_left_of_the_plan(calls):
 
 def test_tavily_uses_the_keys_own_limit_else_the_accounts_plan(calls):
     assert key_usage.check("tavily", "tvly-test-key-00000001") == {
-        "used": 400, "limit": 1000, "left": 600, "plan": "Researcher", "resets": ""}
+        "used": 400, "limit": 1000, "left": 600, "plan": "Researcher", "resets": "", "unit": "credits"}
     calls.replies[key_usage.TAVILY_USAGE] = {**TAVILY, "key": {"usage": 30, "limit": 100}}
     assert key_usage.check("tavily", "tvly-test-key-00000001")["left"] == 70
 
 
 def test_scrapfly_reports_its_scrape_credits_and_period(calls):
     assert key_usage.check("scrapfly", "scp-test-key-00000001") == {
-        "used": 180, "limit": 1000, "left": 820, "plan": "FREE", "resets": "2026-10-12"}
+        "used": 180, "limit": 1000, "left": 820, "plan": "FREE", "resets": "2026-10-12", "unit": "credits"}
     assert calls[0][1]["params"] == {"key": "scp-test-key-00000001"}
+
+
+OPENROUTER = {"data": {"label": "sk-or-v1-abc", "limit": 10, "limit_remaining": 7.456, "usage": 2.544,
+                       "is_free_tier": False, "free_model_daily_requests": {"used": 12, "limit": 1000, "remaining": 988}}}
+
+
+@pytest.fixture
+def models(calls):
+    calls.replies |= {key_usage.OPENROUTER_KEY: OPENROUTER,
+                      key_usage.BAZAARLINK_CREDITS: {"data": {"total_credits": 5, "total_usage": 1.25}},
+                      key_usage.FEATHERLESS_PLAN: {"id": "basic", "name": "Feather Basic", "concurrency": 1},
+                      key_usage.HUGGINGFACE_WHOAMI: {"type": "user", "name": "alex-morgan", "isPro": True}}
+    return calls
+
+
+def test_openrouter_counts_free_requests_today_on_a_free_model(models):
+    found = key_usage.check("openrouter", "sk-or-v1-test-000000001")
+    assert found == {"used": 12, "limit": 1000, "left": 988, "plan": "Free models", "resets": found["resets"],
+                     "unit": "requests"}
+    assert len(found["resets"]) == 10
+    url, kw = models[0]
+    assert url == "https://openrouter.ai/api/v1/key" and kw["headers"]["Authorization"] == "Bearer sk-or-v1-test-000000001"
+
+
+def test_openrouter_counts_dollars_on_a_paid_model(models, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+    assert key_usage.check("openrouter", "sk-or-v1-test-000000001") == {
+        "used": 2.54, "limit": 10.0, "left": 7.46, "plan": "Credits", "resets": "", "unit": "usd"}
+
+
+def test_bazaarlink_featherless_and_hugging_face(models):
+    assert key_usage.check("bazaarlink", "sk-bl-test-0000000001") == {
+        "used": 1.25, "limit": 5.0, "left": 3.75, "plan": "Credits", "resets": "", "unit": "usd"}
+    assert key_usage.check("featherless", "rc-test-000000000001")["plan"] == "Feather Basic"
+    found = key_usage.check("huggingface", "hf_test000000000001")
+    assert found["plan"] == "PRO" and found["unit"] == "plan" and "alex" not in json.dumps(found)
+
+
+def test_a_plan_only_reply_with_no_plan_is_an_error(models):
+    models.replies[key_usage.FEATHERLESS_PLAN] = {}
+    with pytest.raises(key_usage.UsageError):
+        key_usage.check("featherless", "rc-test-000000000001")
+
+
+def test_model_keys_lists_the_set_providers_in_order(monkeypatch):
+    monkeypatch.setenv("HUGGINGFACE_API_KEY", "hf_test000000000001")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test-000000001")
+    monkeypatch.setenv("LLM_PROVIDERS", "huggingface")
+    assert key_usage.model_keys() == {"huggingface": ["hf_test000000000001"], "openrouter": ["sk-or-v1-test-000000001"]}
 
 
 @pytest.mark.parametrize("reply,message", [
