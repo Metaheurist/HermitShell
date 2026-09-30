@@ -20,6 +20,13 @@ const LOGOS = {
   tavily: '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/><path d="M11 7.8v6.4M7.8 11h6.4"/>',
   scrapfly: '<ellipse cx="12" cy="13.5" rx="3.3" ry="5"/><path d="M12 8.5V5.5M9.5 4.5 12 5.5l2.5-1M8.7 11.5 4.5 9M15.3 11.5 19.5 9M8.7 15.5 4.5 18M15.3 15.5l4.2 2.5"/>',
   key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 8.5-8.5M16 7l2.5 2.5M14 9l2 2"/>',
+  openrouter: '<path d="M3 12h5.5l4-6.5H20M12.5 18.5H20M8.5 12l4 6.5"/><path d="m17 2.5 3 3-3 3M17 15.5l3 3-3 3"/>',
+  bazaarlink: '<path d="M4 9.5h16L18.5 4.5h-13Z"/><path d="M5.5 9.5V19h13V9.5"/><path d="M10 19v-5h4v5"/>',
+  featherless: '<path d="M12.7 19a2 2 0 0 0 1.4-.6l6.2-6.2a6 6 0 0 0-8.5-8.5L5.6 9.9A2 2 0 0 0 5 11.3V18a1 1 0 0 0 1 1Z"/><path d="M16 8 2 22M17.5 15H9"/>',
+  huggingface: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 14.5c.9 1.3 2.1 2 3.5 2s2.6-.7 3.5-2M9 10h.01M15 10h.01"/>',
+  ollama: '<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/>',
+  model: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>',
+  server: '<rect x="3.5" y="4" width="17" height="7" rx="2"/><rect x="3.5" y="13" width="17" height="7" rx="2"/><path d="M7.5 7.5h.01M7.5 16.5h.01M11 7.5h6M11 16.5h6"/>',
 };
 
 export function logo(name, cls = "") {
@@ -30,18 +37,26 @@ const modalId = (name) => `gkey-${name}`;
 const MAX_KEYS = 6;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const CHEVRON = '<svg class="kchev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+export const CHEVRON = '<svg class="kchev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+// What a key's allowance counts: credits (web search), requests (free models, per day), usd (dollars) or plan (only
+// the plan's name is known).
+const UNITS = ["credits", "requests", "usd", "plan"];
 const count = (v) => (Number.isInteger(v) && v >= 0 ? v : null);
+const dollars = (v) => (Number.isFinite(v) && v >= 0 ? Math.round(v * 100) / 100 : null);
 const number = (n) => n.toLocaleString("en-GB");
 const day = (d) => `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]}`;
+const shown = (v, unit) => (unit === "usd" ? `$${v.toFixed(2)}` : number(v));
+const noun = (unit) => ({ credits: " credits", requests: " requests", usd: "" })[unit] || "";
 
 // The keys HermitShell reported for a provider, checked field by field.
-function reported(k) {
+export function reported(k) {
   return (Array.isArray(k.keys) ? k.keys : []).filter((r) => r && typeof r === "object" && typeof r.hint === "string").slice(0, MAX_KEYS)
     .map((r) => {
       const u = r.usage && typeof r.usage === "object" && !Array.isArray(r.usage) ? r.usage : {};
+      const unit = UNITS.includes(u.unit) ? u.unit : "credits";
+      const num = unit === "usd" ? dollars : count;
       return { hint: r.hint.slice(0, 20), backup: r.role === "backup", at: Number.isFinite(r.at) && r.at > 0 ? r.at : 0,
-        error: typeof r.error === "string" ? r.error.slice(0, 80) : "", used: count(u.used), limit: count(u.limit), left: count(u.left),
+        error: typeof r.error === "string" ? r.error.slice(0, 80) : "", used: num(u.used), limit: num(u.limit), left: num(u.left), unit,
         plan: typeof u.plan === "string" ? u.plan.slice(0, 40) : "", resets: DATE_RE.test(u.resets || "") && MONTHS[Number(u.resets.slice(5, 7)) - 1] ? u.resets : "" };
     });
 }
@@ -54,9 +69,11 @@ const tone = (pct) => (pct === null ? "" : pct < 15 ? " low" : pct < 40 ? " mid"
 
 function usageRow(r, label) {
   const pct = share(r);
-  const amount = r.left !== null ? `<b>${number(r.left)}</b>${r.limit !== null ? ` of ${number(r.limit)}` : ""} credits left`
-    : r.used !== null ? `<b>${number(r.used)}</b> credits used` : "";
-  const meta = [r.plan ? `${esc(r.plan)} plan` : "", r.resets ? `resets ${day(r.resets)}` : "", r.at ? `checked ${esc(ago(r.at))}` : ""]
+  const planOnly = r.unit === "plan" && r.plan;
+  const amount = planOnly ? `<b>${esc(r.plan)}</b> plan`
+    : r.left !== null ? `<b>${shown(r.left, r.unit)}</b>${r.limit !== null ? ` of ${shown(r.limit, r.unit)}` : ""}${noun(r.unit)} left${r.unit === "requests" ? " today" : ""}`
+      : r.used !== null ? `<b>${shown(r.used, r.unit)}</b>${noun(r.unit)} used` : "";
+  const meta = [r.plan && !planOnly ? `${esc(r.plan)} plan` : "", r.resets ? `resets ${day(r.resets)}` : "", r.at ? `checked ${esc(ago(r.at))}` : ""]
     .filter(Boolean).join(" &middot; ");
   const body = r.error ? `<div class="kuse bad">Couldn&rsquo;t check it: ${esc(r.error)}</div>`
     : amount ? `${pct === null ? "" : `<div class="kbar${tone(pct)}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="${pct}% left"><i style="width:${pct}%"></i></div>`}<div class="kuse">${amount}</div>`
@@ -65,17 +82,18 @@ function usageRow(r, label) {
 ${body}${meta ? `<div class="kmeta">${meta}</div>` : ""}</li>`;
 }
 
-function keyList(rows) {
+export function keyList(rows) {
   let backups = 0;
   return `<ul class="keylist">${rows.map((r) => usageRow(r, r.backup ? `Backup key ${(backups += 1)}` : "Main key")).join("")}</ul>`;
 }
 
-function leftSummary(rows) {
-  const known = rows.filter((r) => r.left !== null);
+export function leftSummary(rows) {
+  const unit = rows[0]?.unit;
+  const known = rows.filter((r) => r.left !== null && r.unit === unit);
   if (!known.length) return "";
   const left = known.reduce((sum, r) => sum + r.left, 0);
   const low = known.every((r) => tone(share(r)) === " low");
-  return `<span class="kleft${low ? " low" : ""}">${number(left)} credits left${rows.length > 1 ? ` across ${rows.length} keys` : ""}</span> &middot; `;
+  return `<span class="kleft${low ? " low" : ""}">${shown(left, unit)}${noun(unit)} left${unit === "requests" ? " today" : ""}${rows.length > 1 ? ` across ${rows.length} keys` : ""}</span> &middot; `;
 }
 
 function clearButton(csrf, provider) {

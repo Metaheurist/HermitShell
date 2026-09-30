@@ -8,6 +8,7 @@ import { CURRENCIES, currencyCode, currencySymbol } from "./currency.js";
 import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem } from "./join.js";
 import { BACK_TO_RECRUITS, CSP, SECURITY_HEADERS, ago, esc, limitedForm, newId, note, page, redirect, safeEqual, when } from "./lib.js";
 import { KEY_STYLE, MODAL_STYLE, PROVIDERS, keyModals, keysSection } from "./keys.js";
+import { MODEL_KEY_RE, MODEL_PROVIDERS, MODEL_RE, MODEL_STYLE, modelModals, modelsSection } from "./models.js";
 import { LINK_STYLE, STATS_URL, icon } from "./stats.js";
 import { profileTabs } from "./history.js";
 
@@ -126,13 +127,14 @@ function pendingEmail(email, queue) {
 }
 
 export function settingsPage(status, csrf, { done = "", queued = [], queue = [] } = {}) {
-  const waiting = queued.filter((q) => /^(email|test email|api keys)$/.test(q));
-  return page("Global settings", `<style>${MODAL_STYLE}${KEY_STYLE}</style>${nav("settings")}
+  const waiting = queued.filter((q) => /^(email|test email|api keys|model keys)$/.test(q));
+  return page("Global settings", `<style>${MODAL_STYLE}${KEY_STYLE}${MODEL_STYLE}</style>${nav("settings")}
 ${done ? note(done) : ""}${waiting.length ? `<p class="muted">Waiting for HermitShell: ${esc(waiting.join("; "))}.</p>` : ""}
 <p class="muted">These apply to the whole of HermitShell and every recruit. Where each person's reports go, their job search
 and CV are on their own page under <a href="/admin">Recruits</a>.</p>
 ${emailSection({ ...status, email: pendingEmail(status.email || {}, queue) }, csrf)}
-${keysSection(status, csrf)}`, { wide: true, before: keyModals(csrf) });
+${keysSection(status, csrf)}
+${modelsSection(status, csrf)}`, { wide: true, before: keyModals(csrf) + modelModals(csrf) });
 }
 
 // ------------------------------------------------------------------------- one profile's page
@@ -475,6 +477,24 @@ export function settingsItem(act, form) {
     const provider = String(form.get("provider") || "firecrawl");
     return Object.hasOwn(PROVIDERS, provider) ? { item: { type: "admin", action: "api_keys", clear: [provider] } } : { error: "badkey" };
   }
+  if (act === "model_key") {
+    const provider = String(form.get("provider") || "");
+    const key = String(form.get("key") || "").trim();
+    const model = String(form.get("model") || "").trim();
+    if (!Object.hasOwn(MODEL_PROVIDERS, provider) || (!key && !model) || (key && !MODEL_KEY_RE.test(key)) || (model && !MODEL_RE.test(model))) {
+      return { error: "badmodel" };
+    }
+    return { item: { type: "admin", action: "model_keys", provider, ...(key ? { key } : {}), ...(model ? { model } : {}) },
+      ttl: key ? SECRET_TTL_SECONDS : undefined };
+  }
+  if (act === "model_key_clear") {
+    const provider = String(form.get("provider") || "");
+    return Object.hasOwn(MODEL_PROVIDERS, provider) ? { item: { type: "admin", action: "model_keys", provider, clear: true } } : { error: "badmodel" };
+  }
+  if (act === "model_order") {
+    const order = String(form.get("order") || "");
+    return ["cloud", "local"].includes(order) ? { item: { type: "admin", action: "model_keys", order } } : { error: "badmodel" };
+  }
   return null;
 }
 
@@ -507,6 +527,7 @@ export async function cvUpload(request, env, s, allow = async () => true, record
 
 export const SETTINGS_DONE = {
   bademail: "Check the email settings: the server, port, username and addresses must be valid.",
+  badmodel: "Choose a provider and paste its API key or a model name (letters, numbers and . _ : / @ + -).",
   baddetails: "A name and a valid email address are needed.",
   profile: "Unknown recruit. Reload the admin page and try again.",
   cvsize: "The CV file is larger than 5 MB.",

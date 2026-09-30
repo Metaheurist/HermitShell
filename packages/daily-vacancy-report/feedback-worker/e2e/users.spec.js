@@ -34,6 +34,7 @@ test("a recruiter sees only their own recruits and no admin pages", async ({ bro
   await signIn(page, RECRUITER.username, RECRUITER.password);
   await expect(page.getByRole("heading", { name: "Recruits" })).toBeVisible();
   await expect(page.locator("nav.tabs a")).toHaveText(["Recruits"]);
+  await expect(page.locator(".srv")).toHaveCount(0);
   const table = page.locator("table.recruits");
   await expect(table.getByText("Sam Lee", { exact: true })).toBeVisible();
   await expect(table.getByText("Jordan Patel", { exact: true })).toHaveCount(0);

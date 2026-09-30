@@ -11,8 +11,10 @@ Then the jobs found for you, the buttons you press and notes you type, and the c
 ask for.`],
   ["Why", `To find and rate job adverts for you and write the letters and CVs you request. You agreed to this on the
 sign-up form and can withdraw at any time with the unsubscribe link.`],
-  ["Where", `Your CV and details are read on the HermitShell server, by an AI model running on that server, not a cloud
-AI service. This page, the sign-up form and the email buttons run on Cloudflare Workers, where what you send waits
+  ["Where", `Your CV and details are read on the HermitShell server, by an AI model running on that server, unless the
+operator has chosen a cloud AI service instead (OpenRouter, BazaarLink, Featherless or Hugging Face, for servers that
+cannot run one): then your CV, details and the job adverts are sent to that service to be rated and written about, and
+its free models may keep what they are sent. This page, the sign-up form and the email buttons run on Cloudflare Workers, where what you send waits
 only until HermitShell collects it (at most 30 days); the operator's admin page there lists your name and email address,
 a stats page of counts (jobs found, buttons pressed, the employers and titles of jobs sent) and the jobs sent to you in
 the last 90 days (each advert's title, employer, place, salary, link, the details shown on its email card and the last

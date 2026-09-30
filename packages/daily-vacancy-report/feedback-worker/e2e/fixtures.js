@@ -35,6 +35,16 @@ export function hermitShellStatus({ samRecruiter = "" } = {}) {
     timezone: "Europe/London",
     email: { host: "smtp.example.com", port: "587", user: "alex.morgan@example.com", from: "", password_set: true, source: "dashboard" },
     keys: { firecrawl: { source: "none", hint: "" }, tavily: { source: "none", hint: "" }, scrapfly: { source: "none", hint: "" } },
+    models: {
+      openrouter: { source: "env", hint: "sk-...0e2e", model: "openrouter/free", today: 7, resting_until: null, why: "",
+        keys: [{ hint: "sk-...0e2e", role: "main", at: Date.now() - 60000,
+          usage: { used: 7, limit: 50, left: 43, plan: "Free models", resets: "", unit: "requests" } }] },
+      bazaarlink: { source: "none", hint: "" }, featherless: { source: "none", hint: "" }, huggingface: { source: "none", hint: "" },
+    },
+    llm: { order: "cloud", cloud: ["openrouter"], local: { model: "qwen3:4b-instruct-2507-q4_K_M", suggested: "qwen3:4b-instruct-2507-q4_K_M",
+      where: "8192 context, on the CPU" }, last: { provider: "openrouter", model: "openrouter/free", at: Date.now() - 120000 } },
+    server: { cpu: { model: "Contoso Server CPU", cores: 8 }, load: 1.2, ram_mb: { total: 16384, available: 9000 }, gpus: [],
+      disk_mb: { total: 500000, free: 200000 } },
     problems: [],
     tasks: [],
   };

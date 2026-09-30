@@ -501,6 +501,53 @@ describe("web search key usage", () => {
   });
 });
 
+describe("AI models and the server panel", () => {
+  const status = {
+    models: { openrouter: { source: "dashboard", hint: HOSTILE, model: HOSTILE, why: HOSTILE, resting_until: Date.now() + 60000, today: HOSTILE,
+      keys: [{ hint: HOSTILE, usage: { used: "1", limit: Infinity, left: -2, plan: HOSTILE, unit: HOSTILE } }] }, __proto__: { source: "env" } },
+    llm: { order: HOSTILE, cloud: ["openrouter", HOSTILE, "__proto__"], local: { model: HOSTILE, suggested: HOSTILE, where: HOSTILE },
+      last: { provider: HOSTILE, model: HOSTILE, at: HOSTILE } },
+    server: { cpu: { model: HOSTILE, cores: HOSTILE }, load: HOSTILE, ram_mb: { total: HOSTILE, available: 5 },
+      gpus: [{ name: HOSTILE, vram_mb: 1e30, free_mb: -1 }, HOSTILE, null], disk_mb: HOSTILE },
+  };
+
+  it("escapes and checks every field HermitShell reports", async () => {
+    const { modelsSection, serverBox } = await import("../src/models.js");
+    for (const html of [modelsSection(status, "c".repeat(32)), serverBox(status)]) {
+      expect(html).not.toContain("<script>");
+      expect(html).not.toContain("<img");
+      expect(html).not.toContain("onerror=alert(2)>");
+      expect(html).not.toContain("Last answer from");
+      expect([...html.matchAll(/style="([^"]*)"/g)].map((m) => m[1]).every((s) => /^(width:\d{1,3}%|display:inline)$/.test(s))).toBe(true);
+    }
+    const panel = serverBox(status);
+    expect(panel).not.toContain("smeter");
+    expect([...panel.matchAll(/<li[^>]*>.*?<b>([^<]+)<\/b>/g)].map((m) => m[1])).toEqual(["OpenRouter", "Local Ollama"]);
+  });
+
+  it("never lets a recruiter see the server, and never queues a model key from a recruiter", async () => {
+    const env = testEnv({ ADMIN_PASSWORD: "correct horse battery" });
+    const form = (path, fields, headers = {}) => new Request(`${BASE}${path}`, { method: "POST", body: new URLSearchParams(fields), headers });
+    await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: { Authorization: "Bearer api-token" },
+      body: JSON.stringify({ profiles: [], server: { cpu: { model: "Secret CPU", cores: 4 } } }) }), env);
+    const signIn = async (username, password) => {
+      const res = await worker.fetch(form("/admin/login", { username, password }, { "CF-Connecting-IP": "203.0.113.9" }), env);
+      const cookie = (res.headers.get("Set-Cookie") || "").split(";")[0];
+      const page = await (await worker.fetch(new Request(`${BASE}/admin`, { headers: { Cookie: cookie } }), env)).text();
+      return { cookie, page, csrf: page.match(/name="csrf" value="([0-9a-f]+)"/)[1] };
+    };
+    const admin = await signIn("admin", "correct horse battery");
+    await worker.fetch(form("/admin/users", { csrf: admin.csrf, op: "add", name: "Casey Quinn", username: "casey", password: "recruiter-password-1", roles: "recruiter" },
+      { Cookie: admin.cookie }), env);
+    const casey = await signIn("casey", "recruiter-password-1");
+    expect(casey.page).not.toContain("Secret CPU");
+    const res = await worker.fetch(form("/admin/action", { csrf: casey.csrf, action: "model_key", provider: "openrouter", key: "test-openrouter-key" },
+      { Cookie: casey.cookie }), env);
+    expect(res.status).not.toBe(302);
+    expect(valuesWith(env, "queue:").filter((i) => i.action === "model_keys")).toEqual([]);
+  });
+});
+
 describe("letters and CVs kept for download", () => {
   const PDF = new TextEncoder().encode("%PDF-1.4\nprivate letter text\n%%EOF");
   const API = { Authorization: "Bearer api-token" };

@@ -25,6 +25,7 @@ import {
 } from "./settings.js";
 import { CONFIRM_STYLE, binButton, deleteModal } from "./confirm.js";
 import { MODAL_STYLE } from "./keys.js";
+import { SERVER_STYLE, serverBox } from "./models.js";
 import { SEARCH_STYLE, matchesProfile, noMatch, recruiterHits, recruiterRow, searchBar, searchQuery } from "./search.js";
 import {
   DOC_URL, REQUEST_KINDS, SKILL_URL, addedSkills, docIndex, emailedIndex, markEmailed, pdfResponse, pendingDocs, readDoc, requestDoc,
@@ -508,7 +509,7 @@ async function action(request, env, s) {
   const setting = settingsItem(act, form);
   if (setting) {
     const back = `${SETTINGS_URL}?done=`;
-    const anchor = act.startsWith("api_key") ? "#keys" : "#email";
+    const anchor = act.startsWith("api_key") ? "#keys" : act.startsWith("model_") ? "#models" : "#email";
     if (setting.error) return redirect(`${back}${setting.error}${anchor}`);
     await queueItem(env, setting.item, setting.ttl);
     return redirect(`${back}queued${anchor}`);
@@ -598,14 +599,15 @@ body:has(main.full) .mecard .avatar{width:30px;height:30px;border-radius:10px;fo
 @media (max-width:560px){.me,body:has(main.full) .me{position:static;justify-content:flex-end;margin:12px 16px 0}}
 `;
 
-// The signed-in user's initials, name and roles, with Change password and Sign out.
+// The signed-in user's initials, name and roles, with Change password and Sign out; admins also get the server
+// button, whose panel shows the machine and the models.
 function signedInBox(s, current) {
   const name = displayName(s.me, current);
   const roles = s.me.roles.map((r) => ROLES[r].label).join(", ");
   const label = `Signed in as ${name} (${roles.toLowerCase()})`;
-  return `<style>${ME_STYLE}</style><div class="me" role="region" aria-label="${esc(label)}">
+  return `<style>${ME_STYLE}${s.me.admin ? SERVER_STYLE : ""}</style><div class="me" role="region" aria-label="${esc(label)}">
 <div class="mecard" title="${esc(label)}"><span class="avatar${s.me.admin ? "" : " rec"}" aria-hidden="true">${esc(initials(name))}</span><span class="mename"><b>${esc(name)}</b><small>${esc(roles)}</small></span></div>
-<div class="mebtns"><a class="mebtn" href="/admin#password" title="Change password" aria-label="Change password">${KEY_ICON}</a><form method="post" action="/admin/logout"><button class="mebtn">${LOGOUT_ICON}Sign out</button></form></div></div>`;
+<div class="mebtns">${s.me.admin ? serverBox(current) : ""}<a class="mebtn" href="/admin#password" title="Change password" aria-label="Change password">${KEY_ICON}</a><form method="post" action="/admin/logout"><button class="mebtn">${LOGOUT_ICON}Sign out</button></form></div></div>`;
 }
 
 // Every signed-in page gets the box, except those shown inside another page (the Tasks window, save status).

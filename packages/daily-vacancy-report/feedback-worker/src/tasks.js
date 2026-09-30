@@ -52,7 +52,7 @@ export async function requests(env) {
 const ADMIN_LABELS = {
   send_now: "Send jobs now", pause: "Pause reports", resume: "Resume reports", delete: "Delete recruit",
   assign: "Assign to a recruiter", profile: "Recruit changes", cv: "New CV",
-  api_keys: "Global API keys", email: "Email settings", test_email: "Test email",
+  api_keys: "Global API keys", model_keys: "AI model settings", email: "Email settings", test_email: "Test email",
 };
 const KIND_LABELS = {
   report: "Daily report", cover_letter: "Cover letter", tailored_cv: "Tailored CV", send_job: "Job email", signup: "Sign-up", unsubscribe: "Unsubscribe",
@@ -61,7 +61,7 @@ const TRIGGERS = { schedule: "scheduled", dashboard: "from the dashboard", email
 
 function queueKind(item) {
   if (item.type === "signup" || item.type === "unsubscribe") return item.type;
-  return { send_now: "send", delete: "delete", api_keys: "key", cv: "cv" }[item.action] || "change";
+  return { send_now: "send", delete: "delete", api_keys: "key", model_keys: "key", cv: "cv" }[item.action] || "change";
 }
 
 // One list, running first, from HermitShell's reported tasks, the Worker's queue and the uncollected requests. Each row
