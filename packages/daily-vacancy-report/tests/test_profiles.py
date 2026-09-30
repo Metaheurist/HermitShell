@@ -73,6 +73,7 @@ def home(tmp_path, monkeypatch):
                                     "other_tech": {"Terraform": r"\bterraform\b", "Excel": r"\bexcel\b"}}))
     for key, value in {"ALERT_EMAIL": "owner@example.com", "COVER_LETTER_NAME": "Alex Morgan",
                        "COVER_LETTER_CONTACT": "owner@example.com", "JOB_KEYWORDS_FILE": str(keywords),
+                       "JOB_PROFILE_FILE": str(tmp_path / "owner_profile.md"), "JOB_FEEDBACK_API_TOKEN": "test-token",
                        "JOB_REGION_NAME": "Belfast", "JOB_FEEDBACK_URL": "https://fb.example.workers.dev",
                        "JOB_FEEDBACK_SECRET": "test-secret", "FIRECRAWL_API_KEY": "fc-envkey-longer0001",
                        "FIRECRAWL_BACKUP_KEYS": "fc-envkey-longer0002", "JOB_SCANNER_QUERIES": "owner query",
@@ -110,7 +111,8 @@ def test_signup_builds_a_profile_from_the_cv(home):
     assert set(keywords["cv_keywords"]) == {"SQL", "Power BI", "Python", "Excel"}
     assert keywords["other_tech"] == {"Terraform": r"\bterraform\b"}
     settings = json.loads((d / "settings.json").read_text())
-    assert settings["JOB_SCANNER_QUERIES"] == '("Data Analyst" OR "BI Analyst") "Belfast" job||("Reporting Analyst") "Belfast" job'
+    # Where they live, from the sign-up, not the admin's region.
+    assert settings["JOB_SCANNER_QUERIES"] == '("Data Analyst" OR "BI Analyst") "Lisburn" job||("Reporting Analyst") "Lisburn" job'
     assert settings["JOB_TARGET_TITLES"] == "Data Analyst||BI Analyst||Reporting Analyst"
     assert "JOB_SCANNER_NIJOBS_KEYWORDS" not in settings
     strong = profiles.re.compile(settings["JOB_TITLE_STRONG"], profiles.re.I)
@@ -213,7 +215,7 @@ def test_admin_cv_upload_rebuilds_that_profile(home):
     assert "BI developer" in (home[0] / "profiles" / "sam-lee-456789" / "cv.txt").read_text()
 
 
-def test_unsubscribe_deletes_a_profile_but_only_pauses_the_owner(home):
+def test_unsubscribe_deletes_a_profile_and_never_the_admin(home):
     tmp, sent = home
     profiles.sync(FakeApi([signup()]))
     sent.clear()
@@ -224,9 +226,9 @@ def test_unsubscribe_deletes_a_profile_but_only_pauses_the_owner(home):
     assert "deleted your profile, your CV" in goodbye["text"]
     assert note["to"] == "owner@example.com" and "Their feedback: found a job" in note["text"]
     assert "sam@example.com" not in note["text"]
-    assert not profiles.owner_paused()
+    sent.clear()
     profiles.sync(FakeApi([{"id": "queue:3:b", "type": "unsubscribe", "u": ""}]))
-    assert profiles.owner_paused()
+    assert sent == [] and profiles.load("owner")["status"] == "active"
     assert (tmp / "profiles" / "owner" / "profile.json").is_file()
 
 
@@ -276,7 +278,7 @@ def test_admin_actions_set_global_keys_pause_and_delete(home, monkeypatch):
     ])
     report = profiles.sync(api)
     assert report[0] == "admin: rejected (recruits no longer have their own crawler keys; set web search keys under Global settings)"
-    assert report[-1] == "admin: rejected (the owner profile cannot be deleted)"
+    assert report[-1] == f"admin: rejected ({profiles.STAFF})"
     assert not (profiles.profile_dir(pid) / "secrets.json").exists()
     sam = profiles.load(pid)
     assert sam["status"] == "paused"
@@ -342,7 +344,7 @@ def test_the_dashboard_assigns_and_unassigns_recruits_but_never_the_owner(home):
                    {"id": "queue:3:b", "type": "admin", "action": "assign", "u": "owner", "recruiter": "riley"},
                    {"id": "queue:4:c", "type": "admin", "action": "assign", "u": pid, "recruiter": "../etc"}])
     report = profiles.sync(api)
-    assert report[-2:] == ["admin: rejected (the owner profile is not anyone's recruit)", "admin: rejected (invalid recruiter)"]
+    assert report[-2:] == [f"admin: rejected ({profiles.STAFF})", "admin: rejected (invalid recruiter)"]
     assert profiles.load(pid)["recruiter"] == "riley"
     assert "recruiter" not in profiles.load("owner")
     assert next(p for p in api.statuses[-1]["profiles"] if p["id"] == pid)["recruiter"] == "riley"
@@ -363,25 +365,56 @@ def test_rejected_dashboard_changes_are_reported_for_a_day(home, monkeypatch):
 
 
 def test_dashboard_job_search_uses_the_region_for_searches(home, monkeypatch):
-    monkeypatch.setenv("JOB_SEARCH_LOCATION", "Lisburn")
+    profiles.sync(FakeApi([signup()]))
+    pid = "sam-lee-456789"
     job = {"titles": ["Data Engineer"], "region": "Belfast", "places": ["Holywood"], "country": "uk"}
-    profiles.sync(FakeApi([{"id": "queue:2:a", "type": "admin", "action": "profile", "u": "owner", "job": job}]))
-    saved = profiles.dashboard_env()
+    profiles.sync(FakeApi([{"id": "queue:2:a", "type": "admin", "action": "profile", "u": pid, "job": job}]))
+    saved = json.loads((home[0] / "profiles" / pid / "settings.json").read_text())
     assert saved["JOB_SEARCH_LOCATION"] == "" and saved["JOB_SEARCH_COUNTRY"] == "gb"
     assert saved["JOB_SCANNER_QUERIES"] == '("Data Engineer") "Belfast" job'
+    assert profiles.dashboard_env() == {}, "a recruit's search never changes the server's settings"
 
 
 def test_a_dashboard_change_only_touches_the_fields_it_names(home, monkeypatch):
-    monkeypatch.setenv("JOB_TARGET_TITLES", "Data Engineer")
-    monkeypatch.setenv("JOB_EMPLOYMENT_TYPES", "Permanent")
-    profiles.sync(FakeApi([{"id": "queue:2:a", "type": "admin", "action": "profile", "u": "owner",
+    profiles.sync(FakeApi([signup()]))
+    pid = "sam-lee-456789"
+    path = home[0] / "profiles" / pid / "settings.json"
+    path.write_text(json.dumps({**json.loads(path.read_text()), "JOB_REGION_NAME": "Newry",
+                                "JOB_EMPLOYMENT_TYPES": "Permanent"}))
+    profiles.sync(FakeApi([{"id": "queue:2:a", "type": "admin", "action": "profile", "u": pid,
                             "job": {"min_salary": "45000"}, "details": {"location": "Bangor"}}]))
-    saved = profiles.dashboard_env()
+    saved = json.loads(path.read_text())
     assert saved["JOB_MIN_SALARY"] == "45000"
-    assert saved["JOB_REGION_NAME"] == "Belfast" and saved["JOB_TARGET_TITLES"] == "Data Engineer"
+    assert saved["JOB_REGION_NAME"] == "Newry" and saved["JOB_TARGET_TITLES"] == "Data Analyst||BI Analyst||Reporting Analyst"
     assert saved["JOB_EMPLOYMENT_TYPES"] == "Permanent"
-    assert saved["ALERT_EMAIL"] == "owner@example.com" and saved["COVER_LETTER_NAME"] == "Alex Morgan"
-    assert saved["COVER_LETTER_CONTACT"] == "owner@example.com · Bangor"
+    sam = profiles.load(pid)
+    assert (sam["location"], sam["phone"], sam["email"]) == ("Bangor", "07700 900123", "sam@example.com")
+
+
+def test_recruits_have_their_own_search_not_the_admins(home, monkeypatch):
+    monkeypatch.setenv("JOB_EMPLOYMENT_TYPES", "Contract")
+    monkeypatch.setenv("JOB_SALARY_CURRENCY", "EUR")
+    profiles.sync(FakeApi([signup()]))
+    environ = profiles.child_env(profiles.load("sam-lee-456789"))
+    for key in ("JOB_REGION_NAME", "JOB_EMPLOYMENT_TYPES", "JOB_SALARY_CURRENCY"):
+        assert environ[key] == "", key
+    assert profiles.os.environ["JOB_REGION_NAME"] == "Belfast"
+
+
+def test_existing_recruits_keep_the_search_they_were_sharing_once(home, monkeypatch):
+    monkeypatch.setenv("JOB_EMPLOYMENT_TYPES", "Contract")
+    d = home[0] / "profiles" / "casey-quinn-0a0a0a"
+    d.mkdir(parents=True)
+    profiles.save({"id": "casey-quinn-0a0a0a", "name": "Casey Quinn", "email": "casey@example.com", "status": "active"})
+    profiles.write_json(d / "settings.json", {"JOB_REGION_NAME": "Derry", "JOB_TARGET_TITLES": "Nurse"})
+    assert profiles.give_recruits_own_search() == 1
+    saved = json.loads((d / "settings.json").read_text())
+    assert saved["JOB_REGION_NAME"] == "Derry", "a recruit's own value is kept"
+    assert saved["JOB_EMPLOYMENT_TYPES"] == "Contract" and "JOB_SCANNER_QUERIES" not in saved
+    assert "ALERT_EMAIL" not in saved and "COVER_LETTER_NAME" not in saved
+    monkeypatch.setenv("JOB_EMPLOYMENT_TYPES", "Permanent")
+    assert profiles.give_recruits_own_search() == 0, "only once"
+    assert profiles.child_env(profiles.load("casey-quinn-0a0a0a"))["JOB_EMPLOYMENT_TYPES"] == "Contract"
 
 
 def test_changes_from_two_people_to_one_profile_both_apply(home):
@@ -786,13 +819,14 @@ def test_the_server_load_and_request_counts_alone_do_not_resend_the_status(home,
 
 def test_status_is_only_pushed_when_it_changes(home, monkeypatch):
     api = FakeApi()
-    profiles.ensure_owner()
+    profiles.sync(FakeApi([signup()]))
+    (profiles.PROFILES_DIR / ".status").unlink()
     profiles.push_status(api)
     profiles.push_status(api)
     assert len(api.statuses) == 1
-    profiles.set_status("owner", "paused")
+    profiles.set_status("sam-lee-456789", "paused")
     profiles.push_status(api)
-    assert len(api.statuses) == 2 and api.statuses[-1]["profiles"][0]["status"] == "paused"
+    assert len(api.statuses) == 2 and api.statuses[-1]["profiles"][1]["status"] == "paused"
     later = profiles.time.time() + profiles.STATUS_EVERY + 1
     monkeypatch.setattr(profiles.time, "time", lambda: later)
     profiles.push_status(api)
@@ -965,22 +999,23 @@ def test_the_owners_report_runs_the_others_only_without_their_own_jobs(home, mon
     assert profiles.others("job_scanner.py", []) == []
     assert [p["id"] for p in profiles.others("job_scanner.py", ["--weekly"])] == ["sam-lee-456789"]
     assert [p["id"] for p in profiles.others("cover_letter.py", [])] == ["sam-lee-456789"]
-    monkeypatch.setenv("JOB_REPORT_ALONE", "1")
+    monkeypatch.setenv("JOB_PROFILE_ID", "sam-lee-456789")
     assert profiles.spawn_others("job_scanner.py", ["--weekly"]) is False
 
 
-def test_the_dashboard_sets_each_profiles_report_time(home, cron):
+def test_the_dashboard_sets_each_recruits_report_time_and_never_the_admins(home, cron):
     profiles.sync(FakeApi([signup()]))
     api = FakeApi([admin("profile", "sam-lee-456789", report={"time": "06:45", "days": "weekdays"}),
                    admin("profile", "owner", 3, report={"time": "07:30"})])
     profiles.sync(api)
     assert cron.job("vacancy-report-sam-lee-456789")["schedule"]["expr"] == "45 6 * * 1-5"
-    assert cron.job("job-scanner")["schedule"]["expr"] == "30 7 * * *"
+    assert cron.job("job-scanner")["schedule"]["expr"] == "0 8 * * *"
     assert "schedule" not in profiles.load("sam-lee-456789") and "schedule" not in profiles.load("owner")
-    rows = {p["id"]: p["report"] for p in api.statuses[-1]["profiles"]}
-    assert rows["sam-lee-456789"] == {"time": "06:45", "days": "weekdays", "schedule": "45 6 * * 1-5",
-                                      "job": True, "pending": False}
-    assert rows["owner"]["time"] == "07:30" and rows["owner"]["days"] == "daily"
+    rows = {p["id"]: p for p in api.statuses[-1]["profiles"]}
+    assert rows["sam-lee-456789"]["report"] == {"time": "06:45", "days": "weekdays", "schedule": "45 6 * * 1-5",
+                                                "job": True, "pending": False}
+    assert "report" not in rows["owner"] and "job" not in rows["owner"]
+    assert api.statuses[-1]["problems"][-1]["error"] == profiles.STAFF
     profiles.sync(FakeApi([admin("profile", "sam-lee-456789", 4, report={"days": "daily"})]))
     assert cron.job("vacancy-report-sam-lee-456789")["schedule"]["expr"] == "45 6 * * *"
 
@@ -988,21 +1023,21 @@ def test_the_dashboard_sets_each_profiles_report_time(home, cron):
 @pytest.mark.parametrize("report", [{"time": "25:00"}, {"time": "8am"}, {"time": "08:00", "days": "sundays"},
                                     {"time": "08:00 * * * 1; rm -rf /"}])
 def test_a_bad_report_time_is_rejected(home, cron, report):
-    api = FakeApi([admin("profile", "owner", report=report)])
+    profiles.sync(FakeApi([signup()]))
+    api = FakeApi([admin("profile", "sam-lee-456789", report=report)])
     profiles.sync(api)
     assert api.statuses[-1]["problems"][-1]["error"] == "invalid daily report time"
-    assert cron.job("job-scanner")["schedule"]["expr"] == "0 8 * * *"
+    assert cron.job("vacancy-report-sam-lee-456789")["schedule"]["expr"] == "15 8 * * *"
 
 
 def test_without_the_scheduler_the_report_time_waits_and_nothing_is_scheduled(home, monkeypatch):
     monkeypatch.setattr(profiles.subprocess, "run", lambda *a, **k: pytest.fail("scheduler called"))
-    api = FakeApi([signup(), admin("profile", "owner", 3, report={"time": "09:00"})])
+    api = FakeApi([signup(), admin("profile", "sam-lee-456789", 3, report={"time": "09:00"})])
     profiles.sync(api)
     payload = api.statuses[-1]
-    owner = next(p for p in payload["profiles"] if p["owner"])
+    sam = next(p for p in payload["profiles"] if p["id"] == "sam-lee-456789")
     assert payload["scheduler"] is False
-    assert owner["report"] == {"time": "09:00", "days": "daily", "schedule": "0 9 * * *", "job": False,
-                               "pending": True}
+    assert sam["report"] == {"time": "09:00", "days": "daily", "schedule": "0 9 * * *", "job": False, "pending": True}
 
 
 def test_send_now_starts_that_profiles_report_in_the_background(home, monkeypatch):
@@ -1014,7 +1049,7 @@ def test_send_now_starts_that_profiles_report_in_the_background(home, monkeypatc
     cmd, kwargs = started[0]
     assert cmd[1:] == [str(Path(profiles.__file__).resolve()), "report", "--now", "sam-lee-456789"]
     assert kwargs["start_new_session"] and kwargs["stdin"] == subprocess.DEVNULL
-    assert len(started) == 1 and report[-1] == "admin: rejected (no CV yet: upload one on the dashboard first)"
+    assert len(started) == 1 and report[-1] == f"admin: rejected ({profiles.STAFF})"
     profiles.write_json(profiles.scan_marker("sam-lee-456789"), {"pid": profiles.os.getpid(), "at": profiles.time.time()})
     profiles.sync(FakeApi([admin("send_now", "sam-lee-456789", 4)]))
     assert len(started) == 1
@@ -1041,17 +1076,102 @@ def test_a_report_tells_the_dashboard_it_is_scanning_then_when_it_ran(home, monk
     assert not profiles.scan_marker("sam-lee-456789").exists()
 
 
-def test_the_owners_report_runs_alone(home, monkeypatch):
-    cv = home[0] / "job_profile.md"
-    cv.write_text("Alex Morgan, data engineer")
-    monkeypatch.setattr(profiles, "owner_files", lambda: (cv, home[0] / "owner_keywords.json"))
+def _owner_search(home, monkeypatch):
+    tmp = home[0]
+    (tmp / "owner_profile.md").write_text("# Candidate profile\n\nName: Alex Morgan\n")
+    (tmp / "owner_cv.txt").write_text("Alex Morgan, data engineer at Contoso")
+    monkeypatch.setenv("COVER_LETTER_CV_FILE", str(tmp / "owner_cv.txt"))
+    monkeypatch.setenv("JOB_TARGET_TITLES", "Data Engineer||Analytics Engineer")
+    monkeypatch.setenv("JOB_EMPLOYMENT_TYPES", "Permanent")
+    state = tmp / "state"
+    (state / "cover_letters").mkdir(parents=True)
+    (state / "cover_letters" / "letter.pdf").write_bytes(b"%PDF")
+    (state / "job_scanner_seen.json").write_text('{"job-1": 1}')
+    _rate_a_job("owner", 1_790_000_000.0)
+    monkeypatch.setattr(profiles.secrets, "token_hex", lambda n: "0d0d0d")
+    return "alex-morgan-0d0d0d"
+
+
+def test_the_admins_own_job_search_moves_once_to_a_recruit(home, monkeypatch):
+    pid = _owner_search(home, monkeypatch)
+    api = FakeApi()
+    profiles.sync(api)
+    moved = profiles.load(pid)
+    assert (moved["name"], moved["email"], moved["status"]) == ("Alex Morgan", "owner@example.com", "active")
+    assert moved["titles"] == ["Data Engineer", "Analytics Engineer"] and moved["from_owner"] is True
+    d = profiles.profile_dir(pid)
+    assert "Name: Alex Morgan" in (d / "job_profile.md").read_text()
+    assert "Contoso" in (d / "cv.txt").read_text()
+    settings = json.loads((d / "settings.json").read_text())
+    assert settings["JOB_EMPLOYMENT_TYPES"] == "Permanent" and settings["JOB_REGION_NAME"] == "Belfast"
+    assert not {"ALERT_EMAIL", "COVER_LETTER_NAME", "COVER_LETTER_CV_FILE", "JOB_PROFILE_FILE"} & set(settings)
+    assert (d / "state" / "cover_letters" / "letter.pdf").is_file()
+    assert json.loads((d / "state" / "job_scanner_seen.json").read_text()) == {"job-1": 1}
+    from job_tracker import Tracker
+    with Tracker(profiles.tracker_file(pid)) as tracker:
+        assert tracker.db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 1
+    assert profiles.load("owner")["recruit"] == pid and profiles.owner_recruit() == pid
+    assert (home[0] / "owner_profile.md").is_file(), "the admin's files are left where they were"
+    rows = {p["id"]: p for p in api.statuses[-1]["profiles"]}
+    assert rows["owner"]["recruit"] == pid and rows["owner"]["has_cv"] is False and "job" not in rows["owner"]
+    assert rows[pid]["has_cv"] and rows[pid]["job"]["types"] == ["Permanent"]
+    profiles.sync(FakeApi())
+    assert [p["id"] for p in profiles.all_profiles()] == ["owner", pid], "moved only once"
+
+
+def test_the_admins_search_is_not_moved_without_an_address_or_while_it_runs(home, monkeypatch):
+    _owner_search(home, monkeypatch)
+    monkeypatch.setenv("ALERT_EMAIL", "")
+    monkeypatch.setenv("SMTP_USER", "")
+    profiles.write_json(profiles.profile_dir("owner") / "profile.json",
+                        {"id": "owner", "owner": True, "name": "Alex Morgan", "email": "", "status": "active"})
+    assert profiles.move_owner_search() == ""
+    monkeypatch.setenv("ALERT_EMAIL", "owner@example.com")
+    profiles.write_json(profiles.scan_marker("owner"), {"pid": profiles.os.getpid(), "at": profiles.time.time()})
+    monkeypatch.setattr(profiles, "_alive", lambda pid: True)
+    assert profiles.move_owner_search() == ""
+    assert [p["id"] for p in profiles.all_profiles()] == ["owner"]
+
+
+def test_the_example_profile_is_not_a_job_search_to_move(home, monkeypatch):
+    example = profiles.SCRIPT_DIR / "job_profile.example.md"
+    if not example.is_file():
+        pytest.skip("no example profile")
+    (home[0] / "owner_profile.md").write_bytes(example.read_bytes())
+    assert profiles.move_owner_search() == ""
+
+
+def test_an_old_unsubscribe_link_pauses_the_admins_moved_search(home, monkeypatch):
+    tmp, sent = home
+    pid = _owner_search(home, monkeypatch)
+    profiles.sync(FakeApi())
+    sent.clear()
+    profiles.sync(FakeApi([{"id": "queue:3:b", "type": "unsubscribe", "u": ""}]))
+    assert profiles.load(pid)["status"] == "paused" and profiles.load("owner")["status"] == "active"
+    assert [m["to"] for m in sent] == ["owner@example.com"] and f"--resume {pid}" in sent[0]["text"]
+
+
+def test_the_setups_run_only_starts_the_recruits_when_the_admin_is_staff(home, monkeypatch):
+    pid = _owner_search(home, monkeypatch)
+    profiles.sync(FakeApi())
+    calls = []
+    monkeypatch.setattr(profiles, "sync_feedback", lambda tracker, url, token, **k: calls.append(
+        (tracker.db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0], url, token, k)) or (2, None))
+    assert profiles.staff_run("job_scanner.py", full=True) is True
+    # Into the moved search's tracker (the one holding the admin's jobs), as answers filed under the admin.
+    assert calls == [(1, "https://fb.example.workers.dev", "test-token", {"full": True})]
+    monkeypatch.setenv("JOB_PROFILE_ID", pid)
+    assert profiles.staff_run("job_scanner.py") is False, "a recruit's own run carries on"
+    monkeypatch.delenv("JOB_PROFILE_ID")
+    monkeypatch.setenv("JOB_FEEDBACK_API_TOKEN", "")
+    assert profiles.staff_run("job_scanner.py") is False, "without the dashboard it is the owner's own search"
+
+
+def test_the_admin_has_no_report_of_their_own(home, monkeypatch):
     monkeypatch.setattr(profiles, "api_from_env", lambda: None)
     profiles.ensure_owner()
-    envs = []
-    profiles.run_report("owner", runner=lambda cmd, env, cwd, timeout: envs.append(env) or
-                        subprocess.CompletedProcess(cmd, 3))
-    assert envs[0]["JOB_REPORT_ALONE"] == "1" and not envs[0].get("JOB_PROFILE_ID")
-    assert "JOB_SCANNER_EMAIL_WHEN_EMPTY" not in envs[0] and "last_run" not in profiles.load("owner")
+    with pytest.raises(profiles.ProfileError, match="staff"):
+        profiles.run_report("owner", runner=lambda *a, **k: pytest.fail("the admin's report ran"))
 
 
 def test_a_scheduled_job_runs_the_report_of_the_folder_it_starts_in(home, monkeypatch):
@@ -1077,7 +1197,7 @@ def test_stats_go_to_the_worker_when_they_change_and_go_with_the_profile(home, m
     api = FakeApi([signup()])
     profiles.sync(api)
     pid = "sam-lee-456789"
-    assert sorted(p for p, _ in api.pushed) == ["owner", pid]
+    assert sorted(p for p, _ in api.pushed) == [pid], "the admin is staff and has no stats page"
     assert all(data["days"] == {} and data["v"] == 1 for _, data in api.pushed)
 
     api.pushed.clear()
@@ -1092,9 +1212,9 @@ def test_stats_go_to_the_worker_when_they_change_and_go_with_the_profile(home, m
     clock[0] += profiles.STATS_EVERY + 1
     profiles.push_stats(api)
     assert api.pushed == []
-    _rate_a_job("owner", clock[0])
+    _rate_a_job(pid, clock[0])
     profiles.push_stats(api)
-    assert [p for p, _ in api.pushed] == ["owner"]
+    assert [p for p, _ in api.pushed] == [pid]
 
     deleting = FakeApi([{"id": "queue:2:a", "type": "admin", "action": "delete", "u": pid}])
     profiles.sync(deleting)
@@ -1123,14 +1243,16 @@ def test_stats_that_cannot_be_read_or_sent_are_retried_later(home, monkeypatch, 
         def stats(self, pid, data):
             raise requests.ConnectionError("down")
 
-    profiles.ensure_owner()
-    profiles.tracker_file("owner").parent.mkdir(parents=True, exist_ok=True)
-    profiles.tracker_file("owner").write_bytes(b"not a database")
+    profiles.sync(FakeApi([signup()]), full=True)
+    (profiles.PROFILES_DIR / ".stats.json").unlink()
+    pid = "sam-lee-456789"
+    profiles.tracker_file(pid).parent.mkdir(parents=True, exist_ok=True)
+    profiles.tracker_file(pid).write_bytes(b"not a database")
     profiles.push_stats(FakeApi())
-    assert "Could not read the stats of owner" in capsys.readouterr().err
-    profiles.tracker_file("owner").unlink()
+    assert f"Could not read the stats of {pid}" in capsys.readouterr().err
+    profiles.tracker_file(pid).unlink()
     profiles.push_stats(Down())
-    assert "Could not send the stats of owner" in capsys.readouterr().err
+    assert f"Could not send the stats of {pid}" in capsys.readouterr().err
     assert json.loads((profiles.PROFILES_DIR / ".stats.json").read_text()) == {}
 
 

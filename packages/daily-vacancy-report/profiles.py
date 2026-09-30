@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Daily Vacancy Report profiles and dashboard settings, managed from the feedback Worker.
 
-The owner (whoever set up HermitShell) uses .env, job_profile.md and cv_keywords.json, overlaid by anything saved
-on the Worker's /admin dashboard (state/dashboard.json, read by hermes_common before .env). Everyone else joins
+With the dashboard, whoever set up HermitShell (the owner, the main admin) and the recruiters are staff, not
+recruits: they manage recruits and have no job search of their own. The owner's settings (.env, overlaid by
+anything saved on the Worker's /admin dashboard in state/dashboard.json) are the server's; an owner who had a job
+search of their own before this gets it moved once to an ordinary recruit profile (move_owner_search). Recruits join
 through a single-use invite link made on the dashboard. Their details and CV wait in the Worker until this
 script collects them, reads the CV, has the local model turn it into a profile and search terms, and emails them.
-Each extra profile lives in state/profiles/<id>/ and gets the same daily report, buttons, cover letters,
+Each recruit lives in state/profiles/<id>/ with its own job search and gets the daily report, buttons, cover letters,
 tailored CVs and weekly roll-up; the unsubscribe link in its reports deletes it. Its daily report is its own
 scheduled job (vacancy-report-<id>, running profile_report.py), kept in step with the profile by this script;
 the dashboard sets its time and can send any profile's report at once. Each profile's stats (profile_stats.py)
@@ -32,6 +34,7 @@ import html
 import json
 import os
 import re
+import secrets
 import shutil
 import signal
 import sqlite3
@@ -57,21 +60,31 @@ import worker_link
 import worker_seal
 from hermes_common import EMAIL_HEAD, STATE_DIR, connect_model, email_header, env, load_env_file, log, ollama_chat
 from job_settings import slug, term_regex
-from job_tracker import Tracker, unsubscribe_link
+from job_tracker import Tracker, sync_feedback, unsubscribe_link
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROFILES_DIR = Path(env("JOB_PROFILES_DIR") or STATE_DIR / "profiles")
 DASHBOARD_FILE = hc.DASHBOARD_FILE
 OWNER = "owner"
 RUNNABLE = ("job_scanner.py", "job_weekly.py", "cover_letter.py")
-# Settings that describe the owner; blanked for other profiles so .env cannot fill them back in.
+# Settings that describe one person; blanked for recruits so .env cannot fill them back in.
 PERSONAL_KEYS = ("ALERT_EMAIL", "JOB_CANDIDATE_NAME", "JOB_PROFILE_FILE", "JOB_KEYWORDS_FILE", "JOB_SCANNER_QUERIES",
                  "JOB_SCANNER_NIJOBS_KEYWORDS", "JOB_TARGET_TITLES", "JOB_TITLE_STRONG", "JOB_TITLE_MEDIUM",
                  "JOB_LEVEL", "JOB_MIN_SALARY", "JOB_REPORT_TAGLINE", "COVER_LETTER_NAME", "COVER_LETTER_CONTACT",
                  "COVER_LETTER_CV_FILE", "COVER_LETTER_SIGN_OFF")
-# What a profile's settings.json may set: its personal settings plus the job search ones it would otherwise
-# share with the owner (region, country, employment types...).
+# The rest of a job search (region, places, country, employment types, work modes, currency...): each recruit has
+# its own in settings.json, so these are blanked for recruits too rather than taken from .env.
+SEARCH_KEYS = tuple(k for k in job_settings.KEYS if k not in PERSONAL_KEYS)
+# What a recruit's settings.json may set.
 PROFILE_KEYS = frozenset(PERSONAL_KEYS) | frozenset(job_settings.KEYS)
+# Set for every recruit by child_env from its profile and folder, so never copied into its settings.json.
+IDENTITY_KEYS = frozenset({"ALERT_EMAIL", "JOB_CANDIDATE_NAME", "JOB_PROFILE_FILE", "JOB_KEYWORDS_FILE", "COVER_LETTER_NAME",
+                           "COVER_LETTER_CONTACT", "COVER_LETTER_CV_FILE"})
+# What the owner's own job search kept in the state folder, moved with it to its recruit profile.
+OWNER_STATE_FILES = ("job_scanner_seen.json", "job_scanner_retry.json", "job_scanner_last.json", "job_scanner_last.html",
+                     "job_scanner_weekly.html", "cv.json", "cv_skills_merged.json")
+OWNER_STATE_DIRS = ("cover_letters", "tailored_cvs")
+STAFF = "the admin is staff, not a recruit, and has no job search of their own"
 SMTP_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM")
 API_KEYS = {"firecrawl": "FIRECRAWL_API_KEY", "firecrawl_backup": "FIRECRAWL_BACKUP_KEYS",
             "tavily": "TAVILY_API_KEY", "scrapfly": "SCRAPFLY_API_KEY"}
@@ -221,8 +234,38 @@ def ensure_owner() -> dict:
     return owner
 
 
-def owner_paused() -> bool:
-    return not env("JOB_PROFILE_ID") and (load(OWNER) or {}).get("status") == "paused"
+def admin_is_staff() -> bool:
+    """With the dashboard (the feedback Worker) the owner only manages recruits; without it HermitShell is one
+    person's job search, run from .env."""
+    return bool(env("JOB_FEEDBACK_URL") and env("JOB_FEEDBACK_API_TOKEN"))
+
+
+def owner_recruit() -> str:
+    """The recruit the owner's own job search was moved to, while it still exists."""
+    pid = str((load(OWNER) or {}).get("recruit") or "")
+    return pid if ID_RE.match(pid) and pid != OWNER and load(pid) else ""
+
+
+def staff_run(script: str, full: bool = False) -> bool:
+    """The setup's scheduled run of `script` when the admin is staff: it only starts the recruits' runs, and takes
+    answers from buttons in reports sent before the admin's own job search moved (still filed under the admin) into
+    that recruit's tracker. False when HermitShell is one person's job search, so the run carries on as the owner's."""
+    if env("JOB_PROFILE_ID") or not admin_is_staff():
+        return False
+    moved = owner_recruit()
+    if moved:
+        path = tracker_file(moved)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with Tracker(path) as tracker:
+            synced, error = sync_feedback(tracker, env("JOB_FEEDBACK_URL", "") or "",
+                                          env("JOB_FEEDBACK_API_TOKEN", "") or "", full=full)
+        if synced:
+            log(f"Filed {synced} earlier answer(s) to the admin's reports under {moved}")
+        if error:
+            log(error)
+    if full:
+        log(f"{script}: {STAFF}, so this run only starts the recruits'")
+    return True
 
 
 def remove_dir(pid: str) -> None:
@@ -273,7 +316,7 @@ def retire_own_keys() -> int:
 def child_env(profile: dict) -> dict[str, str]:
     d = profile_dir(profile["id"])
     environ = dict(os.environ)
-    environ.update({k: "" for k in PERSONAL_KEYS})
+    environ.update({k: "" for k in (*PERSONAL_KEYS, *SEARCH_KEYS)})
     environ.update({k: str(v) for k, v in read_json(d / "settings.json", {}).items() if k in PROFILE_KEYS})
     contact = " · ".join(x for x in (profile.get("email"), profile.get("phone"), profile.get("location")) if x)
     environ.update({
@@ -370,9 +413,10 @@ def keywords_json(built: dict) -> dict:
     return {"cv_keywords": cv, "other_tech": other}
 
 
-def search_settings(built: dict, get=env) -> dict[str, str]:
+def search_settings(built: dict, get, nijobs: bool) -> dict[str, str]:
+    """A recruit's searches from its CV and its own location (`get` reads its settings); `nijobs` when the nijobs.com
+    board is used on this server."""
     location = get("JOB_SEARCH_LOCATION") or get("JOB_REGION_NAME") or ""
-    nijobs = bool(get("JOB_SCANNER_NIJOBS_KEYWORDS"))
     titles = built["titles"]
     strong = term_regex(built["title_keywords"] + titles)
     medium = term_regex(built["related_title_keywords"]) or term_regex([s["name"] for s in built["skills"][:10]])
@@ -462,8 +506,10 @@ def create_profile(item: dict, api, model_info_factory=lambda: connect_model("JO
     hc.write_private(d / "job_profile.md", profile_markdown({**item, "name": name}, built))
     write_json(d / "cv_keywords.json", keywords_json(built), private=True)
     kept = read_json(d / "settings.json", {})
-    write_json(d / "settings.json", {**kept, **search_settings(built, lambda k: kept[k] if k in kept else env(k))},
-               private=True)
+    own = {"JOB_SEARCH_LOCATION": _text(item.get("location"), 80), **kept}
+    nijobs = bool(kept["JOB_SCANNER_NIJOBS_KEYWORDS"] if "JOB_SCANNER_NIJOBS_KEYWORDS" in kept
+                  else env("JOB_SCANNER_NIJOBS_KEYWORDS"))
+    write_json(d / "settings.json", {**kept, **search_settings(built, lambda k: own.get(k) or "", nijobs)}, private=True)
     now = time.time()
     recruiter = str(item.get("recruiter") or "")
     profile = {**(existing or {}), "id": pid, "name": name, "email": email,
@@ -498,35 +544,107 @@ def backup(path: Path, keep: int = 5) -> None:
             old.unlink(missing_ok=True)
 
 
-def rebuild_owner(item: dict, api, model_info_factory=lambda: connect_model("JOB_SCANNER_MODEL")) -> dict:
-    """A CV uploaded for the owner on the dashboard: rebuild job_profile.md and cv_keywords.json (old copies kept
-    as .bak-*) and point cover letters and tailored CVs at it. Search titles are only filled in when none are set."""
+def _owner_cv() -> Path | None:
+    for name in (env("COVER_LETTER_CV_FILE"), str(profile_dir(OWNER) / "cv.txt")):
+        path = Path(name) if name and Path(name).is_absolute() else SCRIPT_DIR / name if name else None
+        if path and path.is_file():
+            return path
+    return None
+
+
+def _is_example(path: Path) -> bool:
+    example = SCRIPT_DIR / "job_profile.example.md"
+    try:
+        return example.is_file() and hc.read_private(path).strip() == example.read_bytes().strip()
+    except (OSError, hc.DataKeyError):
+        return False
+
+
+def move_owner_search() -> str:
+    """Admins and recruiters are staff, not recruits. An owner who had a job search of their own (a CV in
+    job_profile.md) gets it moved, once, to an ordinary recruit profile in their name: the CV, search settings, report
+    time, tracker, the jobs already seen, letters and CVs, so their reports carry on as a recruit's. The owner's files
+    are left where they were. Returns the recruit's id, or "" when there was nothing to move (or it is running)."""
     owner = ensure_owner()
-    d = profile_dir(OWNER)
-    text = read_cv(d, item, api)
-    details = {"name": owner_name(), "location": owner.get("location", ""),
-               "roles": item.get("roles") or owner.get("roles") or (env("JOB_TARGET_TITLES") or "").replace("||", ", ")}
-    built = ask_model(text, details, model_info_factory())
-    keywords = keywords_json(built)
     profile_file, keywords_file = owner_files()
-    for path in (profile_file, keywords_file):
-        backup(path)
-    profile_file.write_text(profile_markdown(details, built), encoding="utf-8")
-    write_json(keywords_file, keywords)
-    updates = {"COVER_LETTER_CV_FILE": str(d / "cv.txt")}
-    if not env("JOB_TARGET_TITLES"):
-        updates.update(search_settings(built))
-    update_dashboard_env(updates)
-    owner.update(titles=built["titles"], title_keywords=built["title_keywords"],
-                 skills=[s["name"] for s in built["skills"]], updated=time.time(), cv_updated=time.time())
+    if owner.get("recruit") or not profile_file.is_file() or _is_example(profile_file) or scanning(OWNER):
+        return ""
+    name = owner_name() if owner_name() != "Owner" else str(owner.get("name") or "Owner")
+    email = env("ALERT_EMAIL") or env("SMTP_USER") or str(owner.get("email") or "")
+    if not EMAIL_RE.fullmatch(email):
+        log("The owner's job search was not moved to a recruit: set ALERT_EMAIL to the address its reports go to")
+        return ""
+    pid = profile_id({"name": name, "id": secrets.token_hex(3)})
+    try:
+        _copy_owner_search(owner, pid, name, email, profile_file, keywords_file)
+    except (OSError, sqlite3.Error, hc.DataKeyError) as exc:
+        shutil.rmtree(profile_dir(pid), ignore_errors=True)
+        log(f"Could not move the owner's job search to a recruit yet: {exc.__class__.__name__}")
+        return ""
+    for key in ("titles", "title_keywords", "skills", "roles", "phone", "location", "cv_updated", "schedule",
+                "last_duration"):
+        owner.pop(key, None)
+    owner.update(recruit=pid, status="active", updated=time.time())
     save(owner)
-    log(f"Rebuilt the owner profile from a new CV ({len(built['skills'])} skills)")
-    notify(lambda: send_owner("Your CV was updated", [
-        "HermitShell read the CV you uploaded on the dashboard and rebuilt your profile. The previous "
-        f"{profile_file.name} and {keywords_file.name} are kept as .bak copies.",
-        f"Skills read from the CV: {', '.join(owner['skills'])}",
-        f"Titles it suggests: {', '.join(built['titles'])}"]))
-    return owner
+    log(f"Moved the owner's own job search to recruit profile {pid}; the admin is staff only from now on")
+    return pid
+
+
+def _copy_owner_search(owner: dict, pid: str, name: str, email: str, profile_file: Path, keywords_file: Path) -> None:
+    d, state = profile_dir(pid), profile_dir(pid) / "state"
+    state.mkdir(parents=True, exist_ok=True)
+    os.chmod(d, 0o700)
+    hc.write_private(d / "job_profile.md", hc.read_private(profile_file))
+    if keywords_file.is_file():
+        hc.write_private(d / "cv_keywords.json", hc.read_private(keywords_file))
+    if cv := _owner_cv():
+        hc.write_private(d / "cv.txt", hc.read_private(cv))
+    write_json(d / "settings.json", {k: env(k) for k in sorted(PROFILE_KEYS - IDENTITY_KEYS) if env(k)}, private=True)
+    tracker = STATE_DIR / "job_tracker.db"
+    if tracker.is_file():
+        with contextlib.closing(sqlite3.connect(tracker, timeout=30)) as src, \
+                contextlib.closing(sqlite3.connect(state / "job_tracker.db")) as dst:
+            src.backup(dst)
+    for item in OWNER_STATE_FILES:
+        if (STATE_DIR / item).is_file():
+            shutil.copy2(STATE_DIR / item, state / item)
+    for item in OWNER_STATE_DIRS:
+        if (STATE_DIR / item).is_dir():
+            shutil.copytree(STATE_DIR / item, state / item, dirs_exist_ok=True)
+    last, now = STATE_DIR / "job_scanner_last.json", time.time()
+    titles = [t for t in (env("JOB_TARGET_TITLES") or "").split("||") if t.strip()]
+    save({"id": pid, "name": name, "email": email, "phone": str(owner.get("phone") or ""),
+          "location": str(owner.get("location") or ""), "roles": str(owner.get("roles") or ", ".join(titles))[:300],
+          "titles": titles or owner.get("titles", []), "title_keywords": owner.get("title_keywords", []),
+          "skills": owner.get("skills", []), "status": owner.get("status", "active"), "created": owner.get("created", now),
+          "updated": now, "cv_updated": owner.get("cv_updated") or profile_file.stat().st_mtime,
+          "last_run": last.stat().st_mtime if last.is_file() else None,
+          "schedule": current_schedule(owner) or DEFAULT_SCHEDULE, "from_owner": True})
+
+
+def give_recruits_own_search() -> int:
+    """Recruits used to take the owner's region, places, country, work types and currency unless their settings.json
+    set their own. Each has its own now: the values a recruit was using are written into its settings.json, once.
+    Returns how many recruits were given values."""
+    marker = PROFILES_DIR / ".own_search"
+    if marker.is_file():
+        return 0
+    given = 0
+    for p in all_profiles():
+        if p.get("owner"):
+            continue
+        path = profile_dir(p["id"]) / "settings.json"
+        kept = read_json(path, {})
+        kept = kept if isinstance(kept, dict) else {}
+        added = {k: env(k) for k in SEARCH_KEYS if k not in kept and env(k)}
+        if added:
+            write_json(path, {**kept, **added}, private=True)
+            given += 1
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+    if given:
+        log(f"Gave {given} recruit(s) their own copy of the job search settings they were sharing")
+    return given
 
 
 # --------------------------------------------------------------------------- email
@@ -623,7 +741,7 @@ def send_owner(subject: str, lines: list[str]) -> None:
                    for x in lines)
     link = f'<p style="margin:10px 0 0"><a href="{html.escape(admin)}/admin" style="color:#4f46e5">Manage recruits</a></p>' \
         if admin else ""
-    profiles = all_profiles()
+    profiles = [p for p in all_profiles() if not p.get("owner")]
     header = email_header("Recruits", _today(), subject, "People getting reports from your HermitShell",
                           [(sum(p.get("status") == "active" for p in profiles), "Active"),
                            (sum(p.get("status") == "paused" for p in profiles), "Paused")], highlight=0)
@@ -758,8 +876,12 @@ def unsubscribe(pid: str, reason: str = "") -> None:
         log(f"Unsubscribe for {pid}: already gone")
         return
     if pid == OWNER:
-        set_status(OWNER, "paused")
-        note = "Your own reports are paused. Resume them from /admin or with profiles.py --resume owner."
+        # Links in reports sent before the admin's own job search became a recruit.
+        if not (moved := owner_recruit()):
+            log("Unsubscribe for the admin: they have no reports of their own")
+            return
+        set_status(moved, "paused")
+        note = f"Your own reports are paused. Resume them from /admin or with profiles.py --resume {moved}."
     else:
         forget(profile)
         notify(lambda: send_goodbye(profile))
@@ -856,24 +978,17 @@ def send_test_email(to: str = "") -> dict:
 
 
 def profile_getter(profile: dict):
-    if profile.get("owner"):
-        return env
     environ = child_env(profile)
     return lambda key, default=None: (environ.get(key) or "").strip() or default
 
 
 def current_details(profile: dict) -> dict:
-    if profile.get("owner"):
-        name, email = owner_name(), env("ALERT_EMAIL") or profile.get("email", "")
-    else:
-        name, email = profile.get("name", ""), profile.get("email", "")
-    return {"name": name, "email": email, "phone": profile.get("phone", ""), "location": profile.get("location", "")}
+    return {k: profile.get(k, "") for k in ("name", "email", "phone", "location")}
 
 
 def apply_profile_settings(profile: dict, item: dict) -> None:
     """The dashboard sends only the fields someone changed, so each is laid over the current values; changes made
     meanwhile (by another admin, a CV rebuild or an email button) are kept."""
-    owner = bool(profile.get("owner"))
     details = item.get("details") if isinstance(item.get("details"), dict) else None
     if details:
         merged = {**current_details(profile), **details}
@@ -882,11 +997,6 @@ def apply_profile_settings(profile: dict, item: dict) -> None:
                "phone": _text(merged.get("phone"), 40), "location": _text(merged.get("location"), 80)}
         if not EMAIL_RE.fullmatch(new["email"]):
             raise ProfileError("invalid email address")
-        if owner:
-            updates = {"ALERT_EMAIL": new["email"], "JOB_CANDIDATE_NAME": new["name"], "COVER_LETTER_NAME": new["name"]}
-            if (new["phone"], new["location"]) != (profile.get("phone", ""), profile.get("location", "")):
-                updates["COVER_LETTER_CONTACT"] = " · ".join(x for x in (new["email"], new["phone"], new["location"]) if x)
-            update_dashboard_env(updates)
         profile.update(new)
     job = item.get("job") if isinstance(item.get("job"), dict) else None
     if job:
@@ -894,11 +1004,8 @@ def apply_profile_settings(profile: dict, item: dict) -> None:
         # The dashboard has no separate search location: its searches use the region.
         form = job_settings.clean_form({**job_settings.form_values(getter), "search_location": "", **job})
         updates = job_settings.env_updates(form, getter, profile.get("title_keywords") or [])
-        if owner:
-            update_dashboard_env(updates)
-        else:
-            path = profile_dir(profile["id"]) / "settings.json"
-            write_json(path, {**read_json(path, {}), **updates}, private=True)
+        path = profile_dir(profile["id"]) / "settings.json"
+        write_json(path, {**read_json(path, {}), **updates}, private=True)
         profile["titles"] = form["titles"] or profile.get("titles", [])
     report = item.get("report") if isinstance(item.get("report"), dict) else None
     if report:
@@ -942,14 +1049,13 @@ def admin_action(item: dict, api=None) -> None:
     profile = load(pid)
     if not profile:
         raise ProfileError(f"no profile {pid}")
+    if (profile.get("owner") or pid == OWNER) and action != "cancel":
+        raise ProfileError(STAFF)
     if action == "profile":
         apply_profile_settings(profile, item)
     elif action == "cv":
-        if pid == OWNER:
-            rebuild_owner(item, api)
-        else:
-            create_profile({**item, **{k: profile.get(k, "") for k in ("name", "email", "phone", "location", "roles")}},
-                           api, existing=profile)
+        create_profile({**item, **{k: profile.get(k, "") for k in ("name", "email", "phone", "location", "roles")}},
+                       api, existing=profile)
     elif action == "assign":
         assign(profile, str(item.get("recruiter") or ""))
     elif action in ("set_key", "use_global"):
@@ -961,8 +1067,6 @@ def admin_action(item: dict, api=None) -> None:
     elif action == "cancel":
         log(cancel_task(str(item.get("task") or ""), pid))
     elif action == "delete":
-        if pid == OWNER:
-            raise ProfileError("the owner profile cannot be deleted")
         forget(profile)
         log("A profile was deleted from /admin")
     else:
@@ -1027,23 +1131,21 @@ def status_payload() -> dict:
     profiles = []
     jobs = cron_jobs()
     for p in all_profiles():
-        owner = bool(p.get("owner"))
-        last = p.get("last_run")
-        if owner:
-            last_file = STATE_DIR / "job_scanner_last.json"
-            last = last_file.stat().st_mtime if last_file.is_file() else None
-            has_cv = owner_files()[0].is_file()
-            name, email = owner_name(), env("ALERT_EMAIL") or p.get("email", "")
-        else:
-            has_cv = (profile_dir(p["id"]) / "job_profile.md").is_file()
-            name, email = p.get("name", ""), p.get("email", "")
+        if p.get("owner"):
+            # Staff: the dashboard names the admin from this row and sends old report links to their moved search.
+            profiles.append({"id": p["id"], "name": owner_name() if owner_name() != "Owner" else p.get("name", ""),
+                             "email": env("ALERT_EMAIL") or p.get("email", ""), "status": "active", "owner": True,
+                             "recruiter": "", "has_cv": False, "recruit": owner_recruit(),
+                             "created": _ms(p.get("created"))})
+            continue
         job = daily_job(p, jobs or [])
         schedule = p.get("schedule") or (_expr(job) if job else "")
         report_time, report_days = schedule_parts(schedule)
         profiles.append({
-            "id": p["id"], "name": name, "email": email, "status": p.get("status", "active"), "owner": owner,
-            "recruiter": "" if owner else str(p.get("recruiter") or ""), "has_cv": has_cv,
-            "created": _ms(p.get("created")), "last_run": _ms(last), "cv_updated": _ms(p.get("cv_updated")),
+            "id": p["id"], "name": p.get("name", ""), "email": p.get("email", ""), "status": p.get("status", "active"),
+            "owner": False, "recruiter": str(p.get("recruiter") or ""),
+            "has_cv": (profile_dir(p["id"]) / "job_profile.md").is_file(),
+            "created": _ms(p.get("created")), "last_run": _ms(p.get("last_run")), "cv_updated": _ms(p.get("cv_updated")),
             "details": current_details(p),
             "job": job_settings.form_values(profile_getter(p)),
             "report": {"time": report_time, "days": report_days, "schedule": schedule, "job": bool(job),
@@ -1144,7 +1246,7 @@ def push_stats(api: Api, now_for: str = "") -> None:
     sent = read_json(marker, {})
     sent = sent if isinstance(sent, dict) else {}
     tz, now = ZoneInfo(timezone_name()), time.time()
-    people = all_profiles()
+    people = [p for p in all_profiles() if not p.get("owner")]
     fx = None
     ids = [p["id"] for p in people]
     for person in people:
@@ -1153,8 +1255,6 @@ def push_stats(api: Api, now_for: str = "") -> None:
         if pid != now_for and now - last.get("at", 0) < STATS_EVERY:
             continue
         private = (person.get("name", ""), person.get("email", ""))
-        if person.get("owner"):
-            private += (env("COVER_LETTER_NAME"), env("ALERT_EMAIL"))
         currency = job_settings.form_values(profile_getter(person))["currency"]
         if currency and fx is None:
             fx = money.rates(STATE_DIR, env("JOB_FX_URL", money.FX_URL))
@@ -1207,6 +1307,8 @@ def sync(api: Api, full: bool = False) -> list[str]:
         if not got:
             log("Another sync is still running")
             return []
+        give_recruits_own_search()
+        move_owner_search()
         marker = PROFILES_DIR / ".last_full"
         full = full or not marker.is_file() or time.time() - marker.stat().st_mtime > FULL_LIST_EVERY
         try:
@@ -1479,19 +1581,14 @@ def _applied(pid: str) -> None:
 
 
 def schedule_reports(runner=None) -> None:
-    """Keep one scheduled job per extra profile with a CV, running its daily report: created with the profile,
-    paused while it is, removed with it. The owner keeps the setup's job. A time set on the dashboard goes into
-    the profile's job; otherwise a new job starts REPORT_GAP minutes after the last. Without the scheduler the owner's
-    run runs everyone's reports instead (spawn_others)."""
+    """Keep one scheduled job per recruit with a CV, running its daily report: created with the profile, paused
+    while it is, removed with it. The admin keeps the setup's job, which runs the server's own work. A time set on
+    the dashboard goes into the profile's job; otherwise a new job starts REPORT_GAP minutes after the last. Without
+    the scheduler the setup's run runs everyone's reports instead (spawn_others)."""
     jobs = cron_jobs()
     if jobs is None or not (SCRIPT_DIR / REPORT_SCRIPT).is_file():
         return
-    owner = load(OWNER) or {}
-    owner_job = daily_job(owner or {"owner": True}, jobs)
-    if owner_job and owner.get("schedule"):
-        if _expr(owner_job) == owner["schedule"] or scheduler_cmd(["edit", owner_job["id"], "--schedule",
-                                                                    owner["schedule"]], runner):
-            _applied(OWNER)
+    owner_job = daily_job({"owner": True}, jobs)
     own = report_jobs(jobs)
     wanted = {p["id"]: p for p in all_profiles() if not p.get("owner")
               and (profile_dir(p["id"]) / "job_profile.md").is_file()}
@@ -1619,7 +1716,9 @@ def run_child(cmd: list[str], env: dict[str, str], cwd: Path, timeout: float) ->
 
 
 def has_cv(profile: dict) -> bool:
-    return (owner_files()[0] if profile.get("owner") else profile_dir(profile["id"]) / "job_profile.md").is_file()
+    if profile.get("owner"):
+        raise ProfileError(STAFF)
+    return (profile_dir(profile["id"]) / "job_profile.md").is_file()
 
 
 def run_report(pid: str, now: bool = False, runner=None, args: list[str] | tuple = ()) -> int:
@@ -1638,7 +1737,7 @@ def run_report(pid: str, now: bool = False, runner=None, args: list[str] | tuple
         if not got or scanning(pid):
             log(f"The report for {pid} is already running")
             return 0
-        environ = child_env(profile) if not profile.get("owner") else {**os.environ, "JOB_REPORT_ALONE": "1"}
+        environ = child_env(profile)
         if now:
             environ["JOB_SCANNER_EMAIL_WHEN_EMPTY"] = "1"
         environ["JOB_SCAN_MARKER"] = str(scan_marker(pid))
@@ -1732,6 +1831,8 @@ def tasks() -> list[dict]:
     letter and tailored CV requests. The Worker adds what it still holds itself (its queue and uncollected requests)."""
     found: list[dict] = []
     for profile in all_profiles():
+        if profile.get("owner"):
+            continue
         if task := report_task(profile):
             found.append(task)
         found += letter_tasks(profile["id"])
@@ -1812,7 +1913,7 @@ def others(script: str, args: list[str]) -> list[dict]:
 def spawn_others(script: str, args: list[str]) -> bool:
     """From the owner's run: start a background runner that runs `script` for every active extra profile once the
     owner's process has finished. No-op inside a profile's own run or when there are no extra profiles."""
-    if env("JOB_PROFILE_ID") or env("JOB_REPORT_ALONE") or script not in RUNNABLE or not others(script, args):
+    if env("JOB_PROFILE_ID") or script not in RUNNABLE or not others(script, args):
         return False
     log_file = PROFILES_DIR / "runs.log"
     if log_file.is_file() and log_file.stat().st_size > 2_000_000:
@@ -1914,7 +2015,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.list:
             for p in all_profiles():
-                recruiter = "owner" if p.get("owner") else p.get("recruiter") or "-"
+                recruiter = "staff" if p.get("owner") else p.get("recruiter") or "-"
                 print(f"{p['id']:<24} {p.get('status', ''):<7} {recruiter:<16} {p.get('name', '')} <{p.get('email', '')}>")
             return 0
         if args.assign:

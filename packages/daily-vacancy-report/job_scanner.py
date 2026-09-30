@@ -1115,9 +1115,7 @@ def main() -> int:
         if not held:
             log("Another scan is still running; skipping this one")
             return 0
-        if args.weekly or env("JOB_PROFILE_ID") or env("JOB_REPORT_ALONE"):
-            return run(args)
-        return profiles.reported(profiles.OWNER, lambda: run(args))
+        return run(args)
 
 
 def run(args: argparse.Namespace) -> int:
@@ -1126,6 +1124,8 @@ def run(args: argparse.Namespace) -> int:
     profile_id = env("JOB_PROFILE_ID", "") or ""
     if not (args.test_email or args.skills or args.remove_skill):
         profiles.spawn_others("job_scanner.py", sys.argv[1:])
+        if not args.dry_run and profiles.staff_run("job_scanner.py", full=True):
+            return 0
 
     if args.test_email:
         stats = {"when": when, "shown": 0, "strong": 0, "avg_fit": "-", "scanned": 0, "min_score": 0,
@@ -1150,10 +1150,6 @@ def run(args: argparse.Namespace) -> int:
         log(fb_error)
     if args.skills:
         print("\n".join(tracker.skills()) or "No skills added from the email yet.")
-        return 0
-    if profiles.owner_paused():
-        print("Your reports are paused (unsubscribe link or /admin); other profiles still run. "
-              "Resume with: python3 profiles.py --resume owner")
         return 0
     if args.weekly:
         return send_weekly(tracker, tz, args.dry_run)

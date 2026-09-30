@@ -480,6 +480,8 @@ def main(argv: list[str] | None = None) -> int:
     hc.set_model_priority(waiting=True)
     if not args.job:
         profiles.spawn_others("cover_letter.py", ["--dry-run"] if args.dry_run else [])
+        if not args.dry_run and profiles.staff_run("cover_letter.py"):
+            return 0
 
     def model_info():
         return connect_model("COVER_LETTER_MODEL" if env("COVER_LETTER_MODEL") else "JOB_SCANNER_MODEL")

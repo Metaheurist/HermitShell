@@ -66,22 +66,32 @@ def test_the_dashboard_cannot_set_process_or_path_settings(key):
 
 def test_a_dashboard_profile_change_can_only_set_its_own_fields(tmp_path, monkeypatch):
     monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
-    written = {}
-    monkeypatch.setattr(profiles, "update_dashboard_env", written.update)
+    monkeypatch.setattr(profiles, "update_dashboard_env", lambda updates: pytest.fail("a recruit changed the server"))
     monkeypatch.setattr(profiles, "save", lambda profile: None)
     monkeypatch.setattr(profiles, "profile_getter", lambda profile: lambda key, default=None: default)
-    monkeypatch.setattr(profiles, "owner_name", lambda: "Alex Morgan")
-    monkeypatch.setenv("ALERT_EMAIL", "alex@example.com")
-    profile = {"id": "owner", "owner": True}
+    profile = {"id": "sam-lee", "name": "Sam Lee", "email": "sam@example.com"}
     profiles.apply_profile_settings(profile, {
-        "details": {"location": HOSTILE, "status": "paused", "owner": False, "id": "../x"},
+        "details": {"location": HOSTILE, "status": "paused", "owner": True, "id": "../x"},
         "job": {"PATH": "/tmp", "JOB_SCANNER_QUERIES": "evil", "level": "wizard", "country": HOSTILE,
                 "titles": [HOSTILE] * 20}})
-    assert profile["id"] == "owner" and profile["owner"] is True and "status" not in profile
-    assert "PATH" not in written and not {k for k in written if k not in profiles.PROFILE_KEYS | {"COVER_LETTER_CONTACT"}}
+    written = profiles.read_json(tmp_path / "profiles" / "sam-lee" / "settings.json", {})
+    assert profile["id"] == "sam-lee" and "owner" not in profile and "status" not in profile
+    assert "PATH" not in written and not set(written) - profiles.PROFILE_KEYS
     assert written["JOB_LEVEL"] == "any" and written["JOB_SEARCH_COUNTRY"] == ""
     assert "evil" not in written["JOB_SCANNER_QUERIES"]
     assert len(written["JOB_TARGET_TITLES"].split("||")) == 1
+
+
+@pytest.mark.parametrize("action", ["profile", "cv", "send_now", "pause", "resume", "delete", "assign"])
+def test_the_dashboard_cannot_give_the_admin_a_job_search(tmp_path, monkeypatch, action):
+    monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
+    monkeypatch.setattr(profiles, "update_dashboard_env", lambda updates: pytest.fail("the admin's search was set"))
+    profiles.write_json(profiles.PROFILES_DIR / "owner" / "profile.json", {"id": "owner", "owner": True, "status": "active"})
+    with pytest.raises(profiles.ProfileError, match="staff"):
+        profiles.admin_action({"type": "admin", "action": action, "u": "owner", "job": {"titles": ["Evil"]},
+                               "report": {"time": "08:00"}, "cv_text": "x" * 300, "recruiter": "casey"})
+    assert profiles.load("owner") == {"id": "owner", "owner": True, "status": "active"}
+    assert not (profiles.PROFILES_DIR / "owner" / "settings.json").exists()
 
 
 def test_email_text_is_escaped():
@@ -239,19 +249,20 @@ def test_letters_are_kept_on_the_worker_only_over_https_with_the_api_token(tmp_p
 def test_stats_sent_to_the_worker_hold_no_notes_or_contact_details(tmp_path, monkeypatch):
     monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
     monkeypatch.setattr(profiles, "STATE_DIR", tmp_path / "state")
-    monkeypatch.setenv("COVER_LETTER_NAME", "Sam Lee")
-    monkeypatch.setenv("ALERT_EMAIL", "owner.alerts@example.org")
     profiles.write_json(profiles.PROFILES_DIR / "owner" / "profile.json", {"id": "owner", "owner": True})
-    with Tracker(tmp_path / "state" / "job_tracker.db") as tracker:
+    profiles.write_json(profiles.PROFILES_DIR / "sam-lee" / "profile.json",
+                        {"id": "sam-lee", "name": "Sam Lee", "email": "sam.alerts@example.org"})
+    (tmp_path / "profiles" / "sam-lee" / "state").mkdir()
+    with Tracker(profiles.tracker_file("sam-lee")) as tracker:
         tracker.upsert_job("k1", {"title": "Engineer", "fit": 8, "employer": "Northwind", "url": "https://jobs.example.com/private",
-                                  "reasoning": "Candidate SAM LEE, sam@example.com, 07700 900 123, owner.alerts@example.org",
+                                  "reasoning": "Candidate SAM LEE, sam@example.com, 07700 900 123, sam.alerts@example.org",
                                   "about": "Apply to jobs@northwind.example", "listing": "Call 07700 900123"}, True)
         tracker.add_event("e1", "k1", "not_for_me", "my manager is there, text me on 07700 900123")
     sent = []
     profiles.push_stats(type("Api", (), {"stats": lambda self, pid, data: sent.append((pid, data))})())
     text = str(sent)
-    assert sent and sent[0][0] == "owner"
-    for private in ("sam@example.com", "SAM LEE", "Sam Lee", "07700", "manager", "owner.alerts", "jobs@northwind", "Call"):
+    assert [pid for pid, _ in sent] == ["sam-lee"], "the admin is staff and has no stats"
+    for private in ("sam@example.com", "SAM LEE", "Sam Lee", "07700", "manager", "sam.alerts", "jobs@northwind", "Call"):
         assert private not in text
     assert sent[0][1]["sent"][0]["more"]["reasoning"].startswith("Candidate [removed]")
     assert text.count("jobs.example.com") == 1 and sent[0][1]["sent"][0]["url"] == "https://jobs.example.com/private"
