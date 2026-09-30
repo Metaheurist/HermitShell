@@ -50,6 +50,7 @@ from hermes_common import (EMAIL_HEAD, STATE_DIR, connect_model, env, env_int, l
                            white_label)
 from job_tracker import REQUEST_ACTIONS, Tracker, secure_base, skills_text, sync_feedback
 from letter_pdf import cv_pdf, letter_pdf
+from writing_checks import PLACEHOLDER_RE, invented_titles
 
 hc.LOG_TAG = "cover_letter"
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -81,9 +82,6 @@ SYSTEM_PROMPT = (
     "appear in the candidate's CV: never invent employers, job titles, dates, numbers, qualifications, "
     "certifications or achievements, and never claim a skill the CV does not show. Output JSON only."
 )
-PLACEHOLDER_RE = re.compile(r"\[[^\]]{2,40}\]|\{[^}]{2,40}\}|<[^>]{2,40}>|\b(?:Lorem|XXX|TBC)\b")
-ROLE_RE = re.compile(r"\b[Aa]s (?:(?:an?|the|my) )?(?:(?:former|current) )?"
-                     r"([A-Z][\w/&+-]*(?: (?:[A-Z][\w/&+-]*|of|and|&))*) at [A-Z]")
 
 
 # --------------------------------------------------------------------------- inputs
@@ -166,18 +164,11 @@ def letter_prompt(job: dict, profile: str, listing: str, note: str) -> str:
     )
 
 
-def invented_titles(paragraphs: list[str], profile: str) -> list[str]:
-    """Job titles the letter claims ("as an X at Y") that the CV never uses."""
-    cv = " ".join(profile.lower().split())
-    titles = dict.fromkeys(m.group(1) for p in paragraphs for m in ROLE_RE.finditer(p))
-    return [title for title in titles if title.lower() not in cv]
-
-
 def write_letter(host: str, model: str, num_ctx: int | None, job: dict, profile: str, listing: str,
                  note: str = "", tries: int = 2) -> list[str]:
     prompt = letter_prompt(job, profile, listing, note)
     for attempt in range(1, tries + 1):
-        reply = ollama_chat(host, model, SYSTEM_PROMPT, prompt, num_ctx, fmt=LETTER_SCHEMA, num_predict=1200)
+        reply = ollama_chat(host, model, SYSTEM_PROMPT, prompt, num_ctx, fmt=LETTER_SCHEMA, num_predict=1200, task="letter")
         paragraphs = [" ".join(str(p).split()) for p in json.loads(reply).get("paragraphs", []) if str(p).strip()]
         words = sum(len(p.split()) for p in paragraphs)
         if len(paragraphs) < 3 or words < 150:

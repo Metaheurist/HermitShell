@@ -10,7 +10,8 @@ Ollama. Each provider's model is <NAME>_MODEL, else its default: OpenRouter's an
 a small open model on Featherless and the cheapest provider of an open model on Hugging Face.
 
 What happened is kept in state/llm_providers.json (when each provider rests until and why, requests today and the
-last model that answered), never a key or a prompt. Only HTTPS is used and redirects are not followed.
+last model that answered), never a key or a prompt; the tokens each task used go to llm_usage.py. Only HTTPS is
+used and redirects are not followed.
 
     python3 llm_providers.py          which providers are set, their models and whether they are resting
 """
@@ -27,6 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import hermes_common as hc  # noqa: E402
+import llm_usage  # noqa: E402
 
 requests = hc.requests
 
@@ -192,8 +194,23 @@ def _content(resp) -> str:
     return _THINK.sub("", text).strip() if isinstance(text, str) else ""
 
 
-def ask(name: str, system: str, user: str, fmt: dict | None, num_predict: int, state: dict, now: float) -> str:
+def _count_tokens(task: str, resp, system: str, user: str, text: str, started: float, ok: bool) -> None:
+    """The tokens the provider says it used (prompt and reply), else an estimate from the text."""
+    try:
+        used = resp.json().get("usage") if len(resp.content) <= MAX_BYTES else None
+    except (ValueError, AttributeError):
+        used = None
+    used = used if isinstance(used, dict) else {}
+    known = isinstance(used.get("prompt_tokens"), int) and isinstance(used.get("completion_tokens"), int)
+    prompt, reply = ((used["prompt_tokens"], used["completion_tokens"]) if known
+                     else (llm_usage.estimate(system, user), llm_usage.estimate(text)))
+    llm_usage.record(task, prompt, reply, (time.monotonic() - started) * 1000, ok=ok, estimated=not known)
+
+
+def ask(name: str, system: str, user: str, fmt: dict | None, num_predict: int, state: dict, now: float,
+        task: str = "other") -> str:
     """One provider's answer, "" when it gave none (and it rests when the failure was the provider's)."""
+    started = time.monotonic()
     try:
         resp = _post(name, _body(name, system, user, fmt, num_predict, False))
         # Not every model behind a router supports structured output: ask again with the schema in the prompt.
@@ -202,6 +219,7 @@ def ask(name: str, system: str, user: str, fmt: dict | None, num_predict: int, s
     except requests.RequestException as exc:
         state[name]["rest_until"], state[name]["why"] = rest_for(0, "", "", now)
         _count(state, name, now, False)
+        llm_usage.record(task, 0, 0, (time.monotonic() - started) * 1000, ok=False)
         hc.log(f"{PROVIDERS[name]['label']} failed ({exc.__class__.__name__}); resting it for a few minutes")
         return ""
     if not resp.ok:
@@ -209,12 +227,13 @@ def ask(name: str, system: str, user: str, fmt: dict | None, num_predict: int, s
         if resp.status_code not in (400, 404, 422):
             state[name]["rest_until"], state[name]["why"] = until, why
         _count(state, name, now, False)
+        llm_usage.record(task, 0, 0, (time.monotonic() - started) * 1000, ok=False)
         hc.log(f"{PROVIDERS[name]['label']} answered HTTP {resp.status_code}"
                + (f"; resting it ({why})" if resp.status_code not in (400, 404, 422) else ""))
         return ""
-    text = _content(resp)
-    if fmt:
-        text = extract_json(text)
+    raw = _content(resp)
+    text = extract_json(raw) if fmt else raw
+    _count_tokens(task, resp, system, user, raw, started, bool(text))
     if not text:
         _count(state, name, now, False)
         hc.log(f"{PROVIDERS[name]['label']} gave no usable answer; trying the next model")
@@ -225,8 +244,10 @@ def ask(name: str, system: str, user: str, fmt: dict | None, num_predict: int, s
     return text
 
 
-def chat(system: str, user: str, fmt: dict | None = None, num_predict: int = 500) -> tuple[str, str, str] | None:
-    """(reply, provider, model) from the first cloud provider that answers, or None when none did."""
+def chat(system: str, user: str, fmt: dict | None = None, num_predict: int = 500,
+         task: str = "other") -> tuple[str, str, str] | None:
+    """(reply, provider, model) from the first cloud provider that answers, or None when none did; `task` is what
+    its tokens count towards (llm_usage.TASKS)."""
     names = configured()
     if not names:
         return None
@@ -236,7 +257,7 @@ def chat(system: str, user: str, fmt: dict | None = None, num_predict: int = 500
         for name in names:
             if resting(name, state, now):
                 continue
-            text = ask(name, system, user, fmt, num_predict, state, now)
+            text = ask(name, system, user, fmt, num_predict, state, now, task)
             if text:
                 return text, name, state[name]["last_model"]
         return None

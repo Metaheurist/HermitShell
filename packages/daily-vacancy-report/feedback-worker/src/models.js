@@ -93,6 +93,54 @@ and free models may keep what they are sent.</p>
 ${orderForm(llm, csrf, saving.order)}`;
 }
 
+// ------------------------------------------------------------------------- Global settings: tokens used
+
+export const TOKEN_TASKS = {
+  triage: "Title screening", rating: "Job ratings", verify: "Second opinions", brief: "Rating briefs",
+  summary: "Report summaries", profile: "Profiles from CVs", cv_read: "Reading CVs", evidence: "Evidence maps",
+  letter: "Cover letters", cv_tailor: "Tailored CVs", skills: "Skills added to CVs", other: "Other",
+};
+
+export function tokens(n) {
+  if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}k`;
+  return String(n);
+}
+
+function counts(c) {
+  const o = obj(c);
+  const n = (k) => whole(o[k], 2 ** 40) ?? 0;
+  return { calls: n("calls"), failed: n("failed"), in: n("in"), out: n("out"), avg: whole(o.avg_ms, 3_600_000) ?? 0, estimated: n("estimated") };
+}
+
+const seconds = (ms) => (ms >= 10000 ? `${Math.round(ms / 1000)}s` : `${(ms / 1000).toFixed(1)}s`);
+
+// What each task sent to the models and got back (llm_usage.py): today and over the last days HermitShell reports.
+export function usageSection(status) {
+  const usage = obj(status.usage);
+  const days = whole(usage.days, 31) || 7;
+  const rows = (Array.isArray(usage.tasks) ? usage.tasks : []).slice(0, 20).map(obj)
+    .filter((r) => Object.hasOwn(TOKEN_TASKS, r.task))
+    .map((r) => ({ task: r.task, today: counts(r.today), period: counts(r.period) }))
+    .filter((r) => r.period.calls);
+  const intro = `<h2 id="usage">Model tokens used</h2>
+<p class="muted">What each task sent to the models and got back over the last ${days} days, for every recruit together. Fewer tokens a
+request means quicker answers and more of a free allowance left. A <b>~</b> marks counts estimated from the text where a provider didn&rsquo;t say.</p>`;
+  if (!rows.length) return `<div class="usage">${intro}<p class="muted small">No model requests counted yet.</p></div>`;
+  const total = rows.reduce((sum, r) => sum + r.period.in + r.period.out, 0) || 1;
+  const body = rows.map(({ task, today, period: p }) => {
+    const all = p.in + p.out;
+    const approx = p.estimated ? "~" : "";
+    const failed = p.failed ? ` <span class="mrest">${p.failed} failed</span>` : "";
+    return `<tr><th scope="row">${esc(TOKEN_TASKS[task])}<div class="ubar" aria-hidden="true"><i style="width:${Math.max(2, Math.round((100 * all) / total))}%"></i></div></th>
+<td>${today.calls} <span class="muted">/ ${p.calls}</span>${failed}</td><td>${approx}${tokens(p.in)}</td><td>${approx}${tokens(p.out)}</td>
+<td><b>${approx}${tokens(Math.round(all / p.calls))}</b></td><td>${seconds(p.avg)}</td></tr>`;
+  }).join("");
+  return `<div class="usage">${intro}<div class="utable"><table><thead><tr><th scope="col">Task</th><th scope="col">Requests <span class="muted">today / ${days} days</span></th>
+<th scope="col">Tokens in</th><th scope="col">Tokens out</th><th scope="col">A request</th><th scope="col">Time</th></tr></thead>
+<tbody>${body}</tbody></table></div></div>`;
+}
+
 export function modelModals(csrf) {
   const defaults = Object.values(MODEL_PROVIDERS).map((p) => `${esc(p.label)} <code>${esc(p.model)}</code>`).join(", ");
   return Object.keys(MODEL_PROVIDERS).map((current) => {
@@ -129,6 +177,14 @@ code.mname{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;co
 .morder{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:6px 0 4px}.morder .crchoices{flex:1;min-width:260px;margin:0}
 .morder .crchoice span{align-items:flex-start}.mtext{font-style:normal}
 .morder .crchoice small{display:block;font-size:12px;color:var(--muted);font-weight:500}
+.utable{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:#fff}
+.utable table{width:100%;border-collapse:collapse;font-size:13px}
+.utable th,.utable td{padding:9px 12px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+.utable tr:last-child th,.utable tr:last-child td{border-bottom:0}
+.utable thead th{font-size:12px;color:var(--muted);font-weight:650;background:#fafbff}
+.utable th:first-child{text-align:left;min-width:150px}.utable tbody th{font-weight:650}
+.ubar{height:4px;margin-top:5px;border-radius:99px;background:#eef0f7;overflow:hidden;max-width:160px}
+.ubar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#6366f1,#8b5cf6);animation:fill .6s var(--ease) both}
 `;
 
 // ------------------------------------------------------------------------- the admin's server panel

@@ -54,6 +54,7 @@ import hermes_common as hc
 import job_settings
 import key_usage
 import llm_providers
+import llm_usage
 import money
 import profile_stats
 import worker_link
@@ -369,7 +370,7 @@ def ask_model(cv: str, item: dict, model_info) -> dict:
     user = (f"CV:\n{cv[:MAX_CV_CHARS]}\n\nROLES THEY WANT: {item.get('roles', '')}\n"
             f"WHERE THEY LIVE: {item.get('location') or 'not given'}\n\n{BUILD_TASK}")
     raw = ollama_chat(host, model, BUILD_SYSTEM, user, hc.fit_ctx(num_ctx, BUILD_SYSTEM, user, num_predict=1800),
-                      fmt=PROFILE_SCHEMA, num_predict=1800)
+                      fmt=PROFILE_SCHEMA, num_predict=1800, task="profile")
     try:
         return clean_build(json.loads(raw), item.get("roles", ""))
     except ValueError as exc:
@@ -1194,6 +1195,7 @@ def status_payload() -> dict:
     problems = [{"at": _ms(p["at"]), "what": p.get("what", ""), "error": p.get("error", "")} for p in recent_problems()]
     return {"profiles": profiles, "email": email, "keys": keys, "problems": problems, "timezone": timezone_name(),
             "scheduler": jobs is not None, "tasks": tasks(), "models": models_info(every), "llm": llm_info(),
+            "usage": llm_usage.summary(),
             "server": server_info(), "protocol": worker_link.PROTOCOL,
             "worker_protocol": worker_link.worker_protocol().get("protocol"), "seal": worker_seal.public_key()}
 
@@ -1241,9 +1243,9 @@ def server_info() -> dict:
 
 
 def _stable(payload: dict) -> dict:
-    """The status without what changes by itself (the server's load, requests counted, the model that answered
-    last), so those alone send it at most every STATUS_EVERY seconds."""
-    stable = {k: v for k, v in payload.items() if k != "server"}
+    """The status without what changes by itself (the server's load, requests and tokens counted, the model that
+    answered last), so those alone send it at most every STATUS_EVERY seconds."""
+    stable = {k: v for k, v in payload.items() if k not in ("server", "usage")}
     if isinstance(payload.get("llm"), dict):
         llm = payload["llm"]
         stable["llm"] = {k: v for k, v in llm.items() if k not in ("last", "local")} | {"local": llm["local"].get("model")}

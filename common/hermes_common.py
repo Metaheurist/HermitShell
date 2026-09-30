@@ -922,20 +922,21 @@ def _free_model_slot(fcntl, slots: int) -> tuple[int, int] | None:
 
 
 def ollama_chat(host: str, model: str, system: str, user: str, num_ctx: int | None,
-                fmt: dict | None = None, num_predict: int = 500) -> str:
+                fmt: dict | None = None, num_predict: int = 500, task: str = "other") -> str:
     """One chat request: to the cloud models when a key is set (llm_providers.py), else or when none of them
-    answers to the local Ollama (host "" means there is none). LLM_ORDER=local asks Ollama first."""
+    answers to the local Ollama (host "" means there is none). LLM_ORDER=local asks Ollama first. `task` is what
+    the request's tokens count towards (llm_usage.TASKS)."""
     import llm_providers
     cloud = bool(llm_providers.configured())
     if cloud and (not host or not llm_providers.local_first()):
-        if (found := llm_providers.chat(system, user, fmt, num_predict)) is not None:
+        if (found := llm_providers.chat(system, user, fmt, num_predict, task)) is not None:
             return _tidy(found[0], fmt)
     if not host:
         raise requests.ConnectionError("no cloud model answered and there is no local Ollama")
     try:
-        content = _ollama_request(host, model, system, user, num_ctx, fmt, num_predict)
+        content = _ollama_request(host, model, system, user, num_ctx, fmt, num_predict, task)
     except requests.RequestException:
-        if cloud and llm_providers.local_first() and (found := llm_providers.chat(system, user, fmt, num_predict)):
+        if cloud and llm_providers.local_first() and (found := llm_providers.chat(system, user, fmt, num_predict, task)):
             return _tidy(found[0], fmt)
         raise
     llm_providers.used_local(model)
@@ -952,8 +953,26 @@ def _tidy(content: str, fmt: dict | None) -> str:
 
 
 def _ollama_request(host: str, model: str, system: str, user: str, num_ctx: int | None,
-                    fmt: dict | None, num_predict: int) -> str:
+                    fmt: dict | None, num_predict: int, task: str = "other") -> str:
     """One chat request to Ollama, on the instance, context size and GPU/CPU split autofit picks (see autofit.py)."""
+    import llm_usage
+    started = time.monotonic()
+    try:
+        reply = _ollama_post(host, model, system, user, num_ctx, fmt, num_predict)
+    except requests.RequestException:
+        llm_usage.record(task, 0, 0, (time.monotonic() - started) * 1000, ok=False)
+        raise
+    content = reply["message"]["content"]
+    # prompt_eval_count leaves out the part of the prompt Ollama had cached, so it is the work really done.
+    known = isinstance(reply.get("eval_count"), int)
+    llm_usage.record(task, reply.get("prompt_eval_count") if known else llm_usage.estimate(system, user),
+                     reply["eval_count"] if known else llm_usage.estimate(content),
+                     (time.monotonic() - started) * 1000, estimated=not known)
+    return content
+
+
+def _ollama_post(host: str, model: str, system: str, user: str, num_ctx: int | None,
+                 fmt: dict | None, num_predict: int) -> dict:
     import autofit
     body = {"model": model, "stream": False, "keep_alive": "30m",
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
@@ -977,7 +996,7 @@ def _ollama_request(host: str, model: str, system: str, user: str, num_ctx: int 
             resp.raise_for_status()
         reply = resp.json()
         autofit.record(target, model, extra, reply)
-    return reply["message"]["content"]
+    return reply
 
 
 def plain_dashes(text: str) -> str:

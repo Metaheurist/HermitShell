@@ -1,0 +1,39 @@
+{
+  "cvs": {
+    "alex-morgan": {
+      "keywords": ["Azure", "Terraform", "Kubernetes", "Docker", "Python", "CI/CD", "GitHub Actions", "Linux", "Bash", "Prometheus", "Grafana", "PowerShell"],
+      "text": "# Alex Morgan\n\nName: Alex Morgan\nLocation: Belfast\n\n## Summary\n\nCloud engineer with 6 years in infrastructure and platform work, most recently running Azure estates for a payments company.\n\n## Experience\n\n### Cloud Engineer, Contoso Payments (March 2021 - present)\n- Built and maintain 40 Terraform modules used by 12 product teams on Azure.\n- Moved 18 services from virtual machines to Azure Kubernetes Service with zero customer downtime.\n- Run the GitHub Actions pipelines for the platform; cut average build time from 22 to 9 minutes.\n- On-call lead for the platform; wrote the incident runbooks and Grafana dashboards.\n\n### Systems Administrator, Northwind Traders (June 2018 - February 2021)\n- Looked after 150 Linux and Windows servers and the backup estate.\n- Automated user and patch management with PowerShell and Bash.\n- Set up Prometheus monitoring for the warehouse systems.\n\n## Projects\n\n- Homelab: a three-node Kubernetes cluster with Flux and Prometheus, documented on a personal blog.\n\n## Education\n\n- BSc Computing, Ulster University (2014 - 2018)\n\n## Certifications\n\n- Microsoft Certified: Azure Administrator Associate\n- HashiCorp Certified: Terraform Associate\n\n## Core skills\n\n- Azure, Terraform, Kubernetes, Docker, Python, CI/CD, GitHub Actions, Linux, Bash, PowerShell, Prometheus, Grafana\n"
+    },
+    "sam-lee": {
+      "keywords": ["SQL", "Python", "Power BI", "Excel", "pandas", "dbt", "Snowflake", "Tableau", "statistics", "A/B testing"],
+      "text": "# Sam Lee\n\nName: Sam Lee\nLocation: Manchester\n\n## Summary\n\nData analyst with 4 years turning retail and web data into reporting and experiments.\n\n## Experience\n\n### Data Analyst, Fabrikam Retail (January 2022 - present)\n- Own the weekly trading dashboards in Power BI, read by 60 store and category managers.\n- Built the dbt models on Snowflake behind finance and marketing reporting.\n- Designed and analysed 25 A/B tests on the website checkout.\n\n### Junior Analyst, Litware Insights (September 2020 - December 2021)\n- Cleaned and joined survey data in Python with pandas.\n- Produced client reports in Excel and Tableau.\n\n## Education\n\n- BSc Mathematics, University of Leeds (2017 - 2020)\n\n## Core skills\n\n- SQL, Python, pandas, Power BI, Excel, dbt, Snowflake, Tableau, statistics, A/B testing\n"
+    }
+  },
+  "listings": {
+    "proseware-platform": {
+      "title": "Senior Platform Engineer", "employer": "Proseware", "location": "Belfast (hybrid)", "source": "bench",
+      "url": "https://jobs.example.test/proseware-platform",
+      "text": "Proseware builds scheduling software for 900 clinics across the UK and Ireland. We are hiring a Senior Platform Engineer in Belfast, hybrid three days a week.\n\nYou will own our Azure landing zone and the Terraform that defines it, run our Kubernetes clusters, and improve the CI/CD pipelines our 8 product teams ship through.\n\nMust have: Azure, Terraform, Kubernetes, CI/CD pipelines (GitHub Actions or Azure DevOps), Linux.\nNice to have: Python, Prometheus and Grafana, on-call experience.\n\nSalary GBP 60,000 - 70,000.",
+      "requirements": ["Azure", "Terraform", "Kubernetes", "CI/CD pipelines", "Linux", "on-call"]
+    },
+    "fabrikam-analyst": {
+      "title": "Data Analyst", "employer": "Fabrikam Retail", "location": "Manchester", "source": "bench",
+      "url": "https://jobs.example.test/fabrikam-analyst",
+      "text": "Fabrikam Retail runs 140 stores. Our insight team is looking for a Data Analyst to build reporting and run experiments with our digital team.\n\nWhat you'll do: build Power BI dashboards, write SQL against our Snowflake warehouse, maintain dbt models, and design A/B tests.\n\nYou'll need strong SQL, Power BI, experience of experimentation and statistics, and Python for analysis.",
+      "requirements": ["SQL", "Power BI", "Snowflake", "dbt", "A/B tests", "Python"]
+    },
+    "northwind-nurse": {
+      "title": "Staff Nurse, Emergency Department", "employer": "Northwind Health", "location": "Belfast", "source": "bench",
+      "url": "https://jobs.example.test/northwind-nurse",
+      "text": "Northwind Health is recruiting a registered Staff Nurse for its Emergency Department. You must hold NMC registration and have at least one year of acute care experience. Band 5, shift work including nights.",
+      "requirements": ["NMC registration", "acute care", "shift work"]
+    }
+  },
+  "cases": [
+    {"cv": "alex-morgan", "listing": "proseware-platform", "fit": [7, 10]},
+    {"cv": "alex-morgan", "listing": "fabrikam-analyst", "fit": [0, 4]},
+    {"cv": "alex-morgan", "listing": "northwind-nurse", "fit": [0, 2]},
+    {"cv": "sam-lee", "listing": "fabrikam-analyst", "fit": [7, 10]},
+    {"cv": "sam-lee", "listing": "proseware-platform", "fit": [0, 4]}
+  ]
+}

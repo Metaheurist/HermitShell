@@ -3,7 +3,7 @@
 #
 #   HERMITSHELL_HOME=/opt/hermitshell ./scripts/install.sh daily-vacancy-report
 #
-# Copies the shared hermes_common.py, autofit.py, doctor.py, llm_providers.py, scheduler.py, worker_link.py and worker_seal.py plus each package's files flat into
+# Copies the shared hermes_common.py, autofit.py, doctor.py, llm_providers.py, llm_usage.py, scheduler.py, worker_link.py and worker_seal.py plus each package's files flat into
 # $HERMITSHELL_HOME/scripts, where the scheduler runs them from; each package's jobs.json becomes
 # <package>.jobs.json, its standard schedule. Existing personal files (job_profile.md, cv_keywords.json, .env) are
 # never overwritten. Set HERMITSHELL_OWNER=uid:gid to chown the result. HERMES_HOME and HERMES_OWNER, from installs
@@ -24,10 +24,10 @@ if [ "$#" -eq 0 ]; then
 fi
 
 mkdir -p "$DEST"
-for f in hermes_common.py autofit.py doctor.py llm_providers.py scheduler.py worker_link.py worker_seal.py; do
+for f in hermes_common.py autofit.py doctor.py llm_providers.py llm_usage.py scheduler.py worker_link.py worker_seal.py; do
     cp "$REPO/common/$f" "$DEST/"
 done
-echo "installed common/hermes_common.py, autofit.py, doctor.py, llm_providers.py, scheduler.py, worker_link.py and worker_seal.py -> $DEST"
+echo "installed common/hermes_common.py, autofit.py, doctor.py, llm_providers.py, llm_usage.py, scheduler.py, worker_link.py and worker_seal.py -> $DEST"
 
 for pkg in "$@"; do
     src="$REPO/packages/$pkg"

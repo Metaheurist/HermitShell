@@ -10,7 +10,7 @@ import { PROTOCOL } from "./apiauth.js";
 import { sealInfo, sealItem } from "./seal.js";
 import { BACK_TO_RECRUITS, CSP, SECURITY_HEADERS, ago, esc, limitedForm, note, page, redirect, reloadTo, safeEqual, waitBar, waitRefresh, when } from "./lib.js";
 import { KEY_STYLE, MODAL_STYLE, PROVIDERS, keyModals, keysSection } from "./keys.js";
-import { MODEL_KEY_RE, MODEL_PROVIDERS, MODEL_RE, MODEL_STYLE, modelModals, modelsSection } from "./models.js";
+import { MODEL_KEY_RE, MODEL_PROVIDERS, MODEL_RE, MODEL_STYLE, modelModals, modelsSection, usageSection } from "./models.js";
 import { LINK_STYLE, STATS_URL, icon } from "./stats.js";
 import { profileTabs } from "./history.js";
 
@@ -173,6 +173,7 @@ and CV are on their own page under <a href="/admin">Recruits</a>.</p>
 ${emailSection({ ...status, email: pendingEmail(status.email || {}, queue) }, csrf)}
 ${keysSection(status, csrf, savingKeys(waiting))}
 ${modelsSection(status, csrf, savingModels(waiting))}
+${usageSection(status)}
 ${demo}`, { wide: true, before: keyModals(csrf) + modelModals(csrf), refresh, refreshTo });
 }
 

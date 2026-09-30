@@ -833,11 +833,22 @@ def test_the_server_load_and_request_counts_alone_do_not_resend_the_status(home,
         payload["server"]["load"] = 99.0
         payload["llm"]["last"] = {"provider": "ollama", "model": "m", "at": 1}
         payload["models"]["openrouter"]["today"] = 42
+        payload["usage"] = {"days": 7, "tasks": [{"task": "rating", "period": {"calls": 9}}]}
         return payload
 
     monkeypatch.setattr(profiles, "status_payload", busier)
     profiles.push_status(api)
     assert len(api.statuses) == 1
+
+
+def test_status_carries_the_tokens_each_task_used(home, monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_USAGE_FILE", str(tmp_path / "usage.json"))
+    profiles.ensure_owner()
+    assert profiles.status_payload()["usage"]["tasks"] == []
+    profiles.llm_usage.record("letter", 5200, 640, 15000)
+    usage = profiles.status_payload()["usage"]
+    assert usage["days"] == 7 and usage["tasks"][0]["task"] == "letter"
+    assert usage["tasks"][0]["today"]["in"] == 5200 and usage["tasks"][0]["period"]["out"] == 640
 
 
 def test_status_is_only_pushed_when_it_changes(home, monkeypatch):

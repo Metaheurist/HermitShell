@@ -162,7 +162,7 @@ def triage_titles(host: str, model: str, num_ctx: int | None, profile: str, titl
                 "Return every index exactly once.")
         try:
             data = json.loads(ollama_chat(host, model, "You screen job titles for a candidate. JSON only.", user,
-                                          num_ctx, TRIAGE_SCHEMA, num_predict=80 + 20 * len(chunk)))
+                                          num_ctx, TRIAGE_SCHEMA, num_predict=80 + 20 * len(chunk), task="triage"))
             for item in data.get("verdicts", []):
                 i = int(item.get("i", -1))
                 if 0 <= i < len(chunk) and item.get("v") in ("yes", "maybe", "no"):
@@ -190,7 +190,7 @@ def second_opinion(host: str, model: str, num_ctx: int | None, profile: str, tit
             "matching seniority. Return your own fit_score (0-10) and a one-sentence reason.")
     try:
         data = json.loads(ollama_chat(host, model, "You are a sceptical hiring manager. JSON only.", user,
-                                      num_ctx, VERIFY_SCHEMA, num_predict=200))
+                                      num_ctx, VERIFY_SCHEMA, num_predict=200, task="verify"))
         return max(0, min(10, int(data["fit_score"])))
     except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
         log(f"second opinion failed for {title[:50]}: {exc.__class__.__name__}")

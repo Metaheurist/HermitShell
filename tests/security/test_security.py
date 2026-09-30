@@ -758,6 +758,24 @@ def test_model_keys_never_reach_the_state_status_or_logs(monkeypatch, tmp_path, 
     assert not any(k in text or k[:-4] in text for k in model_keys.values())
 
 
+def test_the_token_ledger_holds_only_counts_and_cannot_be_moved_from_the_dashboard(monkeypatch, tmp_path, model_keys):
+    import llm_providers
+    import llm_usage
+
+    ledger = tmp_path / "usage.json"
+    monkeypatch.setenv("HERMES_USAGE_FILE", str(ledger))
+    monkeypatch.setattr(llm_providers.requests, "post", lambda *a, **k: _ModelReply(
+        {"model": "vendor/secret-model", "choices": [{"message": {"content": "Alex Morgan: strong fit"}}],
+         "usage": {"prompt_tokens": 10, "completion_tokens": 2}}, 200))
+    llm_providers.chat("system prompt", "Alex Morgan's CV and alex@example.com", task="<script>")
+    text = ledger.read_text()
+    assert not any(k in text or k[:-4] in text for k in model_keys.values())
+    for private in ("Alex", "example.com", "secret-model", "system prompt", "<script>"):
+        assert private not in text
+    assert list(llm_usage.load()["days"].popitem()[1]) == ["other"]
+    assert not hc.dashboard_key_allowed("HERMES_USAGE_FILE") and not hc.dashboard_key_allowed("LLM_USAGE_FILE")
+
+
 def test_model_settings_from_the_dashboard_are_limited_to_model_names(monkeypatch):
     for allowed in ("OPENROUTER_API_KEY", "HUGGINGFACE_MODEL", "LLM_ORDER"):
         assert hc.dashboard_key_allowed(allowed)

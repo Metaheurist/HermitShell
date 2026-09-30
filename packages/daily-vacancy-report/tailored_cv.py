@@ -20,14 +20,14 @@ import profiles
 from hermes_common import STATE_DIR, env, fit_ctx, log, ollama_chat
 from job_settings import term_regex
 from job_tracker import Tracker
+from writing_checks import honest
+from writing_checks import numbers as _numbers
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 MASTER_FILE = STATE_DIR / "cv.json"
 MERGED_FILE = STATE_DIR / "cv_skills_merged.json"
 MAX_SOURCE_CHARS = 14_000
 MAX_SKILLS = 16
-PLACEHOLDER_RE = re.compile(r"\[[^\]]{2,40}\]|\{[^}]{2,40}\}|<[^>]{2,40}>|\b(?:Lorem|XXX|TBC)\b")
-NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)*")
 
 _STR = {"type": "string"}
 MASTER_SCHEMA = {
@@ -74,15 +74,6 @@ def _clean(text) -> str:
 
 def _norm(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
-
-
-def _numbers(text: str) -> set[str]:
-    return {n.replace(",", "") for n in NUMBER_RE.findall(text)}
-
-
-def honest(text: str, source: str) -> bool:
-    """No placeholders, and every figure in the text also appears in the source."""
-    return not PLACEHOLDER_RE.search(text) and _numbers(text) <= _numbers(source)
 
 
 # --------------------------------------------------------------------------- the structured master copy
@@ -145,7 +136,7 @@ def build_master(source: str, model_info) -> dict:
     prompt = (f"CV:\n{source}\n\nCopy this CV into the JSON fields. Bullets are the CV's own achievement and "
               "responsibility lines for each role, most important first.")
     raw = ollama_chat(host, model, MASTER_SYSTEM, prompt, fit_ctx(num_ctx, MASTER_SYSTEM, prompt, num_predict=3000),
-                      fmt=MASTER_SCHEMA, num_predict=3000)
+                      fmt=MASTER_SCHEMA, num_predict=3000, task="cv_read")
     try:
         return clean_master(json.loads(raw), source)
     except ValueError as exc:
@@ -228,7 +219,7 @@ def tailored_cv(master: dict, job: dict, listing: str, note: str, model_info) ->
     host, model, num_ctx = model_info
     prompt = tailor_prompt(master, job, listing, note)
     raw = ollama_chat(host, model, TAILOR_SYSTEM, prompt, fit_ctx(num_ctx, TAILOR_SYSTEM, prompt, num_predict=2200),
-                      fmt=TAILOR_SCHEMA, num_predict=2200)
+                      fmt=TAILOR_SCHEMA, num_predict=2200, task="cv_tailor")
     try:
         data = json.loads(raw)
     except ValueError as exc:
@@ -286,7 +277,7 @@ def merge_with_model(text: str, skills: list[str], model_info) -> str:
               "skills, in the same style as the other entries.")
     budget = len(section) // 2 + 60 * len(skills) + 200
     edited = ollama_chat(host, model, MERGE_SYSTEM, prompt, fit_ctx(num_ctx, prompt, num_predict=budget),
-                         num_predict=budget).strip()
+                         num_predict=budget, task="skills").strip()
     edited = re.sub(r"^```(?:markdown|md)?\n|\n```$", "", edited).strip("\n")
     if not edited or edited.splitlines()[0].strip() != lines[span[0]].strip() or not merged_ok(section, edited, skills):
         return ""

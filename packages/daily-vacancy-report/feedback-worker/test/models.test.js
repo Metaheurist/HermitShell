@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import worker from "../src/index.js";
-import { MODEL_PROVIDERS, modelModals, modelsSection, serverBox } from "../src/models.js";
+import { MODEL_PROVIDERS, TOKEN_TASKS, modelModals, modelsSection, serverBox, tokens, usageSection } from "../src/models.js";
 import { BASE, sealingKeys, testEnv, valuesWith } from "./helpers.js";
 
 const CLOUD_ICON = '<path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.7 4.7 0 0 0 7 18.5Z"/>';
@@ -172,5 +172,44 @@ describe("the admin's server panel", () => {
     const html = serverBox({ profiles: [] });
     expect(html).toContain("HermitShell hasn&rsquo;t reported the machine yet.");
     expect(html).toContain("not reported yet");
+  });
+});
+
+const USAGE = { days: 7, since: "2026-09-24", tasks: [
+  { task: "rating", label: "ignored", today: { calls: 10, failed: 0, in: 20000, out: 3000, avg_ms: 4000, estimated: 0 },
+    period: { calls: 60, failed: 2, in: 120000, out: 18000, avg_ms: 4200, estimated: 0 } },
+  { task: "letter", today: { calls: 0, failed: 0, in: 0, out: 0, avg_ms: 0, estimated: 0 },
+    period: { calls: 3, failed: 0, in: 16500, out: 1800, avg_ms: 15000, estimated: 1 } },
+] };
+
+describe("model tokens used in Global settings", () => {
+  it("shows each task's requests, tokens in and out, tokens a request and time, with its share as a bar", async () => {
+    const { settings } = await setup({ ...STATUS, usage: USAGE });
+    const section = settings.slice(settings.indexOf('<h2 id="usage">'));
+    expect(section).toContain("over the last 7 days");
+    const rating = section.split("<tr>").find((r) => r.includes("Job ratings"));
+    expect(rating).toContain('10 <span class="muted">/ 60</span> <span class="mrest">2 failed</span>');
+    expect(rating).toContain("<td>120k</td><td>18k</td>");
+    expect(rating).toContain("<b>2.3k</b>");
+    expect(rating).toContain("<td>4.2s</td>");
+    expect(rating).toMatch(/class="ubar" aria-hidden="true"><i style="width:88%">/);
+    const letter = section.split("<tr>").find((r) => r.includes("Cover letters"));
+    expect(letter).toContain("<td>~17k</td><td>~1.8k</td>");
+    expect(letter).toContain("<td>15s</td>");
+    expect(section).not.toContain("ignored");
+  });
+
+  it("says so before anything is counted", () => {
+    expect(usageSection({})).toContain("No model requests counted yet.");
+    expect(usageSection({ usage: { tasks: [{ task: "rating", period: { calls: 0 } }] } })).toContain("No model requests counted yet.");
+  });
+
+  it("writes big numbers short", () => {
+    expect([tokens(950), tokens(1250), tokens(12500), tokens(1_250_000), tokens(25_000_000)]).toEqual(["950", "1.3k", "13k", "1.3M", "25M"]);
+  });
+
+  it("only knows the tasks HermitShell counts", () => {
+    expect(Object.keys(TOKEN_TASKS)).toEqual(["triage", "rating", "verify", "brief", "summary", "profile", "cv_read",
+      "evidence", "letter", "cv_tailor", "skills", "other"]);
   });
 });

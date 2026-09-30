@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import worker, { sign } from "../src/index.js";
 import { record } from "../src/history.js";
 import { today } from "../src/lib.js";
+import { usageSection } from "../src/models.js";
 import { BASE, memoryHub, sealingKeys, testEnv, valuesWith } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
@@ -1024,5 +1025,22 @@ describe("the admin is staff, not a recruit", () => {
         body: JSON.stringify({ profiles: [{ ...STAFF, recruit }] }) }), env);
       expect([...env.FEEDBACK.store.keys()].filter((k) => k.startsWith("history:")), String(recruit)).toHaveLength(1);
     }
+  });
+});
+
+describe("model tokens from HermitShell's status", () => {
+  it("shows no markup, unknown task or impossible number from a tampered status", () => {
+    const bad = { calls: HOSTILE, failed: -4, in: 1e99, out: "12", avg_ms: Infinity, estimated: NaN };
+    const html = usageSection({ usage: { days: HOSTILE, tasks: [
+      { task: HOSTILE, today: bad, period: { calls: 5, in: 10, out: 10 } },
+      { task: "__proto__", period: { calls: 5 } },
+      { task: "rating", label: HOSTILE, today: bad, period: { calls: 3, failed: HOSTILE, in: 900, out: 300, avg_ms: HOSTILE } },
+      ...Array.from({ length: 40 }, () => ({ task: "letter", period: { calls: 1, in: 1, out: 1 } })),
+    ] } });
+    expect(html).not.toMatch(/<script|<img|onerror/);
+    expect(html).toContain("Job ratings");
+    expect(html).toContain('0 <span class="muted">/ 3</span></td><td>900</td><td>300</td>');
+    expect(html).toContain("over the last 7 days");
+    expect(html.match(/Cover letters/g)).toHaveLength(17);
   });
 });

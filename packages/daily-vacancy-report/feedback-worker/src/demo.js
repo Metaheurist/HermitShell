@@ -303,6 +303,14 @@ function statusOf(now) {
       local: { model: "qwen3:30b-a3b-instruct-2507-q4_K_M", suggested: "qwen3:30b-a3b-instruct-2507-q4_K_M", where: "16384 context, on the GPU",
         level: "normal", seconds: 9.8 },
       last: { provider: "ollama", model: "qwen3:30b-a3b-instruct-2507-q4_K_M", at: now - 3 * 60000 } },
+    usage: { days: 7, since: isoDay(now - 6 * DAY), tasks: [
+      { task: "triage", today: { calls: 6, failed: 0, in: 5400, out: 1900, avg_ms: 2100, estimated: 0 }, period: { calls: 41, failed: 0, in: 37800, out: 13100, avg_ms: 2300, estimated: 0 } },
+      { task: "rating", today: { calls: 64, failed: 1, in: 131000, out: 20500, avg_ms: 4200, estimated: 0 }, period: { calls: 402, failed: 3, in: 820000, out: 129000, avg_ms: 4400, estimated: 12 } },
+      { task: "verify", today: { calls: 5, failed: 0, in: 7200, out: 600, avg_ms: 1800, estimated: 0 }, period: { calls: 29, failed: 0, in: 41800, out: 3500, avg_ms: 1900, estimated: 0 } },
+      { task: "summary", today: { calls: 3, failed: 0, in: 1500, out: 420, avg_ms: 1500, estimated: 0 }, period: { calls: 19, failed: 0, in: 9500, out: 2700, avg_ms: 1600, estimated: 0 } },
+      { task: "letter", today: { calls: 2, failed: 0, in: 11800, out: 1300, avg_ms: 14800, estimated: 0 }, period: { calls: 9, failed: 0, in: 53100, out: 5900, avg_ms: 15200, estimated: 0 } },
+      { task: "cv_tailor", today: { calls: 1, failed: 0, in: 4700, out: 1450, avg_ms: 16900, estimated: 0 }, period: { calls: 5, failed: 0, in: 23400, out: 7200, avg_ms: 17300, estimated: 0 } },
+    ] },
     server: { cpu: { model: "AMD Ryzen 9 7950X", cores: 32 }, load: 4.1, ram_mb: { total: 65536, available: 38000 },
       gpus: [{ name: "NVIDIA GeForce RTX 4090", vram_mb: 24576, free_mb: 6100 }], disk_mb: { total: 1907000, free: 1210000 } },
     tasks: [

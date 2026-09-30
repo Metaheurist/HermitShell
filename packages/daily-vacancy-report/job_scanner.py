@@ -597,7 +597,7 @@ def rate_job(host: str, model: str, num_ctx: int | None, profile: str, cv_keywor
     for num_predict in (900, 1600):
         try:
             data = json.loads(ollama_chat(host, model, SYSTEM_PROMPT, user, num_ctx, SCORE_SCHEMA,
-                                          num_predict=num_predict))
+                                          num_predict=num_predict, task="rating"))
             data["fit_score"] = max(0, min(10, int(data.get("fit_score", 0))))
             data["confidence"] = max(0, min(100, int(data.get("confidence", 0))))
             data["reasoning"] = first_sentences(str(data.get("reasoning", "")), 2)
@@ -652,7 +652,7 @@ def hermes_summary(host: str, model: str, num_ctx: int | None, jobs: list[dict])
             "Plain text, no lists, no greeting.")
     try:
         return ollama_chat(host, model, "You are HermitShell, a concise career assistant.", user,
-                           num_ctx, num_predict=180).strip()
+                           num_ctx, num_predict=180, task="summary").strip()
     except requests.RequestException as exc:
         log(f"summary failed: {exc.__class__.__name__}")
         return ""

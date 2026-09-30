@@ -160,6 +160,14 @@ const STATUS = {
     local: { model: "qwen3:4b-instruct-2507-q4_K_M", suggested: "qwen3:4b-instruct-2507-q4_K_M", where: "8192 context, on the GPU",
       level: "normal", seconds: 14.2 },
     last: { provider: "openrouter", model: "meta-llama/llama-3.3-70b-instruct:free", at: now - 6 * 60000 } },
+  usage: { days: 7, since: new Date(now - 6 * day).toISOString().slice(0, 10), tasks: [
+    { task: "triage", today: { calls: 6, failed: 0, in: 5400, out: 1900, avg_ms: 2100, estimated: 0 }, period: { calls: 41, failed: 0, in: 37800, out: 13100, avg_ms: 2300, estimated: 0 } },
+    { task: "rating", today: { calls: 64, failed: 1, in: 131000, out: 20500, avg_ms: 4200, estimated: 0 }, period: { calls: 402, failed: 3, in: 820000, out: 129000, avg_ms: 4400, estimated: 0 } },
+    { task: "verify", today: { calls: 5, failed: 0, in: 7200, out: 600, avg_ms: 1800, estimated: 0 }, period: { calls: 29, failed: 0, in: 41800, out: 3500, avg_ms: 1900, estimated: 0 } },
+    { task: "summary", today: { calls: 3, failed: 0, in: 1500, out: 420, avg_ms: 1500, estimated: 0 }, period: { calls: 19, failed: 0, in: 9500, out: 2700, avg_ms: 1600, estimated: 0 } },
+    { task: "letter", today: { calls: 2, failed: 0, in: 11800, out: 1300, avg_ms: 14800, estimated: 2 }, period: { calls: 9, failed: 0, in: 53100, out: 5900, avg_ms: 15200, estimated: 9 } },
+    { task: "cv_tailor", today: { calls: 1, failed: 0, in: 4700, out: 1450, avg_ms: 16900, estimated: 0 }, period: { calls: 5, failed: 0, in: 23400, out: 7200, avg_ms: 17300, estimated: 0 } },
+  ] },
   server: { cpu: { model: "AMD Ryzen 7 5700G", cores: 16 }, load: 3.4, ram_mb: { total: 32768, available: 19000 },
     gpus: [{ name: "NVIDIA GeForce RTX 3060", vram_mb: 12288, free_mb: 7400 }], disk_mb: { total: 953000, free: 512000 } },
   problems: [],
@@ -306,7 +314,10 @@ await save("admin-settings-key-usage", new Response((await (await admin("/admin/
 // The AI model keys, OpenRouter's card pressed open, and the modal that adds one.
 await save("admin-settings-models", new Response((await (await admin("/admin/settings")).text())
   .replace('<details class="keycard cr-openrouter">', '<details class="keycard cr-openrouter" open>')
-  .replace("</head>", "<style>main>:not(.eyebrow):not(h1):not(#models):not(#models~*){display:none!important}</style></head>")));
+  .replace("</head>", "<style>main>:not(.eyebrow):not(h1):not(#models):not(#models~*),main>.usage{display:none!important}</style></head>")));
+// The tokens each task used over the last week.
+await save("admin-settings-usage", new Response((await (await admin("/admin/settings")).text())
+  .replace("</head>", "<style>main>:not(.eyebrow):not(h1):not(.usage){display:none!important}</style></head>")));
 await save("admin-model-key-modal", await withOpenModal("/admin/settings", "mkey-openrouter"));
 // The server button's panel, as hovering over it shows it.
 await save("admin-server-panel", new Response((await (await admin("/admin")).text())
