@@ -474,12 +474,14 @@ older and how to update it ([why](feedback-worker.md#how-it-stays-safe)).
 
 | Control | What it does |
 | --- | --- |
-| **Demo mode** switch | Admins only; shows Off, or On and since when. Every dashboard page shows a made-up desk for everyone signed in; presses work but save nothing and reach neither KV nor HermitShell ([more](feedback-worker.md#demo-mode)) |
+| **Demo mode** switch | Admins only; shows Off, or On and since when. Every dashboard page shows a made-up desk for everyone signed in; presses play out on it (letters and CVs get made, skills added, recruits paused) but reach neither the real data nor HermitShell ([more](feedback-worker.md#demo-mode)) |
 | Demo mode ribbon | At the foot of every page while it is on; admins get a **Turn off** link |
 
 <img src="images/worker/admin-dashboard-demo.png" alt="The recruits list in demo mode with made-up recruits and the ribbon" width="620">
 
 <img src="images/worker/admin-stats-demo.png" alt="A made-up recruit's stats page in demo mode" width="620">
+
+<img src="images/worker/admin-sent-demo.png" alt="A made-up job opened in demo mode: the cover letter asked for earlier made and ready to download, the Terraform skill added, and the tailored CV asked for just now being made" width="620">
 
 ### A recruit's page
 

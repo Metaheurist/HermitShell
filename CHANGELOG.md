@@ -8,6 +8,13 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Demo mode presses play out.** In demo mode a pretend HermitShell now does what a press asks for, a
+  few seconds later, on the made-up data only: **Generate** on a cover letter or tailored CV shows
+  **Being made&hellip;** and then a made-up PDF to download, **Send** turns into **Emailed**, a missing skill goes
+  from **adding** to **added**, and pausing, resuming, assigning, deleting, **Send now** (a short pretend
+  scan) and stopping tasks all land on the dashboard. What it did is kept for two hours in one
+  `demo:state` entry, cleared whenever the switch is turned on or off. Nothing typed into settings, keys,
+  CVs or users is kept, and nothing is queued for or sent to HermitShell.
 - **A keyword prescreen before rating.** A full listing that names none of the CV's keywords is skipped
   without a model request (`JOB_PRESCREEN_MIN_KEYWORDS`, default 1), unless the title screen called it a
   clear match, and counted as "no CV keywords" under the report.

@@ -644,13 +644,20 @@ that is on or off.
 
 <img src="images/worker/admin-dashboard-demo.png" alt="The recruits list in demo mode: made-up recruits, recruiters and invites, and the demo mode ribbon" width="720">
 
-Every press works as it would (pausing, sending jobs, assigning, inviting, saving settings, keys and
-CVs), but only on a copy of the demo data made for that request, so nothing is saved, nothing is queued
+Every press works as it would, and a pretend HermitShell plays its part a few seconds later, on the
+made-up data only: **Generate** on a cover letter or tailored CV shows **Being made&hellip;** and then a
+made-up PDF to download, **Send** turns into **Emailed**, a missing skill goes from **adding** to
+**added**, and pausing, resuming, assigning, deleting, **Send now** (a short pretend scan) and stopping
+tasks show on the dashboard as HermitShell would apply them. What it did is kept for two hours in one
+`demo:state` entry, cleared whenever the switch is turned on or off. Settings, keys, CVs and users can be
+saved but are not kept past that page, nothing typed into them goes into `demo:state`, nothing is queued
 and nothing reaches HermitShell. Changing your own password is still real. The Worker's API, the buttons
 in emails, sign-up links and the privacy notice carry on with the real data, so daily reports keep
 running while it is on.
 
 <img src="images/worker/admin-stats-demo.png" alt="A made-up recruit's stats page in demo mode" width="620">
+
+<img src="images/worker/admin-sent-demo.png" alt="A made-up job opened in demo mode: the cover letter asked for earlier made and ready to download, the Terraform skill added, and the tailored CV asked for just now being made" width="620">
 
 #### A recruit's page
 

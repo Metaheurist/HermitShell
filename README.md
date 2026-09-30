@@ -73,7 +73,7 @@ One HermitShell server can run the daily reports for a whole desk of candidates:
   first), spread over every GPU or Ollama server you add, with cloud models to take the overflow.
   The model is sized to the machine, from a small server to a GPU box.
 - **Show it without showing anyone.** Demo mode fills the dashboard with a made-up desk of
-  candidates, stats and history; nothing pressed is saved, and daily reports carry on
+  candidates, stats and history; presses play out on it without reaching anyone, and daily reports carry on
   ([demo mode](docs/feedback-worker.md#demo-mode)).
 
 ## Quick start

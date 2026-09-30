@@ -414,6 +414,18 @@ await save("admin-dashboard-demo", await ribbonAtFoot(await admin("/admin")));
 await save("admin-settings-demo", await ribbonAtFoot(await admin("/admin/settings?done=demo_on"),
   "main>:not(.eyebrow):not(h1):not(.note):not(#demo):not(#demo~*){display:none!important}"));
 await save("admin-stats-demo", await ribbonAtFoot(await admin("/admin/stats?u=jamie-walsh")));
+// Presses played out by the pretend HermitShell: a letter asked for and a skill added a while ago (made and
+// counted), then a tailored CV asked for just now (being made).
+const DEMO_JOB = "https://jobs.example.com/demo/avery-lane/1001";
+await admin("/admin/doc", { method: "POST", form: { csrf, u: "avery-lane", j: DEMO_JOB, k: "cover_letter", n: "AI Engineer", back: "r=30" } });
+await admin("/admin/skill", { method: "POST", form: { csrf, u: "avery-lane", j: DEMO_JOB, s: "Terraform", back: "r=30" } });
+const realNow = Date.now;
+Date.now = () => realNow() + 60_000;
+await admin("/admin/doc", { method: "POST", form: { csrf, u: "avery-lane", j: DEMO_JOB, k: "tailored_cv", n: "AI Engineer", back: "r=30" } });
+const demoId = (await jobHash(DEMO_JOB)).slice(0, 16);
+await save("admin-sent-demo", await ribbonAtFoot(new Response((await (await admin(`/admin/sent?u=avery-lane&r=30&open=${demoId}`)).text())
+  .replace(/<meta http-equiv="refresh"[^>]*>/, ""))));
+Date.now = realNow;
 await admin("/admin/demo", { method: "POST", form: { csrf, on: "0" } });
 
 env = freshEnv();
