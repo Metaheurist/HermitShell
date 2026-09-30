@@ -8,6 +8,13 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A match report with each tailored CV.** The email lists how many of the requirements your CV shows
+  the tailored CV covers, any it left out, and what the advert asks for that your CV doesn't show.
+- **Tailored CVs led by the evidence map.** The CV uses the cover letter's evidence map (the same cache)
+  and less of the advert; bullets that name the job's requirements come first and start with an action
+  verb, and the bullets are cut to about two pages. See [Tailored CVs](docs/configuration.md#tailored-cvs).
+- **Long CVs read in full.** A CV over 14,000 characters is read in up to 4 sections and merged, instead
+  of being cut off.
 - **Cover letter length and tone.** The cover letter's confirmation page, and a new **Options** pop-over
   beside **Generate** and **Regenerate** on the dashboard's jobs sent, choose a length (short, standard or
   detailed: 3, 4 or 5 paragraphs) and a tone (professional, warm, direct or formal). They reach HermitShell

@@ -256,8 +256,12 @@ Cover letter button ──> Worker (confirm) ──> KV ──> cover_letter.py 
 <img src="images/emails/cover-letter.png" alt="Cover letter email" width="360"> <img src="images/emails/cover-letter-pdf.png" alt="Cover letter PDF" width="300">
 
 **Tailored CV** follows the same path: `cover_letter.py` asks the model to reorder and reword your
-CV for the job (titles, employers and dates are copied, never invented) and emails it as a PDF
-([email](images/emails/tailored-cv.png), [PDF](images/emails/tailored-cv-pdf.png)).
+CV for the job (titles, employers and dates are copied, never invented), led by the same evidence map as
+the letter, and emails it as a PDF ([email](images/emails/tailored-cv.png),
+[PDF](images/emails/tailored-cv-pdf.png)). Bullets that name what the job asks for come first, each
+starting with an action verb, cut to about two pages. The email ends with a match report: how many of the
+requirements your CV shows the tailored CV covers, and what the advert asks for that your CV doesn't show
+([Tailored CVs](configuration.md#tailored-cvs)).
 
 The letter and CV are written on your HermitShell server; the Worker sees the job key and your note,
 and afterwards keeps the finished PDF for download (below). Failed attempts are retried on the next

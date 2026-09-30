@@ -160,6 +160,24 @@ Lengths and tones, from the request or `cover_letter.py --length/--tone`:
 
 Tones: professional (default), warm, direct and formal.
 
+### Tailored CVs
+
+The CV is read into a structured copy once (`state/cv.json`, `tailored_cv.py`) and rebuilt when it changes.
+One request reads up to 14,000 characters; a longer CV is read in sections split between paragraphs (at
+most 4, up to 42,000 characters) and the parts merged, a role split across two sections kept once with all
+its bullets, instead of being cut off.
+
+For each job the tailoring request gets the job's evidence map (the one the cover letter uses, from the
+same cache) and the first 2,500 characters of the advert. The model picks and rephrases; the code then:
+
+- keeps only skills the CV lists, and bullets with no figure the CV doesn't have (a role's own bullets
+  replace any it refuses);
+- orders a role's own bullets, where the model gave none, by how many of the job's requirements they name;
+- cuts the bullets to about two A4 pages: 6, 5, 4 and 3 for the four newest roles, 2 for older ones, and
+  650 words in all, always keeping each role's first bullet;
+- reports which requirements the CV shows are covered, which were left out, and what the advert asks for
+  that the CV doesn't show, at the end of the email.
+
 ### Testing prompts and models
 
 `scripts/llm_bench.py` runs HermitShell's real prompts on the configured models with made-up CVs and

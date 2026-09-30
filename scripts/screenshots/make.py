@@ -205,6 +205,7 @@ def email_page(inner_rows: str) -> str:
 def render_emails(out: Path) -> dict[str, str]:
     import cover_letter
     import job_mail
+    import tailored_cv
     import job_scanner as js
     import job_weekly
     import profiles
@@ -256,7 +257,8 @@ def render_emails(out: Path) -> dict[str, str]:
     letter_job = {**top[0], "closing": "2026-10-11"}
     filename = "Cover letter - Avery Lane - Data Engineer (Python, Airflow).pdf"
     pages["cover-letter"] = cover_letter.email_bodies(letter_job, LETTER, filename, "Mention my Airflow migration")[1]
-    preview = [CV["headline"], CV["summary"], "Skills: " + ", ".join(CV["skills"])]
+    preview = [CV["headline"], CV["summary"], "Skills: " + ", ".join(CV["skills"]), *tailored_cv.report_lines(
+        {"covered": ["Python", "Airflow", "dbt", "Snowflake"], "missing": ["Stakeholder reporting"], "gaps": ["Kubernetes"]})]
     pages["tailored-cv"] = cover_letter.email_bodies(letter_job, preview, "CV - Avery Lane - Data Engineer.pdf", "",
                                                      kind="tailored_cv")[1]
     pages["job-email"] = job_mail.job_email(letter_job["key"], letter_job,
