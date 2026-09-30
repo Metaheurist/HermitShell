@@ -3,8 +3,11 @@
 // use these keys. Pages run no JavaScript, so a modal opens with :target (#gkey-<provider>) and closes by linking
 // to an id that does not exist; modals are rendered outside <main>, whose entry animation would otherwise pin a
 // fixed element to the card. MODAL_STYLE is shared with the Tasks window and the dashboard users' modals.
+//
+// A provider with a key opens, when pressed, to its keys in the order they are tried (Firecrawl's main key then its
+// backups), each masked, with what is left of its allowance as HermitShell last checked it (key_usage.py).
 
-import { esc } from "./lib.js";
+import { ago, esc } from "./lib.js";
 
 export const PROVIDERS = {
   firecrawl: { label: "Firecrawl", signup: "https://www.firecrawl.dev/app/api-keys" },
@@ -24,6 +27,56 @@ export function logo(name, cls = "") {
 }
 
 const modalId = (name) => `gkey-${name}`;
+const MAX_KEYS = 6;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const CHEVRON = '<svg class="kchev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+const count = (v) => (Number.isInteger(v) && v >= 0 ? v : null);
+const number = (n) => n.toLocaleString("en-GB");
+const day = (d) => `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]}`;
+
+// The keys HermitShell reported for a provider, checked field by field.
+function reported(k) {
+  return (Array.isArray(k.keys) ? k.keys : []).filter((r) => r && typeof r === "object" && typeof r.hint === "string").slice(0, MAX_KEYS)
+    .map((r) => {
+      const u = r.usage && typeof r.usage === "object" && !Array.isArray(r.usage) ? r.usage : {};
+      return { hint: r.hint.slice(0, 20), backup: r.role === "backup", at: Number.isFinite(r.at) && r.at > 0 ? r.at : 0,
+        error: typeof r.error === "string" ? r.error.slice(0, 80) : "", used: count(u.used), limit: count(u.limit), left: count(u.left),
+        plan: typeof u.plan === "string" ? u.plan.slice(0, 40) : "", resets: DATE_RE.test(u.resets || "") && MONTHS[Number(u.resets.slice(5, 7)) - 1] ? u.resets : "" };
+    });
+}
+
+function share(r) {
+  return r.limit && r.left !== null ? Math.max(0, Math.min(100, Math.round((100 * r.left) / r.limit))) : null;
+}
+
+const tone = (pct) => (pct === null ? "" : pct < 15 ? " low" : pct < 40 ? " mid" : "");
+
+function usageRow(r, label) {
+  const pct = share(r);
+  const amount = r.left !== null ? `<b>${number(r.left)}</b>${r.limit !== null ? ` of ${number(r.limit)}` : ""} credits left`
+    : r.used !== null ? `<b>${number(r.used)}</b> credits used` : "";
+  const meta = [r.plan ? `${esc(r.plan)} plan` : "", r.resets ? `resets ${day(r.resets)}` : "", r.at ? `checked ${esc(ago(r.at))}` : ""]
+    .filter(Boolean).join(" &middot; ");
+  const body = r.error ? `<div class="kuse bad">Couldn&rsquo;t check it: ${esc(r.error)}</div>`
+    : amount ? `${pct === null ? "" : `<div class="kbar${tone(pct)}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="${pct}% left"><i style="width:${pct}%"></i></div>`}<div class="kuse">${amount}</div>`
+      : '<div class="kuse muted">Not checked yet. HermitShell checks every hour unless WEB_KEY_USAGE_MINUTES is 0.</div>';
+  return `<li><div class="khead"><span class="krole">${label}</span><code>${esc(r.hint)}</code>${pct === null ? "" : `<span class="kpct${tone(pct)}">${pct}% left</span>`}</div>
+${body}${meta ? `<div class="kmeta">${meta}</div>` : ""}</li>`;
+}
+
+function keyList(rows) {
+  let backups = 0;
+  return `<ul class="keylist">${rows.map((r) => usageRow(r, r.backup ? `Backup key ${(backups += 1)}` : "Main key")).join("")}</ul>`;
+}
+
+function leftSummary(rows) {
+  const known = rows.filter((r) => r.left !== null);
+  if (!known.length) return "";
+  const left = known.reduce((sum, r) => sum + r.left, 0);
+  const low = known.every((r) => tone(share(r)) === " low");
+  return `<span class="kleft${low ? " low" : ""}">${number(left)} credits left${rows.length > 1 ? ` across ${rows.length} keys` : ""}</span> &middot; `;
+}
 
 function clearButton(csrf, provider) {
   return `<form method="post" action="/admin/action" style="display:inline"><input type="hidden" name="csrf" value="${esc(csrf)}">
@@ -32,15 +85,20 @@ function clearButton(csrf, provider) {
 
 function keyRow(name, info, k, csrf) {
   const source = k.source === "dashboard" ? "set here" : k.source === "env" ? "from .env" : "";
-  const extra = name === "firecrawl" && k.backups ? `plus ${k.backups} backup key${k.backups === 1 ? "" : "s"} &middot; ` : "";
+  const rows = source ? reported(k) : [];
+  const backups = Number.isInteger(k.backups) && k.backups > 0 ? k.backups : 0;
+  const extra = leftSummary(rows) + (name === "firecrawl" && backups ? `plus ${backups} backup key${backups === 1 ? "" : "s"} &middot; ` : "");
   const hint = source ? `<code class="keyhint" title="Only the start and end of the key are shown">${esc(k.hint || "****")}</code>`
     : '<div class="muted">No key yet</div>';
   const open = source ? `<a class="small" href="#${modalId(name)}">Change</a>`
     : `<a class="addkey" href="#${modalId(name)}">${logo("key")}Add key</a>`;
-  return `<div class="keyrow cr-${name}"><span class="crlogo">${logo(name)}</span><div class="keyinfo">
+  const inner = `<span class="crlogo">${logo(name)}</span><div class="keyinfo">
 <b>${esc(info.label)}</b>${source ? ` <span class="crtag${k.source === "env" ? " env" : ""}">${source}</span>` : ""}${hint}
 <div class="muted small">${extra}<a href="${esc(info.signup)}" target="_blank" rel="noopener noreferrer">get a key</a></div></div>
-<div class="cractions">${open}${k.source === "dashboard" ? clearButton(csrf, name) : ""}</div></div>`;
+<div class="cractions">${open}${k.source === "dashboard" ? clearButton(csrf, name) : ""}</div>`;
+  if (!rows.length) return `<div class="keyrow cr-${name}">${inner}</div>`;
+  return `<details class="keycard cr-${name}"><summary class="keyrow" title="Show the keys and their usage">${inner}${CHEVRON}</summary>
+${keyList(rows)}</details>`;
 }
 
 export function keysSection(status, csrf) {
@@ -48,7 +106,8 @@ export function keysSection(status, csrf) {
   return `<h2 id="keys">Web search API keys</h2>
 <p class="muted">Every recruit's searches use these keys. Firecrawl is tried first, then Tavily, then Scrapfly.</p>
 <div class="keyrows">${Object.entries(PROVIDERS).map(([name, info]) => keyRow(name, info, keys[name] || {}, csrf)).join("")}</div>
-<p class="muted">Keys are only shown as their start and end, and are kept on the HermitShell server, not here.</p>`;
+<p class="muted">Press a provider to see its keys and how much of each allowance is left. Keys are only shown as their start and end,
+and are kept on the HermitShell server, not here.</p>`;
 }
 
 export function keyModals(csrf) {
@@ -119,5 +178,28 @@ transition:border-color .15s,background .15s,box-shadow .15s}
 .crchoice:hover span{border-color:#c9cfe0}
 .crchoice input:checked+span{border-color:var(--brand);background:var(--soft);box-shadow:0 0 0 3px rgba(99,102,241,.14)}
 .crchoice input:focus-visible+span{outline:3px solid rgba(99,102,241,.35);outline-offset:2px}
-@media (max-width:560px){.keyrow{flex-wrap:wrap}.cractions{width:100%;justify-content:flex-start}}
+.keycard{border:1px solid var(--line);border-radius:16px;background:#fff;transition:border-color .15s,box-shadow .15s}
+.keycard:hover,.keycard[open]{border-color:#c9cfe0;box-shadow:0 10px 24px -18px rgba(15,23,42,.35)}
+.keycard>summary.keyrow{list-style:none;cursor:pointer;border:0;background:none}
+.keycard>summary.keyrow:hover{box-shadow:none;transform:none}
+.keycard>summary::-webkit-details-marker{display:none}
+.keycard>summary:focus-visible{outline:3px solid rgba(99,102,241,.35);outline-offset:-3px;border-radius:16px}
+.kchev{flex:none;width:18px;height:18px;color:var(--muted);transition:transform .2s var(--ease)}
+.keycard[open] .kchev{transform:rotate(180deg)}
+.kleft{font-weight:650;color:#047857}.kleft.low{color:#b91c1c}
+.keylist{list-style:none;margin:0;padding:4px 16px 14px 70px;display:grid;gap:10px;animation:kopen .2s var(--ease) both}
+.keylist li{padding:11px 13px;border:1px solid var(--line);border-radius:13px;background:#fafbff}
+.khead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.krole{font-size:12.5px;font-weight:700;color:var(--ink)}
+.khead code{font:12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted)}
+.kpct{margin-left:auto;font-size:11.5px;font-weight:700;color:#047857;background:var(--ok-bg);border-radius:99px;padding:1px 8px}
+.kpct.mid{color:#92400e;background:#fef3c7}.kpct.low{color:#b91c1c;background:#fee2e2}
+.kbar{height:7px;margin:9px 0 6px;border-radius:99px;background:#e9ecf5;overflow:hidden}
+.kbar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#10b981,#34d399)}
+.kbar.mid i{background:linear-gradient(90deg,#f59e0b,#fbbf24)}.kbar.low i{background:linear-gradient(90deg,#ef4444,#f87171)}
+.kuse{font-size:13px;margin-top:4px}.kuse b{font-size:14px}.kuse.bad{color:#b91c1c}
+.kmeta{font-size:12px;color:var(--muted);margin-top:2px}
+@keyframes kopen{from{opacity:0;transform:translateY(-4px)}}
+@media (max-width:560px){.keyrow{flex-wrap:wrap}.cractions{width:100%;justify-content:flex-start}.keylist{padding-left:16px}
+.keycard>summary .kchev{position:absolute;right:16px}.keycard{position:relative}}
 `;

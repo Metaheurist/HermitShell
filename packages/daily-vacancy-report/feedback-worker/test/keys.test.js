@@ -47,6 +47,38 @@ describe("web search keys in Global settings", () => {
     expect(settings).not.toContain("Save keys");
   });
 
+  it("opens a provider with a key, when pressed, to each key masked with what is left of it", () => {
+    const at = Date.now() - 12 * 60000;
+    const html = keysSection({ keys: {
+      firecrawl: { source: "env", hint: "fc-...0001", backups: 2, keys: [
+        { hint: "fc-...0001", role: "main", at, usage: { used: 2000, limit: 3000, left: 1000, plan: "Hobby", resets: "2026-10-01" } },
+        { hint: "fc-...0002", role: "backup", at, error: "the key was rejected" },
+        { hint: "fc-...0003", role: "backup" }] },
+      tavily: { source: "dashboard", hint: "tvl...9d2a", keys: [{ hint: "tvl...9d2a", role: "main", at, usage: { used: 950, limit: 1000, left: 50 } }] },
+      scrapfly: { source: "none", keys: [{ hint: "scp...0001", role: "main" }] } } }, "c".repeat(32));
+    const card = (name) => html.split('<details class="keycard').find((r) => r.startsWith(` cr-${name}"`))?.split("</details>")[0];
+    const fc = card("firecrawl");
+    expect(fc).toMatch(/^ cr-firecrawl"><summary class="keyrow" title="Show the keys and their usage">/);
+    expect(fc).toContain('<span class="kleft">1,000 credits left across 3 keys</span> &middot; plus 2 backup keys &middot; ');
+    expect(fc).toContain('href="#gkey-firecrawl">Change</a>');
+    expect(fc).toMatch(/<svg class="kchev"[^>]*>.*?<\/svg><\/summary>/);
+    expect(fc).toContain('<span class="krole">Main key</span><code>fc-...0001</code><span class="kpct mid">33% left</span>');
+    expect(fc).toContain('<div class="kbar mid" role="progressbar" aria-valuenow="33"');
+    expect(fc).toContain("<b>1,000</b> of 3,000 credits left");
+    expect(fc).toContain("Hobby plan &middot; resets 1 Oct &middot; checked 12 minutes ago");
+    expect(fc).toContain('<span class="krole">Backup key 1</span><code>fc-...0002</code>');
+    expect(fc).toContain('<div class="kuse bad">Couldn&rsquo;t check it: the key was rejected</div>');
+    expect(fc).toContain('<span class="krole">Backup key 2</span><code>fc-...0003</code>');
+    expect(fc).toContain("Not checked yet.");
+    const tv = card("tavily");
+    expect(tv).toContain('<span class="kleft low">50 credits left</span>');
+    expect(tv).toContain('<span class="kpct low">5% left</span>');
+    expect(tv).toContain('name="action" value="api_keys_clear"');
+    expect(card("scrapfly")).toBeUndefined();
+    expect(html).toContain('<div class="keyrow cr-scrapfly">');
+    expect(html).toContain("Press a provider to see its keys");
+  });
+
   it("renders one modal per provider outside <main>, each preselecting its own provider", async () => {
     const { settings } = await setup();
     const main = settings.indexOf("<main");

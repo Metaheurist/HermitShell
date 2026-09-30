@@ -483,6 +483,23 @@ describe("task list", () => {
   });
 });
 
+describe("web search key usage", () => {
+  it("shows only checked, escaped fields from the keys HermitShell reports, at most six", async () => {
+    const { keysSection } = await import("../src/keys.js");
+    const hostile = { hint: HOSTILE, role: HOSTILE, at: HOSTILE, error: HOSTILE,
+      usage: { used: "9", limit: -1, left: 1.5, plan: HOSTILE, resets: `2026-13-01${HOSTILE}` } };
+    const html = keysSection({ keys: { firecrawl: { source: "env", hint: "fc-...0001", backups: HOSTILE,
+      keys: [hostile, { hint: "fc-...0002", usage: { left: 5, limit: 10, plan: HOSTILE, resets: "2026-99-01" } },
+        ...Array.from({ length: 10 }, (_, i) => ({ hint: `fc-...10${i}` })), "x", null, { hint: 5 }] } } }, "c".repeat(32));
+    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("resets");
+    expect(html).not.toContain("backup key");
+    expect(html.match(/<li>/g)).toHaveLength(6);
+    expect([...html.matchAll(/style="([^"]*)"/g)].map((m) => m[1])).toEqual(["width:50%"]);
+  });
+});
+
 describe("letters and CVs kept for download", () => {
   const PDF = new TextEncoder().encode("%PDF-1.4\nprivate letter text\n%%EOF");
   const API = { Authorization: "Bearer api-token" };
