@@ -172,6 +172,72 @@ describe("asking for a letter or CV from the dashboard", () => {
   });
 });
 
+describe("a cover letter's length and tone", () => {
+  it("are offered beside Generate and Regenerate for the letter only, in a pop-over that needs no script", async () => {
+    const { env, get } = await setup();
+    await sentWith(env);
+    let body = await (await get("/admin/sent?u=sam-lee&r=7")).text();
+    const menus = body.match(/<details class="dopts">[\s\S]*?<\/details>/g);
+    expect(menus).toHaveLength(1);
+    expect(menus[0]).toContain('<select name="len"><option value="standard">Standard, about 300 words</option>');
+    expect(menus[0]).toContain('<option value="formal">Formal</option>');
+    expect(body).toMatch(/<details class="dopts">[\s\S]*?<\/details><button class="small">Generate</);
+    await upload(env);
+    body = await (await get("/admin/sent?u=sam-lee&r=7")).text();
+    expect(body).toMatch(/name="fresh" value="1"><details class="dopts">[\s\S]*?<\/details><button class="small quiet" title="Write a new one">Regenerate/);
+    expect(DOC_STYLE).toContain(".dopts[open]>.lopts{position:absolute");
+  });
+
+  it("ride on the dashboard's request, as a new request, and show in the history; the defaults store nothing", async () => {
+    const { env, ask } = await setup();
+    await ask({ len: "short", tone: "warm" });
+    await ask({ len: "standard", tone: "professional", fresh: "1" });
+    const events = valuesWith(env, "event:sam-lee:").sort((a, b) => Number(Boolean(a.fresh)) - Number(Boolean(b.fresh)));
+    expect(events[0]).toMatchObject({ a: "cover_letter", len: "short", tone: "warm" });
+    expect(events[0].id).toMatch(/:cglstw\d+$/);
+    expect(events[1].len).toBeUndefined();
+    expect(events[1].tone).toBeUndefined();
+    expect(events[1].id).toMatch(/:cn\d+$/);
+    const titles = valuesWith(env, "history:sam-lee:").flat().map((e) => e.t);
+    expect(titles).toContain("Asked for a cover letter (short, warm): Data Engineer at Northwind");
+    expect(titles).toContain("Asked for a new cover letter: Data Engineer at Northwind");
+  });
+
+  it("are ignored for a tailored CV, a job email and the kept letter's Email button", async () => {
+    const { env, ask } = await setup();
+    await upload(env);
+    await ask({ k: "tailored_cv", len: "short", tone: "warm" });
+    await ask({ k: "send_job", len: "detailed" });
+    await ask({ send: "1", tone: "formal" });
+    const events = valuesWith(env, "event:sam-lee:");
+    expect(events).toHaveLength(3);
+    expect(events.every((e) => e.len === undefined && e.tone === undefined)).toBe(true);
+  });
+
+  it("are asked on the email button's page for a letter, and a different choice is a different request", async () => {
+    const { env } = await setup();
+    const q = await link("cover_letter", JOB, "Data Engineer", "sam-lee");
+    const page = await (await worker.fetch(new Request(`${BASE}/f?${q}`), env)).text();
+    expect(page).toContain('<label for="len">Length</label><select id="len" name="len">');
+    expect(page).toContain('<label for="tone">Tone</label><select id="tone" name="tone">');
+    const cv = await (await worker.fetch(new Request(`${BASE}/f?${await link("tailored_cv", JOB, "Data Engineer", "sam-lee")}`), env)).text();
+    expect(cv).not.toContain('name="len"');
+    const form = new URLSearchParams(q);
+    form.set("r", "");
+    for (const [len, tone] of [["detailed", "direct"], ["detailed", "direct"], ["short", "professional"]]) {
+      form.set("len", len);
+      form.set("tone", tone);
+      await worker.fetch(new Request(`${BASE}/f`, { method: "POST", body: form }), env);
+    }
+    const events = valuesWith(env, "event:sam-lee:");
+    expect(events.map((e) => [e.len, e.tone]).sort()).toEqual([["detailed", "direct"], ["short", undefined]]);
+    const titles = valuesWith(env, "history:sam-lee:").flat().map((e) => e.t);
+    expect(titles).toContain("Asked for a cover letter (detailed, direct): Data Engineer");
+    await upload(env);
+    expect(await (await worker.fetch(new Request(`${BASE}/f?${q}`), env)).text()).toMatch(/Or have a new one written[\s\S]*name="len"[\s\S]*Confirm: write a new cover letter/);
+  });
+});
+
 describe("the email button when one was made", () => {
   it("offers the kept PDF to download and a new one to be written", async () => {
     const { env } = await setup();

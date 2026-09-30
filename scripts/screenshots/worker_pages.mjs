@@ -342,6 +342,8 @@ await admin("/admin/skill", { method: "POST", form: { csrf, u: "avery-lane", j: 
 const firstId = (await jobHash(FIRST)).slice(0, 16);
 const opened = (await (await admin(`/admin/sent?u=avery-lane&r=7&open=${firstId}`)).text()).replace(/<meta http-equiv="refresh"[^>]*>/, "");
 await save("admin-sent-open", new Response(opened));
+// The kept letter's Options pressed open: the length and tone a new one is written in.
+await save("admin-sent-letter-options", new Response(opened.replace('<details class="dopts">', '<details class="dopts" open>')));
 await save("confirm-cover-letter-ready", await call(`/f?${new URLSearchParams(await link("cover_letter", FIRST_TITLE, { job: FIRST, profile: "avery-lane" }))}`));
 
 // A fresh install: HermitShell has connected, nothing else is set yet.

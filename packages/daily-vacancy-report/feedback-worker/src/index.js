@@ -14,7 +14,7 @@
 
 import { handleAdmin, handleApi } from "./admin.js";
 import { verifyApi, withProtocol } from "./apiauth.js";
-import { DOC_KINDS, DOC_STYLE, OWNER_ID, docFor, jobHash, pdfResponse, readDoc } from "./docs.js";
+import { DOC_KINDS, DOC_STYLE, OWNER_ID, docFor, jobHash, letterFields, letterStyle, pdfResponse, readDoc, styleLabel } from "./docs.js";
 import { listed, record } from "./history.js";
 import { handleJoin, queueItem } from "./join.js";
 import {
@@ -135,7 +135,7 @@ function readyPage(p, hidden, kept) {
 <form method="post" action="/f">${hidden}<input type="hidden" name="fresh" value="1">
 <label for="r">Or have a new one written (optional guidance)</label>
 <textarea id="r" name="r" maxlength="${MAX_REASON}" placeholder="${esc(PLACEHOLDERS[p.a])}"></textarea>
-<button type="submit" class="quiet">Confirm: write a new ${what}</button></form>
+${p.a === "cover_letter" ? letterFields() : ""}<button type="submit" class="quiet">Confirm: write a new ${what}</button></form>
 <p style="font-size:13px">Downloading changes nothing. A new one is only written when you press Confirm.</p>`);
 }
 
@@ -153,7 +153,7 @@ async function confirmPage(p, env) {
 <form method="post" action="/f">${hidden}
 <label for="r">${label}</label>
 <textarea id="r" name="r" maxlength="${MAX_REASON}" placeholder="${esc(placeholder)}"></textarea>
-<button type="submit">Confirm: ${esc(ACTIONS[p.a])}</button></form>
+${p.a === "cover_letter" ? letterFields() : ""}<button type="submit">Confirm: ${esc(ACTIONS[p.a])}</button></form>
 <p style="font-size:13px">Nothing is saved until you press Confirm.</p>`);
 }
 
@@ -175,7 +175,8 @@ const ANSWERED = { interested: "Interested", not_for_me: "Not for me", applied: 
 function historyEntry(p, event, fresh) {
   const job = p.n || "a job";
   if (p.a === "add_skill") return ["skill", `Added ${event.skills.length === 1 ? "the skill" : "skills"} ${listed(event.skills)}, missing from the CV`];
-  if (DOC_KINDS[p.a]) return [p.a, `Asked for a ${fresh ? "new " : ""}${p.a === "cover_letter" ? "cover letter" : "tailored CV"}: ${job}`];
+  const style = styleLabel(event);
+  if (DOC_KINDS[p.a]) return [p.a, `Asked for a ${fresh ? "new " : ""}${p.a === "cover_letter" ? "cover letter" : "tailored CV"}${style ? ` (${style})` : ""}: ${job}`];
   return ["answer", `Answered ${ANSWERED[p.a] || ACTIONS[p.a]}: ${job}`];
 }
 
@@ -209,9 +210,11 @@ async function saveAnswer(form, env) {
   // "Write a new one" asks for a new letter or CV even if one was made in the last few days.
   const fresh = DOC_KINDS[p.a] && form.get("fresh") === "1";
   if (fresh) event.fresh = 1;
+  if (p.a === "cover_letter") Object.assign(event, letterStyle(form));
+  const style = styleLabel(event);
   // Pressing Confirm again with the same answer overwrites the stored event instead of adding one; asking for a new
   // one again is a new request from the next minute on.
-  const answer = await sha256Hex(`${event.r}\n${(event.skills || []).join("|")}${fresh ? `\nfresh:${Math.floor(at / 60000)}` : ""}`);
+  const answer = await sha256Hex(`${event.r}\n${(event.skills || []).join("|")}${fresh ? `\nfresh:${Math.floor(at / 60000)}` : ""}${style ? `\nstyle:${style}` : ""}`);
   event.id = `${eventPrefix(u)}${p.t}:${answer.slice(0, 12)}`;
   const repeat = await env.FEEDBACK.get(event.id);
   await env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });

@@ -30,8 +30,8 @@ import { SERVER_STYLE, serverBox } from "./models.js";
 import { needsSeal, sealInfo, sealItem } from "./seal.js";
 import { SEARCH_STYLE, matchesProfile, noMatch, recruiterHits, recruiterRow, searchBar, searchQuery } from "./search.js";
 import {
-  DOC_URL, REQUEST_KINDS, SKILL_URL, addedSkills, docIndex, emailedIndex, markEmailed, pdfResponse, pendingDocs, readDoc, requestDoc,
-  requestSkill, storeDoc, validJobKey,
+  DOC_URL, REQUEST_KINDS, SKILL_URL, addedSkills, docIndex, emailedIndex, letterStyle, markEmailed, pdfResponse, pendingDocs, readDoc,
+  requestDoc, requestSkill, storeDoc, styleLabel, validJobKey,
 } from "./docs.js";
 import { LINK_STYLE, MAX_STATS_BYTES, SENT_RANGES, SENT_URL, STATS_URL, sentPage, splitStats, statsLink, statsPage, validStats } from "./stats.js";
 import { TASKS_STYLE, TASKS_URL, cancelTask, requests, taskRows, tasksButton, tasksModal, tasksPage } from "./tasks.js";
@@ -454,9 +454,11 @@ async function docRequest(request, env, s) {
   }
   const fresh = form.get("fresh") === "1";
   const send = !fresh && kind !== "send_job" && form.get("send") === "1";
-  const h = await requestDoc(env, { profile: u, j, kind, title, fresh, send });
+  const style = kind === "cover_letter" && !send ? letterStyle(form) : {};
+  const h = await requestDoc(env, { profile: u, j, kind, title, fresh, send, style });
   const doc = kind === "cover_letter" ? "cover letter" : "tailored CV";
-  const asked = kind === "send_job" ? "Emailed the job" : send ? `Emailed the ${doc}` : `Asked for a ${fresh ? "new " : ""}${doc}`;
+  const how = styleLabel(style) ? ` (${styleLabel(style)})` : "";
+  const asked = kind === "send_job" ? "Emailed the job" : send ? `Emailed the ${doc}` : `Asked for a ${fresh ? "new " : ""}${doc}${how}`;
   await record(env, u, kind, `${asked}: ${title || "a job"}`, { by: displayName(s.me, current) });
   return redirect(sentBack(u, form.get("back"), h.slice(0, 16), kind === "send_job" ? "mail" : send ? "docmail" : "doc"));
 }

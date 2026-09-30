@@ -4,6 +4,7 @@ import worker, { sign } from "../src/index.js";
 import { record } from "../src/history.js";
 import { today } from "../src/lib.js";
 import { usageSection } from "../src/models.js";
+import { letterStyle, requestDoc, styleLabel } from "../src/docs.js";
 import { BASE, memoryHub, sealingKeys, testEnv, valuesWith } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
@@ -1042,5 +1043,25 @@ describe("model tokens from HermitShell's status", () => {
     expect(html).toContain('0 <span class="muted">/ 3</span></td><td>900</td><td>300</td>');
     expect(html).toContain("over the last 7 days");
     expect(html.match(/Cover letters/g)).toHaveLength(17);
+  });
+});
+
+describe("a cover letter's length and tone", () => {
+  it("are only ever one of the fixed choices", () => {
+    for (const bad of [HOSTILE, "short\nfresh", "__proto__", "constructor", "hasOwnProperty", "SHORT", " warm", "long"]) {
+      expect(letterStyle(new URLSearchParams({ len: bad, tone: bad }))).toEqual({});
+    }
+    expect(letterStyle(null)).toEqual({});
+    expect(styleLabel({ len: HOSTILE, tone: "warm" })).toBe("warm");
+  });
+
+  it("cannot change anything else about the request they ride on", async () => {
+    const env = testEnv();
+    await requestDoc(env, { profile: "sam-lee", j: "https://jobs.example.com/1", kind: "cover_letter", title: "Data Engineer",
+      style: { len: "short", tone: "formal", a: "unsubscribe", u: "owner", id: "event:owner:x", send: 1, r: HOSTILE } });
+    const [event] = valuesWith(env, "event:sam-lee:");
+    expect(event).toMatchObject({ a: "cover_letter", u: "sam-lee", r: "", len: "short", tone: "formal" });
+    expect(event.send).toBeUndefined();
+    expect(event.id).toMatch(/^event:sam-lee:dash-[0-9a-f]{20}:cglstf\d+$/);
   });
 });

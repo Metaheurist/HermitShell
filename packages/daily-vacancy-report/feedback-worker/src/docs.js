@@ -12,6 +12,9 @@
 // The same list has a third request, "send_job": the job's report card emailed to the profile (job_mail.py). Once
 // sent, HermitShell tells POST /api/emailed, and "emailed:<id>" keeps when each job last went (by its hash only).
 //
+// A cover letter can be asked for in a length and tone ("len" and "tone" on the request, only from the lists below;
+// the defaults are not stored). HermitShell writes it that way and doesn't reuse a letter made in another style.
+//
 // A skill the job's card showed as missing from the CV can be added from the list too: it is stored as the email's
 // "Add to my skills" answer, and "skilladd:<id>" remembers it until HermitShell's stats list it with the others.
 
@@ -26,6 +29,8 @@ export const SKILL_URL = "/admin/skill";
 export const DOC_KINDS = { cover_letter: "Cover letter", tailored_cv: "Tailored CV" };
 export const REQUEST_KINDS = { ...DOC_KINDS, send_job: "Job email" };
 const REQUEST_CODES = { cover_letter: "c", tailored_cv: "v", send_job: "m" };
+export const LETTER_LENGTHS = { standard: "Standard, about 300 words", short: "Short, about 200 words", detailed: "Detailed, about 400 words" };
+export const LETTER_TONES = { professional: "Professional", warm: "Warm", direct: "Direct", formal: "Formal" };
 export const EMAILED_DAYS = 90;
 // The main admin's id, as HermitShell reports it. Links in their own reports from before they were staff only carry
 // no profile id; with no recruit to send them to (index.js answerProfile) they are filed under this id.
@@ -43,6 +48,38 @@ const ciphers = new Map();
 
 export function validJobKey(j) {
   return typeof j === "string" && j.length > 0 && j.length <= MAX_JOB_KEY && !CONTROL_RE.test(j);
+}
+
+// The length and tone a form asked for, leaving out the defaults and anything not on the lists.
+export function letterStyle(form) {
+  const len = String(form?.get?.("len") ?? "");
+  const tone = String(form?.get?.("tone") ?? "");
+  return {
+    ...(len !== "standard" && Object.hasOwn(LETTER_LENGTHS, len) ? { len } : {}),
+    ...(tone !== "professional" && Object.hasOwn(LETTER_TONES, tone) ? { tone } : {}),
+  };
+}
+
+// "short, warm" for a history line, or "" for the defaults.
+export function styleLabel(style) {
+  return [style?.len, style?.tone].filter((v) => Object.hasOwn(LETTER_LENGTHS, v || "") || Object.hasOwn(LETTER_TONES, v || "")).join(", ");
+}
+
+function options(list) {
+  return Object.entries(list).map(([value, label]) => `<option value="${value}">${esc(label)}</option>`).join("");
+}
+
+// The two choices as labelled fields, for the email button's confirm page.
+export function letterFields() {
+  return `<label for="len">Length</label><select id="len" name="len">${options(LETTER_LENGTHS)}</select>
+<label for="tone">Tone</label><select id="tone" name="tone">${options(LETTER_TONES)}</select>`;
+}
+
+// The same choices in a small pop-over beside the dashboard's Generate and Regenerate (no script: a <details>).
+function letterMenu() {
+  return `<details class="dopts"><summary title="Choose the letter's length and tone">Options</summary><div class="lopts">
+<label class="lopt"><span>Length</span><select name="len">${options(LETTER_LENGTHS)}</select></label>
+<label class="lopt"><span>Tone</span><select name="tone">${options(LETTER_TONES)}</select></label></div></details>`;
 }
 
 export async function jobHash(j) {
@@ -161,13 +198,15 @@ export function pdfResponse(doc) {
 
 // A request from the dashboard, stored as the email button would store it. Asking again in the same minute is the
 // same request, so a double press makes one.
-export async function requestDoc(env, { profile: u, j, kind, title, fresh, send }) {
+export async function requestDoc(env, { profile: u, j, kind, title, fresh, send, style = {} }) {
   const at = Date.now();
   const h = await jobHash(j);
   fresh = fresh && Boolean(DOC_KINDS[kind]);
   send = send && !fresh && Boolean(DOC_KINDS[kind]);
-  const event = { j, a: kind, r: "", at, via: "dashboard", ...(fresh ? { fresh: 1 } : {}), ...(send ? { send: 1 } : {}), ...(u ? { u } : {}) };
-  event.id = `${eventPrefix(u)}dash-${h.slice(0, 20)}:${REQUEST_CODES[kind]}${fresh ? "n" : send ? "e" : "g"}${Math.floor(at / 60000)}`;
+  const picked = kind === "cover_letter" && !send ? letterStyle(new Map(Object.entries(style || {}))) : {};
+  const event = { j, a: kind, r: "", at, via: "dashboard", ...(fresh ? { fresh: 1 } : {}), ...(send ? { send: 1 } : {}), ...picked, ...(u ? { u } : {}) };
+  const code = `${picked.len ? `l${picked.len[0]}` : ""}${picked.tone ? `t${picked.tone[0]}` : ""}`;
+  event.id = `${eventPrefix(u)}dash-${h.slice(0, 20)}:${REQUEST_CODES[kind]}${fresh ? "n" : send ? "e" : "g"}${code}${Math.floor(at / 60000)}`;
   await env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });
   await setFlag(env, eventFlag(u), EVENT_TTL_SECONDS);
   await rememberRequest(env, event, title, EVENT_TTL_SECONDS);
@@ -243,10 +282,10 @@ export function docActions(j, h, ctx) {
       return `<div class="doc ready">${docIcon(kind)}<span><b>${label}</b><small title="Kept for download until ${esc(new Date(kept.exp).toISOString().slice(0, 10))}">made ${esc(ago(kept.at))}</small></span>
 <div class="dacts"><a class="dl" href="${DOC_URL}?u=${esc(ctx.profile)}&amp;k=${kind}&amp;h=${h}" download>Download</a>
 <form method="post" action="${DOC_URL}">${hidden(kind, false, true)}<button class="small quiet" title="Email this ${kind === "cover_letter" ? "cover letter" : "tailored CV"} to ${to}">Email to ${to}</button></form>
-<form method="post" action="${DOC_URL}">${hidden(kind, true)}<button class="small quiet" title="Write a new one">Regenerate</button></form></div></div>`;
+<form method="post" action="${DOC_URL}">${hidden(kind, true)}${kind === "cover_letter" ? letterMenu() : ""}<button class="small quiet" title="Write a new one">Regenerate</button></form></div></div>`;
     }
     return `<form class="doc" method="post" action="${DOC_URL}">${docIcon(kind)}<span><b>${label}</b><small>for this job</small></span>${hidden(kind, false)}
-<button class="small">Generate</button></form>`;
+${kind === "cover_letter" ? letterMenu() : ""}<button class="small">Generate</button></form>`;
   }).join("") + emailAction(j, h, ctx, hidden);
 }
 
@@ -282,4 +321,12 @@ background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 8px 18px -10px r
 -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2.5px));
 mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2.5px));animation:dspin 1s linear infinite}
 @keyframes dspin{to{transform:rotate(1turn)}}@keyframes sweep{to{background-position:-200% 0}}
+.doc form{display:flex;align-items:center;gap:4px}.dopts{position:relative;margin:0}
+.dopts>summary{list-style:none;cursor:pointer;font-size:12px;font-weight:650;color:var(--brand-ink);padding:6px 8px;border-radius:9px;white-space:nowrap}
+.dopts>summary::-webkit-details-marker{display:none}.dopts>summary:hover,.dopts[open]>summary{background:var(--soft)}
+.dopts[open]>.lopts{position:absolute;right:0;top:calc(100% + 6px);z-index:6;width:240px;padding:12px;background:#fff;border:1px solid var(--line);
+border-radius:12px;box-shadow:0 18px 40px -20px rgba(30,27,75,.45);animation:pop .16s var(--ease)}
+.dacts .dopts[open]>.lopts{left:0;right:auto}
+.lopts{display:grid;gap:10px}.lopt{display:grid;gap:4px;margin:0;font-size:12px;color:var(--muted);font-weight:600}.lopt select{margin:0;font-size:13px;padding:7px 9px}
+@keyframes pop{from{opacity:0;transform:translateY(-4px)}}
 `;
