@@ -108,6 +108,19 @@ describe("profile search", () => {
     for (const page of [board, manage, missing]) expect(page).not.toMatch(/>\s*(Back to )?[Pp]rofiles\s*</);
   });
 
+  it("widens the recruits card to the screen and stacks each row on narrow screens", async () => {
+    const get = await setup();
+    const board = await get();
+    expect(board).toContain('<main class="wide full">');
+    expect(board).toContain('<table class="list stack recruits"><tr class="head"><th>Recruit</th>');
+    expect(board).toContain("main.full{max-width:min(1320px,calc(100vw - 48px))}");
+    expect(board).toContain("@media (max-width:900px){table.list.stack,table.list.stack tbody{display:block}table.list.stack tr.head{display:none}");
+    expect(board).toContain("table.recruits .rowacts{justify-content:flex-start;flex-wrap:wrap}");
+    expect(board).toContain("@media (max-width:1860px){body:has(main.full) .me{position:absolute");
+    expect(board.match(/<div class="me"/g)).toHaveLength(1);
+    expect(await get("/profile?u=sam-lee")).toContain('<main class="wide">');
+  });
+
   it("tidies the query and matches on the words alone", () => {
     expect(searchQuery(new URL(`${BASE}/admin?q=${encodeURIComponent("  sam \n\t lee ")}`))).toBe("sam lee");
     expect(searchQuery(new URL(`${BASE}/admin?q=${"x".repeat(200)}`))).toHaveLength(MAX_QUERY);

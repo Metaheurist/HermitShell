@@ -59,6 +59,8 @@ describe("dashboard users", () => {
     expect(users[0].salt).not.toBe(users[1].salt);
     const page = await admin.text("/admin/users");
     expect(page).toContain('<a href="/admin/users" class="on" aria-current="page">Users and roles</a>');
+    expect(page).toContain('<main class="wide full">');
+    expect(page).toContain('<table class="list stack"><tr class="head"><th>User</th>');
     expect(page).not.toContain("salted hashes");
     expect(page).toContain("<b>Casey Quinn</b>");
     expect(page).toContain("<code>casey</code>");

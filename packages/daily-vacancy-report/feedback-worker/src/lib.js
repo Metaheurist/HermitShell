@@ -180,6 +180,7 @@ animation-duration:32s;animation-direction:alternate-reverse}
 main{max-width:480px;margin:56px auto;background:rgba(255,255,255,.94);border:1px solid rgba(226,232,240,.9);border-radius:22px;padding:32px;
 box-shadow:0 1px 2px rgba(15,23,42,.04),0 18px 50px -18px rgba(30,27,75,.18);animation:rise .5s var(--ease) both}
 main.wide{max-width:900px}
+main.full{max-width:min(1320px,calc(100vw - 48px))}
 .eyebrow{display:flex;align-items:center;gap:9px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:750;
 color:var(--brand-ink)}
 .eyebrow svg.mark{flex:none;width:24px;height:24px;border-radius:7px;box-shadow:0 3px 8px -4px rgba(79,70,229,.6)}
@@ -220,6 +221,11 @@ table.list{width:100%;border-collapse:separate;border-spacing:0;font-size:14px;m
 table.list th{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650;padding:0 12px 10px;text-align:left}
 table.list td{border-top:1px solid var(--line);padding:16px 12px;text-align:left;vertical-align:top;transition:background .2s}
 table.list tr:hover td{background:rgba(238,240,255,.45)}
+table.list.stack td:last-child{width:1%;white-space:nowrap}table.list.stack .pill{white-space:nowrap}
+@media (max-width:900px){table.list.stack,table.list.stack tbody{display:block}table.list.stack tr.head{display:none}
+table.list.stack tr{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0 16px;border-top:1px solid var(--line);padding:8px 0}
+table.list.stack td,table.list.stack td:last-child{display:block;width:auto;border:0;padding:8px 10px;white-space:normal}
+table.list.stack td:first-child,table.list.stack td:last-child,table.list.stack td[colspan]{grid-column:1/-1}}
 .who{display:flex;gap:12px;align-items:flex-start}
 .avatar{flex:none;width:38px;height:38px;border-radius:12px;display:grid;place-items:center;color:#fff;font-weight:700;font-size:14px;
 background:linear-gradient(135deg,var(--brand),var(--brand2));box-shadow:0 6px 14px -8px rgba(99,102,241,.9)}
@@ -289,7 +295,8 @@ font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--i
 @keyframes beat{0%{box-shadow:0 0 0 0 rgba(5,150,105,.5)}70%,100%{box-shadow:0 0 0 7px rgba(5,150,105,0)}}
 @keyframes drift{to{transform:translate(120px,80px) scale(1.12)}}
 @keyframes blink{to{opacity:.25}}
-@media (max-width:560px){main{margin:16px;padding:24px 20px;border-radius:18px}h1{font-size:23px}}
+@media (max-width:560px){main,main.full{max-width:none;margin:16px;padding:24px 20px;border-radius:18px}h1{font-size:23px}
+nav.tabs{max-width:100%;overflow-x:auto;box-sizing:border-box}nav.tabs a{flex:none;padding:7px 9px;font-size:13px;white-space:nowrap}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 `;
 
@@ -302,7 +309,7 @@ export function page(heading, body, { status = 200, wide = false, headers = {}, 
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">${
   refresh > 0 ? `<meta http-equiv="refresh" content="${Math.trunc(refresh)}">` : ""}
-<link rel="icon" href="/favicon.svg" type="image/svg+xml"><title>${esc(heading)}</title><style>${STYLE}</style></head><body>${before}<main${wide ? ' class="wide"' : ""}>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><title>${esc(heading)}</title><style>${STYLE}</style></head><body>${before}<main${wide === "full" ? ' class="wide full"' : wide ? ' class="wide"' : ""}>
 <div class="eyebrow">${BRAND_MARK}HermitShell</div><h1>${esc(heading)}</h1>${body}</main></body></html>`;
   return new Response(html, {
     status,

@@ -278,6 +278,8 @@ background:var(--soft);color:var(--brand-ink);box-shadow:none}
 .iconbtn:hover{background:#e2e5ff;filter:none;box-shadow:none}.iconbtn svg{width:15px;height:15px}
 .rowlinks{display:flex;gap:10px;align-items:center;flex-wrap:nowrap;margin-top:8px}
 .rowlinks .statpair,.rowlinks .statlink{margin-top:0}
+table.recruits th:first-child{width:34%}
+@media (max-width:900px){table.recruits .rowacts{justify-content:flex-start;flex-wrap:wrap}}
 `;
 
 // The recruiter's initials and a list to pick another; Assign shows once the pick changes (where the browser
@@ -379,12 +381,12 @@ async function dashboard(request, env, s) {
 ${lastUpdate(current, waiting, presence, admin)}
 ${admin ? `${problems(current)}${checklist(current)}` : ""}
 ${all.length ? searchBar(q, shown.length, all.length, tasks) : tasks ? `<div class="tabletools"><span></span><div class="tools">${tasks}</div></div>` : ""}
-<table class="list"><tr><th>Recruit</th><th>Status</th>${admin ? "<th>Recruiter</th>" : ""}<th></th></tr>
+<table class="list stack recruits"><tr class="head"><th>Recruit</th><th>Status</th>${admin ? "<th>Recruiter</th>" : ""}<th></th></tr>
 ${rows}</table>
 ${inviteForm(s, recs)}
 ${inviteRows ? `<table class="list">${inviteRows}</table>` : ""}
 `,
-  { wide: true, before: (admin ? tasksModal() : "") + passwordModal(s.me, s.csrf, env) + deletes,
+  { wide: "full", before: (admin ? tasksModal() : "") + passwordModal(s.me, s.csrf, env) + deletes,
     headers: admin ? { "Content-Security-Policy": `${CSP}; frame-src 'self'` } : {} });
 }
 
@@ -560,7 +562,8 @@ export async function handleAdmin(request, env, ctx) {
 const LOGOUT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h3.5A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5H14"/><path d="M10 16.5 5.5 12 10 7.5M5.5 12H15"/></svg>';
 // Wide screens keep it fixed like the Back button; narrower ones let it scroll away, and phones put it in
 // the flow above the card. The card's 56px top margin collapses into the body, which the absolute box is
-// placed against, hence the negative top.
+// placed against, hence the negative top. Full-width cards reach the corner sooner, so they get the compact box
+// up to 1860px, where the card stops growing and leaves room beside it.
 const ME_STYLE = `
 .me{position:fixed;top:20px;right:20px;z-index:10;display:flex;flex-direction:column;align-items:flex-end;gap:8px;animation:drop .45s var(--ease) both}
 .mecard{display:flex;align-items:center;gap:10px;padding:6px 14px 6px 6px;background:rgba(255,255,255,.92);border:1px solid var(--line);
@@ -577,7 +580,10 @@ box-shadow:0 8px 24px -12px rgba(15,23,42,.25);cursor:pointer;transition:transfo
 a.mebtn{width:34px;padding:0;justify-content:center}.mebtn svg{flex:none;width:16px;height:16px}
 @media (max-width:1360px){.me{position:absolute;top:-46px;right:10px;flex-direction:row;align-items:center}
 .mecard{padding:3px}.mename{display:none}.mecard .avatar{width:30px;height:30px;border-radius:10px;font-size:12px}}
-@media (max-width:560px){.me{position:static;justify-content:flex-end;margin:12px 16px 0}}
+@media (max-width:1860px){body:has(main.full) .me{position:absolute;top:-46px;right:10px;flex-direction:row;align-items:center}
+body:has(main.full) .mecard{padding:3px}body:has(main.full) .mename{display:none}
+body:has(main.full) .mecard .avatar{width:30px;height:30px;border-radius:10px;font-size:12px}}
+@media (max-width:560px){.me,body:has(main.full) .me{position:static;justify-content:flex-end;margin:12px 16px 0}}
 `;
 
 // The signed-in user's initials, name and roles, with Change password and Sign out.

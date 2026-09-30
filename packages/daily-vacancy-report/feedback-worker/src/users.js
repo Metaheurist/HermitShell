@@ -292,8 +292,8 @@ export function usersPage(acc, status, csrf, me, env, done = "") {
   return page("Users and roles", `<style>${MODAL_STYLE}${CONFIRM_STYLE}${USERS_STYLE}</style>${nav("users")}${done ? note(done) : ""}
 <h2>Roles</h2><div class="rolecards">${roles}</div>
 <div class="tabletools"><h2 style="margin:0">Dashboard users</h2><a class="addkey" href="#user-new">${USER_ICON}Add user</a></div>
-<table class="list"><tr><th>User</th><th>Roles</th><th>Recruits</th><th></th></tr>${rows}</table>`,
-  { wide: true, before: userModals(acc, csrf, `${main.name} (main admin)`, me) + deletes });
+<table class="list stack"><tr class="head"><th>User</th><th>Roles</th><th>Recruits</th><th></th></tr>${rows}</table>`,
+  { wide: "full", before: userModals(acc, csrf, `${main.name} (main admin)`, me) + deletes });
 }
 
 // POST /admin/users (admins only, CSRF already checked by the caller).

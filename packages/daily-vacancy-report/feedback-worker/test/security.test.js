@@ -793,4 +793,19 @@ describe("the signed-in box", () => {
     expect(box).not.toContain("<script>");
     expect(box).not.toContain("<img");
   });
+
+  it("stays once, before the full-width card, when a recruit is named with page tags", async () => {
+    const env = testEnv(ADMIN);
+    const tags = '<body><main class="wide full"></main>';
+    await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: { Authorization: "Bearer api-token" },
+      body: JSON.stringify({ profiles: [{ id: "owner", name: "Alex Morgan", email: "alex@example.com", status: "active", owner: true },
+        { id: "sam-lee-abc123", name: tags, email: "sam@example.com", status: "active" }] }) }), env);
+    const cookie = await signIn(env, "203.0.113.71");
+    const body = await (await get("/admin", env, { Cookie: cookie })).text();
+    expect(body.match(/<div class="me"/g)).toHaveLength(1);
+    expect(body.match(/<body>/g)).toHaveLength(1);
+    expect(body.match(/<main class="wide full">/g)).toHaveLength(1);
+    expect(body.indexOf('<div class="me"')).toBeLessThan(body.indexOf('<main class="wide full">'));
+    expect(body).toContain("&lt;body&gt;&lt;main class=&quot;wide full&quot;&gt;");
+  });
 });
