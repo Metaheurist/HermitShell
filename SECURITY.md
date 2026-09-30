@@ -43,7 +43,8 @@ providers, the email server) and the free-plan limits of those services.
   sign-up form are encrypted with the server's public key (RSA-OAEP wrapping AES-256-GCM) before
   they are stored on Cloudflare, so only the server can read them.
 - **A locked-down dashboard.** Signed-in sessions with secure cookies, CSRF tokens on every form that changes something, a
-  Content-Security-Policy that blocks scripts, and roles: recruiters see only their own candidates.
+  Content-Security-Policy that blocks inline and outside scripts (signed-in pages load only the Worker's
+  own `/enhance.js`; public pages run none), and roles: recruiters see only their own candidates.
   It can also sit behind Cloudflare Access.
 - **Signed email buttons.** Changed or made-up links are refused, and links stop working after 90
   days. Opening one saves nothing until the person presses **Confirm**.

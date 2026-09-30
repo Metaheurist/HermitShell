@@ -77,10 +77,12 @@ email button ──> Worker /f (confirm page) ──> KV ──> HermitShell GET
   in any case. Only the job key, action, optional note and time are stored. Letters and CVs kept for
   download are encrypted and deleted after `COVER_LETTER_KEEP_DAYS` (7 by default). Jobs emailed
   from the dashboard (`POST /api/emailed`) are kept as a hash of the job key and a time, for 90 days.
-- **No scripts or outside content.** Every page's Content-Security-Policy blocks JavaScript and
-  anything loaded from elsewhere. The HermitShell mark at the top of each page is drawn inline. The
-  only file a page loads is the tab icon, `/favicon.svg` (the same mark), from
-  the Worker itself (a plain SVG with no scripts or links).
+- **No outside content, and one script of its own.** Every page's Content-Security-Policy blocks
+  anything loaded from elsewhere and all inline script. The HermitShell mark at the top of each page is
+  drawn inline, and the tab icon, `/favicon.svg` (the same mark), comes from the Worker itself (a plain
+  SVG with no scripts or links). Public pages (email buttons, sign-up, privacy) run no JavaScript at all.
+  Signed-in dashboard pages may load one file, `/enhance.js` (`script-src 'self'`), which updates a
+  waiting page in place and stops a form being sent twice; every page works the same without it.
 - **No secrets in git.** The two secrets live only in HermitShell's `.env` and in the Worker's
   encrypted secrets. Your KV namespace ID goes in an untracked `wrangler.local.jsonc`.
   `JOB_FEEDBACK_SECRET` signs both the email links and HermitShell's API requests, so it must match on
@@ -622,11 +624,14 @@ Keys and passwords are stored on the HermitShell server (`state/dashboard.json`,
 are applied by `profiles.py`, within seconds over the live link. Until then a **Saving** bar at the top
 says what is pending, the key or model being changed carries a **saving&hellip;** tag, a new model order
 is shown picked, and the email server form shows what you saved rather than the old values. The page
-reloads itself (no JavaScript: a refresh tag that keeps you at the keys, models or email section) every
-4 seconds for the first 45, then every 20, and once HermitShell has applied the change it shows it with
-**Applied by HermitShell**. After 5 minutes it stops and says HermitShell may be offline, so an offline
-server doesn't use up KV's daily list operations. Entrance animations are off while it reloads, so the
-page doesn't flicker.
+updates itself every 4 seconds for the first 45, then every 20, and once HermitShell has applied the
+change it shows it with **Applied by HermitShell**. After 5 minutes it stops and says HermitShell may be
+offline, so an offline server doesn't use up KV's daily list operations. Where scripts run, the dashboard's
+script fetches the page in the background and swaps in the new card, keeping what you are typing, open
+windows and menus, focus and the scroll: it waits while a field has focus or has been typed in, while a
+window is open and while the tab is hidden. Without scripts a refresh tag reloads the page instead, keeping
+you at the keys, models or email section. Entrance animations are off while it waits, and looping ones
+(spinners, the status dots, the background) carry on from where they were rather than starting over.
 Passwords and keys typed into the page are deleted from KV after 2 days if HermitShell hasn't collected
 them.
 
@@ -698,7 +703,7 @@ without the link. Meanwhile:
 - A small box at the top says **Waiting for HermitShell**, then **Applied by HermitShell** (or why
   it couldn't be applied). It reloads itself every 5 seconds for a minute, then every 20 seconds for
   3 more, then stops; each check lists the KV queue, which the free plan limits to 1,000 a day.
-  The page has no JavaScript: the box is a small frame that only the dashboard itself can embed.
+  The box needs no JavaScript: it is a small frame that only the dashboard itself can embed.
 - Only the fields you changed are saved. Each form remembers the values it opened with, so if
   someone else (another admin tab, a CV rebuild) changed *other* fields in the meantime, both
   changes are kept. If they changed the *same* field, nothing is saved: the page comes back with

@@ -8,6 +8,19 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Waiting pages update in place.** On the dashboard, a page waiting for HermitShell now fetches itself
+  in the background and swaps in the new card instead of reloading, so what you are typing, an open
+  window or menu, focus and the scroll are kept; it holds off while a field is in use or the tab is
+  hidden. This is the dashboard's one script, `/enhance.js`, loaded from the Worker only by signed-in
+  pages (`script-src 'self'`, no inline script); without scripts the page reloads as before. It also
+  stops a form being sent twice by a double click, showing the pressed button as busy.
+- **Smoother motion.** Pages cross-fade into each other where the browser supports view transitions,
+  with the account box, Back button and tabs held still. Spinners, status dots and the background carry
+  on across reloads instead of jumping back, the task list and save status don't slide in again on each
+  update, and progress bars and pulsing dots move with transforms rather than widths and shadows. The
+  stats icons and score-ring glows play a few times and then rest (hover to replay), long jobs-sent lists
+  skip drawing the jobs off screen, small buttons get larger touch targets on phones, and jumping to a
+  section no longer hides its heading under the fixed buttons.
 - **Demo mode presses play out.** In demo mode a pretend HermitShell now does what a press asks for, a
   few seconds later, on the made-up data only: **Generate** on a cover letter or tailored CV shows
   **Being made&hellip;** and then a made-up PDF to download, **Send** turns into **Emailed**, a missing skill goes
