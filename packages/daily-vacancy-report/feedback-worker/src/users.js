@@ -12,6 +12,7 @@
 // minutes). The main admin's password is the ADMIN_PASSWORD secret, so it is changed with wrangler.
 
 import { CONFIRM_STYLE, binButton, deleteModal, iconButton } from "./confirm.js";
+import { record } from "./history.js";
 import { queueItem } from "./join.js";
 import { esc, hmacHex, newId, note, page, redirect, when } from "./lib.js";
 import { MODAL_STYLE } from "./keys.js";
@@ -346,6 +347,7 @@ export async function userAction(env, form, me, status, queue) {
     await saveAccounts(env, acc);
     for (const p of (status.profiles || []).filter((x) => !x.owner && recruiterOf(x, queue) === user.id)) {
       await queueItem(env, { type: "admin", action: "assign", u: p.id, recruiter: "" });
+      await record(env, p.id, "assign", `Unassigned: their recruiter ${user.name}'s account was deleted`, { by: displayName(me, status) });
     }
     const invites = await env.FEEDBACK.list({ prefix: "invite:", limit: 100 });
     const theirs = (await Promise.all(invites.keys.map((k) => env.FEEDBACK.get(k.name, "json"))))

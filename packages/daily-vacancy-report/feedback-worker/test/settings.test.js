@@ -197,11 +197,13 @@ describe("global settings page", () => {
     expect((await get("/admin/settings")).body).toContain('value="smtp.gmail.com"');
   });
 
-  it("links every profile page back to it", async () => {
+  it("keeps its tab to the dashboard: a profile page has Manage and History instead", async () => {
     const { get } = await setup();
     const { body } = await get("/admin/profile?u=sam-lee");
-    expect(body).toContain('<a href="/admin/settings">Global settings</a>');
-    expect(body).toContain('href="/admin" class="on" aria-current="page"');
+    expect(body).not.toContain("Global settings");
+    expect(body).not.toContain("Users and roles");
+    expect(body).toContain('<nav class="tabs" aria-label="Recruit pages"><a href="/admin/profile?u=sam-lee" class="on" aria-current="page">Manage</a><a href="/admin/history?u=sam-lee">History</a></nav>');
+    expect(body).toContain("Back to recruits</a>");
   });
 });
 
@@ -348,6 +350,8 @@ describe("profile page", () => {
     expect(item.job).toEqual({ titles: ["Data Engineer", "Analytics Engineer"], region: "West Yorkshire",
       places: ["Leeds", "Bradford"], remote_anywhere: true, level: "senior", types: ["Permanent"], modes: ["Remote"],
       min_salary: "55000" });
+    expect(valuesWith(env, "history:owner:")).toMatchObject([[{ k: "job", by: "Alex Morgan", v: "dashboard",
+      t: "Changed Email for reports, Phone, Job titles, Region or city, Towns, Fully remote jobs, Seniority, Employment types, Work location and Minimum salary" }]]);
   });
 
   it("keeps what was saved on the page until HermitShell applies it, with a live status box", async () => {
@@ -602,6 +606,7 @@ describe("CV upload", () => {
     const [item] = valuesWith(env, "queue:");
     expect(item).toMatchObject({ type: "admin", action: "cv", u: "owner", roles: "Data engineering", cv: { kind: "pdf", size: 11 } });
     expect(new TextDecoder().decode(new Uint8Array(env.FEEDBACK.store.get(item.cv.key)))).toBe("%PDF-1.4 cv");
+    expect(valuesWith(env, "history:owner:")).toMatchObject([[{ k: "cv", t: "Uploaded a new CV (Alex Morgan CV.pdf)", by: "Alex Morgan" }]]);
   });
 
   it("accepts pasted text and refuses too little, the wrong type or too much", async () => {
@@ -610,8 +615,10 @@ describe("CV upload", () => {
     expect((await upload({ u: "sam-lee" }, new File(["MZ"], "cv.pdf"))).headers.get("Location")).toContain("done=cvtype");
     expect((await upload({ u: "sam-lee" }, new File([new Uint8Array(6 * 1024 * 1024)], "cv.pdf"))).status).toBe(413);
     expect(keysWith(env, "cvfile:")).toEqual([]);
+    expect(keysWith(env, "history:")).toEqual([]);
     await upload({ u: "sam-lee", cv_text: CV_TEXT });
     expect(valuesWith(env, "queue:")).toMatchObject([{ action: "cv", u: "sam-lee", cv: null }]);
+    expect(valuesWith(env, "history:sam-lee:")).toMatchObject([[{ k: "cv", t: "Pasted new CV text" }]]);
   });
 
   it("needs the CSRF token and a valid profile id", async () => {

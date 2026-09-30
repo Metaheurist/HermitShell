@@ -355,8 +355,21 @@ export function skillAddKey(profile) {
   return `skilladd:${profile}`;
 }
 
+export function historyPrefix(profile) {
+  return `history:${profile}:`;
+}
+
+async function deletePrefix(env, prefix) {
+  let cursor;
+  do {
+    const listed = await env.FEEDBACK.list({ prefix, cursor });
+    await Promise.all(listed.keys.map((k) => env.FEEDBACK.delete(k.name)));
+    cursor = listed.list_complete ? undefined : listed.cursor;
+  } while (cursor);
+}
+
 // An extra profile that unsubscribes or is deleted: its answers not yet collected by HermitShell, its stats, its
-// list of jobs sent, the skills added from it and the letters and CVs kept for download are dropped.
+// list of jobs sent, the skills added from it, the letters and CVs kept for download and its history are dropped.
 export async function purgeProfileEvents(env, profile) {
   if (!profile) return;
   const docs = await env.FEEDBACK.get(docIndexKey(profile), "json");
@@ -364,12 +377,7 @@ export async function purgeProfileEvents(env, profile) {
     .map((d) => env.FEEDBACK.delete(docKey(profile, d.k, d.h))));
   await Promise.all([env.FEEDBACK.delete(docIndexKey(profile)), env.FEEDBACK.delete(emailedKey(profile)), env.FEEDBACK.delete(skillAddKey(profile)),
     env.FEEDBACK.delete(`sent:${profile}`), env.FEEDBACK.delete(`stats:${profile}`)]);
-  let cursor;
-  do {
-    const listed = await env.FEEDBACK.list({ prefix: eventPrefix(profile), cursor });
-    await Promise.all(listed.keys.map((k) => env.FEEDBACK.delete(k.name)));
-    cursor = listed.list_complete ? undefined : listed.cursor;
-  } while (cursor);
+  await Promise.all([deletePrefix(env, eventPrefix(profile)), deletePrefix(env, historyPrefix(profile))]);
   await env.FEEDBACK.delete(eventFlag(profile));
 }
 

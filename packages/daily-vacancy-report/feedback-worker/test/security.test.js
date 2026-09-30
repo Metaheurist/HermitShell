@@ -1,6 +1,7 @@
 // Security properties of the feedback Worker: headers, escaping, authentication, CSRF and size limits.
 import { describe, expect, it } from "vitest";
 import worker, { sign } from "../src/index.js";
+import { record } from "../src/history.js";
 import { today } from "../src/lib.js";
 import { BASE, memoryHub, testEnv, valuesWith } from "./helpers.js";
 
@@ -807,5 +808,85 @@ describe("the signed-in box", () => {
     expect(body.match(/<main class="wide full">/g)).toHaveLength(1);
     expect(body.indexOf('<div class="me"')).toBeLessThan(body.indexOf('<main class="wide full">'));
     expect(body).toContain("&lt;body&gt;&lt;main class=&quot;wide full&quot;&gt;");
+  });
+});
+
+describe("a recruit's history", () => {
+  const API = { Authorization: "Bearer api-token" };
+  const PROFILES = [{ id: "owner", name: HOSTILE, email: "alex@example.com", status: "active", owner: true },
+    { id: "sam-lee", name: HOSTILE, email: "sam@example.com", status: "active", last_run: 1000 }];
+
+  async function setup(ip) {
+    const env = testEnv(ADMIN);
+    await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: API, body: JSON.stringify({ profiles: PROFILES }) }), env);
+    const cookie = await signIn(env, ip);
+    const csrf = (await (await get("/admin", env, { Cookie: cookie })).text()).match(/name="csrf" value="([0-9a-f]+)"/)[1];
+    const act = (fields) => worker.fetch(new Request(`${BASE}/admin/action`, { method: "POST", body: new URLSearchParams({ csrf, ...fields }),
+      headers: { Cookie: cookie } }), env);
+    return { env, cookie, act, page: async (q = "") => (await get(`/admin/history?u=sam-lee${q}`, env, { Cookie: cookie })).text() };
+  }
+
+  it("escapes job titles from email links, names and the month asked for", async () => {
+    const { env, act, page } = await setup("203.0.113.80");
+    await worker.fetch(new Request(`${BASE}/f`, { method: "POST", body: new URLSearchParams({ ...(await signed("applied", "nijobs:1", HOSTILE, "sam-lee")), r: "" }) }), env);
+    await act({ action: "pause", u: "sam-lee" });
+    const body = await page(`&m=${encodeURIComponent('2026-09"><script>alert(3)</script>')}`);
+    expect(body).toContain("Answered Applied: &lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(body).toContain("by &lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(body).not.toContain("<script>");
+    expect(body).not.toContain("<img");
+    expect(body).not.toContain("alert(3)");
+  });
+
+  it("drops tampered entries and escapes what is left", async () => {
+    const { env, page } = await setup("203.0.113.81");
+    const key = `history:sam-lee:${new Date().toISOString().slice(0, 7)}`;
+    await env.FEEDBACK.put(key, JSON.stringify([null, "text", { at: "soon", k: "send", t: "x" }, { at: Date.now(), k: "format_disk", t: "bad kind" },
+      { at: Date.now(), k: "send", t: "" }, { at: Date.now(), k: "send", t: HOSTILE, v: "javascript:", by: HOSTILE }]));
+    const body = await page();
+    expect(body.match(/<li class="hev">/g)).toHaveLength(1);
+    expect(body).not.toContain("bad kind");
+    expect(body).not.toContain("<script>");
+    expect(body).not.toContain("javascript:");
+    await env.FEEDBACK.put(key, JSON.stringify({ not: "a list" }));
+    expect(await page()).toContain("Nothing recorded yet.");
+  });
+
+  it("stores entries cleaned and capped, never raw", async () => {
+    const { env } = await setup("203.0.113.82");
+    await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: API,
+      body: JSON.stringify({ profiles: PROFILES.map((p) => ({ ...p, last_run: Date.now() })) }) }), env);
+    await worker.fetch(new Request(`${BASE}/f`, { method: "POST", body: new URLSearchParams({
+      ...(await signed("applied", "nijobs:2", `Engineer ${"x".repeat(111)}`, "sam-lee")), r: "" }) }), env);
+    await record(env, "sam-lee", "send", `Asked\u0007\u001b[31m for ${"y".repeat(400)}`, { by: `Casey\n${"z".repeat(200)}` });
+    const rows = valuesWith(env, "history:sam-lee:").flat();
+    expect(rows).toHaveLength(3);
+    expect(rows[2].by.length).toBeLessThanOrEqual(80);
+    for (const row of rows) {
+      expect(Object.keys(row).every((k) => ["at", "k", "t", "v", "by"].includes(k))).toBe(true);
+      expect(row.t.length).toBeLessThanOrEqual(200);
+      expect(`${row.t}${row.by || ""}`).not.toMatch(/[\u0000-\u001f\u007f]/);
+    }
+  });
+
+  it("never stops the action it records, even when KV refuses the write", async () => {
+    const { env, act } = await setup("203.0.113.83");
+    const put = env.FEEDBACK.put.bind(env.FEEDBACK);
+    env.FEEDBACK.put = async (key, ...rest) => {
+      if (key.startsWith("history:")) throw new Error("KV put() limit exceeded for the day.");
+      return put(key, ...rest);
+    };
+    const res = await act({ action: "pause", u: "sam-lee" });
+    expect(res.headers.get("Location")).toBe("/admin?done=queued");
+    expect(valuesWith(env, "queue:")).toMatchObject([{ action: "pause", u: "sam-lee" }]);
+  });
+
+  it("needs a signed-in session, and HermitShell's token to add its own events", async () => {
+    const env = testEnv(ADMIN);
+    expect((await get("/admin/history?u=sam-lee", env)).status).toBe(200);
+    expect(await (await get("/admin/history?u=sam-lee", env)).text()).toContain("Admin sign-in");
+    const forged = await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", body: JSON.stringify({ profiles: PROFILES }) }), env);
+    expect(forged.status).toBe(401);
+    expect(valuesWith(env, "history:")).toEqual([]);
   });
 });

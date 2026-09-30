@@ -239,7 +239,8 @@ describe("feedback worker", () => {
     const ids = flagged.events.map((e) => e.id);
     expect(ids).toHaveLength(2);
     await worker.fetch(new Request(`${BASE}/ack`, { method: "POST", ...auth, body: JSON.stringify({ ids }) }), env);
-    expect(env.FEEDBACK.store.size).toBe(0);
+    expect([...env.FEEDBACK.store.keys()].filter((k) => !k.startsWith("history:"))).toEqual([]);
+    expect([...env.FEEDBACK.store.keys()]).toEqual([`history:owner:${new Date().toISOString().slice(0, 7)}`]);
   });
 
   it("signs profile links exactly like the Python scanner", async () => {

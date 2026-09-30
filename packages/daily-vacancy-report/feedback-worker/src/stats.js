@@ -5,6 +5,7 @@
 
 import { currencyCode, currencySymbol, moneyIcon } from "./currency.js";
 import { DOC_STYLE, SKILL_URL, docActions, jobHash, validJobKey } from "./docs.js";
+import { HISTORY_URL } from "./history.js";
 import { BACK_TO_RECRUITS, EXTERNAL_ICON, ago, cleanSkill, esc, page } from "./lib.js";
 
 export const STATS_URL = "/admin/stats";
@@ -473,7 +474,7 @@ export async function sentPage(status, stats, pid, opts = {}) {
   const range = SENT_RANGES[opts.range] ? Number(opts.range) : DEFAULT_RANGE;
   const answer = opts.answer === "none" || ANSWER_LABELS[opts.answer] ? opts.answer : "";
   const heading = p.owner ? "Jobs sent to you" : `Jobs sent to ${p.name || "this recruit"}`;
-  const links = `<a class="small" href="${STATS_URL}?u=${esc(pid)}">Stats</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage recruit</a>`;
+  const links = `<a class="small" href="${STATS_URL}?u=${esc(pid)}">Stats</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage recruit</a> &middot; <a class="small" href="${HISTORY_URL}?u=${esc(pid)}">History</a>`;
   const today = zonedToday(status.timezone);
   const first = dayList(today, range)[0];
   const inRange = sentJobs(Array.isArray(opts.sent) ? { sent: opts.sent } : stats).filter((j) => j.day >= first);
@@ -512,7 +513,7 @@ export function statsPage(status, stats, pid, rangeParam) {
   if (!p) return page("Recruit not found", '<p>HermitShell has not reported this recruit. <a href="/admin">Back to recruits</a></p>', { status: 404 });
   const range = RANGES[rangeParam] ? Number(rangeParam) : DEFAULT_RANGE;
   const heading = p.owner ? "Your stats" : `${p.name || "Recruit"}: stats`;
-  const manage = `<a class="small" href="${SENT_URL}?u=${esc(pid)}&amp;r=${range === 365 ? 90 : range}">Jobs sent</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage recruit</a>`;
+  const manage = `<a class="small" href="${SENT_URL}?u=${esc(pid)}&amp;r=${range === 365 ? 90 : range}">Jobs sent</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage recruit</a> &middot; <a class="small" href="${HISTORY_URL}?u=${esc(pid)}">History</a>`;
   if (!stats) {
     return page(heading, `<style>${STYLE}</style>${rangeTabs(pid, range)}
 <div class="nostats">${icon("radar", "hero")}<p><b>No stats yet.</b> HermitShell sends them within a few minutes of its next check-in, and after every report.</p>${manage}</div>`, back);

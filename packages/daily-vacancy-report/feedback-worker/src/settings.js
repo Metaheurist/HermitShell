@@ -9,6 +9,7 @@ import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem } from "./join.js";
 import { BACK_TO_RECRUITS, CSP, SECURITY_HEADERS, ago, esc, limitedForm, newId, note, page, redirect, safeEqual, when } from "./lib.js";
 import { KEY_STYLE, MODAL_STYLE, PROVIDERS, keyModals, keysSection } from "./keys.js";
 import { LINK_STYLE, STATS_URL, icon } from "./stats.js";
+import { profileTabs } from "./history.js";
 
 export const LEVELS = ["junior", "mid", "senior", "lead", "any"];
 export const EMPLOYMENT_TYPES = ["Permanent", "Contract", "Temporary", "Part-time", "Internship"];
@@ -274,6 +275,7 @@ export function profileChange(p, queue, form) {
   const report = changed.filter((k) => REPORT_FIELDS.includes(k));
   return {
     mine,
+    changed: changed.map((k) => LABELS[k]),
     item: { type: "admin", action: "profile", u: p.id, ...(details.length ? { details: pick(mine, details) } : {}),
       ...(job.length ? { job: pick(mine, job) } : {}),
       ...(report.length ? { report: Object.fromEntries(report.map((k) => [k.slice(7), mine[k]])) } : {}) },
@@ -321,7 +323,7 @@ export function sendSection(p, csrf, tz) {
 }
 
 export function profilePage(status, pid, csrf,
-  { done = "", error = "", queue = [], saving = false, draft = null, base = null, conflicts = [], code = 200, admin = true } = {}) {
+  { done = "", error = "", queue = [], saving = false, draft = null, base = null, conflicts = [], code = 200 } = {}) {
   const p = (status.profiles || []).find((x) => x.id === pid);
   if (!p) {
     return page("Recruit not found", '<p>HermitShell has not reported this recruit. <a href="/admin">Back to recruits</a></p>', { status: 404 });
@@ -329,7 +331,7 @@ export function profilePage(status, pid, csrf,
   const latest = latestValues(p, queue);
   const v = draft || latest;
   const message = error ? note(error, "bad") : done ? note(done) : "";
-  return page(p.owner ? "Your profile" : p.name, `<style>${LINK_STYLE}</style>${nav("profiles", admin)}
+  return page(p.owner ? "Your profile" : p.name, `<style>${LINK_STYLE}</style>${profileTabs(pid, "manage")}
 <p><a class="statlink" href="${STATS_URL}?u=${esc(pid)}">${icon("chart")}${p.owner ? "Your stats" : "View stats"}</a></p>
 ${message}<iframe class="saving" src="${STATUS_URL}?u=${esc(pid)}${saving ? "&amp;n=1" : ""}" title="Save status"></iframe>
 ${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
@@ -478,7 +480,7 @@ export function settingsItem(act, form) {
 
 // POST /admin/cv: a CV uploaded for a profile, stored like a sign-up's until HermitShell collects it. `allow(u)`
 // says whether the signed-in user may change that recruit.
-export async function cvUpload(request, env, s, allow = async () => true) {
+export async function cvUpload(request, env, s, allow = async () => true, recorded = async () => {}) {
   const form = await limitedForm(request, MAX_CV_FORM_BYTES);
   if (!form) return page("CV too large", '<p>The CV file is larger than 5 MB. <a href="/admin">Back</a></p>', { status: 413 });
   if (!safeEqual(String(form.get("csrf") || ""), s.csrf)) return page("Expired form", "<p>Reload the admin page and try again.</p>", { status: 403 });
@@ -499,6 +501,7 @@ export async function cvUpload(request, env, s, allow = async () => true) {
   }
   if (!cv && cvText.length < 200) return back("cvmissing");
   await queueItem(env, { type: "admin", action: "cv", u, cv, cv_text: cvText, roles: field(form, "roles", 300) });
+  await recorded(u, cv ? `Uploaded a new CV (${cv.name})` : "Pasted new CV text");
   return back("cvqueued");
 }
 

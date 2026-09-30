@@ -199,8 +199,11 @@ describe("recruiter sign-in and what they can see", () => {
 
   it("shows a recruiter's profile page without admin-only controls", async () => {
     const { admin, casey } = await setup();
-    expect(await casey.text("/admin/profile?u=sam-lee")).not.toContain("Global settings");
-    expect(await admin.text("/admin/profile?u=sam-lee")).toContain("Global settings");
+    for (const who of [casey, admin]) {
+      const body = await who.text("/admin/profile?u=sam-lee");
+      expect(body).not.toContain("Global settings");
+      expect(body).toContain('<a href="/admin/history?u=sam-lee">History</a>');
+    }
   });
 
   it("keeps the task list to admins: no button, window or link for a recruiter, and no cancelling", async () => {

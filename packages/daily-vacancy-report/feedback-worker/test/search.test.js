@@ -100,7 +100,7 @@ describe("profile search", () => {
     expect(board).toContain("<th>Recruit</th><th>Status</th>");
     const manage = await get("/profile?u=sam-lee");
     expect(manage).toContain("Back to recruits</a>");
-    expect(manage).toContain('<a href="/admin" class="on" aria-current="page">Recruits</a>');
+    expect(manage).toContain('class="on" aria-current="page">Manage</a>');
     expect(await get("/stats?u=sam-lee")).toContain("Manage recruit</a>");
     const missing = await get("/profile?u=nobody");
     expect(missing).toContain("<title>Recruit not found</title>");

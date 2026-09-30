@@ -13,6 +13,7 @@
 
 import { handleAdmin, handleApi } from "./admin.js";
 import { DOC_KINDS, DOC_STYLE, OWNER_ID, docFor, jobHash, pdfResponse, readDoc } from "./docs.js";
+import { listed, record } from "./history.js";
 import { handleJoin, queueItem } from "./join.js";
 import {
   CONTROL_RE, EVENT_TTL_SECONDS, LINK_DAYS, MAX_SKILL, ago, authorised, cleanSkill, deleteAndUnflag, esc, eventFlag, eventPrefix, favicon, json, limitedForm,
@@ -155,6 +156,17 @@ async function checkLink(env, p) {
   return null;
 }
 
+const ANSWERED = { interested: "Interested", not_for_me: "Not for me", applied: "Applied", heard_back: "Heard back",
+  rejected: "Rejected", good_match: "Good match" };
+
+// The history line for an answer from an email button: its kind and text.
+function historyEntry(p, event, fresh) {
+  const job = p.n || "a job";
+  if (p.a === "add_skill") return ["skill", `Added ${event.skills.length === 1 ? "the skill" : "skills"} ${listed(event.skills)}, missing from the CV`];
+  if (DOC_KINDS[p.a]) return [p.a, `Asked for a ${fresh ? "new " : ""}${p.a === "cover_letter" ? "cover letter" : "tailored CV"}: ${job}`];
+  return ["answer", `Answered ${ANSWERED[p.a] || ACTIONS[p.a]}: ${job}`];
+}
+
 async function saveAnswer(form, env) {
   const p = Object.fromEntries([...LINK_FIELDS, "r", "o"].map((k) => [k, String(form.get(k) ?? "")]));
   const problem = await checkLink(env, p);
@@ -188,7 +200,9 @@ async function saveAnswer(form, env) {
   // one again is a new request from the next minute on.
   const answer = await sha256Hex(`${event.r}\n${(event.skills || []).join("|")}${fresh ? `\nfresh:${Math.floor(at / 60000)}` : ""}`);
   event.id = `${eventPrefix(p.u)}${p.t}:${answer.slice(0, 12)}`;
+  const repeat = await env.FEEDBACK.get(event.id);
   await env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });
+  if (!repeat) await record(env, p.u || OWNER_ID, ...historyEntry(p, event, fresh), { via: "email", at });
   await setFlag(env, eventFlag(p.u), EVENT_TTL_SECONDS);
   await rememberRequest(env, event, p.n, EVENT_TTL_SECONDS);
   const next = (fresh && FRESH_MESSAGES[p.a]) || SAVED_MESSAGES[p.a] || "HermitShell picks this up on its next run.";

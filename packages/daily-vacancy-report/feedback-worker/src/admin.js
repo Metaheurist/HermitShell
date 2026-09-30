@@ -11,6 +11,7 @@
 // list: tasks.js; the live link: hub.js). Nothing here can reach the HermitShell server: HermitShell connects out to
 // /api/live and reads /api/queue with its API token.
 
+import { HISTORY_URL, historyPage, listed, record, recordReported } from "./history.js";
 import { hubConnect, hubPresence, hubSeen } from "./hub.js";
 import { createInvite, queueItem } from "./join.js";
 import {
@@ -205,14 +206,16 @@ async function saveProfile(env, s, form, u) {
   if (!PROFILE_RE.test(u)) return redirect("/admin?done=profile");
   const [current, queue] = await Promise.all([status(env), queued(env)]);
   const p = (current.profiles || []).find((x) => x.id === u);
-  if (!p) return profilePage(current, u, s.csrf, { admin: s.me.admin });
+  if (!p) return profilePage(current, u, s.csrf);
   const change = profileChange(p, queue, form);
   if (change.conflicts || change.error) {
     return profilePage(current, u, s.csrf, { queue, draft: change.mine, base: change.base, conflicts: change.conflicts || [],
-      error: change.conflicts ? "" : DONE[change.error], code: change.conflicts ? 409 : 400, admin: s.me.admin });
+      error: change.conflicts ? "" : DONE[change.error], code: change.conflicts ? 409 : 400 });
   }
   if (!change.item) return redirect(`/admin/profile?u=${u}&done=nochange`);
   await queueItem(env, change.item);
+  const kind = change.item.job ? "job" : change.item.details ? "details" : "report_time";
+  await record(env, u, kind, `Changed ${listed(change.changed)}`, { by: displayName(s.me, current) });
   return redirect(`/admin/profile?u=${u}&done=saved`);
 }
 
@@ -422,7 +425,10 @@ async function docRequest(request, env, s) {
   if (!p || !validJobKey(j) || !REQUEST_KINDS[kind] || title.length > 200 || /[\u0000-\u001f\u007f]/.test(title)) {
     return redirect(sentBack(u, form.get("back"), "", "docbad"));
   }
-  const h = await requestDoc(env, { profile: u, owner: Boolean(p.owner), j, kind, title, fresh: form.get("fresh") === "1" });
+  const fresh = form.get("fresh") === "1";
+  const h = await requestDoc(env, { profile: u, owner: Boolean(p.owner), j, kind, title, fresh });
+  const asked = kind === "send_job" ? "Emailed the job" : `Asked for a ${fresh ? "new " : ""}${kind === "cover_letter" ? "cover letter" : "tailored CV"}`;
+  await record(env, u, kind, `${asked}: ${title || "a job"}`, { by: displayName(s.me, current) });
   return redirect(sentBack(u, form.get("back"), h.slice(0, 16), kind === "send_job" ? "mail" : "doc"));
 }
 
@@ -440,6 +446,7 @@ async function skillRequest(request, env, s) {
   const skill = cleanSkill(given);
   if (!p || !validJobKey(j) || !skill || given.length > 120) return redirect(sentBack(u, form.get("back"), "", "skillbad"));
   const h = await requestSkill(env, { profile: u, owner: Boolean(p.owner), j, skill });
+  await record(env, u, "skill", `Added the skill ${skill}, missing from the CV`, { by: displayName(s.me, current) });
   return redirect(sentBack(u, form.get("back"), h.slice(0, 16), "skill"));
 }
 
@@ -483,8 +490,10 @@ async function action(request, env, s) {
     return redirect("/admin?done=revoked");
   }
   if (act === "profile") return saveProfile(env, s, form, u);
+  const by = { by: displayName(s.me, current) };
   if (act === "send_now") {
     await queueItem(env, { type: "admin", action: act, u });
+    await record(env, u, "send", "Asked for jobs now", by);
     return redirect(form.get("back") === "profile" ? `/admin/profile?u=${u}&done=sending` : "/admin?done=sending");
   }
   if (act === "assign") {
@@ -492,6 +501,8 @@ async function action(request, env, s) {
     const p = (current.profiles || []).find((x) => x.id === u);
     if (!p || p.owner || (recruiter && !recs.some((r) => r.id === recruiter))) return redirect("/admin?done=badrecruiter");
     await queueItem(env, { type: "admin", action: "assign", u, recruiter });
+    const to = recs.find((r) => r.id === recruiter);
+    await record(env, u, "assign", to ? `Assigned to ${to.name}` : "Unassigned from their recruiter", by);
     return redirect("/admin?done=assigned");
   }
   const setting = settingsItem(act, form);
@@ -508,6 +519,7 @@ async function action(request, env, s) {
     await purgeProfileEvents(env, u);
   } else if (["pause", "resume"].includes(act)) {
     await queueItem(env, { type: "admin", action: act, u });
+    await record(env, u, act, act === "pause" ? "Paused reports" : "Resumed reports", by);
   } else {
     return page("Unknown action", "<p>Reload the admin page and try again.</p>", { status: 400 });
   }
@@ -608,7 +620,8 @@ async function signedInRoute(request, env, s, path) {
   if (path === "/admin" && request.method === "GET") return dashboard(request, env, s);
   if (path === "/admin/action" && request.method === "POST") return action(request, env, s);
   if (path === "/admin/cv" && request.method === "POST") {
-    return cvUpload(request, env, s, async (u) => allowed(s, await status(env), u));
+    return cvUpload(request, env, s, async (u) => allowed(s, await status(env), u),
+      async (u, what) => record(env, u, "cv", what, { by: displayName(s.me, await status(env)) }));
   }
   if (path === USERS_URL && ["GET", "POST"].includes(request.method)) return usersRequest(request, env, s);
   if (path === PASSWORD_URL && request.method === "POST") return passwordRequest(request, env, s);
@@ -633,7 +646,13 @@ async function signedInRoute(request, env, s, path) {
     if (!allowed(s, current, u)) return page(...NOT_FOUND);
     const done = url.searchParams.get("done");
     return profilePage(current, u, s.csrf,
-      { done: DONE[done] || "", queue, saving: ["saved", "cvqueued", "sending"].includes(done), admin: s.me.admin });
+      { done: DONE[done] || "", queue, saving: ["saved", "cvqueued", "sending"].includes(done) });
+  }
+  if (path === HISTORY_URL && request.method === "GET") {
+    if (!PROFILE_RE.test(u)) return text("Not found", 404);
+    const current = await status(env);
+    if (!allowed(s, current, u)) return page(...NOT_FOUND);
+    return historyPage(env, current, u, url.searchParams.get("m") || "");
   }
   if (path === STATS_URL && request.method === "GET") {
     if (!PROFILE_RE.test(u)) return text("Not found", 404);
@@ -699,7 +718,9 @@ export async function handleApi(request, env) {
     if (!status || typeof status !== "object" || Array.isArray(status) || (status.profiles && !Array.isArray(status.profiles))) {
       return json({ error: "invalid status" }, 400);
     }
+    const before = await env.FEEDBACK.get("status:profiles", "json");
     await env.FEEDBACK.put("status:profiles", JSON.stringify({ ...status, updated: Date.now() }));
+    await recordReported(env, before, status);
     return json({ saved: true });
   }
   // One profile's stats page numbers (profile_stats.py), or null to remove them.
