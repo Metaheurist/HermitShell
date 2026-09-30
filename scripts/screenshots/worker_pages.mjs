@@ -110,7 +110,7 @@ const now = Date.now();
 const day = 86400000;
 const JOB = { titles: ["Data Engineer", "Analytics Engineer", "Python Developer"], region: "Greater Manchester",
   places: ["Manchester", "Salford", "Stockport", "Trafford"], country: "gb", remote_anywhere: true,
-  level: "mid", types: ["Permanent", "Contract"], modes: ["Hybrid", "Remote"], min_salary: "45000", currency: "£", hide_agency: true };
+  level: "mid", types: ["Permanent", "Contract"], modes: ["Hybrid", "Remote"], min_salary: "45000", currency: "GBP", hide_agency: true };
 const STATUS = {
   profiles: [
     { id: "owner", name: "Alex Morgan", email: "alex.morgan@example.com", status: "active", owner: true,
@@ -195,7 +195,7 @@ function fakeStats(daysBack, scale, seed) {
     ["BI Developer (Power BI)", "Tailspin Toys", "Selby", "Hybrid", "£45,000", 7, "reed.co.uk", "good_match"],
     ["Machine Learning Engineer", "Contoso", "Remote (UK)", "Remote", "", 7, "uk.indeed.com", ""],
     ["Data Analyst", "Northwind Traders", "Wakefield", "Hybrid", "£38,000", 6, "jobs.ac.uk", "not_for_me"],
-    ["Cloud Data Engineer (Azure)", "Fabrikam", "Leeds", "Hybrid", "£58,000", 8, "web search", ""],
+    ["Cloud Data Engineer (Azure)", "Fabrikam", "Dublin", "Remote", "£55,700 - £64,300 a year", 8, "web search", ""],
     ["Lead Data Engineer", "Adventure Works", "York", "Hybrid", "£75,000", 7, "reed.co.uk", "rejected"],
   ];
   const sent = JOBS.map(([title, employer, location, mode, salary, fit, source, answer], i) => ({

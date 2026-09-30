@@ -514,7 +514,8 @@ button; **Send jobs now** and the CV's **Upload CV** have their own.
   letters). For you, the address is `ALERT_EMAIL`.
 - **Job search**: up to 8 job titles, region or city (web searches use it), country (picked from a
   list), the towns that count as local, whether fully remote jobs elsewhere count, seniority,
-  minimum salary (empty means no minimum; `45000`, `45k` and `£45,000` all work) and currency,
+  minimum salary (empty means no minimum; `45000`, `45k` and `£45,000` all work), the salary
+  currency (a list: salaries in other currencies are converted to it, or As advertised),
   employment types, work location and whether to hide agency adverts that don't name the
   employer. Saving rebuilds the web search queries and the title filter when the titles or
   location change.

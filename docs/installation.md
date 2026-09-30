@@ -168,7 +168,7 @@ Without a token, or with `--advanced`, the wizard asks everything itself, in thi
    - **Employment types:** permanent, contract, temporary, part-time, internship. Choosing
      part-time or internship also takes them off the title exclude list.
    - **Work modes:** on-site, hybrid, remote.
-   - **Minimum salary** (for example `45k`; `0` for none) and the currency symbol used in adverts,
+   - **Minimum salary** (for example `45k`; `0` for none) and the salary currency, which salaries in other currencies are converted to,
      suggested from your country. Jobs that don't list a salary are always kept.
    - **Unnamed agency adverts:** whether to hide recruitment-agency adverts that don't name the
      employer.
@@ -228,7 +228,7 @@ JOB_LEVEL=mid
 JOB_EMPLOYMENT_TYPES=Permanent,Contract
 JOB_WORK_MODES=Hybrid,Remote
 JOB_MIN_SALARY=50000
-JOB_SALARY_CURRENCY=€
+JOB_SALARY_CURRENCY=EUR
 SCHEDULE_DAILY_VACANCY_REPORT=weekdays 07:30
 SCHEDULE_DAILY_VACANCY_REPORT_WEEKLY=sunday 18:00
 ```

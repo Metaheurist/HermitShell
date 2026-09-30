@@ -131,7 +131,8 @@ Full template: [`.env.example`](../.env.example).
 | `JOB_WORK_MODES` | `On-site,Hybrid,Remote` | Work modes to keep. Jobs that don't say are kept |
 | `JOB_JUNIOR_PENALTY` / `JOB_SENIOR_PENALTY` / `JOB_LEAD_PENALTY` | from `JOB_LEVEL` | Fit points subtracted for Junior/Graduate, Senior and Lead/Principal titles |
 | `JOB_MIN_SALARY` | `0` | Minimum yearly salary; jobs clearly paying less are left out. Unlisted salaries are kept |
-| `JOB_SALARY_CURRENCY` | none | Currency symbol of the minimum (`£`, `€`, `$`...). Other currencies are kept |
+| `JOB_SALARY_CURRENCY` | none | `GBP`, `EUR`, `USD`, `CAD`, `AUD` or `NZD` (`£`, `€`, `$` also work). Salaries in the others are converted to it at the day's rate and the minimum is in it. Empty = as advertised |
+| `JOB_FX_URL` | Frankfurter | HTTPS address of the day's exchange rates (Frankfurter's JSON shape), fetched once a day and cached in `state/fx_rates.json`. `off` = never convert. The dashboard can't change it |
 | `JOB_HIDE_UNNAMED_AGENCY` | `0` | `1` drops agency adverts that don't name the employer |
 | `JOB_VERIFY_MIN_FIT` | `8` | Scores at or above this get a second, stricter look (averaged). `0` = off |
 

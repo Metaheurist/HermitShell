@@ -8,6 +8,17 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Salaries in your currency.** The profile page's Currency is now a list (pound, euro, US, Canadian,
+  Australian and New Zealand dollar, or As advertised) instead of a text box. A job advertised in another of
+  them shows the converted figure with the advertised one beside it ("£55,700 - £64,300 a year, converted from
+  €65,000 - €75,000"), in the daily report, the job email and the dashboard's jobs sent; the median salary on
+  the stats page is converted too, and the minimum salary now applies to converted figures instead of
+  keeping every job in another currency. Rates are the European Central Bank's daily reference rates from
+  Frankfurter (no key), fetched once a day and cached (`money.py`, `JOB_FX_URL`, `off` to turn it off).
+  Adverts can write `US$`, `C$`, `A$`, `NZ$` or an ISO code (`50,000 EUR`); a bare `$` is the profile's
+  dollar, else the search country's. Old `£`, `€` and `$` settings keep working as `GBP`, `EUR` and `USD`.
+- **The salary icon shows the currency.** Emails and the dashboard draw the salary with a £, € or $ badge
+  (Lucide) for the figure's currency, and a banknote when it has none.
 - **Every image build is attached to a GitHub release.** The Image workflow's new release job gives a version
   tag its own release and replaces the rolling `latest-build` pre-release on each push to `main`. Each holds the
   digest-pinned `docker pull` command, the image for amd64 and arm64 as `docker load` files (for servers
@@ -690,6 +701,9 @@ using [Semantic Versioning](https://semver.org/).
 
 A review of the whole app; none of these were known to be exploited.
 
+- Exchange rates are only fetched over HTTPS, without following redirects, capped at 64 KB and checked
+  (finite, positive, sane rates for known currencies only); a bad reply or tampered cache converts nothing.
+  The dashboard can't change `JOB_FX_URL`, and a profile's currency must be one of the offered codes.
 - Changing your own password needs the current one, and five wrong ones lock it for that account for 15
   minutes (a lock that can't be recorded refuses the change). The account is always the signed-in one,
   whatever the form sends; the change signs out every other session, and an old cookie can't be replayed

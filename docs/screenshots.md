@@ -44,7 +44,7 @@ From top to bottom:
 | Avatar | The employer's logo from its website, or coloured initials when none is found |
 | `#1 · JOBS.EXAMPLE.COM` | Rank in this email and where the job was found |
 | Title, company, location | The title links to the listing; the company links to its website |
-| Salary | The advertised pay as a headline. Day and hourly rates also show a yearly estimate. Jobs clearly below `JOB_MIN_SALARY` never get here |
+| Salary | The pay as a headline, with the currency's symbol on its icon. Pay advertised in another currency is converted to the profile's, with the advertised figure beside it. Day and hourly rates also show a yearly estimate. Jobs clearly below `JOB_MIN_SALARY` never get here |
 | Pills | Closing date (red within three days), employment type, work mode, level (or "Senior-level stretch"), posting age; "Salary not listed" when there is none |
 | Fit circle | The final 0-10 score: green 8+, teal 7, amber 5-6, red below 5 |
 | Meters | **HermitShell fit**, the model's **Confidence**, and **CV keyword match** (the share of technologies in the listing that are on your CV) |
@@ -438,7 +438,7 @@ HermitShell hasn't collected them.
 | **View stats** | Opens [this profile's stats](#a-recruits-stats) |
 | Status box | Under the tabs: **Up to date**, **Waiting for HermitShell** while a save is queued (it checks again by itself), **Applied by HermitShell**, **Scanning for jobs since…** while a report runs, or why a change couldn't be applied |
 | Details | Name, the email address reports go to, phone and home town (for cover letters) |
-| Job search | Job titles (up to 8), region or city (used in web searches), country from a list, towns, remote elsewhere, seniority, minimum salary (empty = none) and currency, employment types, work location, hiding unnamed agency adverts |
+| Job search | Job titles (up to 8), region or city (used in web searches), country from a list, towns, remote elsewhere, seniority, minimum salary (empty = none), salary currency (a list; salaries in other currencies are converted to it), employment types, work location, hiding unnamed agency adverts |
 | Daily report | The time and days (every day or weekdays) HermitShell sends this profile's report; each profile's report is its own scheduled job |
 | **Save changes** | One button for details, job search and report time; only the fields you changed are sent |
 | **Send jobs now** | Runs the report now instead of at the daily time ([more](feedback-worker.md#send-jobs-now)) |
@@ -469,7 +469,7 @@ the button waits until it has finished.*
 | --- | --- |
 | **7 days** / **30 days** / **90 days** / **12 months** | The period every tile, chip and chart covers (except **Where applications stand**) |
 | Tiles | Scanned, Rated, Sent, Avg match (out of 10), Liked, Applied, Heard back, Letters & CVs; a line of the period and the change against the period before (green up, red down) |
-| Chips | Strong matches (8+), scans, the best day, week or month, median salary of the jobs sent, "not for me" presses |
+| Chips | Strong matches (8+), scans, the best day, week or month, median salary of the jobs sent (in the profile's currency), "not for me" presses |
 | Activity | Jobs rated (light) and sent (dark) per day, week or month; green dots for applications |
 | Funnel | Scanned, rated, sent, liked, applied, heard back, and the share kept at each step |
 | Answers | The buttons pressed in the period, as a ring |
@@ -511,7 +511,7 @@ it to the profile:
 | Part | What it shows |
 | --- | --- |
 | Tags | Closing date, contract type, work mode, seniority and when it was posted |
-| Salary | The advertised pay |
+| Salary | The pay as the email showed it, with its currency's symbol on the icon |
 | **HermitShell fit** / **Confidence** / **CV keyword match** | The score out of 10, how sure the model was, and the share of the advert's skills your CV shows |
 | Why | Why it was rated a fit, with anything it lacks (contact details and your name are removed) |
 | **About the company** | The employer, what it does, its website, what the role is, and the agency when one posted it |

@@ -41,7 +41,7 @@ CHROME_PATHS = [
 SETTINGS = {
     "JOB_REPORT_TITLE": "Daily Vacancy Report", "JOB_REPORT_TAGLINE": "Roles matched to your CV",
     "JOB_REGION_NAME": "Greater Manchester", "JOB_REGION_PLACES": "Manchester,Salford,Stockport,Trafford",
-    "JOB_LEVEL": "mid", "JOB_MIN_SALARY": "40000", "JOB_SALARY_CURRENCY": "£", "JOB_CANDIDATE_NAME": "Alex Morgan",
+    "JOB_LEVEL": "mid", "JOB_MIN_SALARY": "40000", "JOB_SALARY_CURRENCY": "GBP", "JOB_CANDIDATE_NAME": "Alex Morgan",
     "JOB_FEEDBACK_URL": FEEDBACK_URL, "JOB_FEEDBACK_SECRET": SECRET, "HERMES_TIMEZONE": "Europe/London",
     "ALERT_EMAIL": "alex.morgan@example.com",
     "COVER_LETTER_CONTACT": "alex.morgan@example.com  ·  07700 900123  ·  Manchester",
@@ -61,7 +61,12 @@ def isolate(home: Path) -> None:
 
 # --------------------------------------------------------------------------- fictional data
 
+# Fixed exchange rates (per euro), so the converted salary in the screenshots never changes.
+FX_RATES = {"EUR": 1.0, "GBP": 0.857, "USD": 1.135}
+
+
 def jobs(js) -> list[dict]:
+    import money
     from job_extras import parse_salary
 
     def job(**kw) -> dict:
@@ -70,7 +75,8 @@ def jobs(js) -> list[dict]:
                 "snippet_only": False, "second_opinion": None, "closing": "", "days_left": None, "seniority": "Mid"}
         base.update(kw)
         base.setdefault("model_fit", base["fit"])
-        base["salary_range"] = parse_salary(base["salary"]) if base["salary"] else None
+        base["salary_range"] = money.shown_salary(parse_salary(base["salary"]), "GBP", FX_RATES, "gb") \
+            if base["salary"] else None
         base["url"] = f"https://jobs.example.com/{base['key']}"
         base["actions"] = js.card_links(FEEDBACK_URL, SECRET, base["key"], base["title"])
         base["skill_link"] = js.skill_link(FEEDBACK_URL, SECRET, base["key"], base["title"], base["gaps"])
@@ -86,7 +92,7 @@ def jobs(js) -> list[dict]:
             reasoning="Strong match: the role centres on Python and Airflow pipelines feeding a dbt warehouse, which is "
                       "Alex's day-to-day work. Snowflake is new but close to the PostgreSQL and dbt experience."),
         job(key="contoso-ml-engineer", title="Machine Learning Engineer", company="Contoso Health",
-            location="Salford", employment_type="Full-time permanent", work_mode="Hybrid", salary="£55k - £65k",
+            location="Dublin", employment_type="Full-time permanent", work_mode="Hybrid", salary="€65,000 - €75,000",
             fit=8, model_fit=9, second_opinion=7, confidence=80, coverage=64, days_left=2,
             company_site="https://contoso-health.example", company_profile="Health tech · 1,200 staff",
             matched=["Python", "PyTorch", "scikit-learn", "Docker", "LLM applications"],
@@ -126,7 +132,7 @@ def followups() -> list[dict]:
 def stats(**kw) -> dict:
     base = {"when": WHEN, "shown": 5, "strong": 3, "avg_fit": "7.0", "scanned": 25, "min_score": 5,
             "excluded_location": 6, "excluded_type": 3, "below_min": 9, "model": "qwen3:4b-instruct-2507-q4_K_M",
-            "min_salary": 40000, "salary_currency": "£", "excluded_salary": 2, "excluded_closed": 1, "reposts": 2,
+            "min_salary": 40000, "salary_currency": "GBP", "excluded_salary": 2, "excluded_closed": 1, "reposts": 2,
             "grouped": 1, "verify_from": 8, "feedback": True,
             "unsubscribe": "", "sources": "jobs.example.com 31, web search 42",
             "web_usage": "Firecrawl 36 credits (2,964 left this month)", "cv_added": []}

@@ -225,7 +225,14 @@ Every option is an environment variable (or a line in `$HERMITSHELL_HOME/.env`).
 - **`JOB_SCANNER_MIN_SCORE`.** The cut-off (0-10) for a job to appear in the report.
 - **`JOB_MIN_SALARY`, `JOB_SALARY_CURRENCY`.** Leave out jobs whose best advertised pay is clearly
   below the minimum (yearly; day rates count 220 days, hourly rates 1950 hours). Jobs without a
-  salary, or in another currency, are kept.
+  salary are kept.
+- **`JOB_SALARY_CURRENCY`, `JOB_FX_URL`.** The currency salaries are shown in: `GBP`, `EUR`, `USD`,
+  `CAD`, `AUD` or `NZD`. A job advertised in another of them shows the converted figure with the
+  advertised one beside it ("$59,600 - $72,900 a year, converted from £45,000 - £55,000"), and the
+  minimum applies to the converted figure. The salary icon shows the currency's symbol. Rates are
+  the European Central Bank's, from [Frankfurter](https://frankfurter.dev), fetched once a day;
+  without them, salaries in other currencies are shown as advertised and kept. A bare `$` is read as
+  the profile's dollar, else the search country's, else US dollars.
 - **`JOB_HIDE_UNNAMED_AGENCY`.** `1` drops agency adverts that don't name the employer. Repeats
   of the same job are always merged.
 - **`JOB_VERIFY_MIN_FIT`.** Scores at or above this (default 8) get a second look; `0` turns it off.
