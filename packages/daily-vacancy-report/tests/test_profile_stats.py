@@ -169,3 +169,26 @@ def test_collect_only_reads_the_tracker(tmp_path):
     before = db.read_bytes()
     profile_stats.collect(db, LONDON, NOW)
     assert db.read_bytes() == before
+
+
+def test_the_median_salary_is_in_the_profiles_currency(tmp_path):
+    rates = {"EUR": 1.0, "GBP": 0.8, "USD": 1.25}
+    with tracker(tmp_path) as t:
+        t.upsert_job("gbp", {**job("A", 8, year_low=40000), "salary_code": "GBP"}, True, NOW)
+        t.upsert_job("eur", {**job("B", 8, year_low=60000), "salary_code": "EUR"}, True, NOW - 60)
+        t.upsert_job("old", {**job("C", 8, year_low=50000), "salary": "€50,000"}, True, NOW - 120)
+        t.upsert_job("nzd", {**job("D", 8, year_low=90000), "salary_code": "NZD"}, True, NOW - 180)
+    db = tmp_path / "job_tracker.db"
+    # £40,000, €60,000 = £48,000 and an older row's €50,000 = £40,000; the NZ$ job has no rate and is left out.
+    assert profile_stats.collect(db, LONDON, NOW, currency="GBP", rates=rates)["ranges"]["7"]["salary"] == 40000
+    assert profile_stats.collect(db, LONDON, NOW, currency="USD", rates=rates)["ranges"]["7"]["salary"] == 62500
+    assert profile_stats.collect(db, LONDON, NOW)["ranges"]["7"]["salary"] == 55000
+
+
+def test_the_jobs_sent_show_the_salary_their_email_showed(tmp_path):
+    with tracker(tmp_path) as t:
+        t.upsert_job("a", {**job("A", 8), "salary": "€65,000 - €75,000", "salary_shown": "£55,700 - £64,300 a year"},
+                     True, NOW)
+        t.upsert_job("b", {**job("B", 7), "salary": "£45,000"}, True, NOW - 60)
+    sent = profile_stats.collect(tmp_path / "job_tracker.db", LONDON, NOW)["sent"]
+    assert [j["salary"] for j in sent] == ["£55,700 - £64,300 a year", "£45,000"]

@@ -45,6 +45,7 @@ import requests
 
 import autofit
 import hermes_common as hc
+import money
 import profiles
 import tailored_cv
 from companies import LOGO_DIR, Companies
@@ -788,22 +789,26 @@ PERIOD_WORDS = {"year": "a year", "day": "a day", "hour": "an hour"}
 
 
 def salary_figure(text: str, parsed: dict | None) -> tuple[str, str, str]:
-    """(headline, period, yearly estimate), e.g. ('£350 - £400', 'a day', 'about £77,000 - £88,000 a year')."""
+    """(headline, period, yearly estimate), e.g. ('£350 - £400', 'a day', 'about £77,000 - £88,000 a year'). A
+    converted salary (money.shown_salary) adds the advertised figures: 'converted from €65,000 - €75,000'."""
     if not parsed:
         return " ".join(text.split())[:60], "", ""
 
-    def money(value: float) -> str:
-        return f"{parsed['currency']}{value:,.2f}" if value % 1 else f"{parsed['currency']}{value:,.0f}"
+    def span(low: float, high: float, sign: str) -> str:
+        return money.amount(low, sign) + (f" - {money.amount(high, sign)}" if high != low else "")
 
     low, high = parsed["low"], parsed["high"]
-    headline = money(low) if low == high else f"{money(low)} - {money(high)}"
+    headline = span(low, high, parsed["currency"])
     if low == high and re.search(r"\bup to\b", text, re.I):
         headline = f"Up to {headline}"
     yearly = ""
     if parsed["period"] != "year":
-        y_low, y_high = parsed["year_low"], parsed["year_high"]
-        span = f"{parsed['currency']}{y_low:,}" + (f" - {parsed['currency']}{y_high:,}" if y_high != y_low else "")
-        yearly = f"about {span} a year"
+        yearly = f"about {span(parsed['year_low'], parsed['year_high'], parsed['currency'])} a year"
+    was = parsed.get("original")
+    if was:
+        note = f"from {span(was['low'], was['high'], was['currency'])}" + (
+            f" {PERIOD_WORDS[was['period']]}" if was["period"] != "year" else "")
+        yearly = f"{yearly}, {note}" if yearly else f"converted {note}"
     return headline, PERIOD_WORDS[parsed["period"]], yearly
 
 
@@ -822,10 +827,12 @@ def salary_block(job: dict) -> str:
                    f'color:{C_MUTED}">{yearly}</td>'
                    if yearly else "")
     box_class = ' class="m-inline"' if yearly else ""
+    parsed = job.get("salary_range")
+    icon = money.icon(money.currency_code(parsed.get("code") or parsed["currency"])) if parsed else money.PLAIN_ICON
     return (f'<table cellpadding="0" cellspacing="0" style="margin:0 0 10px"><tr>'
             f'<td valign="middle"{box_class} style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;'
             f'padding:6px 12px 6px 10px"><table cellpadding="0" cellspacing="0"><tr>'
-            f'<td valign="middle" width="20" style="padding-right:8px"><img src="cid:icon-salary" width="20" '
+            f'<td valign="middle" width="20" style="padding-right:8px"><img src="cid:{icon}" width="20" '
             f'height="20" alt="Salary" style="display:block;width:20px;height:20px;border:0"></td>'
             f'<td valign="middle" style="font-size:17px;font-weight:800;color:#065f46">'
             f'<span style="white-space:nowrap">{esc(headline)}</span>{period_html}</td></tr></table></td>{yearly_html}'
@@ -958,7 +965,8 @@ def report_footer(stats: dict) -> str:
     """Three short lines under the report: the filters, what was skipped and what the run used. How scores and
     buttons work is in the welcome email and the docs rather than in every report."""
     filters = [esc(CFG.region) if CFG.region_re else "", "permanent or contract", f"fit {stats['min_score']}+",
-               f"{esc(stats.get('salary_currency', ''))}{stats['min_salary']:,}+" if stats.get("min_salary") else ""]
+               f"{esc(money.symbol(money.currency_code(stats.get('salary_currency'))))}{stats['min_salary']:,}+"
+               if stats.get("min_salary") else ""]
     skipped = [(stats["excluded_location"] if CFG.region_re else 0, "outside the area"),
                (stats["excluded_type"], "wrong type or work mode"), (stats["below_min"], "low fit"),
                (stats.get("excluded_salary"), "low salary"), (stats.get("excluded_closed"), "closed"),
@@ -1176,7 +1184,13 @@ def run(args: argparse.Namespace) -> int:
     min_score = env_int("JOB_SCANNER_MIN_SCORE", 5)
     tbs = env("JOB_SCANNER_TBS", "qdr:m")
     min_salary = env_int("JOB_MIN_SALARY", 0)
-    salary_currency = env("JOB_SALARY_CURRENCY", "")
+    salary_currency = money.currency_code(env("JOB_SALARY_CURRENCY"))
+    fx = money.rates(STATE_DIR, env("JOB_FX_URL", money.FX_URL)) if salary_currency else {}
+    if salary_currency and not fx:
+        log("No exchange rates (JOB_FX_URL), so salaries in other currencies are shown as advertised")
+
+    def salary_of(text: str) -> dict | None:
+        return money.shown_salary(parse_salary(text), salary_currency, fx, CFG.country or "")
     verify_from = env_int("JOB_VERIFY_MIN_FIT", 8)
 
     try:
@@ -1278,7 +1292,7 @@ def run(args: argparse.Namespace) -> int:
 
         # Salary and closing date from the page itself are checked before spending model time on the job.
         page_salary = job["facts"].get("salary") or ""
-        if page_salary and below_min_salary(parse_salary(page_salary), min_salary, salary_currency):
+        if page_salary and below_min_salary(salary_of(page_salary), min_salary, salary_currency):
             excluded_salary += 1
             done.append(job["key"])
             log(f"[{i}/{len(queue)}] skip (salary {page_salary} below {min_salary}) {job['title'][:60]}")
@@ -1320,7 +1334,7 @@ def run(args: argparse.Namespace) -> int:
             log(f"[{i}/{len(queue)}] skip ({emp_type}, {mode}) {job['title'][:60]}")
             return "rated"
         salary_text = job["facts"].get("salary") or rating.get("salary") or ""
-        salary = parse_salary(salary_text)
+        salary = salary_of(salary_text)
         if below_min_salary(salary, min_salary, salary_currency):
             excluded_salary += 1
             log(f"[{i}/{len(queue)}] skip (salary {salary_text} below {min_salary}) {job['title'][:60]}")
@@ -1367,6 +1381,9 @@ def run(args: argparse.Namespace) -> int:
             "matched": matched, "gaps": gaps, "reasoning": rating.get("reasoning", "").strip(),
             "snippet_only": job["snippet_only"], "listing": job["text"][:MAX_LISTING_CHARS],
         }
+        if salary:
+            entry["salary_shown"] = " ".join(salary_figure(salary_text, salary)[:2])
+            entry["salary_code"] = salary.get("code", "")
         repost = repost_key(entry["title"], entry["company"])
         if repost:
             repost_keys.append(repost)

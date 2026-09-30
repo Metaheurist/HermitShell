@@ -24,6 +24,9 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import money
+from job_extras import parse_salary
+
 VERSION = 1
 STATS_DAYS = 400
 RANGES = (7, 30, 90, 365)
@@ -97,6 +100,21 @@ def _detail(details: str | None, name: str, limit: int) -> str:
     return "" if value.lower() in ("", "unknown", "not stated") else value
 
 
+def _year_low(r: sqlite3.Row, currency: str, rates: dict[str, float]) -> float | None:
+    """The job's lowest yearly salary in `currency`; None when unknown or its currency has no rate. Rows from
+    before salary_code was kept are in the currency their salary text shows, else the profile's."""
+    value = r["year_low"]
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        return None
+    if not currency:
+        return value
+    code = money.currency_code(_detail(r["details"], "salary_code", 3))
+    if not code:
+        parsed = parse_salary(r["salary"] or "")
+        code = money.advert_code(parsed["currency"] if parsed else "", currency)
+    return money.convert(value, code, currency, rates)
+
+
 def _mode(details: str | None) -> str:
     return _detail(details, "work_mode", 20)
 
@@ -149,9 +167,11 @@ def _more(r: sqlite3.Row, private: tuple[str, ...] = ()) -> dict:
     return {k: v for k, v in more.items() if v not in ("", None, [])}
 
 
-def collect(db: Path, tz: ZoneInfo, now: float | None = None, private: tuple[str, ...] = ()) -> dict:
+def collect(db: Path, tz: ZoneInfo, now: float | None = None, private: tuple[str, ...] = (), currency: str = "",
+            rates: dict[str, float] | None = None) -> dict:
     """A profile's stats; a missing tracker gives empty stats. Only reads the database. `private` words (the
-    profile's name and email) are removed from the job details."""
+    profile's name and email) are removed from the job details. Salaries are in `currency` at `rates` (those
+    that can't be converted are left out of the median); empty `currency` takes them as they are."""
     now = now or time.time()
     today = datetime.fromtimestamp(now, tz).date()
     first = today - timedelta(days=STATS_DAYS - 1)
@@ -193,7 +213,8 @@ def collect(db: Path, tz: ZoneInfo, now: float | None = None, private: tuple[str
         d = day(r["first_seen"])
         if not d:
             continue
-        job = {"fit": r["fit"], "first_seen": r["first_seen"], "day": d.isoformat(), "year_low": r["year_low"],
+        job = {"fit": r["fit"], "first_seen": r["first_seen"], "day": d.isoformat(),
+               "year_low": _year_low(r, currency, rates or {}),
                "employer": _clean(r["employer"] or r["company"], MAX_NAME), "source": _clean(r["source"], MAX_NAME),
                "title": _clean(r["title"], MAX_TITLE), "mode": _mode(r["details"]), "d": d, "row": r}
         rated.append(job)
@@ -237,7 +258,8 @@ def _sent_list(sent: list[dict], answers: dict, cutoff: date, private: tuple[str
         out.append({"title": j["title"], "employer": j["employer"], "day": j["day"],
                     "fit": j["fit"] if isinstance(j["fit"], int) and 0 <= j["fit"] <= 10 else None,
                     "location": _detail(r["details"], "location", MAX_NAME), "mode": j["mode"],
-                    "salary": _clean(r["salary"], 40) or _detail(r["details"], "salary", 40),
+                    "salary": _detail(r["details"], "salary_shown", 40) or _clean(r["salary"], 40)
+                    or _detail(r["details"], "salary", 40),
                     "source": j["source"], "url": _url(r["url"]), "answer": answers.get(r["key"], ""),
                     "key": r["key"] if len(r["key"] or "") <= MAX_KEY and not _CONTROL.search(r["key"]) else "",
                     "more": _more(r, private)})

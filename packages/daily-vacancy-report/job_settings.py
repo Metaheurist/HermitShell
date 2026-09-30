@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import re
 
+from money import currency_code
+
 LEVELS = ("junior", "mid", "senior", "lead", "any")
 EMPLOYMENT_TYPES = ("Permanent", "Contract", "Temporary", "Part-time", "Internship")
 WORK_MODES = ("On-site", "Hybrid", "Remote")
@@ -73,7 +75,7 @@ def form_values(get) -> dict:
         "types": _split(val("JOB_EMPLOYMENT_TYPES", DEFAULT_TYPES), ","),
         "modes": _split(val("JOB_WORK_MODES", ",".join(WORK_MODES)), ","),
         "min_salary": val("JOB_MIN_SALARY", "0"),
-        "currency": val("JOB_SALARY_CURRENCY"),
+        "currency": currency_code(val("JOB_SALARY_CURRENCY")),
         "hide_agency": val("JOB_HIDE_UNNAMED_AGENCY", "0") == "1",
         "titles": _split(val("JOB_TARGET_TITLES"), "||"),
     }
@@ -111,7 +113,7 @@ def clean_form(raw: dict) -> dict:
         "types": types or _split(DEFAULT_TYPES, ","),
         "modes": modes or list(WORK_MODES),
         "min_salary": _salary(raw.get("min_salary")),
-        "currency": re.sub(r"[^\w$£€¥₹]", "", str(raw.get("currency") or ""))[:4],
+        "currency": currency_code(_text(raw.get("currency"), 4)),
         "hide_agency": raw.get("hide_agency") in (True, "1", "yes", "on"),
         "titles": _items(raw.get("titles"), MAX_TITLES, 60),
     }

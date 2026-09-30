@@ -86,7 +86,9 @@ def gpu_run_args(vendor: str, index: int | None = None) -> list[str]:
     nodes = [n for n in (*cards, *NVIDIA_NODES) if Path(n).exists()]
     return ["--gpus", "all" if index is None else f"device={index}", *[a for n in nodes for a in ("--device", n)]]
 DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
-SALARY_SYMBOLS = {"gb": "£", "us": "$", "ca": "$", "au": "$", "nz": "$", "in": "₹", "jp": "¥", "ch": "CHF"}
+# The salary currencies the vacancy report converts between (money.CURRENCIES), by search country.
+SALARY_CURRENCIES = {"gb": "GBP", "us": "USD", "ca": "CAD", "au": "AUD", "nz": "NZD"}
+CURRENCY_CODES = ("GBP", "EUR", "USD", "CAD", "AUD", "NZD")
 EURO_COUNTRIES = {"at", "be", "cy", "de", "ee", "es", "fi", "fr", "gr", "hr", "ie", "it", "lt", "lu", "lv", "mt",
                   "nl", "pt", "si", "sk"}
 
@@ -150,9 +152,9 @@ def scheduled_jobs(pkg: str) -> list[tuple[str, dict]]:
     return [(pkg, info)] + [(f"{pkg}-{extra['id']}", extra) for extra in info.get("extra_jobs", [])]
 
 
-def salary_symbol(country: str) -> str:
+def salary_currency(country: str) -> str:
     cc = country.strip().lower()
-    return "€" if cc in EURO_COUNTRIES else SALARY_SYMBOLS.get(cc, "")
+    return "EUR" if cc in EURO_COUNTRIES else SALARY_CURRENCIES.get(cc, "")
 
 BOLD, DIM, GREEN, YELLOW, RESET = ("\033[1m", "\033[2m", "\033[32m", "\033[33m", "\033[0m") \
     if sys.stdout.isatty() and os.name != "nt" else ("",) * 5
@@ -833,10 +835,12 @@ class Wizard:
                 sys.exit(f"JOB_MIN_SALARY: '{reply}' is not a number")
             self.say(f"  {YELLOW}enter a number such as 45000 or 45k{RESET}")
         self.set("JOB_MIN_SALARY", str(minimum) if minimum else "0", "0")
-        if minimum:
-            symbol = self.preset("JOB_SALARY_CURRENCY") or salary_symbol(self.value("JOB_SEARCH_COUNTRY"))
-            self.set("JOB_SALARY_CURRENCY", self.text(
-                "Currency symbol in the adverts (salaries in another currency are kept; empty = any)", symbol))
+        current = self.preset("JOB_SALARY_CURRENCY") or salary_currency(self.value("JOB_SEARCH_COUNTRY"))
+        current = {"£": "GBP", "€": "EUR", "$": "USD"}.get(current, current.upper())
+        options = [("", "As advertised (no conversion)")] + [(c, c) for c in CURRENCY_CODES]
+        picked = self.choose("Salary currency: salaries in other currencies are converted to it, and the minimum "
+                             "is in it", options, [current if current in CURRENCY_CODES else ""], many=False)
+        self.set("JOB_SALARY_CURRENCY", picked[0] if picked else "")
         self.set("JOB_HIDE_UNNAMED_AGENCY", "1" if self.confirm(
             "Hide recruitment-agency adverts that don't name the employer? (repeats of the same job are "
             "always merged)", self.preset("JOB_HIDE_UNNAMED_AGENCY", "0") == "1") else "0", "0")

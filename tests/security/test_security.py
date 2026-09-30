@@ -22,7 +22,9 @@ sys.path[:0] = [str(PACKAGE), str(REPO / "common")]
 
 import cv_text  # noqa: E402
 import hermes_common as hc  # noqa: E402
+import job_settings  # noqa: E402
 import maintenance  # noqa: E402
+import money  # noqa: E402
 import profiles  # noqa: E402
 from job_tracker import Tracker, sign  # noqa: E402
 
@@ -53,7 +55,8 @@ def test_profile_ids_cannot_leave_the_profiles_folder(pid):
 @pytest.mark.parametrize("key", ["PATH", "LD_PRELOAD", "PYTHONPATH", "HERMES_HOME", "HERMITSHELL_HOME", "HERMES_DATA_KEY",
                                  "JOB_PROFILE_FILE", "HERMES_STATE_DIR", "OLLAMA_HOST", "OLLAMA_HOSTS",
                                  "HERMES_AUTOFIT", "HERMES_AUTOFIT_THREADS", "HERMES_MODEL_CONCURRENCY",
-                                 "OLLAMA_NUM_CTX", "HERMITSHELL_JOB_TIMEOUT", "HERMITSHELL_CATCHUP_MINUTES"])
+                                 "OLLAMA_NUM_CTX", "HERMITSHELL_JOB_TIMEOUT", "HERMITSHELL_CATCHUP_MINUTES",
+                                 "JOB_FX_URL"])
 def test_the_dashboard_cannot_set_process_or_path_settings(key):
     assert not hc.dashboard_key_allowed(key)
 
@@ -540,3 +543,61 @@ def test_the_entrypoint_and_installers_quote_what_they_are_given():
     unit = (REPO / "scripts" / "host" / "hermitshell.service").read_text(encoding="utf-8")
     for line in ("NoNewPrivileges=yes", "ProtectSystem=strict", "ReadWritePaths=@HOME@", "UMask=0077"):
         assert line in unit, line
+
+
+# --------------------------------------------------------------------------- exchange rates and currencies
+
+class _Reply:
+    def __init__(self, data, size=100):
+        self.data, self.content = data, b"x" * size
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self.data
+
+
+def test_exchange_rates_are_only_fetched_over_https_without_following_redirects(monkeypatch):
+    calls = []
+    monkeypatch.setattr(money.requests, "get", lambda url, **kw: calls.append((url, kw)) or _Reply(
+        {"base": "EUR", "rates": {"GBP": 0.85, "USD": 1.1}}))
+    for url in ("http://rates.example/latest", "file:///etc/passwd", "ftp://rates.example", "//rates.example"):
+        assert money.fetch_rates(url) == {}
+    assert not calls
+    assert money.fetch_rates("https://rates.example/latest") == {"EUR": 1.0, "GBP": 0.85, "USD": 1.1}
+    assert calls[0][1]["allow_redirects"] is False and calls[0][1]["timeout"] <= 10
+
+
+@pytest.mark.parametrize("data", [
+    {"base": "EUR", "rates": {"GBP": float("nan"), "USD": float("inf")}},
+    {"base": "EUR", "rates": {"GBP": -1, "USD": 0}},
+    {"base": "EUR", "rates": {"GBP": "0.85", "USD": True}},
+    {"base": "EUR", "rates": {"GBP": 1e9}},
+    {"base": "EUR", "rates": ["GBP", 0.85]},
+    ["not", "a", "dict"],
+    {"base": HOSTILE, "rates": {HOSTILE: 1.0}},
+])
+def test_bad_exchange_rate_replies_convert_nothing(monkeypatch, data):
+    monkeypatch.setattr(money.requests, "get", lambda url, **kw: _Reply(data))
+    assert money.fetch_rates("https://rates.example/latest") == {}
+
+
+def test_an_oversized_exchange_rate_reply_is_ignored(monkeypatch):
+    monkeypatch.setattr(money.requests, "get", lambda url, **kw: _Reply(
+        {"base": "EUR", "rates": {"GBP": 0.85, "USD": 1.1}}, money.FX_MAX_BYTES + 1))
+    assert money.fetch_rates("https://rates.example/latest") == {}
+
+
+@pytest.mark.parametrize("cache", ['{"at": 1e30, "rates": {"GBP": "x", "USD": -2}}', "[1, 2]", "not json",
+                                   '{"at": "soon", "rates": {"GBP": 0.85, "USD": 1.1}}'])
+def test_a_tampered_rate_cache_is_not_trusted(tmp_path, monkeypatch, cache):
+    (tmp_path / money.FX_FILE).write_text(cache, encoding="utf-8")
+    monkeypatch.setattr(money.requests, "get", lambda url, **kw: _Reply({}))
+    assert money.rates(tmp_path, "https://rates.example/latest", now=1_790_000_000.0) == {}
+
+
+def test_a_profiles_currency_is_one_of_the_offered_codes():
+    for raw in (HOSTILE, "GBP<script>", "£ GBP", "../", 7, ["GBP"]):
+        assert job_settings.clean_form({"currency": raw})["currency"] == ""
+    assert job_settings.form_values({"JOB_SALARY_CURRENCY": HOSTILE}.get)["currency"] == ""

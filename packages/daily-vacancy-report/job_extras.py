@@ -11,29 +11,39 @@ from datetime import date, datetime
 import requests
 
 from hermes_common import log, ollama_chat
+from money import SYMBOLS, currency_code
 
 # --------------------------------------------------------------------------- salary
 
 DAYS_PER_YEAR = 220
 HOURS_PER_YEAR = 1950
-_AMOUNT = re.compile(r"(?P<cur>[£€$])?\s?(?P<num>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s?(?P<k>k\b)?", re.I)
+_CODES = "GBP|EUR|USD|CAD|AUD|NZD"
+# ISO codes are shown with a symbol that names the currency: "USD" is "US$", as a bare "$" could be any dollar.
+CODE_SYMBOLS = {"GBP": "£", "EUR": "€", "USD": "US$", "CAD": "C$", "AUD": "A$", "NZD": "NZ$"}
+_AMOUNT = re.compile(
+    r"(?P<cur>(?-i:(?<![A-Za-z])(?:US|CA|AU|NZ|C|A)\$|[£€$]|(?<![A-Za-z])(?:" + _CODES + r")(?=\s?\d)))?\s?"
+    r"(?P<num>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s?(?P<k>k\b)?"
+    r"(?:\s?(?P<code>(?-i:" + _CODES + r"))\b)?", re.I)
 _DAY = re.compile(r"per day|/\s?day|a day\b|\bdaily\b|day rate|\bp/?d\b", re.I)
 _HOUR = re.compile(r"per hour|/\s?h(ou)?r|an hour\b|\bhourly\b|\bp/?h\b", re.I)
 
 
 def parse_salary(text: str) -> dict | None:
-    """'£45k-£55k', '£40,000 - £55,000 per annum', '£350 per day', 'up to 60,000' -> yearly range.
+    """'£45k-£55k', '£40,000 - £55,000 per annum', '£350 per day', 'up to 60,000', 'C$90k', '50,000 EUR' -> yearly range.
 
-    Returns {"low", "high", "period", "currency", "year_low", "year_high"} or None when no figure is given.
+    Returns {"low", "high", "period", "currency", "year_low", "year_high"} or None when no figure is given;
+    "currency" is the symbol the advert used (an ISO code becomes its symbol), or "".
     """
     if not text:
         return None
     amounts: list[tuple[float, str]] = []
     for m in _AMOUNT.finditer(text):
         value = float(m.group("num").replace(",", "")) * (1000 if m.group("k") else 1)
-        if not m.group("cur") and not m.group("k") and value < 10000:
+        cur = m.group("cur") or ""
+        cur = CODE_SYMBOLS.get(m.group("code") or cur.strip(), cur)
+        if not cur and not m.group("k") and value < 10000:
             continue
-        amounts.append((value, m.group("cur") or ""))
+        amounts.append((value, cur))
         if len(amounts) == 2:
             break
     if not amounts:
@@ -51,10 +61,13 @@ def parse_salary(text: str) -> dict | None:
 
 
 def below_min_salary(salary: dict | None, minimum: int, currency: str = "") -> bool:
-    """True only when the listing's best case is clearly under `minimum` (unknown salaries pass)."""
+    """True only when the listing's best case is clearly under `minimum` (unknown salaries pass). A salary in
+    another currency than `currency` passes too: money.shown_salary converts it first when it can."""
     if not salary or not minimum:
         return False
-    if currency and salary["currency"] and salary["currency"] != currency:
+    want = currency_code(currency)
+    have = salary.get("code") or currency_code(SYMBOLS.get(salary["currency"], salary["currency"]))
+    if want and have and have != want:
         return False
     return salary["year_high"] < minimum
 

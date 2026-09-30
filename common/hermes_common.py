@@ -83,9 +83,10 @@ def load_env_file(path: Path = APP_HOME / ".env") -> None:
 
 DASHBOARD_FILE = Path(os.environ.get("HERMES_DASHBOARD_FILE") or SCRIPT_DIR / "state" / "dashboard.json")
 _ENV_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
-# The dashboard may only change report, search, email and crawler settings, never paths or the Worker secrets.
+# The dashboard may only change report, search, email and crawler settings, never paths, the Worker secrets or
+# the exchange-rate address the server fetches from.
 _DASHBOARD_PREFIXES = ("ALERT_", "COVER_LETTER_", "FIRECRAWL_", "JOB_", "SCRAPFLY_", "SMTP_", "TAVILY_")
-_DASHBOARD_DENIED = re.compile(r"^JOB_FEEDBACK_|_(FILE|DIR|PATH)$|^JOB_PROFILE_ID$")
+_DASHBOARD_DENIED = re.compile(r"^JOB_FEEDBACK_|_(FILE|DIR|PATH)$|^JOB_PROFILE_ID$|^JOB_FX_")
 
 
 def dashboard_key_allowed(key: str) -> bool:

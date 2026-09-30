@@ -38,6 +38,12 @@ KNOWN_DAY = 20000
     ("£450 - £500", (99000, 110000, "day", "£")),
     ("£25 per hour", (48750, 48750, "hour", "£")),
     ("€100,000", (100000, 100000, "year", "€")),
+    ("US$120,000 - US$140,000", (120000, 140000, "year", "US$")),
+    ("C$90k", (90000, 90000, "year", "C$")),
+    ("A$95k - A$105k", (95000, 105000, "year", "A$")),
+    ("50,000 EUR", (50000, 50000, "year", "€")),
+    ("USD 95,000", (95000, 95000, "year", "US$")),
+    ("$120,000 USD", (120000, 120000, "year", "US$")),
 ])
 def test_parse_salary(text, expected):
     s = parse_salary(text)
@@ -479,13 +485,42 @@ def test_salary_is_a_headline_not_a_tag():
 
     job = {**report_job(), "salary": "£350 - £400 per day", "salary_range": parse_salary("£350 - £400 per day")}
     page = job_scanner.build_html([job], [], REPORT_STATS, "Summary.")
-    assert 'src="cid:icon-salary"' in page and "£350 - £400" in page and "about £77,000 - £88,000 a year" in page
+    assert 'src="cid:icon-salary-gbp"' in page and "£350 - £400" in page and "about £77,000 - £88,000 a year" in page
     assert page.index("£350 - £400") < page.index("Contract</span>")
-    assert "Salary not listed" not in page and (job_scanner.ICON_DIR / "icon-salary.png").is_file()
+    assert "Salary not listed" not in page and (job_scanner.ICON_DIR / "icon-salary-gbp.png").is_file()
     assert "Salary: £350 - £400 a day (about £77,000 - £88,000 a year)" in job_scanner.build_text([job], "")
     unlisted = job_scanner.build_html([report_job()], [], REPORT_STATS, "Summary.")
     assert "Salary not listed" in unlisted and "icon-salary" not in unlisted
     assert "Salary:" not in job_scanner.build_text([report_job()], "")
+
+
+def test_a_converted_salary_shows_the_profiles_currency_with_the_advertised_figures():
+    import job_scanner
+    import money
+
+    rates = {"EUR": 1.0, "GBP": 0.85718, "USD": 1.1355}
+    year = money.shown_salary(parse_salary("£45,000 - £55,000"), "USD", rates)
+    assert job_scanner.salary_figure("£45,000 - £55,000", year) == (
+        "$59,600 - $72,900", "a year", "converted from £45,000 - £55,000")
+    day = money.shown_salary(parse_salary("£350 - £400 per day"), "USD", rates)
+    assert job_scanner.salary_figure("£350 - £400 per day", day) == (
+        "$464 - $530", "a day", "about $102,000 - $116,600 a year, from £350 - £400 a day")
+    job = {**report_job(), "salary": "£45,000 - £55,000", "salary_range": year}
+    page = job_scanner.build_html([job], [], REPORT_STATS, "Summary.")
+    assert 'src="cid:icon-salary-usd"' in page and "converted from £45,000 - £55,000" in page
+    assert "Salary: $59,600 - $72,900 a year (converted from £45,000 - £55,000)" in job_scanner.build_text([job], "")
+    euro = {**job, "salary_range": money.shown_salary(parse_salary("€65,000"), "", rates)}
+    assert 'src="cid:icon-salary-eur"' in job_scanner.salary_block(euro)
+    plain = {**job, "salary": "60,000", "salary_range": parse_salary("60,000")}
+    assert 'src="cid:icon-salary"' in job_scanner.salary_block(plain)
+
+
+def test_the_report_footer_shows_the_minimum_with_its_currency_symbol():
+    import job_scanner
+
+    assert "€40,000+" in job_scanner.report_footer(dict(REPORT_STATS, salary_currency="EUR"))
+    assert "£40,000+" in job_scanner.report_footer(REPORT_STATS)
+    assert "&lt;" not in job_scanner.report_footer(dict(REPORT_STATS, salary_currency="<b>"))
 
 
 def test_missing_skill_tags_open_the_add_skill_page_with_that_skill_ticked():

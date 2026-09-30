@@ -139,7 +139,8 @@ CREATE TABLE IF NOT EXISTS skills (skill TEXT PRIMARY KEY COLLATE NOCASE, key TE
 # Listing details kept for cover letters and the dashboard's list of jobs sent (added after the first release,
 # hence not in CREATE TABLE).
 DETAIL_FIELDS = ("location", "employment_type", "work_mode", "seniority", "salary", "reasoning", "about",
-                 "company_profile", "company_site", "listing", "coverage", "published", "employer_site")
+                 "company_profile", "company_site", "listing", "coverage", "published", "employer_site",
+                 "salary_shown", "salary_code")
 # How a letter or CV request was made: "fresh" asks for a new one even if one was made recently, "quiet" (from
 # the dashboard) keeps it for download instead of emailing it.
 REQUEST_FLAGS = ("fresh", "quiet")

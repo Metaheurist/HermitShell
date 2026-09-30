@@ -79,9 +79,10 @@ def test_each_packages_standard_jobs_match_the_wizard():
 
 # --------------------------------------------------------------------------- small helpers
 
-@pytest.mark.parametrize("country, symbol", [("gb", "£"), ("ie", "€"), ("us", "$"), ("zz", "")])
-def test_salary_symbol(country, symbol):
-    assert setup.salary_symbol(country) == symbol
+@pytest.mark.parametrize("country, code", [("gb", "GBP"), ("ie", "EUR"), ("us", "USD"), ("ca", "CAD"), ("zz", "")])
+def test_salary_currency(country, code):
+    assert setup.salary_currency(country) == code
+    assert code in (*setup.CURRENCY_CODES, "")
 
 
 def test_mask_never_shows_a_whole_secret():

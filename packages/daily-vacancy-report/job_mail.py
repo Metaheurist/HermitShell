@@ -11,6 +11,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import hermes_common as hc
+import money
 from hermes_common import EMAIL_HEAD, env
 from job_extras import days_left, parse_salary
 from job_tracker import ACTIONS, Tracker, card_links, skill_link
@@ -22,8 +23,10 @@ def _number(value, top: int) -> int:
     return value if isinstance(value, int) and 0 <= value <= top else 0
 
 
-def card_job(key: str, job: dict, today: date) -> dict:
-    """A tracker row in the shape job_scanner.job_card draws; fields the tracker does not keep are left empty."""
+def card_job(key: str, job: dict, today: date, currency: str = "", rates: dict | None = None,
+             country: str = "") -> dict:
+    """A tracker row in the shape job_scanner.job_card draws; fields the tracker does not keep are left empty.
+    The salary is converted to `currency` at `rates` (money.shown_salary), as the daily report does."""
     def text(name: str) -> str:
         value = job.get(name)
         return str(value) if isinstance(value, (str, int, float)) and value != "Unknown" else ""
@@ -43,7 +46,7 @@ def card_job(key: str, job: dict, today: date) -> dict:
         "url": text("url") if text("url").lower().startswith(("https://", "http://")) else "",
         "source": text("source"), "location": text("location"), "employment_type": text("employment_type"),
         "work_mode": text("work_mode"), "seniority": text("seniority"), "published": text("published"),
-        "salary": salary, "salary_range": parse_salary(salary), "fit": _number(job.get("fit"), 10),
+        "salary": salary, "salary_range": money.shown_salary(parse_salary(salary), currency, rates or {}, country), "fit": _number(job.get("fit"), 10),
         "confidence": _number(job.get("confidence"), 100), "coverage": _number(job.get("coverage"), 100),
         "reasoning": text("reasoning"), "about": text("about"), "company_profile": text("company_profile"),
         "company_site": text("company_site"), "employer_site": text("employer_site"),
@@ -72,7 +75,9 @@ def job_email(key: str, job: dict, now: datetime | None = None) -> tuple[str, st
     """(subject, html, text) of the email for one tracker job."""
     import job_scanner as js
     now = now or datetime.now(ZoneInfo(env("HERMES_TIMEZONE", "UTC") or "UTC"))
-    card = card_job(key, job, now.date())
+    currency = money.currency_code(env("JOB_SALARY_CURRENCY"))
+    fx = money.rates(hc.STATE_DIR, env("JOB_FX_URL", money.FX_URL)) if currency else {}
+    card = card_job(key, job, now.date(), currency, fx, js.CFG.country or "")
     base, secret = env("JOB_FEEDBACK_URL", "") or "", env("JOB_FEEDBACK_SECRET", "") or ""
     profile = env("JOB_PROFILE_ID", "") or ""
     card["actions"] = card_links(base, secret, key, card["title"], profile=profile)

@@ -48,6 +48,7 @@ import requests
 import cv_text
 import hermes_common as hc
 import job_settings
+import money
 import profile_stats
 from hermes_common import EMAIL_HEAD, STATE_DIR, connect_model, email_header, env, load_env_file, log, ollama_chat
 from job_settings import slug, term_regex
@@ -1037,6 +1038,7 @@ def push_stats(api: Api, now_for: str = "") -> None:
     sent = sent if isinstance(sent, dict) else {}
     tz, now = ZoneInfo(timezone_name()), time.time()
     people = all_profiles()
+    fx = None
     ids = [p["id"] for p in people]
     for person in people:
         pid = person["id"]
@@ -1046,8 +1048,11 @@ def push_stats(api: Api, now_for: str = "") -> None:
         private = (person.get("name", ""), person.get("email", ""))
         if person.get("owner"):
             private += (env("COVER_LETTER_NAME"), env("ALERT_EMAIL"))
+        currency = job_settings.form_values(profile_getter(person))["currency"]
+        if currency and fx is None:
+            fx = money.rates(STATE_DIR, env("JOB_FX_URL", money.FX_URL))
         try:
-            data = profile_stats.collect(tracker_file(pid), tz, now, private)
+            data = profile_stats.collect(tracker_file(pid), tz, now, private, currency, fx or {})
         except (sqlite3.Error, OSError, ValueError) as exc:
             log(f"Could not read the stats of {pid}: {exc.__class__.__name__}")
             continue
