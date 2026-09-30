@@ -234,7 +234,7 @@ describe("pages that update themselves", () => {
   it("marks the key being saved, reloads Global settings until it is applied, then says so", async () => {
     const { env, get, act } = await setup();
     expect(refreshOf((await get("/admin/settings")).body)).toBeNull();
-    await act({ action: "api_key", provider: "tavily", key: "tvly-test-key-1234567890" });
+    await act({ action: "api_key", provider: "tavily", key: "not-a-real-key" });
     const waiting = (await get("/admin/settings?done=queued")).body;
     expect(refreshOf(waiting)).toBe("4");
     expect(waiting).toContain('<meta http-equiv="refresh" content="4;url=/admin/settings?done=queued&amp;w=1#keys">');

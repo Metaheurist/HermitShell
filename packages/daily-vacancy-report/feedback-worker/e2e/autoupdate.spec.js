@@ -23,7 +23,7 @@ test("a key added on Global settings shows as saving, then appears by itself onc
   await expect(row).toContainText("No key yet");
   await row.getByRole("link", { name: "Add key" }).click();
   const modal = page.locator("#gkey-tavily");
-  await modal.getByLabel("API key").fill("tvly-e2e-autoupdate-0001");
+  await modal.getByLabel("API key").fill("not-a-real-key");
   await modal.getByRole("button", { name: "Save key" }).click();
   await expect(page).toHaveURL(/done=queued#keys$/);
   await expect(page.locator(".waitbar")).toContainText("Waiting for HermitShell to apply the web search keys; this page updates by itself.");
