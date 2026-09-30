@@ -1715,12 +1715,15 @@ def letter_tasks(pid: str) -> list[dict]:
         return []
     writing = read_json(writing_marker(pid), {})
     busy = writing.get("event_id") if isinstance(writing, dict) and _alive(_pid(writing.get("pid"))) else ""
-    found = [{"id": f"letter:{pid}:{r['event_id']}", "kind": r["action"], "u": pid,
-              "state": "running" if r["event_id"] == busy else "waiting", "at": _ms(r["at"]),
-              "trigger": "dashboard" if "quiet" in (r["flags"] or "").split(",") else "email",
-              "title": str(r["title"] or "")[:120], "employer": str(r["employer"] or "")[:80], "retry": r["attempts"] > 0,
-              "j": str(r["key"] or "")[:300]}
-             for r in rows]
+    found = []
+    for r in rows:
+        flags = (r["flags"] or "").split(",")
+        found.append({"id": f"letter:{pid}:{r['event_id']}", "kind": r["action"], "u": pid,
+                      "state": "running" if r["event_id"] == busy else "waiting", "at": _ms(r["at"]),
+                      "trigger": "dashboard" if "quiet" in flags or "send" in flags else "email",
+                      "title": str(r["title"] or "")[:120], "employer": str(r["employer"] or "")[:80],
+                      "retry": r["attempts"] > 0, "j": str(r["key"] or "")[:300],
+                      **({"send": True} if "send" in flags else {})})
     return sorted(found, key=lambda t: t["state"] != "running")
 
 

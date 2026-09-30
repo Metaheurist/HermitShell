@@ -144,8 +144,8 @@ DETAIL_FIELDS = ("location", "employment_type", "work_mode", "seniority", "salar
                  "company_profile", "company_site", "listing", "coverage", "published", "employer_site",
                  "salary_shown", "salary_code")
 # How a letter or CV request was made: "fresh" asks for a new one even if one was made recently, "quiet" (from
-# the dashboard) keeps it for download instead of emailing it.
-REQUEST_FLAGS = ("fresh", "quiet")
+# the dashboard) keeps it for download instead of emailing it, "send" (the dashboard's Email button) emails it.
+REQUEST_FLAGS = ("fresh", "quiet", "send")
 
 
 def clean_flags(flags) -> str:
@@ -446,7 +446,8 @@ def sync_feedback(tracker: Tracker, base_url: str, api_token: str, ack: bool = T
             at = float(ev.get("at") or 0) / 1000 or None
         except (TypeError, ValueError):
             at = None
-        flags = [f for f, on in (("fresh", ev.get("fresh")), ("quiet", ev.get("via") == "dashboard")) if on]
+        dash, send = ev.get("via") == "dashboard", bool(ev.get("send"))
+        flags = [f for f, on in (("fresh", ev.get("fresh")), ("quiet", dash and not send), ("send", dash and send)) if on]
         saved += tracker.add_event(event_id, str(ev.get("j") or ""), str(ev.get("a") or ""),
                                    str(ev.get("r") or ""), at, skills, ",".join(flags))
         ids.append(event_id)

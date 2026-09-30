@@ -259,6 +259,16 @@ def test_dashboard_requests_are_kept_for_download_and_not_emailed(kept):
     assert headers["Authorization"] == "Bearer tok" and headers["Content-Type"] == "application/pdf"
 
 
+def test_the_dashboards_email_button_sends_the_kept_letter_without_the_model(kept):
+    tracker, sent, uploads, written = kept
+    tracker.add_event("e1", "k1", "cover_letter", flags="send")
+    lines = cover_letter.process_pending(tracker, lambda: pytest.fail("no model needed"))
+    assert lines == ["Cover letter sent for AI Engineer (the one made earlier)"] and written == []
+    (subject, [(filename, pdf, _)]), = sent
+    assert filename == "Cover letter - Sam Taylor - AI Engineer.pdf" and pdf.startswith(b"%PDF")
+    assert len(list(cover_letter.LETTER_DIR.glob("*.pdf"))) == 1 and tracker.pending_letters() == []
+
+
 def test_a_reused_letter_is_kept_only_for_the_rest_of_its_days(kept):
     tracker, sent, uploads, written = kept
     tracker.db.execute("UPDATE letters SET at = ?", (time.time() - 5.5 * cover_letter.DAY,))

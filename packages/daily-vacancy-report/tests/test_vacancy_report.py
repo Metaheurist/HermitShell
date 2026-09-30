@@ -348,6 +348,7 @@ def test_sync_feedback_saves_then_acknowledges(tracker, monkeypatch):
 
 def test_request_flags_are_kept_only_for_letters_and_cvs(tracker):
     assert job_tracker.clean_flags("quiet,evil,fresh") == "fresh,quiet" and job_tracker.clean_flags(None) == ""
+    assert job_tracker.clean_flags(["send", "sendall"]) == "send"
     tracker.add_event("e1", "k1", "cover_letter", flags=["quiet", "fresh", "x"])
     tracker.add_event("e2", "k1", "applied", flags="quiet")
     assert tracker.pending_letters()[0]["flags"] == "fresh,quiet"
@@ -369,11 +370,13 @@ def test_recent_doc_is_the_newest_file_dated_from_when_it_was_first_made(tracker
 def test_sync_feedback_keeps_how_a_request_was_made(tracker, monkeypatch):
     events = [{"id": "event:1:a", "j": "k1", "a": "cover_letter", "r": "", "at": 1, "fresh": 1},
               {"id": "event:1:b", "j": "k1", "a": "tailored_cv", "r": "", "at": 2, "via": "dashboard"},
-              {"id": "event:1:c", "j": "k1", "a": "tailored_cv", "r": "", "at": 3, "via": "elsewhere", "fresh": 0}]
+              {"id": "event:1:c", "j": "k1", "a": "tailored_cv", "r": "", "at": 3, "via": "elsewhere", "fresh": 0},
+              {"id": "event:1:d", "j": "k1", "a": "cover_letter", "r": "", "at": 4, "via": "dashboard", "send": 1},
+              {"id": "event:1:e", "j": "k1", "a": "cover_letter", "r": "", "at": 5, "send": 1}]
     monkeypatch.setattr(job_tracker.requests, "get", lambda *a, **k: FakeResponse({"events": events}))
-    assert sync_feedback(tracker, "https://fb.example.workers.dev", "tok", ack=False) == (3, None)
+    assert sync_feedback(tracker, "https://fb.example.workers.dev", "tok", ack=False) == (5, None)
     flags = {r["event_id"]: r["flags"] for r in tracker.open_requests()}
-    assert flags == {"event:1:a": "fresh", "event:1:b": "quiet", "event:1:c": ""}
+    assert flags == {"event:1:a": "fresh", "event:1:b": "quiet", "event:1:c": "", "event:1:d": "send", "event:1:e": ""}
 
 
 def test_sync_feedback_reports_errors(tracker, monkeypatch):
