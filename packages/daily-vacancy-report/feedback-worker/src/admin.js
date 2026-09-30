@@ -14,7 +14,7 @@
 import { hubConnect, hubPresence, hubSeen } from "./hub.js";
 import { createInvite, queueItem } from "./join.js";
 import {
-  CSP, SECURITY_HEADERS, accessUser, ago, authorised, deleteAndUnflag, esc, hmacHex, json, limitedForm, limitedJson, listFlagged,
+  CSP, SECURITY_HEADERS, accessUser, ago, authorised, cleanSkill, deleteAndUnflag, esc, hmacHex, json, limitedForm, limitedJson, listFlagged,
   purgeProfileEvents,
   note, page, redirect, safeEqual, secretEqual, text, when,
 } from "./lib.js";
@@ -26,7 +26,8 @@ import { CONFIRM_STYLE, binButton, deleteModal } from "./confirm.js";
 import { MODAL_STYLE } from "./keys.js";
 import { SEARCH_STYLE, matchesProfile, noMatch, recruiterHits, recruiterRow, searchBar, searchQuery } from "./search.js";
 import {
-  DOC_URL, REQUEST_KINDS, docIndex, emailedIndex, markEmailed, pdfResponse, pendingDocs, readDoc, requestDoc, storeDoc, validJobKey,
+  DOC_URL, REQUEST_KINDS, SKILL_URL, addedSkills, docIndex, emailedIndex, markEmailed, pdfResponse, pendingDocs, readDoc, requestDoc,
+  requestSkill, storeDoc, validJobKey,
 } from "./docs.js";
 import { LINK_STYLE, MAX_STATS_BYTES, SENT_RANGES, SENT_URL, STATS_URL, sentPage, splitStats, statsLink, statsPage, validStats } from "./stats.js";
 import { TASKS_STYLE, TASKS_URL, cancelTask, requests, taskRows, tasksButton, tasksModal, tasksPage } from "./tasks.js";
@@ -423,6 +424,23 @@ async function docRequest(request, env, s) {
   return redirect(sentBack(u, form.get("back"), h.slice(0, 16), kind === "send_job" ? "mail" : "doc"));
 }
 
+// A skill missing from the CV, added from the list of jobs sent (admins, and a recruiter for their own pool).
+async function skillRequest(request, env, s) {
+  const form = await limitedForm(request, 8192);
+  if (!form || !safeEqual(String(form.get("csrf") || ""), s.csrf)) {
+    return page("Expired form", "<p>Reload the admin page and try again.</p>", { status: 403 });
+  }
+  const [u, j, given] = ["u", "j", "s"].map((k) => String(form.get(k) || ""));
+  if (!PROFILE_RE.test(u)) return page("Unknown recruit", "<p>Reload the admin page and try again.</p>", { status: 400 });
+  const current = await status(env);
+  const p = visible(s, current, u);
+  if (!p && !s.me.admin) return page(...NOT_FOUND);
+  const skill = cleanSkill(given);
+  if (!p || !validJobKey(j) || !skill || given.length > 120) return redirect(sentBack(u, form.get("back"), "", "skillbad"));
+  const h = await requestSkill(env, { profile: u, owner: Boolean(p.owner), j, skill });
+  return redirect(sentBack(u, form.get("back"), h.slice(0, 16), "skill"));
+}
+
 async function docDownload(request, env, s) {
   const url = new URL(request.url);
   const [u, kind, h] = ["u", "k", "h"].map((k) => url.searchParams.get(k) || "");
@@ -621,15 +639,16 @@ async function signedInRoute(request, env, s, path) {
     if (!PROFILE_RE.test(u)) return text("Not found", 404);
     const current = await status(env);
     if (!allowed(s, current, u)) return page(...NOT_FOUND);
-    const [stats, sent, docs, emailed, held] = await Promise.all([env.FEEDBACK.get(`stats:${u}`, "json"),
-      env.FEEDBACK.get(`sent:${u}`, "json"), docIndex(env, u), emailedIndex(env, u), requests(env)]);
+    const [stats, sent, docs, emailed, held, added] = await Promise.all([env.FEEDBACK.get(`stats:${u}`, "json"),
+      env.FEEDBACK.get(`sent:${u}`, "json"), docIndex(env, u), emailedIndex(env, u), requests(env), addedSkills(env, u)]);
     const owner = Boolean((current.profiles || []).find((x) => x.id === u)?.owner);
     const q = (k) => url.searchParams.get(k) || "";
     return sentPage(current, stats, u, { range: q("r"), answer: q("a"), open: q("open"), done: q("done"), csrf: s.csrf,
-      sent: Array.isArray(sent) ? sent : null, docs, emailed, pending: pendingDocs(current, held, u, owner) });
+      sent: Array.isArray(sent) ? sent : null, docs, emailed, pending: pendingDocs(current, held, u, owner), added });
   }
   if (path === DOC_URL && request.method === "GET") return docDownload(request, env, s);
   if (path === DOC_URL && request.method === "POST") return docRequest(request, env, s);
+  if (path === SKILL_URL && request.method === "POST") return skillRequest(request, env, s);
   if (path === STATUS_URL && request.method === "GET") {
     if (!PROFILE_RE.test(u)) return text("Not found", 404);
     const [current, queue] = await Promise.all([status(env), queued(env)]);

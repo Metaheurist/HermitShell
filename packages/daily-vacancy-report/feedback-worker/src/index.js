@@ -15,7 +15,7 @@ import { handleAdmin, handleApi } from "./admin.js";
 import { DOC_KINDS, DOC_STYLE, OWNER_ID, docFor, jobHash, pdfResponse, readDoc } from "./docs.js";
 import { handleJoin, queueItem } from "./join.js";
 import {
-  CONTROL_RE, EVENT_TTL_SECONDS, LINK_DAYS, ago, authorised, deleteAndUnflag, esc, eventFlag, eventPrefix, favicon, json, limitedForm,
+  CONTROL_RE, EVENT_TTL_SECONDS, LINK_DAYS, MAX_SKILL, ago, authorised, cleanSkill, deleteAndUnflag, esc, eventFlag, eventPrefix, favicon, json, limitedForm,
   limitedJson, listFlagged, page, purgeProfileEvents, safeEqual, setFlag, sha256Hex, sign, text, today,
 } from "./lib.js";
 import { privacyPage } from "./privacy.js";
@@ -55,16 +55,10 @@ const FRESH_MESSAGES = {
 };
 const MAX_TITLE = 120;
 const MAX_REASON = 300;
-const MAX_SKILL = 60;
 const MAX_SKILLS = 12;
 const MAX_FORM_BYTES = 16 * 1024;
 const PROFILE_RE = /^[a-z0-9-]{1,40}$/;
 const LINK_FIELDS = ["j", "a", "n", "s", "u", "d", "t"];
-
-export function cleanSkill(text) {
-  return String(text ?? "").replace(/[^\p{L}\p{N}_ .+#/&()-]/gu, "").split(/\s+/).filter(Boolean).join(" ")
-    .slice(0, MAX_SKILL).trim();
-}
 
 function skillList(packed) {
   return [...new Set(String(packed || "").split("|").map(cleanSkill).filter(Boolean))].slice(0, MAX_SKILLS);

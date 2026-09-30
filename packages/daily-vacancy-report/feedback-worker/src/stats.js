@@ -4,8 +4,8 @@
 // and hovering a bar shows its numbers through the SVG <title>.
 
 import { currencyCode, currencySymbol, moneyIcon } from "./currency.js";
-import { DOC_STYLE, docActions, jobHash, validJobKey } from "./docs.js";
-import { BACK_TO_RECRUITS, EXTERNAL_ICON, ago, esc, page } from "./lib.js";
+import { DOC_STYLE, SKILL_URL, docActions, jobHash, validJobKey } from "./docs.js";
+import { BACK_TO_RECRUITS, EXTERNAL_ICON, ago, cleanSkill, esc, page } from "./lib.js";
 
 export const STATS_URL = "/admin/stats";
 export const SENT_URL = "/admin/sent";
@@ -20,6 +20,8 @@ export const RANGES = { 7: "7 days", 30: "30 days", 90: "90 days", 365: "12 mont
 export const DEFAULT_RANGE = 30;
 const DAY_MS = 86400000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+// The skills HermitShell counts as on the CV (profile_stats.MAX_POOL).
+const MAX_POOL = 200;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -34,6 +36,7 @@ export function validStats(s) {
     v.every((n) => typeof n === "number" && Number.isFinite(n))) &&
     (s.ranges == null || (typeof s.ranges === "object" && !Array.isArray(s.ranges))) &&
     (s.pipeline == null || (typeof s.pipeline === "object" && !Array.isArray(s.pipeline))) &&
+    (s.skills == null || (Array.isArray(s.skills) && s.skills.length <= MAX_POOL && s.skills.every((k) => typeof k === "string" && k.length <= 60))) &&
     (s.sent == null || (Array.isArray(s.sent) && s.sent.length <= MAX_SENT &&
       s.sent.every((j) => j && typeof j === "object" && !Array.isArray(j) &&
         (j.more == null || (typeof j.more === "object" && !Array.isArray(j.more))))));
@@ -385,8 +388,34 @@ function skillChips(label, items, cls) {
   return items.length ? `<div class="skills ${cls}"><span class="lbl">${label}</span><div>${items.map((s) => `<span>${esc(s)}</span>`).join("")}</div></div>` : "";
 }
 
+const PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+const TICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
+
+// The skills missing from the CV. Each is a button that adds it to the skills HermitShell counts as on the CV; one
+// already counted has a tick, and one added here that HermitShell has not reported back yet shows as being added.
+function gapChips(items, key, ctx) {
+  if (!items.length) return "";
+  let open = 0;
+  const chips = items.map((shown) => {
+    const skill = cleanSkill(shown);
+    const low = skill.toLowerCase();
+    if (skill && ctx.skills.has(low)) return `<span class="added" title="Counted as on the CV">${TICK}${esc(shown)}</span>`;
+    if (skill && ctx.adding.has(low)) {
+      return `<span class="adding" title="Added. HermitShell counts it from its next check-in">${TICK}${esc(shown)}</span>`;
+    }
+    if (!skill || !key || !ctx.csrf) return `<span>${esc(shown)}</span>`;
+    open += 1;
+    return `<form method="post" action="${SKILL_URL}"><input type="hidden" name="csrf" value="${esc(ctx.csrf)}">
+<input type="hidden" name="u" value="${esc(ctx.profile)}"><input type="hidden" name="j" value="${esc(key)}"><input type="hidden" name="s" value="${esc(skill)}">
+<input type="hidden" name="back" value="${esc(ctx.back)}"><button title="Add ${esc(skill)} to the skills on the CV">${PLUS}${esc(shown)}</button></form>`;
+  }).join("");
+  const hint = open ? `<small class="skillhint">Press a skill ${ctx.recipient === "you" ? "you have" : "they have"} to count it as on the CV.</small>` : "";
+  return `<div class="skills gap"><span class="lbl">Missing from the CV</span><div>${chips}</div>${hint}</div>`;
+}
+
 // What the job's email card showed, below its title line.
-function jobMore(j, fit, color, today, docs, currency = "") {
+function jobMore(j, fit, color, docs, key, ctx) {
+  const { today, currency = "" } = ctx;
   const m = j.more && typeof j.more === "object" && !Array.isArray(j.more) ? j.more : {};
   const chips = [closingPill(m.closing, today), ...[m.type, j.mode, m.seniority].map((v) => text(v, 40)).filter((v) => v && v !== "Unknown")
     .map((v) => `<span class="fact">${esc(v)}</span>`), text(m.published, 30) ? `<span class="fact soft">Posted ${esc(text(m.published, 30))}</span>` : "",
@@ -403,7 +432,7 @@ function jobMore(j, fit, color, today, docs, currency = "") {
   const url = safeUrl(j.url);
   const advert = url ? `<a class="advert" href="${esc(url)}" target="_blank" rel="noopener noreferrer nofollow">View the advert on ${esc(domain(url))}${EXTERNAL_ICON}</a>` : "";
   return `<div class="more">${chips ? `<div class="facts">${chips}</div>` : ""}${salary}${meters ? `<div class="meters">${meters}</div>` : ""}${why}${about}
-${skillChips("Strongest matches with the CV", words(m.matched, 12), "have")}${skillChips("Missing from the CV", words(m.gaps, 6), "gap")}
+${skillChips("Strongest matches with the CV", words(m.matched, 12), "have")}${gapChips(words(m.gaps, 6), key, ctx)}
 ${docs ? `<div class="docs">${docs}</div>` : ""}${advert}</div>`;
 }
 
@@ -422,7 +451,7 @@ async function sentRow(j, i, ctx) {
   return `<li id="job-${id}" style="animation-delay:${Math.min(i, 12) * 35}ms"><details${ctx.open === id ? " open" : ""}><summary>${
     fit === null ? '<span class="nofit">&ndash;</span>' : ring(fit, 10, { size: 40, color, label: String(fit) })}
 <div class="job"><b>${esc(cut(j.title, 90))}</b><span class="muted">${meta}</span></div><div class="tags">${badge}${source}</div><span class="chev" aria-hidden="true"></span></summary>
-${jobMore(j, fit, color, ctx.today, docs, ctx.currency)}</details></li>`;
+${jobMore(j, fit, color, docs, key, ctx)}</details></li>`;
 }
 
 const SENT_NOTES = {
@@ -430,11 +459,13 @@ const SENT_NOTES = {
   docbad: ["bad", "That request could not be made. Reload the page and try again."],
   docgone: ["bad", "That document is no longer kept. Generate a new one below."],
   mail: ["ok", "HermitShell will email this job within a few minutes. This page checks every 15 seconds until it has gone."],
+  skill: ["ok", "Added. HermitShell counts it as on the CV within a few minutes, for ratings, cover letters and tailored CVs."],
+  skillbad: ["bad", "That skill could not be added. Reload the page and try again."],
 };
 
 // `opts`: range and answer (the filters), open (the job to show opened), done (a note), csrf, sent (the jobs with
-// their details), docs (the letters and CVs kept), emailed (the jobs emailed from here) and pending (those being
-// made or sent).
+// their details), docs (the letters and CVs kept), emailed (the jobs emailed from here), pending (those being
+// made or sent) and added (the skills added from here, docs.addedSkills).
 export async function sentPage(status, stats, pid, opts = {}) {
   const p = (status.profiles || []).find((x) => x.id === pid);
   const back = { wide: true, before: BACK_TO_RECRUITS };
@@ -450,7 +481,9 @@ export async function sentPage(status, stats, pid, opts = {}) {
   const open = /^[0-9a-f]{16}$/.test(opts.open || "") ? opts.open : "";
   const recipient = p.owner ? "you" : cut(String(p.name || "").trim().split(/\s+/)[0], 40) || "this recruit";
   const ctx = { profile: pid, csrf: opts.csrf || "", docs: opts.docs || [], emailed: opts.emailed || [], recipient,
-    pending: opts.pending || new Set(), today, open, currency: p.job?.currency, back: `r=${range}${answer ? `&a=${answer}` : ""}` };
+    pending: opts.pending || new Set(), today, open, currency: p.job?.currency, back: `r=${range}${answer ? `&a=${answer}` : ""}`,
+    skills: new Set((Array.isArray(stats?.skills) ? stats.skills : []).map((k) => cleanSkill(k).toLowerCase()).filter(Boolean)) };
+  ctx.adding = new Set((opts.added || []).map((e) => e.s.toLowerCase()).filter((k) => !ctx.skills.has(k)));
   const rows = await Promise.all(shown.map((j, i) => sentRow(j, i, ctx)));
   const byDay = [];
   shown.forEach((j, i) => {
@@ -653,6 +686,15 @@ background:var(--ok-bg);border:1px solid var(--ok-line);color:#065f46;font-size:
 .skills span:not(.lbl){font-size:12px;font-weight:650;padding:3px 10px;border-radius:99px;border:1px solid}
 .skills.have span:not(.lbl){background:#ecfdf5;border-color:#6ee7b7;color:#047857}
 .skills.gap .lbl{color:#92400e}.skills.gap span:not(.lbl){background:#fffbeb;border-color:#fcd34d;color:#92400e}
+.skills.gap form{margin:0}.skills.gap button{display:inline-flex;align-items:center;gap:4px;margin:0;font:inherit;font-size:12px;font-weight:650;
+padding:3px 10px 3px 7px;border-radius:99px;border:1px solid #fcd34d;background:#fffbeb;color:#92400e;cursor:pointer;box-shadow:none;
+transition:background .15s,border-color .15s,transform .15s}
+.skills.gap button:hover{background:#fef3c7;border-color:#f59e0b;transform:translateY(-1px);filter:none;box-shadow:none}
+.skills.gap button:focus-visible{outline:3px solid rgba(245,158,11,.35);outline-offset:1px}
+.skills.gap svg{width:12px;height:12px;flex:none}
+.skills.gap span.added,.skills.gap span.adding{display:inline-flex;align-items:center;gap:4px;padding-left:7px;background:#ecfdf5;border-color:#6ee7b7;color:#047857}
+.skills.gap span.adding{border-style:dashed;background:#f0fdf4}
+.skillhint{display:block;margin-top:6px;font-size:12px;color:var(--muted)}
 .more .docs{margin-top:2px}
 a.advert{justify-self:start;font-size:13px;font-weight:650;text-decoration:none}a.advert:hover{text-decoration:underline}
 .answer{font-size:11.5px;font-weight:750;padding:3px 10px;border-radius:99px;color:var(--a);background:color-mix(in srgb,var(--a) 13%,#fff);white-space:nowrap}

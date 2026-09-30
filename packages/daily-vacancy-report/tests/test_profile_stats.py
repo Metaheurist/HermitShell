@@ -78,7 +78,27 @@ def test_a_profile_without_a_tracker_has_empty_stats(tmp_path):
     stats = profile_stats.collect(tmp_path / "missing.db", LONDON, NOW)
     assert stats["days"] == {} and stats["since"] is None
     assert set(stats["ranges"]) == {"7", "30", "90", "365"} and stats["ranges"]["30"]["fit"] == [0] * 11
+    assert stats["skills"] == []
     assert not (tmp_path / "missing.db").exists()
+
+
+def test_the_skills_counted_as_on_the_cv_are_listed_oldest_first(tmp_path):
+    with tracker(tmp_path) as t:
+        t.upsert_job("a", job("Data Engineer", 8), True, NOW)
+        t.add_event("s1", "a", "add_skill", "", NOW - DAY, ["Kubernetes", "dbt"])
+        t.add_event("s2", "a", "add_skill", "", NOW, ["Terraform", "Sam Lee"])
+    stats = profile_stats.collect(tmp_path / "job_tracker.db", LONDON, NOW, ("Sam Lee",))
+    assert stats["skills"] == ["dbt", "Kubernetes", "Terraform"]
+    assert col(stats, "2026-09-29", "add_skill") == 1
+
+
+def test_an_older_tracker_without_a_skills_table_still_has_stats(tmp_path):
+    with tracker(tmp_path) as t:
+        t.upsert_job("a", job("Data Engineer", 8), True, NOW)
+        t.db.execute("DROP TABLE skills")
+        t.db.commit()
+    stats = profile_stats.collect(tmp_path / "job_tracker.db", LONDON, NOW)
+    assert stats["skills"] == [] and len(stats["sent"]) == 1
 
 
 def test_stats_leave_out_notes_and_contact_details(tmp_path):

@@ -263,6 +263,31 @@ describe("jobs sent page", () => {
     expect(waiting).toContain(`<li id="job-${other.slice(0, 16)}" style="animation-delay:35ms"><details open>`);
   });
 
+  it("turns each missing skill into a button that adds it, and ticks those counted or being added", async () => {
+    const s = detailed();
+    s.sent[0].more = { ...MORE, gaps: ["dbt", "Airflow", "Power BI", "<>"] };
+    const h = await jobHash("https://jobs.example.com/1");
+    const body = await sentOf({ ...s, skills: ["airflow"] }, "sam-lee", { range: "7", csrf: "c".repeat(32),
+      added: [{ s: "Power BI", at: Date.now() }, { s: "Airflow", at: Date.now() }] });
+    const gaps = body.match(/<div class="skills gap">[\s\S]*?<\/small><\/div>/)[0];
+    expect(gaps).toMatch(/<form method="post" action="\/admin\/skill">[\s\S]*?name="s" value="dbt">[\s\S]*?<button title="Add dbt to the skills on the CV"><svg [^>]*>.*?<\/svg>dbt<\/button><\/form>/);
+    expect(gaps).toContain('name="u" value="sam-lee"');
+    expect(gaps).toContain('name="j" value="https://jobs.example.com/1"');
+    expect(gaps).toContain(`name="csrf" value="${"c".repeat(32)}"`);
+    expect(gaps).toContain('name="back" value="r=7"');
+    expect(gaps).toMatch(/<span class="added" title="Counted as on the CV"><svg [^>]*>.*?<\/svg>Airflow<\/span>/);
+    expect(gaps).toMatch(/<span class="adding" title="Added\. HermitShell counts it from its next check-in"><svg [^>]*>.*?<\/svg>Power BI<\/span>/);
+    expect(gaps).toContain("<span>&lt;&gt;</span>");
+    expect(gaps).toContain("Press a skill they have to count it as on the CV.");
+    expect(body).toContain(`<li id="job-${h.slice(0, 16)}"`);
+    const owner = await sentOf(s, "owner", { range: "7", csrf: "c".repeat(32), done: "skill" });
+    expect(owner).toContain("Press a skill you have to count it as on the CV.");
+    expect(owner).toContain("Added. HermitShell counts it as on the CV within a few minutes");
+    const noForm = await sentOf(s, "sam-lee", { range: "7" });
+    expect(noForm).not.toContain('action="/admin/skill"');
+    expect(noForm).toContain("<span>dbt</span>");
+  });
+
   it("reads the jobs with their details when they are kept apart from the stats", async () => {
     const { stats, sent } = splitStats(detailed());
     expect(stats.sent[0].more).toBeUndefined();
@@ -297,16 +322,20 @@ describe("stats from HermitShell", () => {
   it("drops a profile's stats when it is deleted from the dashboard", async () => {
     const { env, act } = await setup();
     await putStats(env, { u: "sam-lee", stats: sample() });
+    await env.FEEDBACK.put("skilladd:sam-lee", JSON.stringify([{ s: "dbt", at: Date.now() }]));
     await act({ action: "delete", u: "sam-lee", confirm: "yes" });
     expect(keysWith(env, "stats:")).toEqual([]);
+    expect(keysWith(env, "skilladd:")).toEqual([]);
   });
 
   it("accepts only well-formed stats", () => {
     expect(validStats(sample())).toBe(true);
     expect(validStats({ days: {} })).toBe(true);
+    expect(validStats({ days: {}, skills: ["dbt", "Power BI"] })).toBe(true);
     for (const bad of [null, [], "x", { days: [] }, { days: { yesterday: [1] } }, { days: { "2026-09-29": ["1"] } },
       { days: { "2026-09-29": [Infinity] } }, { days: { "2026-09-29": new Array(41).fill(0) } }, { ranges: [] }, { pipeline: [] },
-      { sent: {} }, { sent: [null] }, { sent: ["job"] }, { sent: new Array(201).fill({}) }]) {
+      { sent: {} }, { sent: [null] }, { sent: ["job"] }, { sent: new Array(201).fill({}) }, { skills: "dbt" }, { skills: [1] },
+      { skills: ["x".repeat(61)] }, { skills: new Array(201).fill("dbt") }]) {
       expect(validStats(bad)).toBe(false);
     }
   });

@@ -655,6 +655,45 @@ describe("jobs emailed from the list of jobs sent", () => {
     expect([...env.FEEDBACK.store.keys()].filter((k) => k.startsWith("event:"))).toEqual([]);
   });
 
+  it("needs a signed-in session and the form's CSRF token to add a skill, and keeps only a cleaned skill", async () => {
+    const env = testEnv(ADMIN);
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "sam-lee", name: "Sam Lee" }] }));
+    const fields = { u: "sam-lee", j: JOB, s: "dbt" };
+    const anonymous = await worker.fetch(new Request(`${BASE}/admin/skill`, { method: "POST", body: new URLSearchParams({ csrf: "x", ...fields }) }), env);
+    expect(await anonymous.text()).toContain("Admin sign-in");
+    const cookie = await signIn(env, "203.0.113.38");
+    const send = (extra) => worker.fetch(new Request(`${BASE}/admin/skill`, { method: "POST", headers: { Cookie: cookie },
+      body: new URLSearchParams({ ...fields, ...extra }) }), env);
+    expect((await send({ csrf: "0".repeat(32) })).status).toBe(403);
+    expect((await send({ csrf: "0".repeat(32), u: "../sam-lee" })).status).toBe(403);
+    expect([...env.FEEDBACK.store.keys()].filter((k) => k.startsWith("event:") || k.startsWith("skilladd:"))).toEqual([]);
+    const csrf = (await (await get("/admin", env, { Cookie: cookie })).text()).match(/name="csrf" value="([0-9a-f]+)"/)[1];
+    expect((await send({ csrf, u: "../sam-lee" })).status).toBe(400);
+    expect((await send({ csrf, s: `${HOSTILE} dbt` })).status).toBe(303);
+    const [event] = [...env.FEEDBACK.store.entries()].filter(([k]) => k.startsWith("event:")).map(([, v]) => JSON.parse(v));
+    const [added] = JSON.parse(env.FEEDBACK.store.get("skilladd:sam-lee"));
+    for (const skill of [event.skills[0], added.s]) {
+      expect(skill).toMatch(/dbt$/);
+      expect(skill).not.toMatch(/[<>"'`=]/);
+      expect(skill.length).toBeLessThanOrEqual(60);
+    }
+  });
+
+  it("escapes skills from the stats and from the skills added, and drops added ones that do not look right", async () => {
+    const env = testEnv(ADMIN);
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "sam-lee", name: "Sam Lee" }] }));
+    await worker.fetch(new Request(`${BASE}/api/stats`, { method: "POST", headers: API, body: JSON.stringify({ u: "sam-lee", stats: { days: {},
+      skills: [HOSTILE.slice(0, 60)], sent: [{ title: "Data Engineer", day: new Date().toISOString().slice(0, 10), fit: 8, key: JOB,
+        more: { gaps: [HOSTILE, "dbt"] } }] } }) }), env);
+    await env.FEEDBACK.put("skilladd:sam-lee", JSON.stringify([{ s: HOSTILE, at: Date.now() }, { s: "dbt", at: "now" }, "x", { s: 5 }]));
+    const { addedSkills } = await import("../src/docs.js");
+    expect(await addedSkills(env, "sam-lee")).toEqual([]);
+    const body = await (await get("/admin/sent?u=sam-lee&r=7", env, { Cookie: await signIn(env, "203.0.113.39") })).text();
+    expect(body).not.toContain("<script>");
+    expect(body).not.toContain("<img");
+    expect(body).toContain('<button title="Add dbt to the skills on the CV">');
+  });
+
   it("escapes the profile's name on the tile and never shows its email address", async () => {
     const env = testEnv(ADMIN);
     await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "sam-lee", name: `${HOSTILE} Lee`, email: "sam@example.com" }] }));

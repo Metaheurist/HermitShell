@@ -185,9 +185,11 @@ describe("recruiter sign-in and what they can see", () => {
         expect((await casey.send("/admin/action", { action: act, u })).status).toBe(404);
       }
       expect((await casey.send("/admin/doc", { u, j: "a".repeat(16), k: "cover_letter", n: "Analyst" })).status).toBe(404);
+      expect((await casey.send("/admin/skill", { u, j: "a".repeat(16), s: "dbt" })).status).toBe(404);
       expect((await casey.send("/admin/cv", { u })).status).toBe(404);
     }
     expect(valuesWith(env, "queue:")).toEqual([]);
+    expect(keysWith(env, "event:")).toEqual([]);
     expect((await casey.get("/admin/profile?u=sam-lee")).status).toBe(200);
     expect(await casey.where("/admin/action", { action: "pause", u: "sam-lee" })).toBe("/admin?done=queued");
     expect(valuesWith(env, "queue:").map(({ action, u }) => [action, u])).toEqual([["pause", "sam-lee"]]);
@@ -459,6 +461,45 @@ describe("passwords", () => {
     expect(res.status).toBe(403);
     expect(env.FEEDBACK.store.get("accounts")).toBe(before);
     expect(await casey.text("/admin")).not.toContain("#reset-");
+  });
+});
+
+describe("skills added from the list of jobs sent", () => {
+  const JOB = "https://jobs.example.com/1";
+  const day = () => new Date().toISOString().slice(0, 10);
+  const putStats = (env, u, skills) => worker.fetch(new Request(`${BASE}/api/stats`, { method: "POST", headers: API, body: JSON.stringify({ u,
+    stats: { days: {}, skills, sent: [{ title: "Data Engineer", day: day(), fit: 8, key: JOB, more: { gaps: ["dbt", "Airflow"] } }] } }) }), env);
+
+  it("stores the email's add-skill answer for HermitShell to collect, and shows it as added until it is counted", async () => {
+    const { env, admin, casey } = await setup();
+    await putStats(env, "sam-lee", []);
+    const location = await casey.where("/admin/skill", { u: "sam-lee", j: JOB, s: "dbt", back: "r=30" });
+    expect(location).toMatch(/^\/admin\/sent\?u=sam-lee&r=30&open=[0-9a-f]{16}&done=skill#job-[0-9a-f]{16}$/);
+    const [event] = valuesWith(env, "event:sam-lee:dash-");
+    expect(event).toMatchObject({ j: JOB, a: "add_skill", r: "", skills: ["dbt"], via: "dashboard", u: "sam-lee" });
+    expect(event.id).toMatch(/^event:sam-lee:dash-[0-9a-f]{20}:s[0-9a-f]{16}\d+$/);
+    expect(env.FEEDBACK.store.has("flag:events:sam-lee")).toBe(true);
+    expect(JSON.parse(env.FEEDBACK.store.get("skilladd:sam-lee")).map((e) => e.s)).toEqual(["dbt"]);
+    const { events } = await (await worker.fetch(new Request(`${BASE}/events?u=sam-lee&full=1`, { headers: API }), env)).json();
+    expect(events.map((e) => [e.a, e.skills])).toEqual([["add_skill", ["dbt"]]]);
+    const adding = await casey.text("/admin/sent?u=sam-lee&r=7");
+    expect(adding).toMatch(/<span class="adding"[^>]*><svg [^>]*>.*?<\/svg>dbt<\/span>/);
+    expect(adding).toContain('<button title="Add Airflow to the skills on the CV">');
+    await putStats(env, "sam-lee", ["dbt"]);
+    expect(await admin.text("/admin/sent?u=sam-lee&r=7")).toMatch(/<span class="added"[^>]*><svg [^>]*>.*?<\/svg>dbt<\/span>/);
+  });
+
+  it("stores the owner's skill as the owner's answer, and turns away a skill with nothing left once cleaned", async () => {
+    const { env, admin } = await setup();
+    expect(await admin.where("/admin/skill", { u: "owner", j: JOB, s: "Power BI" })).toMatch(/done=skill#job-/);
+    const [event] = valuesWith(env, "event:_:dash-");
+    expect(event).toMatchObject({ a: "add_skill", skills: ["Power BI"] });
+    expect(event.u).toBeUndefined();
+    expect(env.FEEDBACK.store.has("skilladd:owner")).toBe(true);
+    for (const fields of [{ s: "<>;" }, { s: "" }, { s: "x".repeat(121) }, { j: "" }, { j: "a\nb" }, { j: "x".repeat(301) }]) {
+      expect(await admin.where("/admin/skill", { u: "owner", j: JOB, s: "dbt", ...fields })).toBe("/admin/sent?u=owner&r=7&done=skillbad");
+    }
+    expect(keysWith(env, "event:")).toHaveLength(1);
   });
 });
 

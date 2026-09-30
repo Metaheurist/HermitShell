@@ -51,6 +51,13 @@ export const DAY_MS = 86400000;
 // Links in emails stop working after this many days.
 export const LINK_DAYS = 90;
 export const CONTROL_RE = /[\u0000-\u001f\u007f]/;
+export const MAX_SKILL = 60;
+
+// A skill as HermitShell keeps it (job_tracker.clean_skill): letters, numbers and a few signs, one space apart.
+export function cleanSkill(text) {
+  return String(text ?? "").replace(/[^\p{L}\p{N}_ .+#/&()-]/gu, "").split(/\s+/).filter(Boolean).join(" ")
+    .slice(0, MAX_SKILL).trim();
+}
 
 const hmacKeys = new Map();
 
@@ -337,14 +344,18 @@ export function emailedKey(profile) {
   return `emailed:${profile}`;
 }
 
+export function skillAddKey(profile) {
+  return `skilladd:${profile}`;
+}
+
 // An extra profile that unsubscribes or is deleted: its answers not yet collected by HermitShell, its stats, its
-// list of jobs sent and the letters and CVs kept for download are dropped.
+// list of jobs sent, the skills added from it and the letters and CVs kept for download are dropped.
 export async function purgeProfileEvents(env, profile) {
   if (!profile) return;
   const docs = await env.FEEDBACK.get(docIndexKey(profile), "json");
   await Promise.all((Array.isArray(docs) ? docs : []).filter((d) => d && /^[0-9a-f]{32}$/.test(d.h) && /^[a-z_]{1,20}$/.test(d.k))
     .map((d) => env.FEEDBACK.delete(docKey(profile, d.k, d.h))));
-  await Promise.all([env.FEEDBACK.delete(docIndexKey(profile)), env.FEEDBACK.delete(emailedKey(profile)),
+  await Promise.all([env.FEEDBACK.delete(docIndexKey(profile)), env.FEEDBACK.delete(emailedKey(profile)), env.FEEDBACK.delete(skillAddKey(profile)),
     env.FEEDBACK.delete(`sent:${profile}`), env.FEEDBACK.delete(`stats:${profile}`)]);
   let cursor;
   do {

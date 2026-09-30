@@ -5,7 +5,8 @@ collect() returns one row of counts per day (in HERMES_TIMEZONE) for the last ST
 FIELDS, and for each of the dashboard's time ranges the employers, sources, match scores, work modes and best
 matches of the jobs sent. `sent` lists the jobs sent in the last SENT_DAYS days, newest first, with the advert's
 link, the last button pressed on each and, under "more", the details its email card showed (why it was rated a
-fit, the skills matched and missing, the company). profiles.py sends it to the feedback Worker, which draws the
+fit, the skills matched and missing, the company). `skills` are those added from the email or the dashboard, which
+HermitShell counts as on the CV. profiles.py sends it to the feedback Worker, which draws the
 charts and the dashboard's list of jobs sent. Notes typed on the buttons' confirmation pages and the listing text
 are not included, and email addresses, phone numbers and the profile's name and email are removed from the rest.
 
@@ -47,6 +48,7 @@ MAX_REASON = 600
 MAX_ABOUT = 400
 MAX_SKILLS = 12
 MAX_GAPS = 6
+MAX_POOL = 200
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]+")
 _URL = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 _EMAIL = re.compile(r"[^\s@<>()\[\],;:\"']+@[^\s@<>()\[\],;:\"']+\.[a-z]{2,}", re.IGNORECASE)
@@ -71,7 +73,8 @@ def _url(url) -> str:
 
 def _empty(today: date) -> dict:
     return {"v": VERSION, "today": today.isoformat(), "since": None, "days": {},
-            "ranges": {str(r): _range([], []) for r in RANGES}, "pipeline": {s: 0 for s in STATUSES}, "sent": []}
+            "ranges": {str(r): _range([], []) for r in RANGES}, "pipeline": {s: 0 for s in STATUSES}, "sent": [],
+            "skills": []}
 
 
 def _range(sent: list[dict], rated: list[dict]) -> dict:
@@ -199,6 +202,10 @@ def collect(db: Path, tz: ZoneInfo, now: float | None = None, private: tuple[str
             "GROUP BY key)", STATUSES).fetchall())
         since = con.execute("SELECT min(t) FROM (SELECT min(first_seen) AS t FROM jobs UNION ALL "
                             "SELECT min(at) FROM runs UNION ALL SELECT min(at) FROM events)").fetchone()[0]
+        try:
+            pool = [r[0] for r in con.execute("SELECT skill FROM skills ORDER BY at, skill LIMIT ?", (MAX_POOL,))]
+        except sqlite3.OperationalError:
+            pool = []
     finally:
         con.close()
 
@@ -247,6 +254,8 @@ def collect(db: Path, tz: ZoneInfo, now: float | None = None, private: tuple[str
         stats["ranges"][str(r)] = _range([j for j in sent if j["d"] >= cutoff], [j for j in rated if j["d"] >= cutoff])
     stats["pipeline"].update(Counter(answers.values()))
     stats["sent"] = _sent_list(sent, answers, today - timedelta(days=SENT_DAYS - 1), private)
+    stats["skills"] = [k for k in dict.fromkeys(redact(_clean(k, MAX_NAME), private) for k in pool if isinstance(k, str))
+                       if k and k != REMOVED]
     return stats
 
 

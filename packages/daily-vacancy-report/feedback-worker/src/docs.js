@@ -10,14 +10,18 @@
 //
 // The same list has a third request, "send_job": the job's report card emailed to the profile (job_mail.py). Once
 // sent, HermitShell tells POST /api/emailed, and "emailed:<id>" keeps when each job last went (by its hash only).
+//
+// A skill the job's card showed as missing from the CV can be added from the list too: it is stored as the email's
+// "Add to my skills" answer, and "skilladd:<id>" remembers it until HermitShell's stats list it with the others.
 
 import {
-  CONTROL_RE, EVENT_TTL_SECONDS, SECURITY_HEADERS, ago, docIndexKey, docKey, emailedKey, esc, eventFlag, eventPrefix, json,
-  limitedBytes, setFlag, sha256Hex,
+  CONTROL_RE, EVENT_TTL_SECONDS, SECURITY_HEADERS, ago, cleanSkill, docIndexKey, docKey, emailedKey, esc, eventFlag, eventPrefix, json,
+  limitedBytes, setFlag, sha256Hex, skillAddKey,
 } from "./lib.js";
 import { rememberRequest } from "./tasks.js";
 
 export const DOC_URL = "/admin/doc";
+export const SKILL_URL = "/admin/skill";
 export const DOC_KINDS = { cover_letter: "Cover letter", tailored_cv: "Tailored CV" };
 export const REQUEST_KINDS = { ...DOC_KINDS, send_job: "Job email" };
 const REQUEST_CODES = { cover_letter: "c", tailored_cv: "v", send_job: "m" };
@@ -27,6 +31,7 @@ export const OWNER_ID = "owner";
 export const MAX_DOC_BYTES = 2 * 1024 * 1024;
 export const MAX_DOC_DAYS = 30;
 const MAX_INDEX = 300;
+const MAX_ADDED = 100;
 const MAX_JOB_KEY = 300;
 const PROFILE_RE = /^[a-z0-9-]{1,40}$/;
 const HASH_RE = /^[0-9a-f]{32}$/;
@@ -164,6 +169,31 @@ export async function requestDoc(env, { profile, owner, j, kind, title, fresh })
   await env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });
   await setFlag(env, eventFlag(u), EVENT_TTL_SECONDS);
   await rememberRequest(env, event, title, EVENT_TTL_SECONDS);
+  return h;
+}
+
+// Skills added from the list of jobs sent in the last EVENT_TTL_SECONDS: [{ s, at }], newest last.
+export async function addedSkills(env, profile, now = Date.now()) {
+  if (!PROFILE_RE.test(profile || "")) return [];
+  const list = await env.FEEDBACK.get(skillAddKey(profile), "json");
+  return (Array.isArray(list) ? list : []).filter((e) => e && typeof e.s === "string" && e.s && e.s === cleanSkill(e.s) &&
+    Number(e.at) > now - EVENT_TTL_SECONDS * 1000);
+}
+
+// A skill added from the dashboard, stored as the email's "Add to my skills" answer would be. Adding the same skill
+// for the same job in the same minute is the same answer, so a double press makes one.
+export async function requestSkill(env, { profile, owner, j, skill }) {
+  const at = Date.now();
+  const u = owner ? "" : profile;
+  const h = await jobHash(j);
+  const tag = (await sha256Hex(`skill\n${skill.toLowerCase()}`)).slice(0, 16);
+  const event = { j, a: "add_skill", r: "", at, skills: [skill], via: "dashboard", ...(u ? { u } : {}) };
+  event.id = `${eventPrefix(u)}dash-${h.slice(0, 20)}:s${tag}${Math.floor(at / 60000)}`;
+  await env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });
+  await setFlag(env, eventFlag(u), EVENT_TTL_SECONDS);
+  const added = (await addedSkills(env, profile, at)).filter((e) => e.s.toLowerCase() !== skill.toLowerCase());
+  added.push({ s: skill, at });
+  await env.FEEDBACK.put(skillAddKey(profile), JSON.stringify(added.slice(-MAX_ADDED)), { expirationTtl: EVENT_TTL_SECONDS });
   return h;
 }
 
