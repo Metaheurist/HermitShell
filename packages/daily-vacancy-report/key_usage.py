@@ -227,7 +227,7 @@ def report(keys: dict[str, list[str]], state_dir: Path, every: int = EVERY_MINUT
             rows.append(row)
         out[provider] = rows
     if every and (changed or kept.keys() != cache.keys()):
-        hc.write_atomic(path, json.dumps(dict(list(kept.items())[:MAX_ENTRIES])), private=True)
+        hc.write_atomic(path, json.dumps(dict(list(kept.items())[:MAX_ENTRIES])))
     return out
 
 

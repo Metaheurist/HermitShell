@@ -784,7 +784,7 @@ using [Semantic Versioning](https://semver.org/).
   longer name employers, salaries or letter files, and `llm_providers.py` no longer prints any part of a
   key. The setup wizard reads passwords and keys through their own prompt, apart from names and other
   answers, and `cloudflare_worker.py` sets and logs only a fixed list of Worker secrets (refusing any
-  other). Shared files are never created readable by everyone (0640 at most). New tests cover each.
+  other). Every file written through `write_atomic` is created 0600, whatever the umask. New tests cover each.
 - **Signed requests to the feedback Worker.** Every request HermitShell makes to `/events`, `/ack` and
   `/api/*` carries, besides the API token, an HMAC-SHA256 signature over the method, path and query, a
   timestamp, a one-time nonce and the SHA-256 of the body, under a key derived from `JOB_FEEDBACK_SECRET`

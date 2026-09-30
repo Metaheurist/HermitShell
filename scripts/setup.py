@@ -973,7 +973,7 @@ class Wizard:
         self.heading("Feedback Worker (Cloudflare)")
         if self.args.dry_run:
             self.say(f"  would deploy {plan['name']} to {cloudflare_worker.worker_url(plan['name'], plan['subdomain'])}"
-                     f" and set {', '.join(k for k in cloudflare_worker.WORKER_SECRETS if k in plan['secrets'])}")
+                     f" and set {', '.join(k for k in cloudflare_worker.WORKER_VARS if k in plan['secrets'])}")
             return
         cf = plan["cf"]
         try:

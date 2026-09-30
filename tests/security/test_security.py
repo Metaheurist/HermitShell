@@ -349,15 +349,15 @@ def test_files_the_scripts_create_are_owner_only(tmp_path):
     subprocess.run([sys.executable, "-c", script], check=True, env={**os.environ, "HERMITSHELL_HOME": str(tmp_path)})
     assert (tmp_path / "plain.txt").stat().st_mode & 0o777 == 0o600
     hc.write_private(tmp_path / "private.txt", "x")
-    hc.write_atomic(tmp_path / "atomic.txt", "x", private=True)
+    hc.write_atomic(tmp_path / "atomic.txt", "x")
     for name in ("private.txt", "atomic.txt"):
         assert (tmp_path / name).stat().st_mode & 0o777 == 0o600
     old = os.umask(0)
     try:
-        hc.write_atomic(tmp_path / "shared.txt", "x")
+        hc.write_atomic(tmp_path / "no-umask.txt", "x")
     finally:
         os.umask(old)
-    assert (tmp_path / "shared.txt").stat().st_mode & 0o007 == 0
+    assert (tmp_path / "no-umask.txt").stat().st_mode & 0o777 == 0o600
 
 
 def test_the_scanners_saved_reports_are_encrypted_with_a_data_key(tmp_path, monkeypatch):

@@ -266,7 +266,7 @@ class Companies:
             results = self.tavily.search(f"{name} {self.region} official website".replace("  ", " "), 5, None,
                                          self.country, "general")
         except Exception as exc:  # noqa: BLE001 - provider errors only cost us the website link
-            log(f"company site search failed for {name}: {exc.__class__.__name__}")
+            log(f"company site search failed: {exc.__class__.__name__}")
             return ""
         for r in results:
             parts = urlsplit(r.get("url", ""))

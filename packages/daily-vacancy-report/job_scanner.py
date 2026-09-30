@@ -1336,7 +1336,7 @@ def run(args: argparse.Namespace) -> int:
         salary = salary_of(salary_text)
         if below_min_salary(salary, min_salary, salary_currency):
             excluded_salary += 1
-            log(f"[{i}/{len(queue)}] skip (salary {salary_text} below {min_salary}) {job['title'][:60]}")
+            log(f"[{i}/{len(queue)}] skip (salary below the minimum) {job['title'][:60]}")
             return "rated"
         closing = closing_date(job["text"], rating.get("closing_date", ""))
         left = days_left(closing, today)

@@ -390,8 +390,8 @@ def test_mask_secret_shows_little_of_short_keys():
 
 def test_write_atomic_creates_private_files_private(tmp_path):
     path = tmp_path / "state" / "secrets.json"
-    hc.write_atomic(path, "{}", private=True)
-    hc.write_atomic(path, '{"a": 1}', private=True)
+    hc.write_atomic(path, "{}")
+    hc.write_atomic(path, '{"a": 1}')
     assert path.read_text() == '{"a": 1}' and [p.name for p in path.parent.iterdir()] == ["secrets.json"]
     if os.name == "posix":
         assert path.stat().st_mode & 0o777 == 0o600

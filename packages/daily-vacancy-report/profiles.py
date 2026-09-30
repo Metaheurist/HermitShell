@@ -254,7 +254,7 @@ def update_dashboard_env(updates: dict[str, str | None]) -> None:
             values[key] = value
             os.environ[key] = value
     # Read by hermes_common before .env (and so before HERMES_DATA_KEY) is loaded: 0600, not encrypted.
-    hc.write_atomic(DASHBOARD_FILE, json.dumps({"env": values, "updated": time.time()}, indent=2), private=True)
+    hc.write_atomic(DASHBOARD_FILE, json.dumps({"env": values, "updated": time.time()}, indent=2))
     load_env_file()
 
 
@@ -412,7 +412,7 @@ def read_cv(d: Path, item: dict, api) -> str:
                 data = worker_seal.open_bytes(data, cv["key"])
             except worker_seal.SealError as exc:
                 raise ProfileError(f"the CV file could not be opened: {exc}") from None
-        hc.write_atomic(upload, data, private=True)
+        hc.write_atomic(upload, data)
         try:
             text = cv_text.clean(cv_text.extract_file_isolated(upload))
         except Exception as exc:  # a malformed or hostile file must not block the pasted fallback

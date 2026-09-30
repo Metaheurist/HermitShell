@@ -109,7 +109,7 @@ def load() -> dict:
 
 def _save(state: dict) -> None:
     try:
-        hc.write_atomic(_path(), json.dumps(state), private=True)
+        hc.write_atomic(_path(), json.dumps(state))
     except OSError as exc:
         hc.log(f"Could not save {STATE_FILE}: {exc.__class__.__name__}")
 

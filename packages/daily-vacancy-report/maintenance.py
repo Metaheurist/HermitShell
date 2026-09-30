@@ -283,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.decrypt:
         data = hc.read_private(Path(args.decrypt))
         if args.out:
-            hc.write_atomic(Path(args.out), data, private=True)
+            hc.write_atomic(Path(args.out), data)
         else:
             sys.stdout.buffer.write(data)
         return 0
