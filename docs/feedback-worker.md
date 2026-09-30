@@ -587,6 +587,27 @@ what is pending). Until then the email server form shows what you saved rather t
 Passwords and keys typed into the page are deleted from KV after 2 days if HermitShell hasn't collected
 them.
 
+##### Demo mode
+
+**Turn on demo mode**, at the foot of Global settings, fills every dashboard page with a made-up
+recruitment desk instead of the real one, so HermitShell can be shown to someone without showing
+anyone's data. It has fictional recruits (active, paused, scanning, without a CV and waiting to be set
+up), recruiters, invites, tasks, a cover letter to download, and months of stats, jobs sent and history.
+Only admins can switch it, and it applies to everyone signed in until an admin turns it off, from Global
+settings or the **Turn off** link on the ribbon at the foot of each page.
+
+<img src="images/worker/admin-settings-demo.png" alt="Global settings with demo mode on: what it does, when it was turned on and Turn off demo mode" width="720">
+
+<img src="images/worker/admin-dashboard-demo.png" alt="The recruits list in demo mode: made-up recruits, recruiters and invites, and the demo mode ribbon" width="720">
+
+Every press works as it would (pausing, sending jobs, assigning, inviting, saving settings, keys and
+CVs), but only on a copy of the demo data made for that request, so nothing is saved, nothing is queued
+and nothing reaches HermitShell. Changing your own password is still real. The Worker's API, the buttons
+in emails, sign-up links and the privacy notice carry on with the real data, so daily reports keep
+running while it is on.
+
+<img src="images/worker/admin-stats-demo.png" alt="A made-up recruit's stats page in demo mode" width="620">
+
 #### A recruit's page
 
 <img src="images/worker/admin-profile.png" alt="A recruit's settings page" width="720">

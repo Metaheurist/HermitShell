@@ -8,6 +8,14 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Demo mode.** **Turn on demo mode** on Global settings (admins only) fills every dashboard page
+  with a made-up desk: fictional recruits in every state, recruiters, invites, a sign-up waiting, tasks,
+  a cover letter PDF, and months of stats, jobs sent and history (`feedback-worker/src/demo.js`). Pages
+  read and write a copy of that data made for each request, so presses work but save nothing, queue
+  nothing and never reach HermitShell; changing your own password stays real. The API, email buttons,
+  sign-ups and the privacy notice keep the real data, so reports carry on. A ribbon at the foot of each
+  page says it is on, with a **Turn off** link for admins. Tests check that no press changes the real KV
+  and that no real names show, and Playwright covers it on a phone.
 - **Cloud AI models for servers that can't run one.** OpenRouter, BazaarLink, Featherless and Hugging Face
   (all OpenAI-compatible) can rate jobs and write letters and CVs instead of, or before, the local Ollama
   (`common/llm_providers.py`). Keys and models are added on Global settings under **AI model API keys**,

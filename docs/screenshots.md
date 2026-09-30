@@ -462,6 +462,19 @@ older and how to update it ([why](feedback-worker.md#how-it-stays-safe)).
 
 <img src="images/worker/admin-model-key-modal.png" alt="The AI model key window: OpenRouter, BazaarLink, Featherless or Hugging Face, the API key and an optional model" width="420">
 
+#### Demo mode
+
+<img src="images/worker/admin-settings-demo.png" alt="Global settings with demo mode on and Turn off demo mode" width="620">
+
+| Control | What it does |
+| --- | --- |
+| **Turn on demo mode** / **Turn off demo mode** | Admins only. Every dashboard page shows a made-up desk for everyone signed in; presses work but save nothing and reach neither KV nor HermitShell ([more](feedback-worker.md#demo-mode)) |
+| Demo mode ribbon | At the foot of every page while it is on; admins get a **Turn off** link |
+
+<img src="images/worker/admin-dashboard-demo.png" alt="The recruits list in demo mode with made-up recruits and the ribbon" width="620">
+
+<img src="images/worker/admin-stats-demo.png" alt="A made-up recruit's stats page in demo mode" width="620">
+
 ### A recruit's page
 
 <img src="images/worker/admin-profile.png" alt="A profile's settings page" width="620">
