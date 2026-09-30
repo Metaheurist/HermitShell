@@ -134,6 +134,22 @@ variety: cover letters 0.4, tailored CVs 0.2 and report summaries 0.3. On OpenRo
 (screening, ratings, second opinions, summaries and briefs) ask reasoning models to think briefly and
 leave the reasoning out of the reply, which saves tokens on the tasks that need it least.
 
+### Fewer and surer ratings
+
+Two checks spend rating requests where they change the outcome:
+
+- **A keyword prescreen.** Once a listing is fetched and has passed the region, type, salary and
+  closing-date filters, the CV's keywords are looked for in it. A full listing (1,500 characters or more)
+  naming fewer than `JOB_PRESCREEN_MIN_KEYWORDS` (default 1) is marked seen without a rating, and counted
+  as "no CV keywords" under the report. It never applies to a job the title screen called a clear match, a
+  job being retried, a short or snippet-only listing, or a CV with fewer than 8 keywords.
+- **A second opinion by confidence.** Scores of `JOB_VERIFY_MIN_FIT` (default 8) or more get a sceptical
+  re-check that can only lower them, by half the gap rounded up. A score that would be shown but has a
+  confidence under `JOB_VERIFY_BELOW_CONFIDENCE` (default 60), on a full listing, gets the same re-check
+  and moves halfway towards it either way; when the two are within a point, its confidence goes up to 70.
+  The card says when a second look changed the score. Snippet-only listings are left alone, as a second
+  look at the same few lines would not be surer.
+
 ### Cover letters from an evidence map
 
 Before a letter is written, one request maps the job (`evidence.py`): the advert's main requirements, at
@@ -257,7 +273,9 @@ Full template: [`.env.example`](../.env.example).
 | `JOB_SALARY_CURRENCY` | none | `GBP`, `EUR`, `USD`, `CAD`, `AUD` or `NZD` (`£`, `€`, `$` also work). Salaries in the others are converted to it at the day's rate and the minimum is in it. Empty = as advertised |
 | `JOB_FX_URL` | Frankfurter | HTTPS address of the day's exchange rates (Frankfurter's JSON shape), fetched once a day and cached in `state/fx_rates.json`. `off` = never convert. The dashboard can't change it |
 | `JOB_HIDE_UNNAMED_AGENCY` | `0` | `1` drops agency adverts that don't name the employer |
-| `JOB_VERIFY_MIN_FIT` | `8` | Scores at or above this get a second, stricter look (averaged). `0` = off |
+| `JOB_VERIFY_MIN_FIT` | `8` | Scores at or above this get a second, stricter look that can only lower them. `0` = off |
+| `JOB_VERIFY_BELOW_CONFIDENCE` | `60` | A shown score with a confidence under this gets a second look and moves halfway to it. `0` = off. See [Fewer and surer ratings](#fewer-and-surer-ratings) |
+| `JOB_PRESCREEN_MIN_KEYWORDS` | `1` | A full listing naming fewer of the CV's keywords than this is not rated. `0` = rate every listing |
 
 `JOB_LEVEL` sets the three penalties (junior, senior, lead titles) like this: `junior` 0/2/3,
 `mid` 1/1/2, `senior` 2/0/1, `lead` 3/1/0 and `any` 0/0/0. Setting one of the penalty variables

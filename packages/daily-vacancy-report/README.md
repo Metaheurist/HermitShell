@@ -25,12 +25,14 @@ light and dark modes.
    contract, temporary, part-time, internship) and work modes (on-site, hybrid, remote) you chose.
    Jobs that don't state a type or mode are kept. Optionally drops jobs advertising clearly less
    than your minimum salary (day and hourly rates are converted) and jobs whose closing date has
-   passed.
+   passed. A full listing that names none of your CV's keywords is skipped before the model rates it,
+   unless the title screen called it a clear match.
 4. **Rate.** The model scores each job 0-10 against `job_profile.md`, with a confidence value,
    matched CV keywords, gaps, the closing date and a short reason. For agency adverts it also
    identifies the real employer. Seniority comes from the title, or from the model's reading of
-   the listing when the title doesn't say. Scores of 8 or more get a second, stricter look and the
-   two scores are averaged. If you use the feedback buttons, your recent likes and rejections are
+   the listing when the title doesn't say. Scores of 8 or more get a second, stricter look that can
+   only lower them, and a score that would be shown but that the model was unsure of gets a second
+   look that moves it halfway to the new one. If you use the feedback buttons, your recent likes and rejections are
    added to the prompt as examples.
 5. **Enrich.** Adds the hiring company's website, a circular logo and an expandable "About the
    company" section. Lookups are cached for 30 days in `state/companies.json`. The same job
@@ -240,6 +242,10 @@ Every option is an environment variable (or a line in `$HERMITSHELL_HOME/.env`).
 - **`JOB_HIDE_UNNAMED_AGENCY`.** `1` drops agency adverts that don't name the employer. Repeats
   of the same job are always merged.
 - **`JOB_VERIFY_MIN_FIT`.** Scores at or above this (default 8) get a second look; `0` turns it off.
+- **`JOB_VERIFY_BELOW_CONFIDENCE`.** A shown score with a confidence under this (default 60) gets a
+  second look too; `0` turns it off.
+- **`JOB_PRESCREEN_MIN_KEYWORDS`.** A full listing naming fewer of your CV's keywords than this
+  (default 1) is not rated; `0` turns it off.
 - **`JOB_SCANNER_MAX_SCRAPE`, `JOB_TRIAGE_MAX`.** How many jobs are rated per run (default 25),
   and how many titles the model screens first (default 60).
 - **`JOB_FEEDBACK_URL`, `JOB_FEEDBACK_SECRET`, `JOB_FEEDBACK_API_TOKEN`.** The optional

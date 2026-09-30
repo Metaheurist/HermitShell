@@ -116,7 +116,7 @@ def jobs(js) -> list[dict]:
                       "with pre-sales duties Avery has not done."),
         job(key="adventureworks-platform", title="Data Platform Engineer", company="Adventure Works",
             location="Stockport", employment_type="Full-time permanent", work_mode="On-site", salary="£45,000",
-            fit=5, confidence=66, coverage=45, days_left=20,
+            fit=5, model_fit=6, second_opinion=4, second_kind="doubt", confidence=55, coverage=45, days_left=20,
             matched=["SQL", "Python", "Docker"], gaps=["Spark", "Databricks", "Scala", "Kafka"],
             reasoning="Adjacent: a Spark and Databricks platform team. Avery covers the SQL and Python side but "
                       "would need to pick up the streaming stack."),
@@ -134,7 +134,7 @@ def stats(**kw) -> dict:
     base = {"when": WHEN, "shown": 5, "strong": 3, "avg_fit": "7.0", "scanned": 25, "min_score": 5,
             "excluded_location": 6, "excluded_type": 3, "below_min": 9, "model": "qwen3:4b-instruct-2507-q4_K_M",
             "min_salary": 40000, "salary_currency": "GBP", "excluded_salary": 2, "excluded_closed": 1, "reposts": 2,
-            "grouped": 1, "verify_from": 8, "feedback": True,
+            "grouped": 1, "prescreened": 4, "verify_from": 8, "feedback": True,
             "unsubscribe": "", "sources": "jobs.example.com 31, web search 42",
             "web_usage": "Firecrawl 36 credits (2,964 left this month)", "cv_added": []}
     base.update(kw)

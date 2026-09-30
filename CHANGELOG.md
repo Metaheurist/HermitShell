@@ -8,6 +8,13 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A keyword prescreen before rating.** A full listing that names none of the CV's keywords is skipped
+  without a model request (`JOB_PRESCREEN_MIN_KEYWORDS`, default 1), unless the title screen called it a
+  clear match, and counted as "no CV keywords" under the report.
+- **A second opinion for unsure scores.** A score that would be shown but that the model gave a confidence
+  under `JOB_VERIFY_BELOW_CONFIDENCE` (default 60) is re-checked and moved halfway to the second score,
+  up or down; close agreement raises its confidence. The card says why it was checked. See
+  [Fewer and surer ratings](docs/configuration.md#fewer-and-surer-ratings).
 - **A match report with each tailored CV.** The email lists how many of the requirements your CV shows
   the tailored CV covers, any it left out, and what the advert asks for that your CV doesn't show.
 - **Tailored CVs led by the evidence map.** The CV uses the cover letter's evidence map (the same cache)
