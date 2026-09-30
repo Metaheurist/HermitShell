@@ -8,6 +8,13 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Theme and branding.** Admins get a palette button at the top right, beside the server button, that
+  opens `/admin/theme`. It sets a name and logo (PNG, JPEG, GIF or WebP up to 200 KB, checked by content;
+  SVG refused) shown on every page and optionally as the tab icon, one of eight palettes or two custom
+  colours, and the background, corners, font, spacing and motion, with a live preview. The Worker repaints
+  its brand colours, stylesheet and favicon at render time, so HermitShell's look stays the default and
+  **Reset** goes back to it. Emails keep HermitShell's look.
+
 - **Download from History.** A cover letter or tailored CV asked for or emailed, from the dashboard or an email
   button, has a **Download** button on the recruit's History tab while the document is still kept. The history
   entry keeps the job's hash for this; entries recorded before this change have no button. The demo's kept
@@ -846,6 +853,9 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Demo history no longer runs ahead of the clock.** Near midnight the demo logged recruits' email answers
+  for later that day, so on the first of a month its History showed a month with no reports. Demo answers
+  are now always in the past.
 - **Cloud model counts and rests are no longer lost.** Two model requests at once (from two scripts, or
   ratings running side by side) each saved the whole provider state when they finished, so the later one
   undid the other's request count or a provider's rest after a 429. Each request now saves only what it

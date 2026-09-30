@@ -137,7 +137,10 @@ describe("demo mode pages", () => {
     expect(dashboard).toContain("Careers fair, marketing graduate");
     expect(dashboard).toContain('<div class="demoribbon" role="status">');
     expect(dashboard).toContain('href="/admin/settings#demo">Turn off</a>');
-    expect((await admin.get("/admin/history?u=sam-lee")).body).toContain("Job report ran");
+    const history = (await admin.get("/admin/history?u=sam-lee")).body;
+    const months = [...history.matchAll(/href="(\/admin\/history\?u=sam-lee&amp;m=\d{4}-\d\d)"/g)].map((m) => m[1].replace("&amp;", "&"));
+    const shown = [history, ...(await Promise.all(months.map(async (m) => (await admin.get(m)).body)))];
+    expect(shown.some((b) => b.includes("Job report ran"))).toBe(true);
     expect((await admin.get("/admin/sent?u=avery-lane&r=30")).body).toContain("jobs.example.com/demo/avery-lane/1000");
     expect((await admin.get("/admin/tasks")).body).toContain("Rating jobs");
     expect((await admin.get("/admin/users")).body).toContain("Drew Harper");

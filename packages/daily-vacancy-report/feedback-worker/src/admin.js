@@ -30,6 +30,7 @@ import { CONFIRM_STYLE, binButton, deleteModal } from "./confirm.js";
 import { MODAL_STYLE } from "./keys.js";
 import { SERVER_STYLE, serverBox } from "./models.js";
 import { needsSeal, sealInfo, sealItem } from "./seal.js";
+import { PALETTE_ICON, THEME_URL, readTheme, themePage, themeRequest } from "./theme.js";
 import { SEARCH_STYLE, matchesProfile, noMatch, recruiterHits, recruiterRow, searchBar, searchQuery } from "./search.js";
 import {
   DOC_URL, REQUEST_KINDS, SKILL_URL, addedSkills, docIndex, emailedIndex, letterStyle, markEmailed, pdfResponse, pendingDocs, readDoc,
@@ -612,6 +613,8 @@ export async function handleAdmin(request, env, ctx) {
   if (path === DEMO_URL && request.method === "POST") return demoToggle(request, env, s);
   if (path === PASSWORD_URL && request.method === "POST") return passwordRequest(request, env, s);
   const demo = await demoMode(env);
+  // The theme is real whether or not demo mode is on, like the switch.
+  if (path === THEME_URL) return withSignedIn(await themeRoute(request, env, s), env, { ...s, demo }, path, request.method);
   if (!demo) return withSignedIn(await signedInRoute(request, env, s, path), env, s, path, request.method);
   const pretend = await demoEnv(env);
   const seen = { ...s, acc: await accounts(pretend), demo };
@@ -648,15 +651,22 @@ body:has(main.full) .mecard .avatar{width:30px;height:30px;border-radius:10px;fo
 @media (max-width:560px){.me,body:has(main.full) .me{position:static;justify-content:flex-end;margin:12px 16px 0}}
 `;
 
+async function themeRoute(request, env, s) {
+  if (!s.me.admin) return page(...ADMINS_ONLY);
+  if (request.method === "POST") return themeRequest(request, env, s);
+  if (request.method !== "GET") return text("Method not allowed", 405, { Allow: "GET, POST" });
+  return themePage(await readTheme(env, { fresh: true }), s.csrf, new URL(request.url).searchParams.get("done") || "");
+}
+
 // The signed-in user's initials, name and roles, with Change password and Sign out; admins also get the server
-// button, whose panel shows the machine and the models.
+// button, whose panel shows the machine and the models, and Theme and branding.
 function signedInBox(s, current) {
   const name = displayName(s.me, current);
   const roles = s.me.roles.map((r) => ROLES[r].label).join(", ");
   const label = `Signed in as ${name} (${roles.toLowerCase()})`;
   return `<style>${ME_STYLE}${s.me.admin ? SERVER_STYLE : ""}</style><div class="me" role="region" aria-label="${esc(label)}">
 <div class="mecard" title="${esc(label)}"><span class="avatar${s.me.admin ? "" : " rec"}" aria-hidden="true">${esc(initials(name))}</span><span class="mename"><b>${esc(name)}</b><small>${esc(roles)}</small></span></div>
-<div class="mebtns">${s.me.admin ? serverBox(current) : ""}<a class="mebtn" href="/admin#password" title="Change password" aria-label="Change password">${KEY_ICON}</a><form method="post" action="/admin/logout"><button class="mebtn">${LOGOUT_ICON}Sign out</button></form></div></div>`;
+<div class="mebtns">${s.me.admin ? `${serverBox(current)}<a class="mebtn" href="${THEME_URL}" title="Theme and branding" aria-label="Theme and branding">${PALETTE_ICON}</a>` : ""}<a class="mebtn" href="/admin#password" title="Change password" aria-label="Change password">${KEY_ICON}</a><form method="post" action="/admin/logout"><button class="mebtn">${LOGOUT_ICON}Sign out</button></form></div></div>`;
 }
 
 // The invite link just made, on its own address so reloading it doesn't make another. Only its maker (or an admin)

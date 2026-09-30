@@ -580,12 +580,14 @@ async function seed(env) {
     }
     if (pausedFor(p)) log(p.id, "pause", "Paused reports", now - 5 * DAY - 4 * HOUR, { by: names[p.recruiter] });
     for (const j of p.employers.length ? jobsFor(p, end).filter((x) => x.answer) : []) {
-      log(p.id, "answer", `Answered ${ANSWER_LABELS[j.answer]}: ${j.title} at ${j.employer}`, Date.parse(`${j.day}T12:00:00Z`) + 5 * HOUR, { via: "email" });
+      // Today's answers late in the afternoon, or just now early in the day: never in the future.
+      const at = Math.min(Date.parse(`${j.day}T12:00:00Z`) + 5 * HOUR, now - 20 * 60000);
+      log(p.id, "answer", `Answered ${ANSWER_LABELS[j.answer]}: ${j.title} at ${j.employer}`, at, { via: "email" });
     }
   }
-  // The request for the cover letter kept below, so its history entry has a Download button.
+  // The request for the cover letter kept below, the newest entry, so its history entry has a Download button.
   const first = jobsFor(PEOPLE[0], end)[0];
-  log(PEOPLE[0].id, "cover_letter", `Asked for a cover letter: ${first.title} at ${first.employer}`, now - 50 * 60000,
+  log(PEOPLE[0].id, "cover_letter", `Asked for a cover letter: ${first.title} at ${first.employer}`, now - 10 * 60000,
     { by: names[PEOPLE[0].recruiter], h: await jobHash(first.key) });
   for (const [key, entries] of months) await put(env, key, entries);
 

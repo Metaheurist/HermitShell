@@ -1115,3 +1115,71 @@ describe("the shared stylesheet", () => {
     expect(css).not.toMatch(/<\/?script|@import|expression\(|url\((?!#)|https?:/i);
   });
 });
+
+describe("theme and branding", () => {
+  const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 73, 72, 68, 82]);
+  const upload = async (env, cookie, fields, file = null) => {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(fields)) form.set(k, v);
+    if (file) form.set("logo", new Blob([file.bytes], { type: file.type }), file.name);
+    return worker.fetch(new Request(`${BASE}/admin/theme`, { method: "POST", body: form, headers: cookie ? { Cookie: cookie } : {} }), env);
+  };
+  const csrfOf = async (env, cookie) => (await (await get("/admin/theme", env, { Cookie: cookie })).text()).match(/name="csrf" value="([0-9a-f]+)"/)[1];
+
+  it("needs a signed-in admin and the form's CSRF token to change it", async () => {
+    const env = testEnv(ADMIN);
+    const anonymous = await upload(env, "", { csrf: "x", name: "Planted", palette: "ocean" });
+    expect(await anonymous.text()).toContain("Admin sign-in");
+    const cookie = await signIn(env, "203.0.113.60");
+    expect((await upload(env, cookie, { csrf: "0".repeat(32), name: "Planted", palette: "ocean" })).status).toBe(403);
+    expect(env.FEEDBACK.store.has("theme")).toBe(false);
+  });
+
+  it("shows a hostile name as text, and never lets stored values write CSS or markup", async () => {
+    const env = testEnv(ADMIN);
+    const cookie = await signIn(env, "203.0.113.61");
+    await upload(env, cookie, { csrf: await csrfOf(env, cookie), name: HOSTILE, palette: "royal", showname: "1" });
+    const login = await (await get("/admin", env)).text();
+    expect(login).not.toContain("<script>alert(1)");
+    expect(login).not.toContain("<img src=x");
+    expect(login).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    await env.FEEDBACK.put("theme", JSON.stringify({ name: "Contoso", palette: "ocean;}</style><script>alert(3)</script>",
+      font: "x}body{background:url(https://tracker.example/a)", c1: "#000;background:red", logo: { type: "text/html", v: "0123456789ab" } }));
+    const cleaned = await (await get("/admin/theme", env, { Cookie: await signIn(env, "203.0.113.62") })).text();
+    expect(cleaned).not.toContain("alert(3)");
+    expect(cleaned).not.toContain("tracker.example");
+    expect(cleaned).not.toContain("background:red");
+    expect(cleaned).not.toContain("/brand/logo");
+    expect(cleaned).toContain('id="pal-hermitshell" checked');
+  });
+
+  it("takes only real pictures as a logo, whatever the upload says it is, and serves it sandboxed", async () => {
+    const env = testEnv(ADMIN);
+    const cookie = await signIn(env, "203.0.113.63");
+    const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><script>alert(2)</script></svg>');
+    const html = new TextEncoder().encode("<html><script>alert(1)</script></html>");
+    for (const [bytes, type, name] of [[svg, "image/svg+xml", "logo.svg"], [svg, "image/png", "logo.png"], [html, "image/png", "logo.png"]]) {
+      const res = await upload(env, cookie, { csrf: await csrfOf(env, cookie) }, { bytes, type, name });
+      expect(res.headers.get("Location")).toBe("/admin/theme?done=badlogo");
+    }
+    expect(env.FEEDBACK.store.has("theme:logo")).toBe(false);
+    await upload(env, cookie, { csrf: await csrfOf(env, cookie), showname: "1", tabicon: "1" }, { bytes: PNG, type: "text/html", name: "logo.html" });
+    const { logo } = JSON.parse(env.FEEDBACK.store.get("theme"));
+    const res = await get(`/brand/logo?v=${logo.v}`, env);
+    expect(res.headers.get("Content-Type")).toBe("image/png");
+    expect(res.headers.get("Content-Security-Policy")).toBe("default-src 'none'; sandbox");
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  });
+
+  it("keeps every page's security headers once themed", async () => {
+    const env = testEnv(ADMIN);
+    const cookie = await signIn(env, "203.0.113.64");
+    await upload(env, cookie, { csrf: await csrfOf(env, cookie), palette: "graphite", showname: "1", tabicon: "1" });
+    const res = await get("/admin", env, { Cookie: cookie });
+    onlyOwnScript(res.headers.get("Content-Security-Policy"));
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    const pub = await get(`/join?i=${"0".repeat(32)}`, env);
+    expect(pub.headers.get("Content-Security-Policy")).not.toContain("script-src");
+    expect(await pub.text()).toMatch(/<link rel="stylesheet" href="\/app\.css\?v=[0-9a-f]{8}&amp;t=[0-9a-f]{8}">/);
+  });
+});

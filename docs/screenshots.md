@@ -595,6 +595,26 @@ it to the profile:
 
 *Filtered to **Applied** over 30 days.*
 
+### Theme and branding
+
+<img src="images/worker/admin-theme.png" alt="Theme and branding: name, logo and logo options, eight palettes and a custom one, and the look options, with a live preview on the right" width="720">
+
+`/admin/theme`, from the palette button beside the server button (admins only). It starts on
+HermitShell's own look ([more](feedback-worker.md#theme-and-branding)).
+
+| Part | What it does |
+| --- | --- |
+| **Name** / **Logo** | Replace HermitShell at the top of every page. PNG, JPEG, GIF or WebP up to 200 KB; SVG is refused |
+| **Show the name next to the logo** / **Use the logo as the browser tab's icon** / **Logo size** | How the logo is shown |
+| **Palette** | Eight palettes, or **Custom** with two colour pickers |
+| **Background** / **Corners** / **Font** / **Spacing** / **Motion** | The look of every page |
+| **Preview** | Follows the choices as you make them |
+| **Save theme** / **Reset to HermitShell's look** | Apply for everyone, or go back to the default |
+
+<img src="images/worker/admin-theme-applied.png" alt="The Recruits page under the name Northwind Talent in the Ocean palette with soft corners" width="720">
+
+*The Recruits page after saving the name **Northwind Talent**, the **Ocean** palette and soft corners.*
+
 ## Regenerating these images
 
 The pictures are made by the real code, so they stay accurate after a change. Run this from the

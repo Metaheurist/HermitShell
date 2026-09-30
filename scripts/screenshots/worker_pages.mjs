@@ -57,12 +57,15 @@ async function call(path, { method = "GET", form, json, headers = {} } = {}) {
   return worker.fetch(new Request(`${BASE}${path}`, init), env, {});
 }
 
-// The screenshots open the pages as files, so the shared stylesheet goes back inline.
+// The screenshots open the pages as files, so the shared stylesheet goes back inline (in the theme's colours when
+// one is set).
 const STYLESHEET = await stylesheet().text();
 
 async function save(name, response) {
   const html = await response.text();
-  writeFileSync(join(out, `${name}.html`), html.replace(`<link rel="stylesheet" href="${STYLE_URL}">`, () => `<style>${STYLESHEET}</style>`));
+  const href = html.match(/<link rel="stylesheet" href="([^"]+)">/)?.[1];
+  const css = !href || href === STYLE_URL ? STYLESHEET : await (await call(href.replaceAll("&amp;", "&"))).text();
+  writeFileSync(join(out, `${name}.html`), href ? html.replace(`<link rel="stylesheet" href="${href}">`, () => `<style>${css}</style>`) : html);
 }
 
 // A profile page with its save-status frame inlined, since the screenshots open the pages as files.
@@ -412,6 +415,17 @@ for (const [ago, kind, text, by, via, job] of [
 ]) await record(env, "sam-lee", kind, text, { by, via, at: now - ago, h: job ? await jobHash(job) : "" });
 await casey("/admin/action", { method: "POST", form: { csrf: caseyCsrf, action: "send_now", u: "sam-lee" } });
 await save("admin-history", await casey("/admin/history?u=sam-lee"));
+
+// Theme and branding: the page as it opens, then the dashboard under another name in the Ocean palette, then back.
+await save("admin-theme", await admin("/admin/theme"));
+const themeForm = (fields) => {
+  const form = new FormData();
+  for (const [k, v] of Object.entries({ csrf, showname: "1", tabicon: "1", ...fields })) form.set(k, v);
+  return form;
+};
+await admin("/admin/theme", { method: "POST", form: themeForm({ name: "Northwind Talent", palette: "ocean", corners: "soft" }) });
+await save("admin-theme-applied", await admin("/admin"));
+await admin("/admin/theme", { method: "POST", form: themeForm({ op: "reset" }) });
 
 // Demo mode, switched on from Global settings: the made-up desk on every signed-in page, then off again. The ribbon
 // is fixed to the window's foot, which the screenshots' tall window would push far below the page, so it is drawn

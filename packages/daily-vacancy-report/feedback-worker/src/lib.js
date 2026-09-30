@@ -53,8 +53,9 @@ export function hidden(fields) {
   return Object.entries(fields).map(([k, v]) => `<input type="hidden" name="${k}" value="${esc(v)}">`).join("");
 }
 
-export function favicon() {
-  return new Response(FAVICON, {
+// `paint` repaints its colours for the theme (theme.js).
+export function favicon(paint = null) {
+  return new Response(paint ? paint(FAVICON) : FAVICON, {
     headers: {
       "Content-Type": "image/svg+xml",
       "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
@@ -405,8 +406,8 @@ export function savingTag(label = "saving") {
 export const STYLE_PATH = "/app.css";
 export const STYLE_URL = `${STYLE_PATH}?v=${fnv(STYLE)}`;
 
-export function stylesheet() {
-  return new Response(STYLE, {
+export function stylesheet(paint = null) {
+  return new Response(paint ? paint(STYLE) : STYLE, {
     headers: {
       "Content-Type": "text/css; charset=utf-8",
       "Cache-Control": "public, max-age=31536000, immutable",

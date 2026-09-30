@@ -19,12 +19,13 @@ import { DOC_KINDS, DOC_STYLE, OWNER_ID, docFor, jobHash, letterFields, letterSt
 import { listed, record } from "./history.js";
 import { handleJoin, queueItem } from "./join.js";
 import {
-  CONTROL_RE, EVENT_TTL_SECONDS, LINK_DAYS, MAX_SKILL, ago, authorised, cleanSkill, deleteAndUnflag, esc, eventFlag, eventPrefix, favicon, json, limitedForm,
-  limitedJson, listFlagged, page, purgeProfileEvents, safeEqual, setFlag, sha256Hex, sign, STYLE_PATH, stylesheet, text, today, PROFILE_RE,
+  CONTROL_RE, EVENT_TTL_SECONDS, LINK_DAYS, MAX_SKILL, ago, authorised, cleanSkill, deleteAndUnflag, esc, eventFlag, eventPrefix, json, limitedForm,
+  limitedJson, listFlagged, page, purgeProfileEvents, safeEqual, setFlag, sha256Hex, sign, STYLE_PATH, text, today, PROFILE_RE,
 } from "./lib.js";
 import { memoKV } from "./memo.js";
 import { privacyPage } from "./privacy.js";
 import { forgetRequests, rememberRequest } from "./tasks.js";
+import { LOGO_PATH, logoResponse, themed, themedFavicon, themedStylesheet } from "./theme.js";
 
 export { sign } from "./lib.js";
 export { Hub } from "./hub.js";
@@ -258,9 +259,10 @@ async function route(request, env, ctx) {
     return withProtocol(auth.ok ? await apiRoute(auth.request, env, url) : json({ error: auth.error }, auth.status));
   }
 
-  if ((url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") && request.method === "GET") return favicon();
+  if ((url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") && request.method === "GET") return themedFavicon(url, env);
   if (url.pathname === ENHANCE_PATH && request.method === "GET") return enhanceScript();
-  if (url.pathname === STYLE_PATH && request.method === "GET") return stylesheet();
+  if (url.pathname === STYLE_PATH && request.method === "GET") return themedStylesheet(url, env);
+  if (url.pathname === LOGO_PATH && request.method === "GET") return logoResponse(url, env);
   if (url.pathname === "/privacy") return privacyPage();
   if (url.pathname === "/join") return handleJoin(request, env);
   if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return handleAdmin(request, env, ctx);
@@ -297,7 +299,8 @@ async function apiRoute(request, env, url) {
 export default {
   async fetch(request, env, ctx) {
     try {
-      return await route(request, env.FEEDBACK ? { ...env, FEEDBACK: memoKV(env.FEEDBACK) } : env, ctx);
+      const memo = env.FEEDBACK ? { ...env, FEEDBACK: memoKV(env.FEEDBACK) } : env;
+      return await themed(await route(request, memo, ctx), memo);
     } catch (err) {
       console.error(`${new URL(request.url).pathname}: ${err?.name || "Error"}: ${String(err?.message || "").slice(0, 200)}`);
       return page("Something went wrong", "<p>Please try again in a minute.</p>", { status: 500 });

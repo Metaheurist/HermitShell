@@ -405,7 +405,7 @@ def main() -> int:
                     1900 if html.stem in ("admin-signed-in", "admin-server-panel") else
                     # Recruits and Users grow with the window and stack their rows below 900px.
                     1280 if html.stem.startswith(("admin-dashboard", "admin-tasks", "admin-user", "admin-recruiter",
-                                                  "admin-delete", "admin-password")) else
+                                                  "admin-delete", "admin-password", "admin-theme")) else
                     1000 if html.stem.startswith(("admin-profile", "admin-settings", "admin-stats", "admin-sent",
                                                   "admin-global-key", "admin-history", "admin-model-key")) else
                     760 if html.stem == "privacy" else 600,

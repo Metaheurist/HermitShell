@@ -4,6 +4,7 @@
 //   only while nothing is being typed and no window or menu is open, so input, focus and scroll are kept. Without
 //   scripts the <noscript> refresh reloads the page as before.
 // - A form sends once: pressing again, or double clicking, while its page loads does nothing.
+// - The theme page's preview follows the custom colours and the name as they change (the rest it follows by CSS).
 import { fnv } from "./lib.js";
 
 const SOURCE = `(() => {
@@ -20,6 +21,18 @@ const SOURCE = `(() => {
     setTimeout(() => idle(form), 8000);
   });
   addEventListener("pageshow", (e) => { if (e.persisted) document.querySelectorAll("form[aria-busy]").forEach(idle); });
+
+  document.addEventListener("input", (e) => {
+    const field = e.target;
+    const form = field instanceof HTMLInputElement ? field.closest("form.theme") : null;
+    if (!form) return;
+    if (field.dataset.pv) {
+      form.style.setProperty(field.dataset.pv, field.value);
+      const custom = form.querySelector("#pal-custom");
+      if (custom) custom.checked = true;
+    }
+    if (field.name === "name") form.querySelectorAll(".pvname").forEach((n) => { n.textContent = field.value.trim() || "HermitShell"; });
+  });
 
   const meta = document.querySelector('meta[name="hs-refresh"]');
   if (!meta) return;

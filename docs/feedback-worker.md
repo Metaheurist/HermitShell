@@ -535,6 +535,9 @@ don't get the button.
 
 <img src="images/worker/admin-server-panel.png" alt="The admin's server panel: CPU, memory, GPU and disk bars, then the models in the order they are asked" width="720">
 
+Between the server button and the key button, admins have a **palette** button that opens
+[Theme and branding](#theme-and-branding).
+
 Every dashboard user, recruiters included, changes their password with the key button (or
 **Change password** on their own row under Users and roles). It asks for the current
 password and the new one twice. You stay signed in in that browser and are signed out everywhere
@@ -555,6 +558,35 @@ HermitShell keeps each recruit's recruiter in their `profile.json`. From the ser
 python3 profiles.py --list                       # the recruiter is the third column
 python3 profiles.py --assign sam-lee-456789 casey   # "" puts them in nobody's pool
 ```
+
+#### Theme and branding
+
+`/admin/theme`, from the palette button at the top right (admins only). It sets how every page the
+Worker draws looks: the dashboard, sign-in, the sign-up form and the pages behind email buttons.
+**Save theme** applies it for everyone within about a minute; **Reset to HermitShell's look** goes back
+to the default, which is what a new Worker starts with and stores nothing.
+
+<img src="images/worker/admin-theme.png" alt="Theme and branding: name, logo and logo options, eight palettes and a custom one, and the look options, with a live preview on the right" width="720">
+
+- **Branding.** A **Name** (up to 40 characters) shown at the top of every page in place of
+  HermitShell; messages about the HermitShell server keep its name. A **Logo** in PNG, JPEG, GIF or
+  WebP up to 200 KB, checked by its content rather than its name. SVG is refused, as it can carry
+  script. Then whether the name shows next to the logo, whether the logo is the browser tab's icon,
+  and a small or large logo. Tick **Remove the logo** under the current one to go back to the
+  HermitShell mark.
+- **Palette.** HermitShell's indigo and violet, Ocean, Forest, Royal, Berry, Sunset, Ember and
+  Graphite, or **Custom** with two colour pickers. Custom colours too light for white button text are
+  darkened a little. The whole family of brand colours (buttons, links, focus rings, the background's
+  glow, charts and the favicon) moves to the palette; status colours such as green, amber and red stay.
+- **Look.** Background (aurora, still or plain), corners (rounded, soft or sharp), font (system,
+  rounded, serif or mono), spacing (comfortable or compact) and motion (full, or calm, which stops the
+  background drifting and cards sliding in).
+
+The preview beside the form follows the palette, corners, font, spacing and name as you change them.
+The theme is kept in KV (`theme`, and `theme:logo` for the picture) and demo mode shows it too.
+Emails are drawn by HermitShell, so they keep HermitShell's look.
+
+<img src="images/worker/admin-theme-applied.png" alt="The Recruits page under the name Northwind Talent in the Ocean palette with soft corners" width="720">
 
 #### Global settings
 
