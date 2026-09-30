@@ -376,7 +376,8 @@ HermitShell applies the changes, since the Worker can't reach your server.
    watching off) and `JOB_PROFILES_POLL_SECONDS` (default 15, at least 5) tune that fallback.
 
 3. Open `https://vacancy-feedback.<subdomain>.workers.dev/admin`, sign in and press
-   **Create invite link**. Each link works once and expires after 7 days; send it to the person.
+   **Create invite link**. Each link works once and expires after 7 days; send it to the person. The link
+   opens on its own page, so reloading that page shows the same link rather than making another.
    (`python3 profiles.py --invite "note"` makes one from the server too.)
 4. They fill in their name, email, optional phone and town, the roles they want, and upload a CV
    (PDF, Word .docx or text, up to 5 MB) or paste it. The CV waits in KV, deleted once HermitShell has it.
@@ -709,7 +710,8 @@ without the link. Meanwhile:
 #### Send jobs now
 
 **Send jobs now** on each recruit's page (**Send jobs** on the Recruits list) runs that recruit's report straight
-away instead of waiting for its daily time. HermitShell gets the request over the live link within
+away instead of waiting for its daily time. A second press for the same recruit within a minute (a double click
+or a reload) is the same request, so the scan is not queued twice. HermitShell gets the request over the live link within
 seconds and starts the scan in the background (`profiles.py report --now <id>`, logged to
 `state/profiles/runs.log`), so other dashboard changes keep being applied while it runs. The email
 arrives when the scan finishes, usually 10 to 20 minutes later, and it is sent even when nothing
@@ -954,7 +956,10 @@ Object requests a day, well inside that plan's 100,000 requests and 13,000 GB-se
 a hibernating socket isn't billed for time. Without the link it reads `/api/queue/flag` every 15
 seconds between runs (about 5,200 reads and requests a day) and only syncs when its value
 changes, so an item that keeps failing is retried by the next run rather than listed every 15
-seconds. Admin pages also skip the listing when the flag says the queue is empty. Status reports
+seconds. Admin pages also skip the listing when the flag says the queue is empty. Each flag holds when it was
+last set, and a listing that finds nothing under a flag set over two minutes ago takes it down (KV lists can
+show a deleted key for about a minute), so a flag can't stay on after its items have gone and cost a list on
+every poll. Status reports
 from HermitShell are only written when something changed or every 15 minutes (at most 96 of the
 1,000 writes a day), plus two per report (when it starts and when it ends), about one a minute for
 a report's progress while it runs (a 20-minute scan adds about 20), and one per cover letter or

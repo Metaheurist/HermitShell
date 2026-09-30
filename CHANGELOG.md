@@ -823,6 +823,24 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Waiting pages keep the account box and the demo ribbon.** A page reloading itself while HermitShell
+  applied a change lost the **Sign out** box (and the demo ribbon), and on phones the card jumped as it
+  came and went.
+- **A waiting flag can no longer stay on.** KV lists can still show deleted keys for about a minute, so
+  the flag saying "something is waiting" often outlived its items, and every poll (cover letters every
+  5 minutes, the queue, each dashboard load) then paid for a list from the free plan's 1,000 a day.
+  Flags now hold when they were set and are taken down once a listing finds nothing under an older one.
+- **No double presses.** Pressing **Send jobs** twice within a minute queues one scan, and a new invite
+  opens on its own page, so reloading it no longer makes another invite. Deleting a recruiter with
+  several recruits raises the queue flag once instead of once per recruit, which KV could refuse.
+- **Rate limits given as a date.** A Firecrawl or model provider asking to wait until a date (not a
+  number of seconds) crashed the scan or was ignored; both forms are read now. Firecrawl is left alone
+  for the rest of a run after three network failures in a row instead of minutes of retries per call.
+- **A failing sync keeps the live link.** An error while applying dashboard changes counted as the live
+  link dropping, and enough of them sent HermitShell back to polling; it is now logged and
+  retried over the same link.
+- **Score rings pop in again.** Four stylesheets defined an animation called `pop` differently, so the
+  jobs-sent rings slid instead of growing; each now has its own name, and a test keeps them apart.
 - **A smooth shine on pending sign-ups.** The glow across a sign-up waiting to be set up (always one in
   demo mode) was drawn separately in each cell, so it moved at a different speed in every column and
   showed seams, which looked choppy. It is now one sweep across the whole row.

@@ -284,7 +284,7 @@ const casey = (path, options = {}) => call(path, { ...options, headers: { Cookie
 const caseyCsrf = (await (await casey("/admin")).text()).match(/name="csrf" value="([^"]+)"/)[1];
 await casey("/admin/action", { method: "POST", form: { csrf: caseyCsrf, action: "invite", note: "Morgan, met at the careers fair" } });
 await call("/api/invite", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: { note: "Taylor, former colleague" } });
-await save("admin-invite-link", await admin("/admin/action", { method: "POST", form: { csrf, action: "invite", note: "Jamie from the course" } }));
+await save("admin-invite-link", await admin((await admin("/admin/action", { method: "POST", form: { csrf, action: "invite", note: "Jamie from the course" } })).headers.get("Location")));
 await admin("/admin/action", { method: "POST", form: { csrf, action: "resume", u: "jordan-patel" } });
 await call("/f", { method: "POST", form: { ...(await link("tailored_cv", "BI Developer at Fabrikam", { profile: "sam-lee" })), r: "" } });
 await save("admin-dashboard", await admin("/admin?done=queued"));
