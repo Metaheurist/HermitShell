@@ -186,6 +186,19 @@ def test_deploy_rejects_bad_worker_names():
         cw.deploy(cf, "Bad_Name", "demo", {}, log=lambda _: None)
 
 
+def test_deploy_sets_only_the_known_secrets_and_logs_only_their_names():
+    cf, api = client(dict(BASE_ROUTES))
+    with pytest.raises(cw.CloudflareError, match="only these Worker secrets"):
+        cw.deploy(cf, "vacancy-feedback", "demo", {"SOMETHING_ELSE": "value-1"}, log=lambda _: None)
+    assert not api.sent("PUT", "/accounts/A/workers/scripts/vacancy-feedback")
+    logs = []
+    cw.deploy(cf, "vacancy-feedback", "demo", {"ADMIN_PASSWORD": "a-long-demo-password", "ADMIN_USER": "admin"},
+              log=logs.append)
+    sent = [json.loads(c["data"])["name"] for c in api.sent("PUT", "/accounts/A/workers/scripts/vacancy-feedback/secrets")]
+    assert sent == ["ADMIN_USER", "ADMIN_PASSWORD"]
+    assert "  secret ADMIN_PASSWORD: set" in logs and not any("a-long-demo-password" in line for line in logs)
+
+
 class RedirectOpener:
     def __init__(self, location):
         self.location = location
@@ -343,10 +356,10 @@ def interactive(replies, advanced=False, current=None):
     w.cloudflare_factory = FakeCF
     queue = list(replies)
 
-    def answer(prompt, secret=False):
+    def answer(prompt):
         w.prompts.append(prompt)
         return queue.pop(0)
-    w._input = answer
+    w._input = w._secret = answer
     w.left = queue
     for step in ("shared", "job_search", "job_targets", "job_profile"):
         setattr(w, step, lambda *a, step=step: w.steps.append(step))

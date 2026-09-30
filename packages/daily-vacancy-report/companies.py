@@ -327,5 +327,5 @@ class Companies:
             LOGO_DIR.mkdir(parents=True, exist_ok=True)
             (LOGO_DIR / f"{cid}.png").write_bytes(png)
         self.cache[key] = {"name": name, "website": website, "logo": cid, "checked": time.time()}
-        log(f"company {name}: website {website or 'not found'}, logo {'yes' if cid else 'no'}")
+        log(f"company lookup: website {'found' if website else 'not found'}, logo {'yes' if cid else 'no'}")
         return self.cache[key]

@@ -35,6 +35,8 @@ REPO = Path(__file__).resolve().parent.parent
 WORKER_DIR = REPO / "packages" / "daily-vacancy-report" / "feedback-worker"
 DEFAULT_NAME = "vacancy-feedback"
 KV_BINDING = "FEEDBACK"
+# The secrets deploy() sets, in this order; their names are logged, never their values.
+WORKER_SECRETS = ("JOB_FEEDBACK_SECRET", "JOB_FEEDBACK_API_TOKEN", "ADMIN_USER", "ADMIN_PASSWORD")
 # The live link's Durable Object (src/hub.js) and the migration that creates it; the same tag as wrangler.jsonc.
 HUB_BINDING, HUB_CLASS, HUB_TAG = "HUB", "Hub", "v1"
 ACCOUNT_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -240,6 +242,8 @@ def deploy(cf: Cloudflare, name: str, subdomain: str, worker_secrets: dict[str, 
     """Upload the Worker with its KV binding, turn on workers.dev and set the given secrets; returns its URL."""
     if not NAME_RE.match(name):
         raise CloudflareError(f"'{name}' is not a valid Worker name (lowercase letters, digits and hyphens)")
+    if not set(worker_secrets) <= set(WORKER_SECRETS):
+        raise CloudflareError(f"only these Worker secrets can be set: {', '.join(WORKER_SECRETS)}")
     main, date, modules = worker_source(worker_dir)
     title = f"{name}-{KV_BINDING}"
     kv_id, created = cf.kv_namespace(title)
@@ -248,9 +252,9 @@ def deploy(cf: Cloudflare, name: str, subdomain: str, worker_secrets: dict[str, 
     cf.upload_worker(name, main, date, modules, kv_id, tag)
     log(f"  Worker {name}: uploaded ({len(modules)} modules{'' if tag == HUB_TAG else ', live link created'})")
     cf.enable_workers_dev(name)
-    for key, value in worker_secrets.items():
-        if value:
-            cf.put_secret(name, key, value)
+    for key in WORKER_SECRETS:
+        if worker_secrets.get(key):
+            cf.put_secret(name, key, worker_secrets[key])
             log(f"  secret {key}: set")
     return worker_url(name, subdomain)
 

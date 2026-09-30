@@ -108,7 +108,7 @@ def test_older_plain_files_are_encrypted_once_a_key_is_set(tree, monkeypatch):
 def test_tighten_makes_state_owner_only(tree):
     _, _, state = tree
     path = aged(state / "cover_letters" / "a.pdf", 1)
-    os.chmod(path, 0o644)
+    os.chmod(path, 0o640)
     assert maintenance.tighten(state) >= 1
     assert path.stat().st_mode & 0o777 == 0o600 and state.stat().st_mode & 0o777 == 0o700
 

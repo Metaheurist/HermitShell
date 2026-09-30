@@ -283,7 +283,7 @@ def main() -> int:
     for name in names:
         p = info["providers"][name]
         rest = f"resting ({p['why']})" if p["resting_until"] else "ready"
-        print(f"{PROVIDERS[name]['label']:13} {hc.mask_secret(key(name)):12} {p['model']:32} {rest}, {p['today']} today")
+        print(f"{PROVIDERS[name]['label']:13} {p['model']:32} {rest}, {p['today']} today")
     return 0
 
 

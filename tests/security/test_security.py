@@ -352,6 +352,25 @@ def test_files_the_scripts_create_are_owner_only(tmp_path):
     hc.write_atomic(tmp_path / "atomic.txt", "x", private=True)
     for name in ("private.txt", "atomic.txt"):
         assert (tmp_path / name).stat().st_mode & 0o777 == 0o600
+    old = os.umask(0)
+    try:
+        hc.write_atomic(tmp_path / "shared.txt", "x")
+    finally:
+        os.umask(old)
+    assert (tmp_path / "shared.txt").stat().st_mode & 0o007 == 0
+
+
+def test_the_scanners_saved_reports_are_encrypted_with_a_data_key(tmp_path, monkeypatch):
+    pytest.importorskip("cryptography")
+    import job_scanner
+    from zoneinfo import ZoneInfo
+    monkeypatch.setenv(hc.DATA_KEY_ENV, hc.new_data_key())
+    monkeypatch.setattr(job_scanner, "STATE_DIR", tmp_path)
+    with Tracker(tmp_path / "job_tracker.db") as tracker:
+        assert job_scanner.send_weekly(tracker, ZoneInfo("UTC"), dry_run=True) == 0
+    report = tmp_path / "job_scanner_weekly.html"
+    assert hc.is_sealed(report) and b"<html" not in report.read_bytes()
+    assert "<html" in hc.read_private_text(report)
 
 
 @POSIX

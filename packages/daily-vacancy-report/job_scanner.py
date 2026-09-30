@@ -1060,8 +1060,7 @@ def send_weekly(tracker: Tracker, tz: ZoneInfo, dry_run: bool) -> int:
     now = time.time()
     subject, html_body, text = build_weekly(tracker.week(now - 7 * 86400), weekly_when(tz), CFG.title,
                                             CFG.region or "Job radar", now, report_unsubscribe_link())
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    (STATE_DIR / "job_scanner_weekly.html").write_text(html_body, encoding="utf-8")
+    hc.write_private(STATE_DIR / "job_scanner_weekly.html", html_body)
     if dry_run:
         print(f"{subject} [dry run, report at {STATE_DIR / 'job_scanner_weekly.html'}]")
         print(text)
@@ -1295,7 +1294,7 @@ def run(args: argparse.Namespace) -> int:
         if page_salary and below_min_salary(salary_of(page_salary), min_salary, salary_currency):
             excluded_salary += 1
             done.append(job["key"])
-            log(f"[{i}/{len(queue)}] skip (salary {page_salary} below {min_salary}) {job['title'][:60]}")
+            log(f"[{i}/{len(queue)}] skip (salary below the minimum) {job['title'][:60]}")
             return "skipped"
         page_left = days_left(closing_date(job["text"], ""), today)
         if page_left is not None and page_left < 0:
@@ -1502,11 +1501,9 @@ def run(args: argparse.Namespace) -> int:
     text_body = (f"Added to your CV: {', '.join(cv_added)}\n\n" if cv_added else "") + \
         build_text(results, summary, followup_text(followups)) + \
         (f"\n\nUnsubscribe: {stats['unsubscribe']}" if stats["unsubscribe"] else "")
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    LAST_REPORT.write_text(preview_html(html_body), encoding="utf-8")
-    LAST_RESULTS.write_text(json.dumps({"generated": when, "model": model, "summary": summary, "sources": health,
-                                        "problems": problems, "jobs": results}, indent=1, default=str),
-                            encoding="utf-8")
+    hc.write_private(LAST_REPORT, preview_html(html_body))
+    hc.write_private(LAST_RESULTS, json.dumps({"generated": when, "model": model, "summary": summary, "sources": health,
+                                               "problems": problems, "jobs": results}, indent=1, default=str))
 
     line = (f"Job radar: {len(results)} matches ({len(top)} with fit 7+) from {len(queue)} rated; "
             f"best: {results[0]['title']} ({results[0]['fit']}/10)" if results else

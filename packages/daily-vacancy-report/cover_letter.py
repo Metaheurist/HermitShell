@@ -418,7 +418,8 @@ def process_pending(tracker: Tracker, model_info_factory, dry_run: bool = False)
     for kind, req in pending:
         what = KIND_LABELS[kind]
         job = tracker.job(req["key"]) or {}
-        label = (job_title(job) if job else req["key"]) + (f" at {employer(job)}" if employer(job) else "")
+        # These lines go to the plain-text log, so they name the role but not the employer or the file.
+        label = job_title(job) if job else req["key"]
         if tracker.letter_cancelled(req["event_id"]):
             lines.append(f"{what} for {label} was cancelled from the dashboard")
             continue
@@ -462,7 +463,7 @@ def process_pending(tracker: Tracker, model_info_factory, dry_run: bool = False)
             if problem := upload_doc(kind, req["key"], path, doc_info(path, kind, job)[0], days):
                 log(problem)
         done = "saved" if dry_run else "sent" if send else "made for download"
-        lines.append(f"{what} {done} for {label}: {path.name}" + (" (the one made earlier)" if earlier else ""))
+        lines.append(f"{what} {done} for {label}" + (" (the one made earlier)" if earlier else ""))
     profiles.tasks_changed()
     return lines
 

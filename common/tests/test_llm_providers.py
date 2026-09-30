@@ -284,3 +284,14 @@ def test_connect_model_prefers_the_model_that_fits_the_machine(monkeypatch):
     monkeypatch.setenv("OLLAMA_MODEL", "llama3.2:3b")
     hc.connect_model("JOB_SCANNER_MODEL")
     assert seen[1][0] == "llama3.2:3b"
+
+
+def test_the_status_command_prints_no_part_of_any_key(monkeypatch, capsys):
+    monkeypatch.setattr(hc, "load_env_file", lambda *a, **k: None)
+    for name, value in KEYS.items():
+        monkeypatch.setenv(f"{name.upper()}_API_KEY", value)
+    assert lp.main() == 0
+    out = capsys.readouterr().out
+    assert "OpenRouter" in out
+    for value in KEYS.values():
+        assert value[:3] not in out and value[-4:] not in out

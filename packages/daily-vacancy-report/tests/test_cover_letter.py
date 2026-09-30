@@ -155,7 +155,7 @@ def test_process_pending_writes_and_emails_each_request_once(setup, monkeypatch)
     monkeypatch.setattr(cover_letter, "write_letter",
                         lambda host, model, ctx, job, profile, listing, note: notes.append(note) or PARAGRAPHS)
     lines = cover_letter.process_pending(tracker, lambda: ("h", "m", None))
-    assert lines[0].startswith("Cover letter sent for AI Engineer at Acme")
+    assert lines[0].startswith("Cover letter sent for AI Engineer") and "Acme" not in "\n".join(lines)
     assert notes == ["mention Azure"]
     (subject, [(filename, pdf, mime)]), = sent
     assert subject == "Cover letter: AI Engineer at Acme" and mime == "application/pdf"
@@ -181,7 +181,7 @@ def test_process_pending_marks_the_request_it_is_writing_and_skips_cancelled_one
     assert tracker.cancel_letter("e2") and not tracker.cancel_letter("nope")
     lines = cover_letter.process_pending(tracker, lambda: ("h", "m", None))
     assert marks == ["e1"] and len(sent) == 1 and not cover_letter.WRITING_FILE.exists()
-    assert lines[-1] == "Cover letter for AI Engineer at Acme was cancelled from the dashboard"
+    assert lines[-1] == "Cover letter for AI Engineer was cancelled from the dashboard"
     assert tracker.open_requests() == [] and len(pushes) >= 2
 
 
@@ -314,7 +314,7 @@ def test_a_job_asked_for_from_the_dashboard_is_emailed_without_the_model(kept, m
                             (url, params, {"Authorization": headers["Authorization"]})) or type("R", (), {})())
     tracker.add_event("e1", "k1", "send_job", flags="quiet")
     lines = cover_letter.process_pending(tracker, lambda: pytest.fail("no model needed"))
-    assert lines == ["Job email sent for AI Engineer at Acme"] and written == []
+    assert lines == ["Job email sent for AI Engineer"] and written == []
     (subject, images), = sent
     assert subject.endswith("AI Engineer at Acme") and isinstance(images, dict)
     assert uploads == [("https://fb.example.org/api/emailed", {"u": "owner", "j": "k1"},
@@ -327,7 +327,7 @@ def test_a_job_email_in_a_dry_run_sends_nothing_and_stays_queued(kept):
     tracker, sent, uploads, written = kept
     tracker.add_event("e1", "k1", "send_job")
     lines = cover_letter.process_pending(tracker, lambda: pytest.fail("no model needed"), dry_run=True)
-    assert lines == ["Job email not sent (dry run) for AI Engineer at Acme"] and sent == [] and uploads == []
+    assert lines == ["Job email not sent (dry run) for AI Engineer"] and sent == [] and uploads == []
     assert [r["event_id"] for r in tracker.open_requests()] == ["e1"]
 
 
@@ -359,6 +359,6 @@ def test_process_pending_retries_failures_and_skips_unknown_jobs(setup, monkeypa
 
     monkeypatch.setattr(cover_letter, "write_letter", broken)
     lines = cover_letter.process_pending(tracker, lambda: ("h", "m", None))
-    assert lines[0].startswith("Cover letter will retry for AI Engineer at Acme: ValueError")
+    assert lines[0].startswith("Cover letter will retry for AI Engineer: ValueError")
     assert lines[1] == "Cover letter skipped for gone: job gone is not in the tracker"
     assert [p["event_id"] for p in tracker.pending_letters()] == ["e1"] and sent == []

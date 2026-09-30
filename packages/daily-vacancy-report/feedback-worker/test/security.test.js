@@ -273,7 +273,7 @@ describe("authentication", () => {
     expect(anonymous).not.toContain("jobs.example.com");
     const cookie = await signIn(env, "203.0.113.7");
     for (const q of ["r=7", "r=<script>", "a=<script>", "r=90&a=applied"]) {
-      const res = await get(`/admin/sent?u=sam-lee&${q.replace(/<script>/g, encodeURIComponent("<script>"))}`, env, { Cookie: cookie });
+      const res = await get(`/admin/sent?u=sam-lee&${q.replaceAll("<script>", encodeURIComponent("<script>"))}`, env, { Cookie: cookie });
       expect(res.headers.get("Content-Security-Policy")).not.toContain("script-src");
       const body = await res.text();
       expect(body, q).not.toContain("<script>");

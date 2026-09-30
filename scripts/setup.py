@@ -396,11 +396,19 @@ class Wizard:
     def say(self, text: str = "") -> None:
         print(text)
 
-    def _input(self, prompt: str, secret: bool = False) -> str:
+    def _input(self, prompt: str) -> str:
         try:
-            if secret and sys.stdin.isatty():
-                return getpass.getpass(prompt)
             return input(prompt)
+        except EOFError:
+            return ""
+
+    def _secret(self, prompt: str) -> str:
+        """Passwords and keys: not echoed on a terminal, read as a plain line when piped. Kept apart from _input so
+        answers such as names can never be mistaken for a password."""
+        if not sys.stdin.isatty():
+            return self._input(prompt)
+        try:
+            return getpass.getpass(prompt)
         except EOFError:
             return ""
 
@@ -499,7 +507,7 @@ class Wizard:
         if s.secret:
             state = f"current {mask(base)}" if base else "not set"
             while True:
-                reply = self._input(f"  value ({state}; Enter keeps it, '-' clears): ", secret=True).strip()
+                reply = self._secret(f"  value ({state}; Enter keeps it, '-' clears): ").strip()
                 if not reply:
                     return base
                 if reply == "-":
@@ -862,7 +870,7 @@ class Wizard:
                 return self.feedback_manual()
             account = self.text("Cloudflare account ID (32 characters, dashboard -> Workers & Pages)", account)
             state = f"current {mask(token)}" if token else "not set"
-            token = self._input(f"Cloudflare API token ({state}; Enter keeps it): ", secret=True).strip() or token
+            token = self._secret(f"Cloudflare API token ({state}; Enter keeps it): ").strip() or token
         elif not (account and token):
             return self.feedback_manual()
         try:
@@ -937,7 +945,7 @@ class Wizard:
         keep = "" if required else "; Enter keeps the current one"
         empty = 0
         while True:
-            first = self._input(f"New admin password (12+ characters{keep}): ", secret=True).strip()
+            first = self._secret(f"New admin password (12+ characters{keep}): ").strip()
             if not first and required and empty < 2:
                 empty += 1
                 self.say(f"  {YELLOW}the rest of the setup happens on /admin, so it needs a password{RESET}")
@@ -947,7 +955,7 @@ class Wizard:
             if len(first) < 12:
                 self.say(f"  {YELLOW}use at least 12 characters{RESET}")
                 continue
-            if self._input("Repeat the password: ", secret=True).strip() == first:
+            if self._secret("Repeat the password: ").strip() == first:
                 return first
             self.say(f"  {YELLOW}the two passwords differ; try again{RESET}")
 
@@ -965,7 +973,7 @@ class Wizard:
         self.heading("Feedback Worker (Cloudflare)")
         if self.args.dry_run:
             self.say(f"  would deploy {plan['name']} to {cloudflare_worker.worker_url(plan['name'], plan['subdomain'])}"
-                     f" and set {', '.join(plan['secrets'])}")
+                     f" and set {', '.join(k for k in cloudflare_worker.WORKER_SECRETS if k in plan['secrets'])}")
             return
         cf = plan["cf"]
         try:

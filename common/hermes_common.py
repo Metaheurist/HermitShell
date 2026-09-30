@@ -148,11 +148,11 @@ def mask_secret(value: str) -> str:
 
 def write_atomic(path: Path, data: str | bytes, private: bool = False) -> None:
     """Write through a unique temp file and a rename, so readers never see half a file and concurrent writers
-    never share a temp file; private files are created 0600 from the start."""
+    never share a temp file; private files are created 0600 from the start and none are readable by everyone."""
     path.parent.mkdir(parents=True, exist_ok=True)
     raw = data.encode("utf-8") if isinstance(data, str) else data
     tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600 if private else 0o644)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600 if private else 0o640)
     try:
         with os.fdopen(fd, "wb") as fh:
             fh.write(raw)
