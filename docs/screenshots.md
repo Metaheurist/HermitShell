@@ -580,9 +580,13 @@ it to the profile:
 | Why | Why it was rated a fit, with anything it lacks (contact details and your name are removed) |
 | **About the company** | The employer, what it does, its website, what the role is, and the agency when one posted it |
 | **Strongest matches** / **Missing from the CV** | The skills found, and the ones the advert wants that your CV doesn't show. Press a missing skill the profile has (**+**) to count it as on the CV, as the email's missing-skill tag does: it shows dashed with a tick until HermitShell's next stats update, then with a solid tick |
-| **Cover letter** / **Tailored CV** | **Generate** has one made (not emailed), shown with a loading circle until it is ready. **Download** gets the one made in the last `COVER_LETTER_KEEP_DAYS` days (7 by default), from here or an email button; **Email to Sam** (**Email to you**) has HermitShell email that same PDF to the profile, showing **Emailing to Sam…** until it has gone; **Regenerate** replaces it |
+| **Cover letter** / **Tailored CV** | **Generate** has one made (not emailed), shown with a loading circle until it is ready. **Download** gets the one made in the last `COVER_LETTER_KEEP_DAYS` days (7 by default), from here or an email button; **Email to Sam** (**Email to you**) has HermitShell email that same PDF to the profile, showing **Emailing to Sam…** until it has gone; **Regenerate** replaces it. **Options**, on the cover letter only, picks the length and tone the new one is written in |
 | **Email to Sam** (**Email to you**) | **Send** has HermitShell email the job to the profile as its report card, with a loading circle while it goes; then **Emailed to Sam** with when, and **Send again** |
 | **View the advert** | Opens the advert in a new tab, when the report had a link |
+
+<img src="images/worker/admin-sent-letter-options.png" alt="The cover letter's Options open, with Length and Tone" width="460">
+
+*The cover letter's **Options** open.*
 
 <img src="images/worker/admin-sent-applied.png" alt="The jobs sent in 30 days that were applied for" width="460">
 

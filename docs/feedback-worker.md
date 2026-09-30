@@ -231,17 +231,25 @@ nothing (up to 30 days).
 ## Cover letters
 
 **Cover letter** on a job card opens the usual confirmation page, where you can add guidance
-("mention my Azure work", "keep it short"). After you confirm:
+("mention my Azure work") and choose its **Length** (short, about 200 words in 3 paragraphs; standard,
+about 300 in 4; detailed, about 400 in 5) and **Tone** (professional, warm, direct or formal). After you
+confirm:
 
 ```
 Cover letter button ──> Worker (confirm) ──> KV ──> cover_letter.py every 5 min ──> email + PDF
 ```
 
 1. `cover_letter.py`, a scheduled job, fetches the request from the Worker within 5 minutes.
-2. The model writes the letter from `job_profile.md` (plus `COVER_LETTER_CV_FILE` if set),
-   the listing saved when the job was rated, and your note. It is told to use only facts from
-   your CV. Letters that are too short or contain placeholders are rejected and retried.
-3. The letter is laid out as an A4 PDF with real, selectable text (`letter_pdf.py`, no extra
+2. The model first maps the job: the advert's main requirements, each with the fact from your CV that
+   shows it, or marked as not shown ([evidence map](configuration.md#cover-letters-from-an-evidence-map),
+   kept per job so a new letter or the tailored CV reuses it). It then writes the letter from that map,
+   `job_profile.md` (plus `COVER_LETTER_CV_FILE` if set), the listing and your note, in the length and
+   tone asked for, using only facts from your CV.
+3. The draft is checked without a model (`writing_checks.py`). One that is too short, has placeholders,
+   or uses a job title or figure your CV doesn't have is sent back with exactly what is wrong, up to
+   twice, and refused if it still does. Stock phrases ("I am excited", "passionate"), missing most of
+   the requirements the CV shows, or being off the length asked for get one rewrite.
+4. The letter is laid out as an A4 PDF with real, selectable text (`letter_pdf.py`, no extra
    packages), saved in `state/cover_letters/`, and emailed to you with the job details, a
    preview and a View job button.
 
@@ -262,8 +270,8 @@ days (default `7`, at most `30`, `0` turns this off), counted from when it was f
   (**Download PDF**) instead of queueing another, with **Confirm: write a new cover letter** if you
   want a new one anyway.
 - A request that reaches the server with no note, while a PDF made for that job is still on disk
-  and within those days, emails that PDF again without using the model. A note, or asking for a
-  new one, always writes a new one.
+  and within those days, emails that PDF again without using the model. A note, a length or tone
+  other than standard and professional, or asking for a new one, always writes a new one.
 - The Worker keeps each PDF in KV (`doc:<profile>:<kind>:<job hash>`) encrypted with AES-GCM under
   a key derived from `JOB_FEEDBACK_SECRET`, bound to that profile, job and kind, and KV deletes it
   when its days are up. It is served only to a signed-in admin or through a signed email link for
@@ -284,6 +292,7 @@ The wizard schedules the job; by hand:
 python3 scheduler.py create "*/5 * * * *" "Cover letter requests" \
     --name vacancy-cover-letters --script cover_letter.py
 python3 cover_letter.py --job <tracker key> --dry-run   # try one without email
+python3 cover_letter.py --job <tracker key> --length short --tone warm --dry-run
 ```
 
 The job prints nothing when there is nothing to do, so its runs leave no output file.
@@ -845,6 +854,11 @@ and a **Tailored CV**:
   **Emailing to Sam…** until it has gone. The request carries `send: 1`, which HermitShell's tracker
   keeps as the `send` flag in place of the download-only `quiet`.
 - **Regenerate** writes a new one, replacing the one kept.
+- **Options**, beside **Generate** and **Regenerate** on the cover letter, opens the letter's
+  **Length** and **Tone**. The request carries them as `len` and `tone` (only the listed values; the
+  defaults aren't sent), and the history says, for example, "Asked for a cover letter (short, warm)".
+
+<img src="images/worker/admin-sent-letter-options.png" alt="The cover letter's Options open on an opened job, with Length and Tone" width="460">
 
 The third tile, **Email to Sam**, sends the job itself to that
 recruit's address: **Send** asks HermitShell, which emails it within 5 minutes as the card it had in

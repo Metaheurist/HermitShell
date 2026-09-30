@@ -134,6 +134,32 @@ variety: cover letters 0.4, tailored CVs 0.2 and report summaries 0.3. On OpenRo
 (screening, ratings, second opinions, summaries and briefs) ask reasoning models to think briefly and
 leave the reasoning out of the reply, which saves tokens on the tasks that need it least.
 
+### Cover letters from an evidence map
+
+Before a letter is written, one request maps the job (`evidence.py`): the advert's main requirements, at
+most 8, each with the strongest evidence from the CV in its own words and where it is (a role, projects,
+skills or education), or marked as not shown. Evidence with a figure the CV doesn't have is dropped. The
+map is kept in `state/evidence/` under a hash of the job, encrypted with a data key, until the CV or the
+advert changes, and maps older than 30 days are deleted; a regenerated letter reuses it.
+
+With a map, the letter prompt gets the compacted CV, the map and the first 2,500 characters of the
+trimmed advert instead of 5,000. Each draft is checked without a model (`writing_checks.py`), and a rewrite
+sends only the draft, what is wrong with it and the map (the CV instead when a job title needs fixing),
+not the whole prompt again. Hard problems (too short, placeholders, job titles or figures the CV doesn't
+have) get up to two rewrites and fail the letter if they stay; soft ones (stock phrases, missing most of
+the requirements the CV shows, off the length asked for) get one. When no model answers the map, the letter
+is written without it, as before.
+
+Lengths and tones, from the request or `cover_letter.py --length/--tone`:
+
+| Length | Paragraphs | Words | Reply tokens allowed |
+| --- | --- | --- | --- |
+| short | 3 | 170 to 260 | 800 |
+| standard (default) | 4 | 250 to 380 | 1,100 |
+| detailed | 5 | 350 to 480 | 1,400 |
+
+Tones: professional (default), warm, direct and formal.
+
 ### Testing prompts and models
 
 `scripts/llm_bench.py` runs HermitShell's real prompts on the configured models with made-up CVs and

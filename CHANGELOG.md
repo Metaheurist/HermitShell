@@ -8,6 +8,17 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Cover letter length and tone.** The cover letter's confirmation page, and a new **Options** pop-over
+  beside **Generate** and **Regenerate** on the dashboard's jobs sent, choose a length (short, standard or
+  detailed: 3, 4 or 5 paragraphs) and a tone (professional, warm, direct or formal). They reach HermitShell
+  as request flags, show in the history, and a letter in another style is written rather than the kept one
+  reused. `cover_letter.py --job KEY --length short --tone warm` does the same by hand.
+- **Cover letters written from an evidence map.** One request per job pairs the advert's main requirements
+  with the evidence in the CV (`evidence.py`), kept encrypted in `state/evidence/` until the CV or advert
+  changes. The letter is planned on it and gets less of the advert. Drafts are checked for figures and job
+  titles the CV doesn't have, placeholders, stock phrases, requirements missed and length, and a rewrite
+  is sent only the draft and exactly what failed. See
+  [Cover letters from an evidence map](docs/configuration.md#cover-letters-from-an-evidence-map).
 - **Model tokens used, per task.** Every model request, cloud or local, now counts its prompt and reply
   tokens under the task that asked (job ratings, title screening, second opinions, summaries, profiles,
   reading CVs, cover letters, tailored CVs, skills), in `llm_usage.json` in the shared state folder
@@ -671,6 +682,10 @@ using [Semantic Versioning](https://semver.org/).
   briefed once by the model and kept in `state/rating_brief.json` until it changes. A brief that drops
   searched skills or adds figures or job titles isn't used. See
   [Smaller prompts for ratings](docs/configuration.md#smaller-prompts-for-ratings).
+- **Profiles and CVs with plain headings are compacted too.** A short line ending in a colon ("Skills:")
+  now gathers the bullets under it, as a Markdown heading does.
+- **The model bench writes letters as production does**, with the evidence map and rewrites, and reports
+  how many requirements the map found evidence for.
 - **Temperature per task.** Scoring stays at 0; cover letters use 0.4, tailored CVs 0.2 and summaries 0.3,
   on Ollama and cloud providers alike. On OpenRouter, the small bulk tasks ask reasoning models for low
   effort with the reasoning left out of the reply.
