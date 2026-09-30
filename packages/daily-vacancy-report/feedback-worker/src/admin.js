@@ -14,6 +14,7 @@
 import { DEMO_DONE, DEMO_URL, demoEnv, demoMode, demoRibbon, demoSection, demoToggle, saveDemo } from "./demo.js";
 import { HISTORY_URL, historyPage, listed, moveOwnerHistory, record, recordReported } from "./history.js";
 import { hubConnect, hubPresence, hubSeen } from "./hub.js";
+import { enhance, enhancedCsp } from "./enhance.js";
 import { createInvite, queueItem } from "./join.js";
 import {
   CSP, SECURITY_HEADERS, accessUser, ago, authorised, cleanSkill, deleteAndUnflag, esc, flaggedItems, hmacHex, json, limitedForm, limitedJson, listFlagged,
@@ -264,7 +265,8 @@ function toggleButton(p, csrf) {
 }
 
 const PENDING_STYLE = `
-.pill.pending{background:#fff7ed;color:#c2410c}.pill.pending::before{animation:blink .8s ease-in-out infinite alternate}
+.pill.pending{background:#fff7ed;color:#c2410c}.pill.pending::before{animation:blink .8s ease-in-out var(--phase,0s) infinite alternate}
+body.still .pill.pending::before{animation:blink .8s ease-in-out var(--phase,0s) infinite alternate!important}
 tr.pendingrow{background:linear-gradient(90deg,rgba(255,247,237,0),rgba(255,237,213,.9),rgba(255,247,237,0)) 0 0/200% 100%;
 animation:sweep 2.4s linear infinite}
 tr.pendingrow .avatar{background:linear-gradient(135deg,#fdba74,#fb923c);box-shadow:0 6px 14px -8px rgba(234,88,12,.9)}
@@ -625,7 +627,8 @@ const LOGOUT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 // placed against, hence the negative top. Full-width cards reach the corner sooner, so they get the compact box
 // up to 1860px, where the card stops growing and leaves room beside it.
 const ME_STYLE = `
-.me{position:fixed;top:20px;right:20px;z-index:10;display:flex;flex-direction:column;align-items:flex-end;gap:8px;animation:drop .45s var(--ease) both}
+.me{position:fixed;top:20px;right:20px;z-index:10;display:flex;flex-direction:column;align-items:flex-end;gap:8px;animation:drop .45s var(--ease) both;view-transition-name:me}
+@supports (view-transition-name:none){.me{animation:none}}
 .mecard{display:flex;align-items:center;gap:10px;padding:6px 14px 6px 6px;background:rgba(255,255,255,.92);border:1px solid var(--line);
 border-radius:14px;box-shadow:0 8px 24px -12px rgba(15,23,42,.25)}
 .mecard .avatar{width:34px;height:34px;border-radius:11px;font-size:13px}
@@ -679,7 +682,9 @@ async function withSignedIn(res, env, s, path, method) {
   if (!(res.headers.get("Content-Type") || "").startsWith("text/html")) return res;
   const [html, current] = await Promise.all([res.text(), status(env)]);
   const ribbon = s.demo ? demoRibbon(s.me.admin) : "";
-  return new Response(html.replace(/<body[^>]*>/, (tag) => `${tag}${signedInBox(s, current)}${ribbon}`), { status: res.status, headers: res.headers });
+  const headers = new Headers(res.headers);
+  headers.set("Content-Security-Policy", enhancedCsp(headers.get("Content-Security-Policy")));
+  return new Response(enhance(html.replace(/<body[^>]*>/, (tag) => `${tag}${signedInBox(s, current)}${ribbon}`)), { status: res.status, headers });
 }
 
 async function signedInRoute(request, env, s, path) {

@@ -14,6 +14,7 @@
 
 import { handleAdmin, handleApi } from "./admin.js";
 import { verifyApi, withProtocol } from "./apiauth.js";
+import { ENHANCE_PATH, enhanceScript } from "./enhance.js";
 import { DOC_KINDS, DOC_STYLE, OWNER_ID, docFor, jobHash, letterFields, letterStyle, pdfResponse, readDoc, styleLabel } from "./docs.js";
 import { listed, record } from "./history.js";
 import { handleJoin, queueItem } from "./join.js";
@@ -256,6 +257,7 @@ async function route(request, env, ctx) {
   }
 
   if ((url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") && request.method === "GET") return favicon();
+  if (url.pathname === ENHANCE_PATH && request.method === "GET") return enhanceScript();
   if (url.pathname === "/privacy") return privacyPage();
   if (url.pathname === "/join") return handleJoin(request, env);
   if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return handleAdmin(request, env, ctx);

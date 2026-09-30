@@ -619,7 +619,7 @@ transform-origin:left;animation:growx .9s var(--ease) both}
 filter:drop-shadow(0 1px 1.5px color-mix(in srgb,var(--c) 45%,transparent))}
 .ring .val{font-size:11px;font-weight:800;fill:var(--c);animation:fade .5s ease both .7s}
 .ring .sub{font-size:4.4px;font-weight:700;fill:var(--muted);letter-spacing:.02em}
-.ring.hot{animation:halo 2.6s ease-in-out infinite 1.5s}
+.ring.hot{animation:halo 2.6s ease-in-out 1.5s 2}li:hover .ring.hot,summary:hover .ring.hot{animation-iteration-count:infinite}
 li:hover .ring .arc,summary:hover .ring .arc{animation:arc2 .9s var(--ease) both}
 @keyframes halo{50%{filter:drop-shadow(0 0 5px color-mix(in srgb,var(--c) 60%,transparent))}}
 @keyframes arc2{from{stroke-dasharray:0 100}}
@@ -652,6 +652,8 @@ animation:rise .45s var(--ease) both;transition:transform .2s var(--ease),box-sh
 .ico .write{stroke-dasharray:1;animation:draw 2.4s ease-in-out infinite alternate}
 svg .grow{transform-box:fill-box;transform-origin:50% 100%;animation:grow 1.6s var(--ease) infinite alternate}
 svg .g2{animation-delay:.25s}svg .g3{animation-delay:.5s}
+.ico *,.hero *,svg .grow{animation-iteration-count:4!important}
+:hover>.ico *,.nostats:hover .hero *{animation-iteration-count:infinite!important}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes ping{0%{transform:scale(.7);opacity:1}100%{transform:scale(1.7);opacity:.2}}
 @keyframes heart{0%,100%{transform:scale(1)}14%{transform:scale(1.16)}28%{transform:scale(1)}42%{transform:scale(1.08)}}
@@ -677,6 +679,7 @@ nav.answers a.on{background:var(--soft);border-color:#c7cbf5;color:var(--brand-i
 .sentday h3{display:flex;align-items:baseline;gap:10px;margin:0 0 8px;font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:750}
 .sentday h3 span{letter-spacing:0;text-transform:none;font-weight:600;color:#94a3b8}
 .sentlist{list-style:none;padding:0;margin:0;display:grid;gap:8px}
+.sentlist>li:not(:has(details[open])){content-visibility:auto;contain-intrinsic-size:auto 76px}
 .sentlist li{background:#fff;border:1px solid var(--line);border-radius:16px;animation:rise .45s var(--ease) both;scroll-margin-top:80px;
 transition:box-shadow .2s,border-color .2s}
 .sentlist li:hover{box-shadow:0 14px 26px -20px rgba(30,27,75,.45)}
@@ -749,6 +752,7 @@ a.statlink .line{fill:none;stroke:#6366f1;stroke-width:2;stroke-linecap:round;st
 animation:draw 1.4s var(--ease) both .25s}
 a.statlink .area{fill:#dfe3ff}
 a.statlink .grow{transform-box:fill-box;transform-origin:50% 100%;animation:grow 1.6s var(--ease) infinite alternate}
+a.statlink:hover .grow{animation-iteration-count:infinite!important}
 a.statlink .g2{animation-delay:.25s}a.statlink .g3{animation-delay:.5s}
 @keyframes draw{from{stroke-dashoffset:1}}@keyframes grow{from{transform:scaleY(0)}}
 `;

@@ -446,7 +446,7 @@ export function saveStatus(status, pid, queue, n) {
   const next = refresh ? `<meta http-equiv="refresh" content="${refresh};url=${STATUS_URL}?u=${esc(pid)}&amp;n=${n + 1}">` : "";
   const state = mine.length || (scan && !failed.length) ? (refresh ? "wait" : "idle") : failed.length ? "bad" : n > 0 ? "done" : "ok";
   return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8">${next}<style>${WIDGET_STYLE}</style></head>
-<body class="${state}">${body}</body></html>`, {
+<body class="${state}${n > 0 ? " again" : ""}" style="--spin:-${((Date.now() % 800) / 1000).toFixed(2)}s">${body}</body></html>`, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'",
@@ -461,7 +461,8 @@ text-overflow:ellipsis;font:500 14px/42px system-ui,-apple-system,'Segoe UI',Rob
 position:relative;color:#334155;background:#f8fafc;border-color:#e5e8f0;-webkit-font-smoothing:antialiased;animation:in .4s ease both}
 body::before{content:"";position:absolute;left:14px;top:12px;width:18px;height:18px;box-sizing:border-box;border-radius:50%}
 body.wait{background:#eef0ff;border-color:#c7d2fe;color:#3730a3}
-body.wait::before{border:2px solid #c7d2fe;border-top-color:#6366f1;animation:spin .8s linear infinite}
+body.wait::before{border:2px solid #c7d2fe;border-top-color:#6366f1;animation:spin .8s linear var(--spin,0s) infinite}
+body.again{animation:none}
 body.idle{background:#fffbeb;border-color:#fde68a;color:#92400e}body.idle::before{border:2px solid #f59e0b}
 body.ok,body.done{background:#f0fdf6;border-color:#bbf7d0;color:#166534}
 body.ok::before{background:#22c55e;width:8px;height:8px;left:19px;top:17px;box-shadow:0 0 0 4px rgba(34,197,94,.2)}

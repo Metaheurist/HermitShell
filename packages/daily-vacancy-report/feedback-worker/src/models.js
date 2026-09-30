@@ -184,7 +184,7 @@ code.mname{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;co
 .utable thead th{font-size:12px;color:var(--muted);font-weight:650;background:#fafbff}
 .utable th:first-child{text-align:left;min-width:150px}.utable tbody th{font-weight:650}
 .ubar{height:4px;margin-top:5px;border-radius:99px;background:#eef0f7;overflow:hidden;max-width:160px}
-.ubar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#6366f1,#8b5cf6);animation:fill .6s var(--ease) both}
+.ubar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#6366f1,#8b5cf6);transform-origin:left;animation:fill .6s var(--ease) both}
 `;
 
 // ------------------------------------------------------------------------- the admin's server panel

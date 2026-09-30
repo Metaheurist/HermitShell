@@ -673,7 +673,7 @@ describe("daily report and Send jobs now", () => {
     expect(dash).not.toContain(">Send jobs<");
     expect((await get("/admin/profile?u=sam-lee")).body).toContain("Scanning now (started ");
     const box = (await get("/admin/profile/status?u=sam-lee&n=1")).body;
-    expect(box).toContain('<body class="wait">');
+    expect(box).toContain('<body class="wait');
     expect(box).toContain("Scanning for jobs since");
     expect(box).toContain('content="30;url=/admin/profile/status?u=sam-lee&amp;n=2"');
     expect((await get("/admin/profile/status?u=sam-lee&n=80")).body).not.toContain("http-equiv");
@@ -687,20 +687,20 @@ describe("save status box", () => {
     const { env, get, act } = await setup();
     const idle = await get("/admin/profile/status?u=sam-lee");
     expect(idle.res.status).toBe(200);
-    expect(idle.body).toContain('<body class="ok">');
+    expect(idle.body).toContain('<body class="ok');
     expect(idle.body).toContain("Up to date. HermitShell last reported just now.");
     expect(idle.body).not.toContain("http-equiv");
     await save(get, act, "sam-lee", { phone: "07700 900111" });
     const waiting = await get("/admin/profile/status?u=sam-lee&n=1");
     expect(waiting.body).toContain("Waiting for HermitShell to apply it");
-    expect(waiting.body).toContain('<body class="wait">');
+    expect(waiting.body).toContain('<body class="wait');
     expect(waiting.body).toContain('<meta http-equiv="refresh" content="5;url=/admin/profile/status?u=sam-lee&amp;n=2">');
     expect((await get("/admin/profile/status?u=jordan-patel")).body).toContain("Up to date");
     const ids = keysWith(env, "queue:");
     await worker.fetch(new Request(`${BASE}/api/queue/ack`, { method: "POST", headers: API_HEADERS, body: JSON.stringify({ ids }) }), env);
     const applied = await get("/admin/profile/status?u=sam-lee&n=3");
     expect(applied.body).toContain("Applied by HermitShell");
-    expect(applied.body).toContain('<body class="done">');
+    expect(applied.body).toContain('<body class="done');
     expect(applied.body).not.toContain("http-equiv");
   });
 
@@ -710,7 +710,7 @@ describe("save status box", () => {
     expect((await get("/admin/profile/status?u=sam-lee&n=15")).body).toContain('content="20;url=');
     const stopped = await get("/admin/profile/status?u=sam-lee&n=21");
     expect(stopped.body).toContain("Still waiting for HermitShell");
-    expect(stopped.body).toContain('<body class="idle">');
+    expect(stopped.body).toContain('<body class="idle');
     expect(stopped.body).not.toContain("http-equiv");
     expect((await get("/admin/profile/status?u=sam-lee&n=-5")).body).toContain('content="5;url=/admin/profile/status?u=sam-lee&amp;n=1"');
   });

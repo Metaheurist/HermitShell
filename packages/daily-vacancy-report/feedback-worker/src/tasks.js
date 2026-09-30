@@ -226,7 +226,7 @@ export function tasksPage(rows, csrf, tz, n, done = "") {
     : `<div class="tempty">${icon("done")}<b>Nothing waiting or running</b><span>New reports, requests and changes show here as they start.</span></div>`;
   const paused = refresh ? "" : `<p class="tpaused">Updates paused. <a href="${TASKS_URL}">Check again</a></p>`;
   return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8">${next}<style>${FRAME_STYLE}</style></head>
-<body>${note}${list}${paused}</body></html>`, {
+<body${n > 0 ? ' class="again"' : ""}>${note}${list}${paused}</body></html>`, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'self'",
@@ -262,6 +262,7 @@ body{margin:0;padding:10px;font:14px/1.45 system-ui,-apple-system,'Segoe UI',Rob
 ul.tasks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .task{display:flex;gap:12px;align-items:center;padding:11px 12px;background:#fff;border:1px solid #e5e8f0;border-radius:14px;
 animation:tin .3s cubic-bezier(.2,.8,.2,1) both}
+.again .task{animation:none}
 .ticon{position:relative;flex:none;width:36px;height:36px;border-radius:12px;display:grid;place-items:center;color:#4f46e5;background:#eef0ff}
 .ticon svg{width:19px;height:19px}
 .s-running .ticon{margin:0 3px;border-radius:50%;color:#fff;background:linear-gradient(135deg,#6366f1,#8b5cf6)}

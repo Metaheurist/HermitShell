@@ -15,32 +15,57 @@ test.afterEach(async ({ request }) => {
   await applyQueue(request, hermitShellStatus());
 });
 
-test("a key added on Global settings shows as saving, then appears by itself once HermitShell applies it", async ({ page, request }) => {
-  await applyQueue(request, hermitShellStatus());
-  await signIn(page);
+// Without scripts Playwright can't wait for a button to settle, so that test sends the form with Enter.
+async function addTavilyKey(page, { enter = false } = {}) {
   await page.goto("/admin/settings");
   const row = page.locator(".keyrows .cr-tavily");
   await expect(row).toContainText("No key yet");
   await row.getByRole("link", { name: "Add key" }).click();
   const modal = page.locator("#gkey-tavily");
   await modal.getByLabel("API key").fill("not-a-real-key");
-  await modal.getByRole("button", { name: "Save key" }).click();
+  if (enter) await modal.getByLabel("API key").press("Enter");
+  else await modal.getByRole("button", { name: "Save key" }).click();
   await expect(page).toHaveURL(/done=queued#keys$/);
+  return row;
+}
+
+test("a key added on Global settings shows as saving, then appears by itself once HermitShell applies it", async ({ page, request }) => {
+  await applyQueue(request, hermitShellStatus());
+  await signIn(page);
+  const row = await addTavilyKey(page);
   await expect(page.locator(".waitbar")).toContainText("Waiting for HermitShell to apply the web search keys; this page updates by itself.");
   await expect(row.locator(".savingtag")).toHaveText("saving…");
 
   const status = hermitShellStatus();
   status.keys.tavily = { source: "dashboard", hint: "tvly...0001" };
   await applyQueue(request, status);
+  await page.evaluate(() => { window.stayed = true; });
   await expect(page.getByText(APPLIED)).toBeVisible({ timeout: 10_000 });
-  await expect(page).toHaveURL(/done=queued&w=[12]#keys$/);
+  await expect(page).toHaveURL(/done=queued#keys$/);
+  expect(await page.evaluate(() => window.stayed)).toBe(true);
   await expect(row).toContainText("set here");
   await expect(row).toContainText("tvly...0001");
   await expect(row.locator(".savingtag")).toHaveCount(0);
   await expect(page.locator(".waitbar")).toHaveCount(0);
 });
 
-test("a pause shows on the dashboard at once, keeps the scroll while it reloads, and settles when applied", async ({ page, request }) => {
+test.describe("without JavaScript", () => {
+  test.use({ javaScriptEnabled: false });
+
+  test("the settings page reloads itself at its section until HermitShell applies the key", async ({ page, request }) => {
+    await applyQueue(request, hermitShellStatus());
+    await signIn(page);
+    const row = await addTavilyKey(page, { enter: true });
+    const status = hermitShellStatus();
+    status.keys.tavily = { source: "dashboard", hint: "tvly...0001" };
+    await applyQueue(request, status);
+    await expect(page.getByText(APPLIED)).toBeVisible({ timeout: 10_000 });
+    await expect(page).toHaveURL(/done=queued&w=[12]#keys$/);
+    await expect(row).toContainText("tvly...0001");
+  });
+});
+
+test("a pause shows on the dashboard at once, keeps the scroll while it updates, and settles when applied", async ({ page, request }) => {
   await applyQueue(request, hermitShellStatus());
   await page.setViewportSize({ width: 1280, height: 560 });
   await signIn(page);
@@ -53,8 +78,9 @@ test("a pause shows on the dashboard at once, keeps the scroll while it reloads,
   await page.evaluate(() => window.scrollTo(0, 320));
   const before = await page.evaluate(() => window.scrollY);
   expect(before).toBeGreaterThan(100);
-  await page.waitForEvent("load", { timeout: 10_000 });
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(before - 40);
+  await page.evaluate(() => { window.stayed = true; });
+  await page.waitForTimeout(5000);
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(before - 40);
 
   const status = hermitShellStatus();
   status.profiles.find((p) => p.id === "sam-lee").status = "paused";
@@ -62,4 +88,5 @@ test("a pause shows on the dashboard at once, keeps the scroll while it reloads,
   await expect(page.getByText(APPLIED)).toBeVisible({ timeout: 10_000 });
   await expect(sam.locator(".pill").first()).toHaveText("paused");
   await expect(sam.locator(".savingtag")).toHaveCount(0);
+  expect(await page.evaluate(() => window.stayed)).toBe(true);
 });

@@ -55,6 +55,30 @@ test("demo mode fills the dashboard with made-up recruits, plays presses out wit
   await expect(page.locator("table.recruits").getByText("Jamie Walsh")).toHaveCount(0);
 });
 
+test("a waiting page updates in place, and holds off while something is being typed", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/admin/settings");
+  await page.getByRole("switch", { name: "Demo mode" }).press("Enter");
+  await expect(page).toHaveURL(/done=demo_on#demo$/);
+  await page.goto("/admin");
+  await page.getByRole("button", { name: "Pause reports for Jamie Walsh" }).click();
+  await expect(page).toHaveURL(/done=queued/);
+  await expect(page.locator('meta[name="hs-refresh"]')).toHaveCount(1);
+  await page.evaluate(() => { window.stayed = true; });
+  await expect(page.getByRole("button", { name: "Resume reports for Jamie Walsh" })).toBeVisible({ timeout: 20000 });
+  expect(await page.evaluate(() => window.stayed)).toBe(true);
+
+  await page.getByRole("button", { name: "Pause reports for Morgan Ellis" }).click();
+  await expect(page).toHaveURL(/done=queued/);
+  await page.evaluate(() => { window.stayed = true; });
+  const note = page.getByPlaceholder("Who it is for (only you see this)");
+  await note.fill("Typed while waiting");
+  await page.locator("h1").click();
+  await page.waitForTimeout(10000);
+  await expect(note).toHaveValue("Typed while waiting");
+  expect(await page.evaluate(() => window.stayed)).toBe(true);
+});
+
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 

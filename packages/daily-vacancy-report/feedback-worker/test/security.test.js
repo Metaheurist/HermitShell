@@ -10,6 +10,12 @@ import { BASE, memoryHub, sealingKeys, testEnv, valuesWith } from "./helpers.js"
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const HOSTILE = `<script>alert(1)</script>"'><img src=x onerror=alert(2)>`;
 
+// Signed-in pages may load the dashboard's own script file and nothing else: no inline script, no other origin.
+function onlyOwnScript(csp) {
+  expect(csp).toContain("default-src 'none'; script-src 'self'; connect-src 'self';");
+  expect(csp.match(/script-src[^;]*/g)).toEqual(["script-src 'self'"]);
+}
+
 async function signed(action, key, title, profile = "") {
   const d = String(today());
   const t = await sign("test-secret", key, action, title, "", profile, d);
@@ -246,7 +252,7 @@ describe("authentication", () => {
     const cookie = await signIn(env, "203.0.113.6");
     for (const r of ["30", "7", "90", "365", "<script>"]) {
       const res = await get(`/admin/stats?u=sam-lee&r=${encodeURIComponent(r)}`, env, { Cookie: cookie });
-      expect(res.headers.get("Content-Security-Policy")).not.toContain("script-src");
+      onlyOwnScript(res.headers.get("Content-Security-Policy"));
       const body = await res.text();
       expect(body, r).not.toContain("<script>");
       expect(body, r).not.toContain("<img src=x");
@@ -277,7 +283,7 @@ describe("authentication", () => {
     const cookie = await signIn(env, "203.0.113.7");
     for (const q of ["r=7", "r=<script>", "a=<script>", "r=90&a=applied"]) {
       const res = await get(`/admin/sent?u=sam-lee&${q.replaceAll("<script>", encodeURIComponent("<script>"))}`, env, { Cookie: cookie });
-      expect(res.headers.get("Content-Security-Policy")).not.toContain("script-src");
+      onlyOwnScript(res.headers.get("Content-Security-Policy"));
       const body = await res.text();
       expect(body, q).not.toContain("<script>");
       expect(body, q).not.toContain("<img src=x");
@@ -354,7 +360,7 @@ describe("authentication", () => {
     for (const query of [q, `${q}${"a".repeat(5000)}`, encodeURIComponent('" autofocus onfocus="alert(1)'), "%00%0a%1b"]) {
       const res = await get(`/admin?q=${query}`, env, { Cookie: cookie });
       const body = await res.text();
-      expect(res.headers.get("Content-Security-Policy")).not.toContain("script-src");
+      onlyOwnScript(res.headers.get("Content-Security-Policy"));
       expect(body).not.toContain("<script>");
       expect(body).not.toContain("<img src=x");
       expect(body).not.toContain('" autofocus');
