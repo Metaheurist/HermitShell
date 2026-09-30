@@ -5,7 +5,7 @@
 // (llm_providers.py, key_usage.py, autofit.py) and is checked field by field before it is shown; keys only ever
 // arrive masked.
 
-import { ago, esc } from "./lib.js";
+import { ago, esc, savingTag } from "./lib.js";
 import { CHEVRON, keyList, leftSummary, logo, reported } from "./keys.js";
 
 export const MODEL_PROVIDERS = {
@@ -40,7 +40,7 @@ function clearButton(csrf, provider) {
 <input type="hidden" name="action" value="model_key_clear"><input type="hidden" name="provider" value="${esc(provider)}"><button class="small quiet">Use the .env key</button></form>`;
 }
 
-function modelRow(name, info, m, csrf) {
+function modelRow(name, info, m, csrf, saving = false) {
   const source = m.source === "dashboard" ? "set here" : m.source === "env" ? "from .env" : "";
   const rows = source ? reported(m) : [];
   const model = modelName(m.model) || info.model;
@@ -50,7 +50,7 @@ function modelRow(name, info, m, csrf) {
     : `<a class="addkey" href="#${modalId(name)}">${logo("key")}Add key</a>`;
   const line = source ? `${leftSummary(rows)}<code class="mname">${esc(model)}</code> &middot; ${state(m)} &middot; ` : "";
   const inner = `<span class="crlogo">${logo(name)}</span><div class="keyinfo">
-<b>${esc(info.label)}</b>${source ? ` <span class="crtag${m.source === "env" ? " env" : ""}">${source}</span>` : ""}${hint}
+<b>${esc(info.label)}</b>${source ? ` <span class="crtag${m.source === "env" ? " env" : ""}">${source}</span>` : ""}${saving ? ` ${savingTag()}` : ""}${hint}
 <div class="muted small">${line}<a href="${esc(info.signup)}" target="_blank" rel="noopener noreferrer">get a key</a></div></div>
 <div class="cractions">${open}${m.source === "dashboard" ? clearButton(csrf, name) : ""}</div>`;
   if (!rows.length) return `<div class="keyrow cr-${name}">${inner}</div>`;
@@ -71,25 +71,26 @@ ${model ? `<code class="keyhint">${esc(model)}</code>` : '<div class="muted">No 
 <div class="muted small">${facts}</div></div></div>`;
 }
 
-function orderForm(llm, csrf) {
-  const local = llm.order === "local";
+function orderForm(llm, csrf, pending = "") {
+  const local = (pending || llm.order) === "local";
   const choice = (value, title, detail, checked) => `<label class="crchoice"><input type="radio" name="order" value="${value}"${checked ? " checked" : ""}>
 <span>${logo(value === "local" ? "computer" : "cloud")}<i class="mtext"><b>${title}</b><small>${detail}</small></i></span></label>`;
   return `<form method="post" action="/admin/action" class="morder"><input type="hidden" name="csrf" value="${esc(csrf)}">
 <input type="hidden" name="action" value="model_order">
 <div class="crchoices">${choice("cloud", "Cloud first", "Ollama when no key or credits are left", !local)}${choice("local", "Local first", "The cloud only when Ollama doesn&rsquo;t answer", local)}</div>
-<button class="small">Save order</button></form>`;
+<button class="small">Save order</button>${pending ? ` ${savingTag()}` : ""}</form>`;
 }
 
-export function modelsSection(status, csrf) {
+// `saving` is { providers, order }: the model keys and the order with a change waiting for HermitShell.
+export function modelsSection(status, csrf, saving = { providers: new Set(), order: "" }) {
   const models = obj(status.models);
   const llm = obj(status.llm);
   return `<h2 id="models">AI model API keys</h2>
 <p class="muted">For servers that can&rsquo;t run a model themselves. HermitShell asks the providers with a key in this order, and the
 local Ollama when none has a key or credits left. They are sent each recruit&rsquo;s CV and the adverts it is compared with,
 and free models may keep what they are sent.</p>
-<div class="keyrows">${Object.entries(MODEL_PROVIDERS).map(([name, info]) => modelRow(name, info, obj(models[name]), csrf)).join("")}${localRow(llm)}</div>
-${orderForm(llm, csrf)}`;
+<div class="keyrows">${Object.entries(MODEL_PROVIDERS).map(([name, info]) => modelRow(name, info, obj(models[name]), csrf, saving.providers.has(name))).join("")}${localRow(llm)}</div>
+${orderForm(llm, csrf, saving.order)}`;
 }
 
 export function modelModals(csrf) {

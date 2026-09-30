@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import worker from "../src/index.js";
 import { SECRET_TTL_SECONDS } from "../src/join.js";
+import { APPLIED, waitRefresh } from "../src/lib.js";
 import { BASE, keysWith, sealingKeys, testEnv, valuesWith } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
@@ -119,7 +120,7 @@ describe("setup checklist", () => {
   it("shows progress and each step's state as styled items", async () => {
     const { get } = await setup();
     const { body } = await get("/admin?done=queued");
-    expect(body).toContain('<p class="note ok" role="status">Saved. HermitShell applies it within seconds while it is connected.</p>');
+    expect(body).toContain(`<p class="note ok" role="status">${APPLIED}</p>`);
     expect(body).toContain("2 of 5 done");
     expect(body).toMatch(/role="progressbar"[^>]*aria-valuenow="2"><span style="width:40%"><\/span>/);
     expect(body).toContain('<li class="done"><span class="tick" aria-hidden="true"></span><div><b>HermitShell is connected</b>');
@@ -208,8 +209,109 @@ describe("global settings page", () => {
     await act({ action: "pause", u: "sam-lee" });
     const { body } = await get("/admin/settings?done=queued");
     expect(body).toContain("Saved. HermitShell applies it within seconds while it is connected.");
-    expect(body).toContain("Waiting for HermitShell: test email.");
-    expect(body).not.toContain("pause for sam-lee");
+    expect(body).toContain("Waiting for HermitShell to apply the test email; this page updates by itself.");
+    expect(body).not.toContain("sam-lee");
+  });
+});
+
+// The pages run no scripts, so while one of their changes is waiting for HermitShell they reload themselves.
+const clearQueue = async (env) => {
+  for (const key of keysWith(env, "queue:")) await env.FEEDBACK.delete(key);
+  await env.FEEDBACK.delete("flag:queue");
+};
+const refreshOf = (body) => body.match(/<meta http-equiv="refresh" content="(\d+)(?:;url=[^"]*)?">/)?.[1] || null;
+
+describe("pages that update themselves", () => {
+  it("reload every 4 seconds at first, every 20 after 45 seconds, and stop at 5 minutes", () => {
+    const now = 1_000_000_000;
+    expect(waitRefresh([], now)).toBe(0);
+    expect(waitRefresh([{ at: now - 1000 }], now)).toBe(4);
+    expect(waitRefresh([{ at: now - 60_000 }], now)).toBe(20);
+    expect(waitRefresh([{ at: now - 1000 }, { at: now - 301_000 }], now)).toBe(0);
+    expect(waitRefresh([{}], now)).toBe(4);
+  });
+
+  it("marks the key being saved, reloads Global settings until it is applied, then says so", async () => {
+    const { env, get, act } = await setup();
+    expect(refreshOf((await get("/admin/settings")).body)).toBeNull();
+    await act({ action: "api_key", provider: "tavily", key: "tvly-test-key-1234567890" });
+    const waiting = (await get("/admin/settings?done=queued")).body;
+    expect(refreshOf(waiting)).toBe("4");
+    expect(waiting).toContain('<meta http-equiv="refresh" content="4;url=/admin/settings?done=queued&amp;w=1#keys">');
+    expect((await get("/admin/settings?done=queued&w=1")).body).toContain('content="4;url=/admin/settings?done=queued&amp;w=2#keys"');
+    expect(waiting).toContain('<body class="still">');
+    expect(waiting).toContain("Waiting for HermitShell to apply the web search keys");
+    expect(waiting).toContain("Saved. HermitShell applies it within seconds while it is connected.");
+    const keys = waiting.slice(waiting.indexOf('<h2 id="keys">'), waiting.indexOf('<h2 id="models">'));
+    const tavily = keys.slice(keys.indexOf("cr-tavily"), keys.indexOf("cr-scrapfly"));
+    expect(tavily).toContain('<span class="savingtag keepanim">saving&hellip;</span>');
+    expect(waiting.match(/savingtag keepanim/g)).toHaveLength(1);
+    await clearQueue(env);
+    const applied = (await get("/admin/settings?done=queued")).body;
+    expect(refreshOf(applied)).toBeNull();
+    expect(applied).toContain(APPLIED);
+    expect(applied).not.toContain('class="waitbar');
+    expect(applied).not.toContain("savingtag keepanim");
+  });
+
+  it("shows a saved model order and model key at once", async () => {
+    const { get, act } = await setup();
+    await act({ action: "model_order", order: "local" });
+    await act({ action: "model_key_clear", provider: "openrouter" });
+    const body = (await get("/admin/settings")).body;
+    expect(body).toMatch(/name="order" value="local" checked/);
+    expect(body).toContain('Save order</button> <span class="savingtag keepanim">');
+    const models = body.slice(body.indexOf('<h2 id="models">'));
+    const or = models.slice(models.indexOf("cr-openrouter"), models.indexOf("cr-bazaarlink"));
+    expect(models.slice(models.indexOf("cr-bazaarlink"), models.indexOf("cr-ollama"))).not.toContain("savingtag");
+    expect(or).toContain("savingtag keepanim");
+    expect(refreshOf(body)).toBe("4");
+  });
+
+  it("slows down after 45 seconds and stops after 5 minutes, saying HermitShell may be offline", async () => {
+    const { env, get } = await setup();
+    const queue = async (ago) => {
+      const at = Date.now() - ago;
+      await env.FEEDBACK.put(`queue:${at}:abc`, JSON.stringify({ id: `queue:${at}:abc`, at, type: "admin", action: "test_email", to: "" }));
+      await env.FEEDBACK.put("flag:queue", "x");
+    };
+    await queue(60_000);
+    expect(refreshOf((await get("/admin/settings")).body)).toBe("20");
+    await clearQueue(env);
+    await queue(6 * 60_000);
+    const late = (await get("/admin/settings")).body;
+    expect(refreshOf(late)).toBeNull();
+    expect(late).not.toContain('<body class="still">');
+    expect(late).toContain("Still waiting for HermitShell</b> to apply the test email. It may be offline or busy");
+  });
+
+  it("shows a pause on the dashboard at once and reloads until HermitShell applies it", async () => {
+    const { env, get, act } = await setup();
+    await act({ action: "pause", u: "sam-lee" });
+    const body = (await get("/admin?done=queued")).body;
+    expect(refreshOf(body)).toBe("4");
+    expect(body).toContain("Waiting for HermitShell to apply the change; this page updates by itself.");
+    const row = body.slice(body.indexOf("Sam &lt;b&gt;Lee"));
+    expect(row).toMatch(/<span class="pill paused">paused<\/span> <span class="savingtag keepanim">pausing&hellip;<\/span>/);
+    expect(row).toContain('aria-label="Resume reports for Sam &lt;b&gt;Lee&lt;/b&gt;"');
+    const jordan = body.slice(body.indexOf("Jordan Patel"), body.indexOf("Sam &lt;b&gt;Lee") > body.indexOf("Jordan Patel") ? body.indexOf("Sam &lt;b&gt;Lee") : undefined);
+    expect(jordan).not.toContain("savingtag");
+    await clearQueue(env);
+    const after = (await get("/admin?done=queued")).body;
+    expect(refreshOf(after)).toBeNull();
+    expect(after).toContain(APPLIED);
+  });
+
+  it("doesn't reload for a sign-up or a CV, which take minutes and show their own progress", async () => {
+    const { env, get } = await setup();
+    const at = Date.now();
+    await env.FEEDBACK.put(`queue:${at}:s1`, JSON.stringify({ id: `queue:${at}:s1`, at, type: "signup", name: "Casey Quinn", email: "casey@example.com" }));
+    await env.FEEDBACK.put(`queue:${at + 1}:c1`, JSON.stringify({ id: `queue:${at + 1}:c1`, at: at + 1, type: "admin", action: "cv", u: "sam-lee" }));
+    await env.FEEDBACK.put("flag:queue", "x");
+    const body = (await get("/admin")).body;
+    expect(refreshOf(body)).toBeNull();
+    expect(body).not.toContain('class="waitbar');
+    expect(refreshOf((await get("/admin/settings")).body)).toBeNull();
   });
 
   it("keeps a saved email server in the form until HermitShell applies it, but never the password", async () => {

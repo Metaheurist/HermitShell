@@ -6,7 +6,7 @@
 import { currencyCode, currencySymbol, moneyIcon } from "./currency.js";
 import { DOC_STYLE, SKILL_URL, docActions, jobHash, validJobKey } from "./docs.js";
 import { HISTORY_URL } from "./history.js";
-import { BACK_TO_RECRUITS, EXTERNAL_ICON, ago, cleanSkill, esc, page } from "./lib.js";
+import { BACK_TO_RECRUITS, EXTERNAL_ICON, ago, cleanSkill, esc, page, reloadTo } from "./lib.js";
 
 export const STATS_URL = "/admin/stats";
 export const SENT_URL = "/admin/sent";
@@ -478,7 +478,7 @@ const SENT_NOTES = {
 
 // `opts`: range and answer (the filters), open (the job to show opened), done (a note), csrf, sent (the jobs with
 // their details), docs (the letters and CVs kept), emailed (the jobs emailed from here), pending (those being
-// made or sent) and added (the skills added from here, docs.addedSkills).
+// made or sent), added (the skills added from here, docs.addedSkills) and here (the page's address, for reloads).
 export async function sentPage(status, stats, pid, opts = {}) {
   const p = (status.profiles || []).find((x) => x.id === pid);
   const back = { wide: true, before: BACK_TO_RECRUITS };
@@ -517,7 +517,7 @@ ${inRange.length ? answerFilter(pid, range, answer, inRange) : ""}${body}
 <p class="muted small">Press a job for everything its email showed, the advert, and its cover letter and tailored CV. Letters and CVs made from
 here are kept to download for a few days, and emailed only when you press &ldquo;Email to ${esc(recipient)}&rdquo; beside one. The last tile sends the job itself
 to the recruit, as its report card.
-Notes typed on the buttons are never shown here.</p>`, { ...back, refresh: waiting ? 15 : 0 });
+Notes typed on the buttons are never shown here.</p>`, { ...back, refresh: waiting ? 15 : 0, refreshTo: waiting && opts.here ? reloadTo(opts.here, `job-${open}`) : "" });
 }
 
 export function statsPage(status, stats, pid, rangeParam) {

@@ -8,7 +8,7 @@ import { CURRENCIES, currencyCode, currencySymbol } from "./currency.js";
 import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem, storeCv } from "./join.js";
 import { PROTOCOL } from "./apiauth.js";
 import { sealInfo, sealItem } from "./seal.js";
-import { BACK_TO_RECRUITS, CSP, SECURITY_HEADERS, ago, esc, limitedForm, note, page, redirect, safeEqual, when } from "./lib.js";
+import { BACK_TO_RECRUITS, CSP, SECURITY_HEADERS, ago, esc, limitedForm, note, page, redirect, reloadTo, safeEqual, waitBar, waitRefresh, when } from "./lib.js";
 import { KEY_STYLE, MODAL_STYLE, PROVIDERS, keyModals, keysSection } from "./keys.js";
 import { MODEL_KEY_RE, MODEL_PROVIDERS, MODEL_RE, MODEL_STYLE, modelModals, modelsSection } from "./models.js";
 import { LINK_STYLE, STATS_URL, icon } from "./stats.js";
@@ -136,16 +136,44 @@ function pendingEmail(email, queue) {
     : { ...e, host: i.host || e.host, port: i.port || e.port, user: i.user || e.user, from: i.from ?? e.from }, email);
 }
 
-export function settingsPage(status, csrf, { done = "", queued = [], queue = [], demo = "" } = {}) {
-  const waiting = queued.filter((q) => /^(email|test email|api keys|model keys)$/.test(q));
+const WAITING_LABELS = { email: "the email server", test_email: "the test email", api_keys: "the web search keys", model_keys: "the AI model settings" };
+const WAITING_SECTIONS = { email: "email", test_email: "email", api_keys: "keys", model_keys: "models" };
+
+// Global settings changes still waiting for HermitShell.
+export function settingsWaiting(queue) {
+  return queue.filter((i) => i.type === "admin" && Object.hasOwn(WAITING_LABELS, i.action));
+}
+
+// The providers with a key change waiting (sealed keys keep the provider as their field name).
+function savingKeys(waiting) {
+  const names = new Set();
+  for (const i of waiting.filter((x) => x.action === "api_keys")) {
+    for (const name of Object.keys(PROVIDERS)) if (Object.hasOwn(i, name)) names.add(name);
+    for (const name of Array.isArray(i.clear) ? i.clear : []) names.add(String(name));
+  }
+  return names;
+}
+
+function savingModels(waiting) {
+  const models = waiting.filter((i) => i.action === "model_keys");
+  return { providers: new Set(models.map((i) => String(i.provider || "")).filter(Boolean)),
+    order: models.map((i) => i.order).filter((o) => o === "cloud" || o === "local").at(-1) || "" };
+}
+
+// `here` is the page's address, so a reload keeps the section of the change it is waiting for.
+export function settingsPage(status, csrf, { done = "", queue = [], demo = "", here = "" } = {}) {
+  const waiting = settingsWaiting(queue);
+  const refresh = waitRefresh(waiting);
+  const refreshTo = refresh && here ? reloadTo(here, WAITING_SECTIONS[waiting.at(-1).action]) : "";
+  const what = [...new Set(waiting.map((i) => WAITING_LABELS[i.action]))].join(", ");
   return page("Global settings", `<style>${MODAL_STYLE}${KEY_STYLE}${MODEL_STYLE}</style>${nav("settings")}
-${done ? note(done) : ""}${versionNote(status)}${waiting.length ? `<p class="muted">Waiting for HermitShell: ${esc(waiting.join("; "))}.</p>` : ""}
+${done ? note(done) : ""}${versionNote(status)}${waiting.length ? waitBar(what, refresh) : ""}
 <p class="muted">These apply to the whole of HermitShell and every recruit. Where each person's reports go, their job search
 and CV are on their own page under <a href="/admin">Recruits</a>.</p>
 ${emailSection({ ...status, email: pendingEmail(status.email || {}, queue) }, csrf)}
-${keysSection(status, csrf)}
-${modelsSection(status, csrf)}
-${demo}`, { wide: true, before: keyModals(csrf) + modelModals(csrf) });
+${keysSection(status, csrf, savingKeys(waiting))}
+${modelsSection(status, csrf, savingModels(waiting))}
+${demo}`, { wide: true, before: keyModals(csrf) + modelModals(csrf), refresh, refreshTo });
 }
 
 // ------------------------------------------------------------------------- one profile's page

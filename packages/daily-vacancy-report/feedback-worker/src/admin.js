@@ -18,11 +18,11 @@ import { createInvite, queueItem } from "./join.js";
 import {
   CSP, SECURITY_HEADERS, accessUser, ago, authorised, cleanSkill, deleteAndUnflag, esc, hmacHex, json, limitedForm, limitedJson, listFlagged,
   purgeProfileEvents,
-  note, page, redirect, safeEqual, secretEqual, text, when,
+  APPLIED, note, page, redirect, safeEqual, savingTag, secretEqual, text, waitBar, waitRefresh, when,
 } from "./lib.js";
 import {
   SETTINGS_DONE, SETTINGS_URL, STATUS_URL, USERS_URL, button, checklist, cvUpload, nav, problems, profileChange, profilePage, saveStatus,
-  sendButton, settingsItem, settingsPage,
+  sendButton, settingsItem, settingsPage, settingsWaiting,
 } from "./settings.js";
 import { CONFIRM_STYLE, binButton, deleteModal } from "./confirm.js";
 import { MODAL_STYLE } from "./keys.js";
@@ -315,8 +315,14 @@ function pendingRow(p, tz, live, third) {
 <td><span class="pill pending">pending</span><div class="muted">${doing}</div></td>${third === null ? "" : `<td>${third}</td>`}<td></td></tr>`;
 }
 
-function profileRow(p, csrf, tz, stats, { admin, third, inPool }) {
-  const status = `<span class="pill${p.status === "paused" ? " paused" : ""}">${esc(p.status)}</span>`
+// Row changes that HermitShell applies within seconds: the dashboard shows them at once, tagged, and reloads
+// itself until they are applied.
+const QUICK_ACTIONS = { pause: "pausing", resume: "resuming", delete: "deleting", send_now: "starting a scan", assign: "assigning" };
+
+function profileRow(p, csrf, tz, stats, { admin, third, inPool, busy = "" }) {
+  const shown = busy === "pause" ? "paused" : busy === "resume" ? "active" : p.status;
+  const status = `<span class="pill${shown === "paused" ? " paused" : ""}">${esc(shown)}</span>`
+    + (busy ? ` ${savingTag(QUICK_ACTIONS[busy])}` : "")
     + (p.scanning ? ' <span class="pill scanning">scanning now</span>' : "");
   const remove = admin ? binButton(`del-${p.id}`, `Delete ${p.name}`) : "";
   const cv = p.has_cv === false ? ' <span class="pill paused">no CV</span>' : "";
@@ -326,7 +332,7 @@ function profileRow(p, csrf, tz, stats, { admin, third, inPool }) {
 <div class="rowlinks"><a class="small" href="/admin/profile?u=${esc(p.id)}">Manage</a>${statsLink(p, stats, tz)}</div></div></div></td>
 <td>${status}${whenTip(p.last_run, tz, "Last report")}${schedule(p)}</td>
 ${third === null ? "" : `<td>${third}</td>`}
-<td><div class="rowacts">${sendButton(p, csrf, {}, "Send jobs")}${toggleButton(p, csrf)}${remove}</div></td></tr>`;
+<td><div class="rowacts">${sendButton(p, csrf, {}, "Send jobs")}${toggleButton({ ...p, status: shown }, csrf)}${remove}</div></td></tr>`;
 }
 
 function deleteRecruitModal(p, csrf) {
@@ -355,6 +361,9 @@ async function dashboard(request, env, s) {
   const tasks = admin ? tasksButton(taskRows(current, queue, held).length) : "";
   const signups = pendingSignups(queue, current.profiles || []).filter((p) => admin || p.recruiter === s.me.id);
   const mine = mineOnly(s, current, queue);
+  const quick = mine.filter((i) => i.type === "admin" && Object.hasOwn(QUICK_ACTIONS, i.action));
+  const refresh = waitRefresh(quick);
+  const busy = new Map(quick.filter((i) => i.u).map((i) => [String(i.u), i.action]));
   const waiting = describe(mine.filter((i) => !signups.some((p) => i.type === "signup" && p.email === String(i.email || ""))));
   const profiles = (current.profiles || []).filter((p) => canSee(s.me, p));
   const stats = await Promise.all(profiles.map((p) => PROFILE_RE.test(p.id || "") ? env.FEEDBACK.get(`stats:${p.id}`, "json") : null));
@@ -363,7 +372,8 @@ async function dashboard(request, env, s) {
     .map((i) => `<tr><td>${esc(i.note || "No note")}</td>${admin ? `<td class="muted">${i.recruiter && byId.get(i.recruiter)
       ? `joins ${esc(byId.get(i.recruiter).name)}` : "no recruiter"}</td>` : ""}<td class="muted">expires ${esc(when(i.expires, current.timezone))}</td>
 <td>${button(s.csrf, "revoke", "Revoke", { invite: i.id })}</td></tr>`).join("");
-  const done = DONE[url.searchParams.get("done")];
+  const code = url.searchParams.get("done");
+  const done = (code === "queued" || code === "assigned") && !quick.length ? APPLIED : DONE[code];
   const q = searchQuery(url);
   const all = [...profiles.map((p, i) => ({ p, stats: stats[i], rec: admin ? recruiterOf(p, queue) : String(p.recruiter || "") })),
     ...signups.map((p) => ({ p, rec: p.recruiter }))];
@@ -372,7 +382,7 @@ async function dashboard(request, env, s) {
   const row = (e, inPool) => {
     const third = admin ? recruiterCell(e.p, e.rec, recs, s.csrf) : null;
     return e.p.pending ? pendingRow(e.p, current.timezone, presence.live, third)
-      : profileRow(e.p, s.csrf, current.timezone, e.stats, { admin, third, inPool });
+      : profileRow(e.p, s.csrf, current.timezone, e.stats, { admin, third, inPool, busy: busy.get(e.p.id) });
   };
   const listed = new Set();
   const grouped = hits.map((r) => {
@@ -386,6 +396,7 @@ async function dashboard(request, env, s) {
   const deletes = admin ? shown.filter(({ p }) => !p.pending).map(({ p }) => deleteRecruitModal(p, s.csrf)).join("") : "";
   return page("Recruits", `<style>${LINK_STYLE}${MODAL_STYLE}${CONFIRM_STYLE}${SEARCH_STYLE}${PENDING_STYLE}${TASKS_STYLE}${RECRUITER_STYLE}</style>${nav("profiles", admin)}${done ? note(done) : ""}
 ${lastUpdate(current, waiting, presence, admin)}
+${quick.length ? waitBar(quick.length === 1 ? "the change" : `${quick.length} changes`, refresh) : ""}
 ${admin ? `${problems(current)}${checklist(current)}` : ""}
 ${all.length ? searchBar(q, shown.length, all.length, tasks) : tasks ? `<div class="tabletools"><span></span><div class="tools">${tasks}</div></div>` : ""}
 <table class="list stack recruits"><tr class="head"><th>Recruit</th><th>Status</th>${admin ? "<th>Recruiter</th>" : ""}<th></th></tr>
@@ -393,7 +404,7 @@ ${rows}</table>
 ${inviteForm(s, recs)}
 ${inviteRows ? `<table class="list">${inviteRows}</table>` : ""}
 `,
-  { wide: "full", before: (admin ? tasksModal() : "") + passwordModal(s.me, s.csrf, env) + deletes,
+  { wide: "full", refresh, before: (admin ? tasksModal() : "") + passwordModal(s.me, s.csrf, env) + deletes,
     headers: admin ? { "Content-Security-Policy": `${CSP}; frame-src 'self'` } : {} });
 }
 
@@ -670,7 +681,7 @@ async function signedInRoute(request, env, s, path) {
     const url = new URL(request.url);
     const [current, queue] = await Promise.all([status(env), queued(env)]);
     const done = url.searchParams.get("done");
-    return settingsPage(current, s.csrf, { done: DONE[done] || "", queued: describe(queue), queue,
+    return settingsPage(current, s.csrf, { done: done === "queued" && !settingsWaiting(queue).length ? APPLIED : DONE[done] || "", queue, here: url,
       demo: demoSection(s.demo, s.csrf, current.timezone, done === "demo_on" || done === "demo_off") });
   }
   const url = new URL(request.url);
@@ -702,7 +713,7 @@ async function signedInRoute(request, env, s, path) {
       env.FEEDBACK.get(`sent:${u}`, "json"), docIndex(env, u), emailedIndex(env, u), requests(env), addedSkills(env, u)]);
     const q = (k) => url.searchParams.get(k) || "";
     return sentPage(current, stats, u, { range: q("r"), answer: q("a"), open: q("open"), done: q("done"), csrf: s.csrf,
-      sent: Array.isArray(sent) ? sent : null, docs, emailed, pending: pendingDocs(current, held, u), added });
+      sent: Array.isArray(sent) ? sent : null, docs, emailed, pending: pendingDocs(current, held, u), added, here: url });
   }
   if (path === DOC_URL && request.method === "GET") return docDownload(request, env, s);
   if (path === DOC_URL && request.method === "POST") return docRequest(request, env, s);

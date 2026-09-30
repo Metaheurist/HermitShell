@@ -317,6 +317,24 @@ describe("recruiters' pools", () => {
   });
 });
 
+describe("a recruiter's dashboard updating itself", () => {
+  it("reloads and tags only for changes to their own recruits", async () => {
+    const { admin, casey } = await setup();
+    await admin.send("/admin/action", { action: "pause", u: "jordan-patel" });
+    const quiet = await casey.text("/admin");
+    expect(quiet).not.toContain('http-equiv="refresh"');
+    expect(quiet).not.toContain("savingtag keepanim");
+    expect(quiet).not.toContain('class="waitbar');
+    await casey.send("/admin/action", { action: "pause", u: "sam-lee" });
+    const mine = await casey.text("/admin");
+    expect(mine).toContain('<meta http-equiv="refresh" content="4">');
+    expect(mine.match(/savingtag keepanim">pausing/g)).toHaveLength(1);
+    const all = await admin.text("/admin");
+    expect(all.match(/savingtag keepanim">pausing/g)).toHaveLength(2);
+    expect(all).toContain("Waiting for HermitShell to apply 2 changes");
+  });
+});
+
 describe("signing users out", () => {
   it("signs a user out when an admin resets their password, and each user's sign-out leaves the others signed in", async () => {
     const { env, admin, casey } = await setup();

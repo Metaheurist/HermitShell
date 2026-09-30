@@ -949,6 +949,31 @@ describe("a recruit's history", () => {
   });
 });
 
+describe("pages that update themselves", () => {
+  it("never show a queued item's own text, however hostile, and only reload for what the page shows", async () => {
+    const env = testEnv(ADMIN);
+    await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: { Authorization: "Bearer api-token" },
+      body: JSON.stringify({ profiles: [{ id: "sam-lee", name: "Sam Lee", email: "sam@example.com", status: "active" }] }) }), env);
+    const at = Date.now();
+    const items = [{ type: "admin", action: "api_keys", clear: [HOSTILE], [HOSTILE]: HOSTILE },
+      { type: "admin", action: "model_keys", provider: HOSTILE, order: HOSTILE }, { type: "admin", action: "pause", u: HOSTILE }];
+    for (const [n, item] of items.entries()) {
+      await env.FEEDBACK.put(`queue:${at + n}:x${n}`, JSON.stringify({ id: `queue:${at + n}:x${n}`, at: at + n, ...item }));
+    }
+    await env.FEEDBACK.put("flag:queue", "x");
+    const cookie = await signIn(env, "203.0.113.90");
+    const settings = await (await get("/admin/settings", env, { Cookie: cookie })).text();
+    const board = await (await get("/admin", env, { Cookie: cookie })).text();
+    for (const body of [settings, board]) {
+      expect(body).not.toContain("<script>");
+      expect(body).not.toContain("<img");
+      expect(body).toMatch(/<meta http-equiv="refresh" content="4(;url=\/admin\/settings\?w=1#models)?">/);
+    }
+    expect(settings).not.toContain("savingtag keepanim");
+    expect(board).not.toContain("savingtag keepanim");
+  });
+});
+
 describe("the admin is staff, not a recruit", () => {
   const API = { Authorization: "Bearer api-token" };
   const STAFF = { id: "owner", owner: true, name: "Alex Morgan", email: "alex@example.com", status: "active", recruiter: "", has_cv: false,

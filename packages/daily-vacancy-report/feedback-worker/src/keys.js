@@ -7,7 +7,7 @@
 // A provider with a key opens, when pressed, to its keys in the order they are tried (Firecrawl's main key then its
 // backups), each masked, with what is left of its allowance as HermitShell last checked it (key_usage.py).
 
-import { ago, esc } from "./lib.js";
+import { ago, esc, savingTag } from "./lib.js";
 
 export const PROVIDERS = {
   firecrawl: { label: "Firecrawl", signup: "https://www.firecrawl.dev/app/api-keys" },
@@ -102,7 +102,7 @@ function clearButton(csrf, provider) {
 <input type="hidden" name="action" value="api_keys_clear"><input type="hidden" name="provider" value="${esc(provider)}"><button class="small quiet">Use the .env key</button></form>`;
 }
 
-function keyRow(name, info, k, csrf) {
+function keyRow(name, info, k, csrf, saving = false) {
   const source = k.source === "dashboard" ? "set here" : k.source === "env" ? "from .env" : "";
   const rows = source ? reported(k) : [];
   const backups = Number.isInteger(k.backups) && k.backups > 0 ? k.backups : 0;
@@ -112,7 +112,7 @@ function keyRow(name, info, k, csrf) {
   const open = source ? `<a class="small" href="#${modalId(name)}">Change</a>`
     : `<a class="addkey" href="#${modalId(name)}">${logo("key")}Add key</a>`;
   const inner = `<span class="crlogo">${logo(name)}</span><div class="keyinfo">
-<b>${esc(info.label)}</b>${source ? ` <span class="crtag${k.source === "env" ? " env" : ""}">${source}</span>` : ""}${hint}
+<b>${esc(info.label)}</b>${source ? ` <span class="crtag${k.source === "env" ? " env" : ""}">${source}</span>` : ""}${saving ? ` ${savingTag()}` : ""}${hint}
 <div class="muted small">${extra}<a href="${esc(info.signup)}" target="_blank" rel="noopener noreferrer">get a key</a></div></div>
 <div class="cractions">${open}${k.source === "dashboard" ? clearButton(csrf, name) : ""}</div>`;
   if (!rows.length) return `<div class="keyrow cr-${name}">${inner}</div>`;
@@ -120,11 +120,12 @@ function keyRow(name, info, k, csrf) {
 ${keyList(rows)}</details>`;
 }
 
-export function keysSection(status, csrf) {
+// `saving` names the providers with a change waiting for HermitShell.
+export function keysSection(status, csrf, saving = new Set()) {
   const keys = status.keys || {};
   return `<h2 id="keys">Web search API keys</h2>
 <p class="muted">Every recruit's searches use these keys. Firecrawl is tried first, then Tavily, then Scrapfly.</p>
-<div class="keyrows">${Object.entries(PROVIDERS).map(([name, info]) => keyRow(name, info, keys[name] || {}, csrf)).join("")}</div>
+<div class="keyrows">${Object.entries(PROVIDERS).map(([name, info]) => keyRow(name, info, keys[name] || {}, csrf, saving.has(name))).join("")}</div>
 <p class="muted">Press a provider to see its keys and how much of each allowance is left. Keys are only shown as their start and end,
 and are kept on the HermitShell server, not here.</p>`;
 }

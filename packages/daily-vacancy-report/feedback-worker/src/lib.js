@@ -289,6 +289,16 @@ iframe.saving{display:block;width:100%;height:44px;border:0;border-radius:12px;m
 code.link{display:block;word-break:break-all;background:#f7f8fc;border:1px solid var(--line);border-radius:12px;padding:12px 14px;
 font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink)}
 .signout{margin-top:32px}
+.waitbar{display:flex;gap:10px;align-items:center;padding:11px 14px;margin:0 0 16px;border:1px solid #c7d2fe;border-radius:12px;
+background:linear-gradient(90deg,#eef2ff,#f5f3ff);color:var(--brand-ink);font-size:14px}
+.waitbar.late{border-color:#fde68a;background:var(--todo-bg);color:#92400e}
+.spinner{flex:none;width:16px;height:16px;box-sizing:border-box;border-radius:50%;border:2.5px solid rgba(99,102,241,.25);
+border-top-color:var(--brand);animation:spin .8s linear infinite}
+.savingtag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:#c2410c;background:#fff7ed;
+border-radius:99px;padding:1px 8px;vertical-align:1px}
+.savingtag::before{content:"";width:6px;height:6px;border-radius:50%;background:#f97316;animation:blink .8s ease-in-out infinite alternate}
+body.still *:not(.keepanim),body.still *:not(.keepanim)::before{animation:none!important}
+@keyframes spin{to{transform:rotate(360deg)}}
 @keyframes rise{from{opacity:0;transform:translateY(10px)}}
 @keyframes drop{from{opacity:0;transform:translateY(-6px)}}
 @keyframes fill{from{width:0}}
@@ -305,12 +315,41 @@ export function note(text, kind = "ok") {
   return `<p class="note ${kind}" role="status">${esc(text)}</p>`;
 }
 
+// While a change a page shows is waiting for HermitShell, the page reloads itself (pages run no scripts): every 4
+// seconds for the first 45, then every 20 until the change is 5 minutes old. Then it stops, so an offline HermitShell
+// doesn't use up the free plan's daily KV list operations. A reload keeps the address, its #section and the scroll.
+export function waitRefresh(items, now = Date.now()) {
+  if (!items.length) return 0;
+  const age = now - Math.min(...items.map((i) => Number(i.at) || now));
+  return age < 45000 ? 4 : age < 300000 ? 20 : 0;
+}
+
+export const APPLIED = "Applied by HermitShell. The page shows the change.";
+
+// Where a page reloads to so it keeps its place at #section. Reloading its own address would not do: with a #section
+// in it the browser only scrolls there, so `w` flips to make each reload a real one.
+export function reloadTo(url, section) {
+  const next = new URL(url);
+  next.searchParams.set("w", next.searchParams.get("w") === "1" ? "2" : "1");
+  return `${next.pathname}${next.search}#${section}`;
+}
+
+export function waitBar(what, refresh) {
+  return refresh
+    ? `<p class="waitbar" role="status"><span class="spinner keepanim" aria-hidden="true"></span><span><b>Saving.</b> Waiting for HermitShell to apply ${esc(what)}; this page updates by itself.</span></p>`
+    : `<p class="waitbar late" role="status"><span><b>Still waiting for HermitShell</b> to apply ${esc(what)}. It may be offline or busy; reload the page to check again.</span></p>`;
+}
+
+export function savingTag(label = "saving") {
+  return `<span class="savingtag keepanim">${esc(label)}&hellip;</span>`;
+}
+
 // `before` goes outside the card: main's entrance animation would otherwise pin a fixed element to the card.
-export function page(heading, body, { status = 200, wide = false, headers = {}, before = "", refresh = 0 } = {}) {
+export function page(heading, body, { status = 200, wide = false, headers = {}, before = "", refresh = 0, refreshTo = "" } = {}) {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">${
-  refresh > 0 ? `<meta http-equiv="refresh" content="${Math.trunc(refresh)}">` : ""}
-<link rel="icon" href="/favicon.svg" type="image/svg+xml"><title>${esc(heading)}</title><style>${STYLE}</style></head><body>${before}<main${wide === "full" ? ' class="wide full"' : wide ? ' class="wide"' : ""}>
+  refresh > 0 ? `<meta http-equiv="refresh" content="${Math.trunc(refresh)}${refreshTo ? `;url=${esc(refreshTo)}` : ""}">` : ""}
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><title>${esc(heading)}</title><style>${STYLE}</style></head><body${refresh > 0 ? ' class="still"' : ""}>${before}<main${wide === "full" ? ' class="wide full"' : wide ? ' class="wide"' : ""}>
 <div class="eyebrow">${BRAND_MARK}HermitShell</div><h1>${esc(heading)}</h1>${body}</main></body></html>`;
   return new Response(html, {
     status,

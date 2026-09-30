@@ -243,7 +243,7 @@ describe("emailing a job to its profile from the list of jobs sent", () => {
     const page = await (await get(`/admin/sent?u=sam-lee&r=7&open=${h.slice(0, 16)}&done=mail`)).text();
     expect(page).toContain("HermitShell will email this job within a few minutes.");
     expect(page).toMatch(/Email to Sam<\/b><small>Sending&hellip;<\/small><\/span><span class="dspin"/);
-    expect(page).toContain('http-equiv="refresh" content="15"');
+    expect(page).toContain(`http-equiv="refresh" content="15;url=/admin/sent?u=sam-lee&amp;r=7&amp;open=${h.slice(0, 16)}&amp;done=mail&amp;w=1#job-${h.slice(0, 16)}"`);
     expect(await (await get("/admin/tasks")).text()).toContain("Job email");
   });
 
