@@ -380,7 +380,6 @@ ${admin ? `${problems(current)}${checklist(current)}` : ""}
 ${all.length ? searchBar(q, shown.length, all.length, tasks) : tasks ? `<div class="tabletools"><span></span><div class="tools">${tasks}</div></div>` : ""}
 <table class="list"><tr><th>Recruit</th><th>Status</th>${admin ? "<th>Recruiter</th>" : ""}<th></th></tr>
 ${rows}</table>
-${admin ? `<p class="muted">The email server and web search keys everyone shares are under <a href="${SETTINGS_URL}">Global settings</a>; dashboard users and recruiters under <a href="${USERS_URL}">Users and roles</a>.</p>` : ""}
 ${inviteForm(s, recs)}
 ${inviteRows ? `<table class="list">${inviteRows}</table>` : ""}
 `,

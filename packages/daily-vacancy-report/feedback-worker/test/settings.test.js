@@ -166,6 +166,7 @@ describe("global settings page", () => {
     expect(profiles).not.toContain('id="email"');
     expect(profiles).not.toContain('id="keys"');
     expect(profiles).toContain('<a href="/admin/settings">Global settings</a>');
+    expect(profiles).not.toContain("everyone shares");
     const { res, body } = await get("/admin/settings");
     expect(res.status).toBe(200);
     expect(body).toContain("<h1>Global settings</h1>");

@@ -291,8 +291,7 @@ export function usersPage(acc, status, csrf, me, env, done = "") {
   return page("Users and roles", `<style>${MODAL_STYLE}${CONFIRM_STYLE}${USERS_STYLE}</style>${nav("users")}${done ? note(done) : ""}
 <h2>Roles</h2><div class="rolecards">${roles}</div>
 <div class="tabletools"><h2 style="margin:0">Dashboard users</h2><a class="addkey" href="#user-new">${USER_ICON}Add user</a></div>
-<table class="list"><tr><th>User</th><th>Roles</th><th>Recruits</th><th></th></tr>${rows}</table>
-<p class="muted">Passwords are kept only as salted hashes. Resetting a password or deleting a user signs them out at once; everyone changes their own password with the key button at the top right. Assign recruits to a recruiter from the <a href="/admin">Recruits</a> list; the people a recruiter invites join their pool.</p>`,
+<table class="list"><tr><th>User</th><th>Roles</th><th>Recruits</th><th></th></tr>${rows}</table>`,
   { wide: true, before: userModals(acc, csrf, `${main.name} (main admin)`, me) + deletes });
 }
 

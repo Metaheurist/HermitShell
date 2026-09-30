@@ -553,6 +553,8 @@ using [Semantic Versioning](https://semver.org/).
 - **Tasks are for admins only.** Recruiters no longer get the **Tasks** button, its window or the
   **Waiting for HermitShell** link, and `/admin/tasks` answers them with 403 (viewing and cancelling).
   Their status line still says how many of their changes are waiting.
+- **Fewer hints.** The line under the Recruits table pointing to **Global settings** and **Users and roles**
+  (both are tabs already) and the note under the dashboard users table are gone.
 - **A tidier Recruits list.** Each row's buttons sit on one line: **Send jobs**, a pause or play button and
   the bin. The recruiter column is one list with the recruiter's initials, and **Assign** appears only once
   you pick someone else. Status says **Last report 3 hours ago** (the exact time on hover) and **Daily at
