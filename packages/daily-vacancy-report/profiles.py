@@ -53,6 +53,8 @@ import key_usage
 import llm_providers
 import money
 import profile_stats
+import worker_link
+import worker_seal
 from hermes_common import EMAIL_HEAD, STATE_DIR, connect_model, email_header, env, load_env_file, log, ollama_chat
 from job_settings import slug, term_regex
 from job_tracker import Tracker, unsubscribe_link
@@ -404,7 +406,13 @@ def read_cv(d: Path, item: dict, api) -> str:
     if cv.get("key"):
         kind = cv.get("kind") if cv.get("kind") in cv_text.KINDS else "txt"
         upload = d / f".upload.{kind}"
-        hc.write_atomic(upload, api.file(cv["key"]), private=True)
+        data = api.file(cv["key"])
+        if cv.get("sealed") is True:
+            try:
+                data = worker_seal.open_bytes(data, cv["key"])
+            except worker_seal.SealError as exc:
+                raise ProfileError(f"the CV file could not be opened: {exc}") from None
+        hc.write_atomic(upload, data, private=True)
         try:
             text = cv_text.clean(cv_text.extract_file_isolated(upload))
         except Exception as exc:  # a malformed or hostile file must not block the pasted fallback
@@ -625,18 +633,22 @@ def send_owner(subject: str, lines: list[str]) -> None:
 # --------------------------------------------------------------------------- Worker API
 
 class Api:
-    def __init__(self, base: str, token: str, timeout: int = 30):
-        self.base, self.timeout = base.rstrip("/"), timeout
-        self.headers = {"Authorization": f"Bearer {token}"}
+    """The Worker's /api, over worker_link (HTTPS only, signed, retried)."""
+
+    def __init__(self, base: str, token: str, timeout: int = 30, secret: str | None = None):
+        self.link = worker_link.Link(base, token, secret, timeout)
+        self.base = self.link.base
 
     @property
     def live_url(self) -> str:
         return re.sub(r"^http", "ws", self.base, count=1) + "/api/live"
 
-    def call(self, method: str, path: str, **kwargs):
-        resp = requests.request(method, f"{self.base}{path}", headers=self.headers, timeout=self.timeout, **kwargs)
-        resp.raise_for_status()
-        return resp.json()
+    def live_headers(self) -> dict:
+        """Signed afresh for each connection, so a copied handshake can't be replayed."""
+        return self.link.headers("GET", "/api/live")
+
+    def call(self, method: str, path: str, params: dict | None = None, json: dict | None = None, retry: bool = True):
+        return self.link.json(method, path, params=params, json_body=json, retry=retry)
 
     def queue(self, full: bool = False) -> list[dict]:
         return self.call("GET", "/api/queue", params={"full": "1"} if full else None).get("items", [])
@@ -646,30 +658,31 @@ class Api:
         return str(self.call("GET", "/api/queue/flag").get("flag") or "")
 
     def ack(self, ids: list[str]) -> None:
-        self.call("POST", "/api/queue/ack", json={"ids": ids})
+        self.link.request("POST", "/api/queue/ack", json_body={"ids": ids})
 
     def file(self, key: str) -> bytes:
-        resp = requests.get(f"{self.base}/api/file", params={"k": key}, headers=self.headers, timeout=self.timeout,
-                            stream=True)
-        resp.raise_for_status()
+        resp = self.link.request("GET", "/api/file", params={"k": key}, stream=True)
         data = resp.raw.read(MAX_FILE_BYTES + 1, decode_content=True)
         if len(data) > MAX_FILE_BYTES:
             raise ProfileError("CV file too large")
         return data
 
     def status(self, payload: dict) -> None:
-        self.call("POST", "/api/status", json=payload)
+        self.link.request("POST", "/api/status", json_body=payload)
 
     def stats(self, pid: str, data: dict | None) -> None:
         """A profile's stats page numbers; None removes them."""
-        self.call("POST", "/api/stats", json={"u": pid, "stats": data})
+        self.link.request("POST", "/api/stats", json_body={"u": pid, "stats": data})
 
     def invite(self, note: str) -> dict:
-        return self.call("POST", "/api/invite", json={"note": note})
+        return self.call("POST", "/api/invite", json={"note": note}, retry=False)
 
 
 def api_from_env() -> Api | None:
-    base, token = env("JOB_FEEDBACK_URL", ""), env("JOB_FEEDBACK_API_TOKEN", "")
+    base, token = env("JOB_FEEDBACK_URL", "") or "", env("JOB_FEEDBACK_API_TOKEN", "") or ""
+    if base and token and not worker_link.secure_base(base):
+        log("JOB_FEEDBACK_URL must start with https://, so the feedback Worker is not used")
+        return None
     return Api(base, token) if base and token else None
 
 
@@ -957,6 +970,10 @@ def admin_action(item: dict, api=None) -> None:
 
 
 def handle(item: dict, api: Api) -> None:
+    try:
+        item = worker_seal.open_item(item)
+    except worker_seal.SealError as exc:
+        raise ProfileError(str(exc)) from None
     kind = item.get("type")
     if kind == "signup":
         create_profile(item, api)
@@ -1047,7 +1064,8 @@ def status_payload() -> dict:
     problems = [{"at": _ms(p["at"]), "what": p.get("what", ""), "error": p.get("error", "")} for p in recent_problems()]
     return {"profiles": profiles, "email": email, "keys": keys, "problems": problems, "timezone": timezone_name(),
             "scheduler": jobs is not None, "tasks": tasks(), "models": models_info(every), "llm": llm_info(),
-            "server": server_info()}
+            "server": server_info(), "protocol": worker_link.PROTOCOL,
+            "worker_protocol": worker_link.worker_protocol().get("protocol"), "seal": worker_seal.public_key()}
 
 
 def models_info(every: int) -> dict:
@@ -1151,7 +1169,7 @@ def push_stats(api: Api, now_for: str = "") -> None:
         try:
             api.stats(pid, data)
         except requests.RequestException as exc:
-            log(f"Could not send the stats of {pid} to the Worker: {exc.__class__.__name__}")
+            log(f"Could not send the stats of {pid} to the Worker: {worker_link.reason(exc)}")
             break
         sent[pid] = {"digest": digest, "at": now}
     for pid in [p for p in sent if p not in ids]:
@@ -1175,7 +1193,7 @@ def push_status(api: Api, force: bool = False, stats_for: str = "") -> None:
         api.status(payload)
         write_json(marker, {"digest": digest, "at": time.time()})
     except requests.RequestException as exc:
-        log(f"Could not report profiles to the Worker: {exc.__class__.__name__}")
+        log(f"Could not report profiles to the Worker: {worker_link.reason(exc)}")
 
 
 def lock(name: str):
@@ -1194,7 +1212,7 @@ def sync(api: Api, full: bool = False) -> list[str]:
         try:
             items = api.queue(full)
         except requests.RequestException as exc:
-            log(f"Worker unreachable: {exc.__class__.__name__}")
+            log(f"Worker unreachable: {worker_link.reason(exc)}")
             return []
         if full:
             marker.touch()
@@ -1226,7 +1244,7 @@ def sync(api: Api, full: bool = False) -> list[str]:
             try:
                 api.ack(done)
             except requests.RequestException as exc:
-                log(f"Could not acknowledge queue items: {exc.__class__.__name__}")
+                log(f"Could not acknowledge queue items: {worker_link.reason(exc)}")
         return report
 
 
@@ -1298,7 +1316,7 @@ def listen(api: Api, seconds: float, connect=None, clock=time.monotonic, sleep=t
         if stamp() != start:
             return "updated"
         try:
-            with connect(api.live_url, additional_headers=api.headers, open_timeout=20, close_timeout=5,
+            with connect(api.live_url, additional_headers=api.live_headers(), open_timeout=20, close_timeout=5,
                          max_size=65536) as ws:
                 failures = 0
                 log("Live link to the Worker connected")

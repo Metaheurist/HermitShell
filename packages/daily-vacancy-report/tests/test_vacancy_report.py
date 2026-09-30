@@ -3,6 +3,7 @@
 Run from the repository root:  python -m pytest packages/daily-vacancy-report/tests
 """
 
+import json
 import re
 import sys
 import threading
@@ -332,13 +333,13 @@ def test_sync_feedback_saves_then_acknowledges(tracker, monkeypatch):
     events = [{"id": "event:1:a", "j": "k1", "a": "applied", "r": "", "at": 1_790_000_000_000},
               {"id": "event:2:b", "j": "k2", "a": "not_for_me", "r": "remote only", "at": 1_790_000_100_000}]
     monkeypatch.setattr(job_tracker.requests, "get",
-                        lambda url, headers, params, timeout: calls.setdefault("get", []).append((url, headers, params))
-                        or FakeResponse({"events": events}))
+                        lambda url, headers, params, **kw: calls.setdefault("get", []).append(
+                            (url, headers["Authorization"], params)) or FakeResponse({"events": events}))
     monkeypatch.setattr(job_tracker.requests, "post",
-                        lambda url, headers, json, timeout: calls.setdefault("ack", (url, json)) and FakeResponse())
+                        lambda url, data, **kw: calls.setdefault("ack", (url, json.loads(data))) and FakeResponse())
     saved, error = sync_feedback(tracker, "https://fb.example.workers.dev/", "tok")
     assert (saved, error) == (2, None)
-    assert calls["get"] == [("https://fb.example.workers.dev/events", {"Authorization": "Bearer tok"}, {})]
+    assert calls["get"] == [("https://fb.example.workers.dev/events", "Bearer tok", None)]
     assert calls["ack"] == ("https://fb.example.workers.dev/ack", {"ids": ["event:1:a", "event:2:b"]})
     assert tracker.latest_action("k2") == "not_for_me"
     assert sync_feedback(tracker, "https://fb.example.workers.dev", "tok", profile="sam-lee", full=True)[0] == 0

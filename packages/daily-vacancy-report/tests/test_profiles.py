@@ -530,7 +530,8 @@ def test_the_live_link_syncs_on_connect_and_the_moment_something_is_queued(home,
     assert result == "done"
     assert synced == [0, 50, 70]
     assert calls[0][0] == "wss://fb.example.workers.dev/api/live"
-    assert calls[0][1]["additional_headers"] == {"Authorization": "Bearer api-token"}
+    assert calls[0][1]["additional_headers"]["Authorization"] == "Bearer api-token"
+    assert calls[0][1]["additional_headers"]["X-HermitShell-Protocol"] == str(profiles.worker_link.PROTOCOL)
     assert link.sent == [(30, "ping"), (60, "ping"), (90, "ping")]
 
 
@@ -685,6 +686,84 @@ def test_the_status_shows_the_local_model_and_the_server(home, monkeypatch):
     assert status["llm"]["cloud"] == [] and set(status["models"]) == set(profiles.llm_providers.PROVIDERS)
     server = status["server"]
     assert server["cpu"]["cores"] >= 1 and "total" in server["ram_mb"] and isinstance(server["gpus"], list)
+
+
+@pytest.fixture
+def sealing(home, monkeypatch):
+    """The server's sealing key pair in this test's state folder, and seal() as the Worker's seal.js does it."""
+    import base64
+
+    import worker_seal
+    monkeypatch.setattr(profiles.hc, "STATE_DIR", home[0] / "state")
+    monkeypatch.setattr(worker_seal, "KEY_BITS", 2048)
+    worker_seal._public.clear()
+
+    def seal_text(text, field):
+        blob = worker_seal.seal(text.encode(), worker_seal.field_aad(field), worker_seal.public_key()["spki"])
+        return worker_seal.PREFIX + base64.urlsafe_b64encode(blob).decode().rstrip("=")
+
+    def seal_file(data, key):
+        return worker_seal.seal(data, key, worker_seal.public_key()["spki"])
+    return seal_text, seal_file
+
+
+def test_the_status_carries_the_protocol_and_the_key_the_worker_seals_with(sealing):
+    import worker_seal
+    status = profiles.status_payload()
+    assert status["protocol"] == profiles.worker_link.PROTOCOL
+    assert status["seal"] == worker_seal.public_key() and set(status["seal"]) == {"alg", "kid", "spki"}
+    assert status["worker_protocol"] is None
+    assert "PRIVATE" not in json.dumps(status)
+
+
+def test_sealed_dashboard_secrets_are_opened_before_they_apply(sealing):
+    seal_text, _ = sealing
+    api = FakeApi([
+        {"id": "queue:2:a", "type": "admin", "action": "api_keys", "sealed": ["firecrawl", "tavily"],
+         "firecrawl": [seal_text("fc-sealed-longer001", "firecrawl")], "tavily": seal_text("tvly-sealed-longer-01", "tavily")},
+        {"id": "queue:3:b", "type": "admin", "action": "email", "host": "smtp.example.com", "port": "587",
+         "user": "alex@example.com", "sealed": ["password"], "password": seal_text("abcd efgh ijkl mnop", "password")},
+    ])
+    assert profiles.sync(api) == ["admin: done (api_keys)", "admin: done (email)"]
+    saved = profiles.dashboard_env()
+    assert (saved["FIRECRAWL_API_KEY"], saved["TAVILY_API_KEY"]) == ("fc-sealed-longer001", "tvly-sealed-longer-01")
+    assert saved["SMTP_PASSWORD"] == "abcd efgh ijkl mnop"
+    assert "sealed:" not in json.dumps(saved)
+
+
+def test_a_sealed_value_that_cant_be_opened_is_rejected_and_nothing_applies(sealing):
+    seal_text, _ = sealing
+    swapped = {"id": "queue:2:a", "type": "admin", "action": "api_keys", "sealed": ["tavily"],
+               "tavily": seal_text("tvly-sealed-longer-01", "firecrawl")}
+    plain = {"id": "queue:3:b", "type": "admin", "action": "api_keys", "sealed": ["tavily"], "tavily": "tvly-plain-longer-01"}
+    api = FakeApi([swapped, plain])
+    report = profiles.sync(api)
+    assert report[0].startswith("admin: rejected (sealed value could not be opened")
+    assert report[1] == "admin: rejected (tavily was meant to be sealed but isn't)"
+    assert "TAVILY_API_KEY" not in profiles.dashboard_env()
+    assert api.acked == ["queue:2:a", "queue:3:b"]
+
+
+def test_a_sealed_cv_file_and_cv_text_build_the_profile(home, sealing):
+    seal_text, seal_file = sealing
+    pdf = letter_pdf.letter_pdf("Sam Lee", "sam@example.com", "1 May 2026", [], "Curriculum vitae", "Profile",
+                                [CV.replace("\n", " ")])
+    cv = {"key": "cvfile:1", "kind": "pdf", "name": "cv.pdf", "size": len(pdf), "sealed": True}
+    profiles.sync(FakeApi([signup(cv_text="", cv=cv)], {"cvfile:1": seal_file(pdf, "cvfile:1")}))
+    d = home[0] / "profiles" / "sam-lee-456789"
+    assert "Power BI dashboards" in " ".join((d / "cv.txt").read_text().split())
+    item = {"id": "queue:2:0c", "type": "admin", "action": "cv", "u": "sam-lee-456789", "cv": None,
+            "sealed": ["cv_text"], "cv_text": seal_text(CV.replace("Data analyst", "BI developer"), "cv_text")}
+    profiles.sync(FakeApi([item]))
+    assert "BI developer" in (d / "cv.txt").read_text()
+
+
+def test_a_cv_file_sealed_for_another_upload_is_refused(home, sealing):
+    _, seal_file = sealing
+    cv = {"key": "cvfile:1", "kind": "pdf", "name": "cv.pdf", "size": 9, "sealed": True}
+    api = FakeApi([signup(cv_text="", cv=cv)], {"cvfile:1": seal_file(b"%PDF-1.4 other", "cvfile:2")})
+    assert profiles.sync(api)[0].startswith("signup: rejected (the CV file could not be opened: sealed value could not be opened")
+    assert not (home[0] / "profiles" / "sam-lee-456789").exists()
 
 
 def test_the_server_load_and_request_counts_alone_do_not_resend_the_status(home, monkeypatch):

@@ -1,8 +1,11 @@
 """Keeps every test away from a real HermitShell install: .env, dashboard settings, the schedule and state live in a
 temporary folder, and settings inherited from the shell are dropped before any script module is imported."""
 import os
+import sys
 import tempfile
 from pathlib import Path
+
+import pytest
 
 _HOME = Path(tempfile.mkdtemp(prefix="hermitshell-tests-"))
 os.environ.update({"HERMITSHELL_HOME": str(_HOME), "HERMES_HOME": str(_HOME), "HERMES_STATE_DIR": str(_HOME / "state"),
@@ -15,3 +18,10 @@ for _key in [k for k in os.environ if k.startswith(("JOB_", "SMTP_", "FIRECRAWL_
                                                     "HUGGINGFACE_", "LLM_"))]:
     del os.environ[_key]
 os.environ.pop("HERMES_DASHBOARD_APPLIED", None)
+
+
+@pytest.fixture(autouse=True)
+def _no_retry_waits(monkeypatch):
+    """worker_link retries a dropped connection after 1 and 2 seconds; tests don't wait for them."""
+    if "worker_link" in sys.modules:
+        monkeypatch.setattr(sys.modules["worker_link"], "_sleep", lambda seconds: None)

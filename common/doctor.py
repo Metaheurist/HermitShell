@@ -163,6 +163,12 @@ def common():
     return hermes_common
 
 
+def worker_link():
+    common()
+    import worker_link as link
+    return link
+
+
 def check_scheduler(report: Report, fix: bool) -> None:
     common()
     import scheduler
@@ -384,6 +390,21 @@ def check_worker(report: Report, _fix: bool) -> None:
         report.add("worker", "warn", f"feedback Worker unreachable ({exc.__class__.__name__})")
         return
     report.add("worker", "ok" if status == 200 else "warn", f"feedback Worker answers (HTTP {status})")
+    if not worker_link().secure_base(base):
+        report.add("worker", "fail", "JOB_FEEDBACK_URL is not https://, so HermitShell won't send it the API token",
+                   "use the https:// address the wizard printed")
+        return
+    theirs, ours = worker_link().worker_protocol().get("protocol"), worker_link().PROTOCOL
+    if theirs is None:
+        return
+    if theirs < ours:
+        report.add("worker", "warn", f"the feedback Worker is older than HermitShell (protocol {theirs}, not {ours})",
+                   "redeploy it: docker exec hermitshell /app/entrypoint.sh worker, or python3 scripts/cloudflare_worker.py")
+    elif theirs > ours:
+        report.add("worker", "warn", f"HermitShell is older than its feedback Worker (protocol {ours}, not {theirs})",
+                   "update HermitShell (the container updates itself; else git pull and install.sh)")
+    else:
+        report.add("worker", "ok", f"feedback Worker speaks HermitShell's protocol ({ours}), signed and sealed")
 
 
 def check_disk(report: Report, _fix: bool) -> None:

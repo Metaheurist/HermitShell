@@ -1,6 +1,7 @@
 # Packages for running the tests and CI. The scripts themselves only need `requests`, plus
-# `cryptography` once HERMES_DATA_KEY is set (both are in the container image); pillow and pyyaml are
-# optional there, and are installed here so their code paths are tested and audited for CVEs.
+# `cryptography` once HERMES_DATA_KEY is set or passwords and API keys are typed into the dashboard
+# (both are in the container image); pillow and pyyaml are optional there, and are installed here so
+# their code paths are tested and audited for CVEs.
 requests>=2.32
 cryptography>=44
 pillow>=10.4

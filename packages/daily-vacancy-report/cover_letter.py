@@ -45,6 +45,7 @@ import hermes_common as hc
 import job_mail
 import profiles
 import tailored_cv
+import worker_link
 from hermes_common import EMAIL_HEAD, STATE_DIR, connect_model, env, env_int, load_env_file, log, ollama_chat
 from job_tracker import REQUEST_ACTIONS, Tracker, secure_base, skills_text, sync_feedback
 from letter_pdf import cv_pdf, letter_pdf
@@ -376,10 +377,10 @@ def upload_doc(kind: str, key: str, path: Path, filename: str, days: int | None 
     days = min(days or keep_days(), keep_days())
     params = {"u": env("JOB_PROFILE_ID", "") or profiles.OWNER, "j": key, "k": kind, "days": str(days), "name": filename}
     try:
-        requests.post(f"{base}/api/doc", params=params, data=hc.read_private(path), timeout=30,
-                      headers={"Authorization": f"Bearer {token}", "Content-Type": "application/pdf"}).raise_for_status()
+        worker_link.Link(base, token).request("POST", "/api/doc", params=params, data=hc.read_private(path),
+                                              content_type="application/pdf")
     except (requests.RequestException, OSError, RuntimeError) as exc:
-        return f"could not keep {path.name} on the Worker for download: {exc.__class__.__name__}"
+        return f"could not keep {path.name} on the Worker for download: {worker_link.reason(exc)}"
     return ""
 
 
@@ -390,10 +391,9 @@ def record_emailed(key: str) -> str:
         return ""
     params = {"u": env("JOB_PROFILE_ID", "") or profiles.OWNER, "j": key}
     try:
-        requests.post(f"{base}/api/emailed", params=params, timeout=30,
-                      headers={"Authorization": f"Bearer {token}"}).raise_for_status()
+        worker_link.Link(base, token).request("POST", "/api/emailed", params=params)
     except requests.RequestException as exc:
-        return f"could not mark the job as emailed on the Worker: {exc.__class__.__name__}"
+        return f"could not mark the job as emailed on the Worker: {worker_link.reason(exc)}"
     return ""
 
 

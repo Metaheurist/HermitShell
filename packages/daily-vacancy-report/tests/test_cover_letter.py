@@ -215,7 +215,8 @@ def kept(setup, tmp_path, monkeypatch):
             return None
 
     monkeypatch.setattr(cover_letter.requests, "post",
-                        lambda url, params, data, timeout, headers: uploads.append((url, params, data, headers)) or Response())
+                        lambda url, params=None, data=None, headers=None, **kw: uploads.append((url, params, data, headers))
+                        or Response())
     written = []
     monkeypatch.setattr(cover_letter, "write_letter",
                         lambda host, model, ctx, job, profile, listing, note: written.append(note) or PARAGRAPHS)
@@ -255,7 +256,7 @@ def test_dashboard_requests_are_kept_for_download_and_not_emailed(kept):
     assert url == "https://fb.example.org/api/doc" and data.startswith(b"%PDF")
     assert params == {"u": "owner", "j": "k1", "k": "cover_letter", "days": "7",
                       "name": "Cover letter - Sam Taylor - AI Engineer.pdf"}
-    assert headers == {"Authorization": "Bearer tok", "Content-Type": "application/pdf"}
+    assert headers["Authorization"] == "Bearer tok" and headers["Content-Type"] == "application/pdf"
 
 
 def test_a_reused_letter_is_kept_only_for_the_rest_of_its_days(kept):
@@ -303,14 +304,14 @@ def test_a_failed_upload_is_logged_and_the_letter_still_counts_as_sent(kept, mon
     tracker.add_event("e1", "k1", "cover_letter", flags="fresh")
     cover_letter.process_pending(tracker, lambda: ("h", "m", None))
     assert tracker.pending_letters() == [] and len(sent) == 1
-    assert logged == [logged[0]] and logged[0].endswith("for download: ConnectionError")
+    assert logged == [logged[0]] and logged[0].endswith("for download: feedback Worker unreachable (ConnectionError)")
 
 
 def test_a_job_asked_for_from_the_dashboard_is_emailed_without_the_model(kept, monkeypatch):
     tracker, sent, uploads, written = kept
     monkeypatch.setattr(cover_letter.requests, "post",
-                        lambda url, params, timeout, headers: uploads.append((url, params, headers)) or type(
-                            "R", (), {"raise_for_status": lambda self: None})())
+                        lambda url, params=None, headers=None, **kw: uploads.append(
+                            (url, params, {"Authorization": headers["Authorization"]})) or type("R", (), {})())
     tracker.add_event("e1", "k1", "send_job", flags="quiet")
     lines = cover_letter.process_pending(tracker, lambda: pytest.fail("no model needed"))
     assert lines == ["Job email sent for AI Engineer at Acme"] and written == []
@@ -344,7 +345,7 @@ def test_record_emailed_reports_problems_and_needs_https_and_a_token(monkeypatch
         raise cover_letter.requests.ConnectionError("worker down")
     monkeypatch.setenv("JOB_FEEDBACK_API_TOKEN", "tok")
     monkeypatch.setattr(cover_letter.requests, "post", down)
-    assert cover_letter.record_emailed("k1").endswith("as emailed on the Worker: ConnectionError")
+    assert cover_letter.record_emailed("k1").endswith("as emailed on the Worker: feedback Worker unreachable (ConnectionError)")
 
 
 def test_process_pending_retries_failures_and_skips_unknown_jobs(setup, monkeypatch):

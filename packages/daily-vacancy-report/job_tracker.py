@@ -19,6 +19,8 @@ from urllib.parse import urlencode
 
 import requests
 
+import worker_link
+
 ACTIONS = {
     "interested": "Interested",
     "not_for_me": "Not for me",
@@ -421,19 +423,21 @@ def sync_feedback(tracker: Tracker, base_url: str, api_token: str, ack: bool = T
         return 0, None
     if not secure_base(base_url):
         return 0, "JOB_FEEDBACK_URL must start with https://"
-    headers = {"Authorization": f"Bearer {api_token}"}
-    base = base_url.rstrip("/")
+    link = worker_link.Link(base_url, api_token, timeout=timeout)
     params = {k: v for k, v in (("u", profile), ("full", "1" if full else "")) if v}
     try:
-        resp = requests.get(f"{base}/events", headers=headers, params=params, timeout=timeout)
-        resp.raise_for_status()
-        events = resp.json().get("events", [])
-    except (requests.RequestException, ValueError) as exc:
-        detail = f"HTTP {exc.response.status_code}" if getattr(exc, "response", None) is not None \
-            else exc.__class__.__name__
-        return 0, f"feedback Worker unreachable ({detail})"
+        events = link.json("GET", "/events", params=params or None).get("events", [])
+        if not isinstance(events, list):
+            events = []
+    except requests.RequestException as exc:
+        if getattr(exc, "response", None) is not None:
+            return 0, f"feedback Worker unreachable (HTTP {exc.response.status_code})"
+        return 0, worker_link.reason(exc) if isinstance(exc, worker_link.WorkerError) \
+            else f"feedback Worker unreachable ({exc.__class__.__name__})"
     saved, ids = 0, []
     for ev in events:
+        if not isinstance(ev, dict):
+            continue
         event_id = str(ev.get("id") or "")
         if not event_id:
             continue
@@ -448,9 +452,9 @@ def sync_feedback(tracker: Tracker, base_url: str, api_token: str, ack: bool = T
         ids.append(event_id)
     if ack and ids:
         try:
-            requests.post(f"{base}/ack", headers=headers, json={"ids": ids}, timeout=timeout).raise_for_status()
+            link.request("POST", "/ack", json_body={"ids": ids})
         except requests.RequestException as exc:
-            return saved, f"feedback saved but not acknowledged ({exc.__class__.__name__})"
+            return saved, f"feedback saved but not acknowledged ({worker_link.reason(exc)})"
     return saved, None
 
 

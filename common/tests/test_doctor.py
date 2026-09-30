@@ -334,6 +334,30 @@ def test_settings_warnings_and_worker(home, monkeypatch):
     assert statuses(report) == [("worker", "ok")]
 
 
+@pytest.mark.parametrize("theirs, status, says", [
+    (2, "ok", "speaks HermitShell's protocol (2), signed and sealed"),
+    (1, "warn", "the feedback Worker is older than HermitShell (protocol 1, not 2)"),
+    (3, "warn", "HermitShell is older than its feedback Worker (protocol 2, not 3)")])
+def test_the_worker_check_compares_protocols(home, monkeypatch, theirs, status, says):
+    link = doctor.worker_link()
+    monkeypatch.setenv("JOB_FEEDBACK_URL", "https://fb.example.workers.dev")
+    monkeypatch.setattr(hc.requests, "get", lambda url, timeout=None: FakeResponse(status=200))
+    monkeypatch.setattr(link, "worker_protocol", lambda: {"protocol": theirs, "at": 1})
+    report = doctor.Report(as_json=True)
+    doctor.check_worker(report, False)
+    assert report.items[-1]["status"] == status and says in report.items[-1]["message"]
+    if theirs == 1:
+        assert "entrypoint.sh worker" in report.items[-1]["fix"]
+
+
+def test_the_worker_check_refuses_a_plain_http_address(home, monkeypatch):
+    monkeypatch.setenv("JOB_FEEDBACK_URL", "http://fb.example.workers.dev")
+    monkeypatch.setattr(hc.requests, "get", lambda url, timeout=None: FakeResponse(status=200))
+    report = doctor.Report(as_json=True)
+    doctor.check_worker(report, False)
+    assert statuses(report)[-1] == ("worker", "fail") and "not https://" in report.items[-1]["message"]
+
+
 # --------------------------------------------------------------------------- command line
 
 def test_json_output_and_exit_code(home, monkeypatch, capsys):
