@@ -15,6 +15,39 @@ explains the techniques, for anyone building a new package.
   phones.
 - Every email also has a plain-text part (`multipart/alternative`), for clients that block HTML.
 
+## Phones
+
+<img src="images/emails/daily-report-phone.png" alt="The daily report at phone width" width="300">
+
+On a narrow screen a table cell shrinks to fit its content, so anything drawn with a cell's
+size or padding gets squashed. The base layout avoids that without relying on media queries:
+
+- Circles (company initials, the score) are `<div>`s with a fixed `width`, `height`,
+  `min-width` and `line-height`, not table cells, so they stay round.
+- Bars are nested `<div>`s with a percentage width inside a fixed-height track. Empty cells
+  used as bars collapse to nothing in some clients.
+- Anything long gets its own row instead of sharing one with fixed-width columns. On the job
+  card, the salary and tags sit under the title, and the score column keeps a fixed width.
+- `table-layout:fixed` on grids such as the meters, so columns split evenly.
+
+`EMAIL_HEAD` also has a separate `<style>` block with a `max-width:540px` media query, for
+clients that support it (Gmail's apps with a Gmail account do). It is separate so an error in
+it can't make Gmail drop the dark-mode block. Its classes need `!important` to beat inline
+styles, and `compact_html()` leaves tags that already have a class alone:
+
+| Class | On a phone |
+| --- | --- |
+| `m-wrap`, `m-pad`, `m-head` | Tighter outer, card and header padding |
+| `m-stack` | Cell becomes a full-width block, so side-by-side cells stack |
+| `m-inline`, `m-below` | Paired with `m-stack` to drop a cell under its neighbour |
+| `m-flush` | Removes the left indent under the avatar |
+| `m-sep` | Narrower gap before each header stat |
+| `m-num`, `m-title`, `m-score`, `m-label` | Smaller header numbers, title, score circle and meter labels |
+
+`scripts/screenshots/make.py` renders `emails/daily-report-phone.png` at 390px wide to check
+this. Headless Chrome won't make a window narrower than 500px, so it loads the email in a
+390px iframe and crops.
+
 ## Size: staying under Gmail's clipping limit
 
 Gmail cuts off any message whose HTML is over 102 KB and shows "[Message clipped] View entire
