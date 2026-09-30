@@ -461,6 +461,16 @@ to 1320px), so they keep the row above the page up to 1860px wide.
 
 <img src="images/worker/admin-signed-in.png" alt="The signed-in badge at the top right: initials, name and role, then the key button and Sign out" width="720">
 
+Admins also get a **server** button before the key button. Point at it (or Tab to it) and a panel
+opens with the machine HermitShell runs on: CPU and its load, memory, each GPU's memory and free
+disk, each with a bar (amber from 70%, red from 90%). Under them are the AI models in the order they
+are asked, each with its model name and whether it is ready, how many requests it answered today or
+why it is resting, then which one gave the last answer and **Model settings**. It needs no
+JavaScript, and it shows what HermitShell last reported (see [AI models](#ai-models)). Recruiters
+don't get the button.
+
+<img src="images/worker/admin-server-panel.png" alt="The admin's server panel: CPU, memory, GPU and disk bars, then the models in the order they are asked" width="720">
+
 Every dashboard user, recruiters included, changes their password with the key button (or
 **Change password** on their own row under Users and roles). It asks for the current
 password and the new one twice. You stay signed in in that browser and are signed out everywhere
@@ -486,7 +496,7 @@ python3 profiles.py --assign sam-lee-456789 casey   # "" puts them in nobody's p
 
 `/admin/settings`, the **Global settings** tab. These apply to every recruit.
 
-<img src="images/worker/admin-settings.png" alt="Global settings: email server and web search API keys" width="720">
+<img src="images/worker/admin-settings.png" alt="Global settings: email server, web search and AI model API keys" width="720">
 
 - **Email server**: SMTP server, port, username, password (for Gmail an
   [app password](api-keys.md#gmail-app-password)) and an optional sender address, used for
@@ -513,6 +523,31 @@ python3 profiles.py --assign sam-lee-456789 casey   # "" puts them in nobody's p
 <img src="images/worker/admin-settings-key-usage.png" alt="Global settings with Firecrawl opened: its main and backup keys, each with a bar of the credits left, its plan and when it resets" width="620">
 
 <img src="images/worker/admin-global-key-modal.png" alt="The Add key window on Global settings: Firecrawl, Tavily or Scrapfly" width="380">
+
+##### AI models
+
+For servers that can't run a model themselves, the **AI model API keys** section adds cloud models
+from OpenRouter, BazaarLink, Featherless or Hugging Face. It works like the web search keys: one
+row per provider with its icon, **Add key** or **Change** opening a window to pick the provider,
+paste the key and, optionally, a model (blank keeps the current one; each provider's free or cheap
+default is listed), and **Use the .env key** to undo a dashboard key. A row with a key shows its
+model, what is left (OpenRouter's free requests today or dollars of credit, BazaarLink's credits,
+Featherless's plan, Hugging Face's account) and whether it is ready or resting, and opens to the
+key's usage like the web search keys.
+
+HermitShell asks the providers with a key in turn and uses the local Ollama when none has a key or
+credits left. A provider that runs out of credits or hits its daily limit rests until the next day
+(UTC), a rejected key for six hours and a rate limit for as long as it asks. The **Local Ollama** row
+shows the model it runs, where it last ran and, when it differs, the model that suits the machine
+([how it's picked](configuration.md#autofit-gpu-cpu-and-context-chosen-for-you)). **Cloud first**
+or **Local first** sets which is asked first; with **Local first** the cloud is only used when
+Ollama doesn't answer. Cloud models are sent each recruit's CV and the adverts it is compared with,
+and free models may keep what they are sent, which the [privacy notice](#privacy-notice) says.
+[Where to get each key](api-keys.md#cloud-models).
+
+<img src="images/worker/admin-settings-models.png" alt="The AI model API keys section: OpenRouter opened to its key's usage, BazaarLink, Featherless, Hugging Face, the local Ollama and the order" width="720">
+
+<img src="images/worker/admin-model-key-modal.png" alt="The AI model key window: pick the provider, paste the key and an optional model" width="420">
 
 Keys and passwords are stored on the HermitShell server (`state/dashboard.json`, mode 600) and shown only as their last four characters. Changes wait in KV and
 are applied by `profiles.py`, within seconds over the live link ("Waiting for HermitShell" shows

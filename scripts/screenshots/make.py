@@ -400,18 +400,20 @@ def main() -> int:
         print("emails/daily-report-phone.png")
         for html in sorted((html_dir / "worker").glob("*.html")):
             capture(chrome, profile, html, args.out / "worker" / f"{html.stem}.png",
-                    1900 if html.stem == "admin-signed-in" else
+                    1900 if html.stem in ("admin-signed-in", "admin-server-panel") else
                     # Recruits and Users grow with the window and stack their rows below 900px.
                     1280 if html.stem.startswith(("admin-dashboard", "admin-tasks", "admin-user", "admin-recruiter",
                                                   "admin-delete", "admin-password")) else
                     1000 if html.stem.startswith(("admin-profile", "admin-settings", "admin-stats", "admin-sent",
-                                                  "admin-global-key", "admin-history")) else
+                                                  "admin-global-key", "admin-history", "admin-model-key")) else
                     760 if html.stem == "privacy" else 600,
                     # A modal covers the whole window, so the page cannot be trimmed to its content.
                     720 if html.stem in ("admin-global-key-modal", "admin-user-modal", "admin-delete-modal",
                                          "admin-user-reset-modal", "admin-password-modal", "admin-tasks") else
+                    860 if html.stem == "admin-model-key-modal" else
                     # A wide window, where the signed-in box sits beside the card; only the top is kept.
-                    240 if html.stem == "admin-signed-in" else None)
+                    240 if html.stem == "admin-signed-in" else
+                    700 if html.stem == "admin-server-panel" else None)
             print(f"worker/{html.stem}.png")
         for stem in ("admin-dashboard", "admin-users"):
             capture_phone(chrome, profile, html_dir / "worker" / f"{stem}.html", args.out / "worker" / f"{stem}-phone.png",

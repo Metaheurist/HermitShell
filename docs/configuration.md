@@ -27,7 +27,7 @@ Resolution order:
 
 | Setting | Order |
 | --- | --- |
-| Model | `JOB_SCANNER_MODEL` (or `COVER_LETTER_MODEL`) → `OLLAMA_MODEL` → `qwen3:4b-instruct-2507-q4_K_M` |
+| Model | `JOB_SCANNER_MODEL` (or `COVER_LETTER_MODEL`) → `OLLAMA_MODEL` → the model that fits the machine ([autofit](#autofit-gpu-cpu-and-context-chosen-for-you)) → `qwen3:4b-instruct-2507-q4_K_M` |
 | Host | `OLLAMA_HOST` → `OLLAMA_FALLBACK_HOST` (`http://localhost:11434`) → `http://ollama:11434` (a container named `ollama`) → `http://host.docker.internal:11434` (Ollama on the Docker host) |
 | Context | `OLLAMA_NUM_CTX` for `OLLAMA_MODEL`, else chosen by [autofit](#autofit-gpu-cpu-and-context-chosen-for-you) |
 
@@ -77,6 +77,30 @@ docker exec hermitshell python3 autofit.py --calibrate  # load each size once
 `doctor.py` also says where the model runs, for example `qwen3:4b: loaded at 8192 context, 94% on
 the GPU, the rest on the CPU`, and warns when a machine with a GPU runs the model on the CPU.
 
+- **The model that fits.** With no `OLLAMA_MODEL`, autofit picks the model to download from the
+  GPU's memory or the machine's RAM: `qwen2.5:1.5b-instruct` below 6 GB of RAM and 4 GB of VRAM, the
+  default `qwen3:4b-instruct-2507-q4_K_M` up to 48 GB of RAM or 24 GB of VRAM, and
+  `qwen3:30b-a3b-instruct-2507-q4_K_M` (a mixture of experts, quick on a CPU for its size) above.
+  `doctor.py --fix` downloads it and the scripts prefer it; see [Ollama](api-keys.md#ollama).
+
+### Cloud models
+
+With a key for OpenRouter, BazaarLink, Featherless or Hugging Face (`llm_providers.py`), every model
+request goes to those providers first, in `LLM_PROVIDERS` order, and to Ollama when none of them
+answers; `LLM_ORDER=local` asks Ollama first. Cloud requests skip the shared queue (they don't load
+Ollama). A provider that is out of credits (HTTP 402) or over its daily limit rests until midnight
+UTC, one that rejects its key (401/403) for six hours, and one that is rate limited or down for a few
+minutes (a `Retry-After` of up to an hour is honoured). Replies meant to be JSON are asked for as
+structured output, and again with the schema in the prompt when a model doesn't support that; a reply
+that still isn't valid JSON goes to the next provider. When no Ollama answers at all, the scripts
+run on the cloud alone and `doctor.py` warns instead of failing.
+
+`state/llm_providers.json` keeps each provider's rest and why, its requests today and the model that
+answered last, never a key or a prompt. `python3 llm_providers.py` prints the same. The dashboard's
+Global settings shows each key's usage (`key_usage.py`, every `WEB_KEY_USAGE_MINUTES`), and the admin's
+server button the machine, the models in order and the last one that answered. Keys and setup:
+[Cloud models](api-keys.md#cloud-models).
+
 ## Shared settings
 
 Full template: [`.env.example`](../.env.example).
@@ -101,6 +125,10 @@ Full template: [`.env.example`](../.env.example).
 | `OLLAMA_HOSTS` | none | Extra Ollama servers, comma-separated (`http://ollama-gpu1:11435`). Only `http(s)://host:port`, no logins or paths |
 | `HERMES_AUTOFIT` | `auto` | `off` sends the model settings unchanged, with no context, GPU or thread tuning. See [Autofit](#autofit-gpu-cpu-and-context-chosen-for-you) |
 | `HERMES_AUTOFIT_THREADS` | automatic | Fixed CPU threads per model request (`num_thread`), instead of timing both settings |
+| `OPENROUTER_API_KEY` / `BAZAARLINK_API_KEY` / `FEATHERLESS_API_KEY` / `HUGGINGFACE_API_KEY` | none | Cloud model keys, for servers that can't run Ollama. See [Cloud models](#cloud-models) |
+| `OPENROUTER_MODEL` / `BAZAARLINK_MODEL` / `FEATHERLESS_MODEL` / `HUGGINGFACE_MODEL` | `openrouter/free` / `auto:free` / `Qwen/Qwen2.5-7B-Instruct` / `openai/gpt-oss-20b:cheapest` | Each provider's model |
+| `LLM_PROVIDERS` | `openrouter,bazaarlink,featherless,huggingface` | The order the cloud providers are asked in |
+| `LLM_ORDER` | `cloud` | `cloud` asks the cloud providers first and Ollama when none answers; `local` asks Ollama first |
 | `HERMES_TIMEZONE` | `UTC` | IANA timezone for dates shown in emails and for the schedules |
 | `HERMES_STATE_DIR` | `<scripts>/state` | Seen-state, caches and last reports |
 | `HERMITSHELL_HOME` | parent of the scripts directory | HermitShell's home: `.env`, the schedule, backups. `/data` in the container. Environment only (`HERMES_HOME` is still read) |

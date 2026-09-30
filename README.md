@@ -7,7 +7,8 @@
 
 A self-hosted job-finder automation platform that runs on any Linux server, as a container or a service.
 Every morning it searches the web for jobs in your region, has a local model (Ollama) score each one against
-your CV, and emails you the best matches. Buttons in the email teach it what you like, write cover letters and tailored CVs on
+your CV, and emails you the best matches. A server that can't run a model can use a cloud one instead
+(OpenRouter, BazaarLink, Featherless or Hugging Face), with Ollama as the fallback. Buttons in the email teach it what you like, write cover letters and tailored CVs on
 request, and remind you to follow up. One server can run it for other people too, each with
 their own CV, searches and reports.
 
@@ -112,7 +113,10 @@ it by hand with wrangler or the Cloudflare MCP.
 
 ```
 common/hermes_common.py    shared plumbing: .env loading, model discovery, web providers, SMTP, encryption
-common/autofit.py          picks GPU or CPU, context size, threads and Ollama server per model request
+common/autofit.py          picks the model size for the machine, and GPU or CPU, context size, threads and Ollama
+                           server per model request
+common/llm_providers.py    cloud models (OpenRouter, BazaarLink, Featherless, Hugging Face) tried in turn before or
+                           after Ollama, resting a provider that is out of credits
 common/doctor.py           checks and sets up prerequisites: packages, scheduler, Ollama and its model, data key
 common/scheduler.py        runs each script on its cron schedule (the service, or a tick from cron)
 common/tests/              unit tests for the shared library, the scheduler and the doctor
@@ -149,13 +153,17 @@ job runs one of them.
   sets each person's report time through it.
 - **Runs anywhere.** One image for amd64 and arm64, read-only and unprivileged, updated by the server itself;
   or a hardened systemd service on any Linux server.
-- **Fits the model to the machine.** Autofit gives each request the context it needs, keeps as
+- **Fits the model to the machine.** Without a model set, it picks the size the machine can run
+  (a 30B model with 24 GB of GPU memory or 48 GB of RAM, 4B for most, 1.5B on small servers). Autofit gives each request the context it needs, keeps as
   much of the model on the GPU as fits, uses every CPU thread when that's faster, and spreads job
   ratings over every Ollama server. It steps down when memory runs out and back up when it's safe.
   See [docs/configuration.md](docs/configuration.md#autofit-gpu-cpu-and-context-chosen-for-you).
 - **One model queue for everyone.** Every profile's ratings, cover letters, tailored CVs and
   sign-ups share one queue, so each Ollama server gets one request at a time however many people
   you run it for, with requests someone is waiting on served first.
+- **Cloud models when there's no GPU.** Add an OpenRouter, BazaarLink, Featherless or Hugging Face key
+  on the dashboard and it asks them in turn, resting one that runs out of credits until the next day
+  and falling back to Ollama. See [docs/api-keys.md](docs/api-keys.md#cloud-models).
 - **Web provider failover.** Firecrawl comes first (with extra backup keys when credits run
   low), then Tavily and Scrapfly. See [docs/web-providers.md](docs/web-providers.md).
 - **Email that survives Gmail.** Table layout, inline CSS, PNG icons sent as inline attachments,
@@ -180,7 +188,8 @@ job runs one of them.
   them, and `doctor.py --fix` installs any that are missing
   ([prerequisites](docs/installation.md#3-check-the-prerequisites)).
 - An Ollama model. A 4B instruct model such as `qwen3:4b-instruct-2507` works well on a CPU. The
-  wizard can start an Ollama container and download the model for you.
+  wizard can start an Ollama container and download the model that suits the machine. Or, without
+  one, a key for a cloud model: OpenRouter and BazaarLink have free models with daily limits.
 - An SMTP account, such as a Gmail App Password.
 - An API key for at least one of [Firecrawl](https://firecrawl.dev),
   [Tavily](https://tavily.com) or [Scrapfly](https://scrapfly.io). All three have free tiers.

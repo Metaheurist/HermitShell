@@ -1,7 +1,8 @@
 # Accounts and API keys
 
 Everything HermitShell uses has a free plan. You need an email account to send from, one web search
-key, and Ollama where HermitShell can reach it. Cloudflare is optional but gives you the buttons, the sign-up
+key, and Ollama where HermitShell can reach it, or a [cloud model](#cloud-models) key when the server can't
+run one. Cloudflare is optional but gives you the buttons, the sign-up
 links and the `/admin` dashboard where all of the keys below can be entered.
 
 | Service | Needed? | What for | Free plan (checked September 2026) | Where it goes |
@@ -11,7 +12,11 @@ links and the `/admin` dashboard where all of the keys below can be entered.
 | [Firecrawl](#firecrawl) | One search key is | Web search and reading job pages | 1,000 credits a month, 2 requests at a time, no card | Global settings → Web search API keys |
 | [Tavily](#tavily) | Optional | Second search provider when Firecrawl fails or runs out | 1,000 credits a month, no card | Global settings → Web search API keys |
 | [Scrapfly](#scrapfly) | Optional | Reading pages that block ordinary requests | 1,000 credits when you sign up, no card | Global settings → Web search API keys |
-| [Ollama](#ollama) | Yes | The model that rates jobs and writes letters, on your own machine | Free and open source | Set up by the wizard |
+| [Ollama](#ollama) | Yes, unless a cloud model key is set | The model that rates jobs and writes letters, on your own machine | Free and open source | Set up by the wizard |
+| [OpenRouter](#openrouter) | Optional | A cloud model for servers that can't run Ollama | Free models: 20 requests a minute, 50 a day (1,000 a day once you have bought $10 of credits) | Global settings → AI model API keys |
+| [BazaarLink](#bazaarlink) | Optional | Another cloud model router | Free `auto:free` router with a daily limit | Global settings → AI model API keys |
+| [Featherless](#featherless) | Optional | Open models with a flat monthly price, prompts not logged | Paid plans only | Global settings → AI model API keys |
+| [Hugging Face](#hugging-face) | Optional | Open models through Hugging Face's inference providers | $0.10 of credit a month ($2 with PRO) | Global settings → AI model API keys |
 
 Free plans change: check each pricing page before relying on the numbers. Keys and passwords typed
 on `/admin` wait in the Worker only until HermitShell picks them up (within minutes; they expire after
@@ -107,14 +112,81 @@ wizard sets it up: when no Ollama server answers and Docker is there, it starts 
 `ollama/ollama` container next to HermitShell (with the GPU when there is one) and downloads the model.
 To do it by hand, see [Check the prerequisites](installation.md#3-check-the-prerequisites).
 
-The default model, `qwen3:4b-instruct-2507-q4_K_M`, is about 2.5 GB and runs on a CPU; about 8 GB
-of free memory is comfortable. With a GPU, a larger model such as `qwen3:8b` rates jobs more
-carefully (set `OLLAMA_MODEL`, then run `python3 doctor.py --fix`).
+Unless `OLLAMA_MODEL` is set, `doctor.py --fix` downloads the model that fits the machine
+(`autofit.suggested_model()`):
+
+| Machine | Model | Download |
+| --- | --- | --- |
+| A GPU with 24 GB, or 48 GB of RAM | `qwen3:30b-a3b-instruct-2507-q4_K_M` (a mixture of experts, quick on a CPU for its size) | about 18.6 GB |
+| A GPU with 4 GB, or 6 GB of RAM | `qwen3:4b-instruct-2507-q4_K_M` (the default) | about 2.5 GB |
+| Less | `qwen2.5:1.5b-instruct` | about 1 GB |
+
+The scripts prefer that model when Ollama has it, and otherwise use whichever of the others it has.
+`HERMES_AUTOFIT=off` always picks the default.
+
+## Cloud models
+
+For a server that can't run a model (a small VPS, a Raspberry Pi), HermitShell can send each request
+to a cloud model instead. Add a key on the **Global settings** tab under **AI model API keys** (or in
+`.env`). With **Cloud first** (the default) the providers with a key are asked in order (OpenRouter,
+BazaarLink, Featherless, Hugging Face, or `LLM_PROVIDERS`), and the local Ollama answers when none has
+a key or credits left. **Local first** (`LLM_ORDER=local`) asks Ollama first and the cloud only when
+Ollama doesn't answer, so the cloud covers for a machine that is off or busy.
+
+A provider that runs out of credits or reaches its daily limit rests until midnight UTC; one that
+rejects its key rests for six hours, and one that is down or rate limited for a few minutes. Each
+provider's row shows its model, whether it is resting and why, the requests it answered today and,
+pressed, what is left of its allowance (OpenRouter's free requests today or dollars, BazaarLink's
+dollars, Featherless' and Hugging Face's plan). Press **Change** to set another model; blank keeps the
+current one.
+
+**Privacy.** A cloud model is sent each recruit's CV and the job adverts it is rated against. Free
+models on OpenRouter and BazaarLink may keep what they are sent; Featherless doesn't log prompts.
+The [privacy notice](../PRIVACY.md) says so. Keep Ollama as the main model where you can.
+
+### OpenRouter
+
+1. Sign up at [openrouter.ai](https://openrouter.ai) and open [Keys](https://openrouter.ai/settings/keys).
+2. Press **Create key** and copy it (it starts with `sk-or-`).
+3. Paste it on **Global settings** → **AI model API keys** → OpenRouter.
+
+The default model, `openrouter/free`, picks a free model for each request. Free models allow 20
+requests a minute and 50 a day, or 1,000 a day once you have bought $10 of credits. Each job a report
+rates is one request, so the free 50 cover about one recruit's report a day, with Ollama taking the
+rest. Set another model (for example `meta-llama/llama-3.3-70b-instruct:free`, or a paid one) with
+**Change** or `OPENROUTER_MODEL`.
+
+### BazaarLink
+
+1. Sign up at [bazaarlink.ai](https://bazaarlink.ai) and open **API Keys**.
+2. Create a key (it starts with `sk-bl-`) and paste it under BazaarLink.
+
+The default model, `auto:free`, routes to a free model with a daily limit; credits unlock paid
+models (`BAZAARLINK_MODEL`).
+
+### Featherless
+
+1. Sign up at [featherless.ai](https://featherless.ai), choose a plan and copy your API key.
+2. Paste it under Featherless.
+
+Plans are paid, with no per-request charge within the plan's model size and concurrency, and prompts
+are not logged. The default model is `Qwen/Qwen2.5-7B-Instruct` (`FEATHERLESS_MODEL`).
+
+### Hugging Face
+
+1. Sign in at [huggingface.co](https://huggingface.co) and open [Access tokens](https://huggingface.co/settings/tokens).
+2. Create a **fine-grained** token with **Make calls to Inference Providers** and copy it (it starts
+   with `hf_`).
+3. Paste it under Hugging Face.
+
+Free accounts get $0.10 of inference credit a month and PRO accounts $2. The default model,
+`openai/gpt-oss-20b:cheapest`, runs on whichever provider is cheapest (`HUGGINGFACE_MODEL`).
 
 ## Keys in .env instead
 
 Everything above can also go in HermitShell's `.env`, for example when there's no Cloudflare
 Worker: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `FIRECRAWL_API_KEY`,
-`FIRECRAWL_BACKUP_KEYS`, `TAVILY_API_KEY` and `SCRAPFLY_API_KEY`
+`FIRECRAWL_BACKUP_KEYS`, `TAVILY_API_KEY`, `SCRAPFLY_API_KEY`, `OPENROUTER_API_KEY`, `BAZAARLINK_API_KEY`,
+`FEATHERLESS_API_KEY` and `HUGGINGFACE_API_KEY` (each with a `_MODEL`)
 ([all settings](configuration.md)). Values saved on `/admin` take priority over `.env`; each
 section's "use the .env ..." button goes back to the `.env` value.

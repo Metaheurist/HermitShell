@@ -8,8 +8,33 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Cloud AI models for servers that can't run one.** OpenRouter, BazaarLink, Featherless and Hugging Face
+  (all OpenAI-compatible) can rate jobs and write letters and CVs instead of, or before, the local Ollama
+  (`common/llm_providers.py`). Keys and models are added on Global settings under **AI model API keys**,
+  like the web search keys (a row and icon per provider, a window to paste the key and an optional model,
+  **Use the .env key**), or in `.env` (`OPENROUTER_API_KEY`, `BAZAARLINK_API_KEY`, `FEATHERLESS_API_KEY`,
+  `HUGGINGFACE_API_KEY` and their `_MODEL`s, `LLM_PROVIDERS` for the order). Defaults are free or cheap models
+  (`openrouter/free`, `auto:free`, `Qwen/Qwen2.5-7B-Instruct`, `openai/gpt-oss-20b:cheapest`). Providers
+  are asked in turn and Ollama is used when none has a key or credits left; **Local first**
+  (`LLM_ORDER=local`) turns that round. A provider that is out of credits or at its daily limit rests
+  until the next UTC day, a rejected key for six hours and a rate limit for its Retry-After (at most an
+  hour). Replies must be the JSON asked for (a JSON schema, or the schema in the prompt when a model
+  refuses one), `<think>` blocks are dropped, and redirects are never followed. Each row shows what is
+  left (OpenRouter's free requests today or credit, BazaarLink's credits, Featherless's plan, Hugging
+  Face's account), the model and whether it is ready or resting. `doctor.py` only warns about a missing
+  Ollama or model while a cloud key is set. The privacy notice says CVs and adverts go to the chosen
+  service and that free models may keep them.
+- **The local model fits the machine.** Without `OLLAMA_MODEL` or `JOB_SCANNER_MODEL`, autofit picks
+  `qwen3:30b-a3b-instruct-2507-q4_K_M` with 24 GB of GPU memory or 48 GB of RAM, `qwen3:4b-instruct-2507`
+  from 4 GB of GPU memory or 6 GB of RAM, and `qwen2.5:1.5b-instruct` below that. `doctor.py --fix`
+  downloads that size and says how big it is.
+- **Server panel for admins.** A server button beside the key button and **Sign out** opens, on hover
+  or keyboard focus (no JavaScript), the machine HermitShell runs on (CPU and load, memory, GPUs, disk,
+  with bars), the models in the order they are asked with their state, and which one gave the last
+  answer. HermitShell adds the machine and models to its status; they don't count as a change, so the
+  Worker's KV writes stay within the free plan.
 - **Playwright browser tests and workflow.** A new **Playwright** workflow (`.github/workflows/playwright.yml`)
-  runs 26 Chromium tests of the feedback Worker's pages on every push and pull request (`e2e/`, `npm run e2e`).
+  runs 30 Chromium tests of the feedback Worker's pages on every push and pull request (`e2e/`, `npm run e2e`).
   The Worker runs locally under `wrangler dev` with fictional recruits and throwaway secrets, so no Cloudflare
   account is needed. They cover sign-in and sign-out, search, the dashboard tabs, a recruit's Manage and History
   tabs, saving, Send jobs now, pausing, email buttons, invite sign-up, recruiters and their access, phone and

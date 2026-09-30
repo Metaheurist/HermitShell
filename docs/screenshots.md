@@ -349,6 +349,9 @@ buttons. On a phone everything is in one column.
 | Invite someone + recruiter list + **Create invite link** | Makes a one-time `/join` link; the note is only for you. Admins pick whose recruit the person becomes; a recruiter's invites join their own pool |
 | **Revoke** | Cancels an unused invite |
 | Badge + key + **Sign out** (top right) | Your initials, name and roles, on every dashboard page (just the initials, above the page, on narrower windows, and on Recruits and Users and roles below 1860px). The key button opens **Change password**: your current password and the new one twice; you stay signed in here and are signed out everywhere else. For the main admin it shows the `wrangler secret put ADMIN_PASSWORD` command instead. Signing out ends that user's sessions |
+| Server button (admins only, before the key) | Pointed at or tabbed to, opens a panel with the machine HermitShell runs on (CPU and load, memory, each GPU and the disk, with bars that turn amber from 70% and red from 90%), the AI models in the order they are asked with their model and state, the last answer and **Model settings** |
+
+<img src="images/worker/admin-server-panel.png" alt="The server panel open under the server button: CPU, memory, GPU and disk bars, then OpenRouter, Hugging Face and the local Ollama in order" width="760">
 
 <img src="images/worker/admin-delete-modal.png" alt="Deleting a recruit: the confirm window with the CV and history tick box" width="380">
 
@@ -422,9 +425,9 @@ Applied…) are never listed and can't be cancelled here.
 
 ### Global settings
 
-`/admin/settings`: the email server and web search keys every recruit uses.
+`/admin/settings`: the email server, web search keys and AI models every recruit uses.
 
-<img src="images/worker/admin-settings.png" alt="Global settings: email server and web search API keys" width="620">
+<img src="images/worker/admin-settings.png" alt="Global settings: email server, web search and AI model API keys" width="620">
 
 | Control | What it does |
 | --- | --- |
@@ -442,6 +445,17 @@ Applied…) are never listed and can't be cancelled here.
 
 Keys are shown only as `fc-...1234`. Keys typed here are removed from the Worker after 2 days if
 HermitShell hasn't collected them.
+
+<img src="images/worker/admin-settings-models.png" alt="AI model API keys: OpenRouter opened to its free requests left today, BazaarLink, Featherless and Hugging Face, the local Ollama and Cloud first or Local first" width="620">
+
+| Control | What it does |
+| --- | --- |
+| AI model API keys | One row per cloud provider (OpenRouter, BazaarLink, Featherless, Hugging Face) with its icon: **set here** or **from .env**, the start and end of the key, what is left, the model and whether it is **ready**, how many requests it answered today or why it is **resting** (out of credits, daily limit reached, key rejected). Pressed, it opens the key's usage like a web search key. Without a key, what the provider offers and **get a key** |
+| **Add key** / **Change** | Opens a window to pick the provider, paste its key and, optionally, a model; blank keeps the current key or model |
+| **Local Ollama** | The model the local Ollama runs, where it last ran, the model that suits the machine when that differs, and whether it is asked first or is the fallback |
+| **Cloud first** / **Local first** + **Save order** | Cloud first asks the providers with a key in turn and Ollama when none has a key or credits left; Local first uses the cloud only when Ollama doesn't answer |
+
+<img src="images/worker/admin-model-key-modal.png" alt="The AI model key window: OpenRouter, BazaarLink, Featherless or Hugging Face, the API key and an optional model" width="420">
 
 ### A recruit's page
 

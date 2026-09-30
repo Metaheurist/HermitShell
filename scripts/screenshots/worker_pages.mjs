@@ -140,6 +140,22 @@ const STATUS = {
     tavily: { source: "dashboard", hint: "tvly...8c1e", keys: [{ hint: "tvly...8c1e", role: "main", at: now - 18 * 60000,
       usage: { used: 412, limit: 1000, left: 588, plan: "Researcher", resets: "" } }] },
     scrapfly: { source: "none", hint: "" } },
+  models: {
+    openrouter: { source: "dashboard", hint: "sk-...7f2a", model: "openrouter/free", resting_until: null, why: "", today: 38, failed: 1,
+      last_ok: now - 6 * 60000, keys: [{ hint: "sk-...7f2a", role: "main", at: now - 18 * 60000,
+        usage: { used: 38, limit: 1000, left: 962, plan: "Free models", resets: new Date(now + day).toISOString().slice(0, 10), unit: "requests" } }] },
+    bazaarlink: { source: "none", hint: "", model: "auto:free", resting_until: null, why: "", today: 0, failed: 0, last_ok: null },
+    featherless: { source: "none", hint: "", model: "Qwen/Qwen2.5-7B-Instruct", resting_until: null, why: "", today: 0, failed: 0, last_ok: null },
+    huggingface: { source: "env", hint: "hf_...c9d1", model: "openai/gpt-oss-20b:cheapest", resting_until: now + 5 * 3600000,
+      why: "out of credits", today: 0, failed: 2, last_ok: now - 2 * day, keys: [{ hint: "hf_...c9d1", role: "main", at: now - 18 * 60000,
+        usage: { used: null, limit: null, left: null, plan: "Free", resets: "", unit: "plan" } }] },
+  },
+  llm: { order: "cloud", cloud: ["openrouter", "huggingface"],
+    local: { model: "qwen3:4b-instruct-2507-q4_K_M", suggested: "qwen3:4b-instruct-2507-q4_K_M", where: "8192 context, on the GPU",
+      level: "normal", seconds: 14.2 },
+    last: { provider: "openrouter", model: "meta-llama/llama-3.3-70b-instruct:free", at: now - 6 * 60000 } },
+  server: { cpu: { model: "AMD Ryzen 7 5700G", cores: 16 }, load: 3.4, ram_mb: { total: 32768, available: 19000 },
+    gpus: [{ name: "NVIDIA GeForce RTX 3060", vram_mb: 12288, free_mb: 7400 }], disk_mb: { total: 953000, free: 512000 } },
   problems: [],
   timezone: "Europe/London",
   tasks: [
@@ -281,6 +297,14 @@ await save("admin-settings", await admin("/admin/settings"));
 // Firecrawl's card pressed open: its main and backup keys with what is left of each.
 await save("admin-settings-key-usage", new Response((await (await admin("/admin/settings")).text())
   .replace('<details class="keycard cr-firecrawl">', '<details class="keycard cr-firecrawl" open>')));
+// The AI model keys, OpenRouter's card pressed open, and the modal that adds one.
+await save("admin-settings-models", new Response((await (await admin("/admin/settings")).text())
+  .replace('<details class="keycard cr-openrouter">', '<details class="keycard cr-openrouter" open>')
+  .replace("</head>", "<style>main>:not(.eyebrow):not(h1):not(#models):not(#models~*){display:none!important}</style></head>")));
+await save("admin-model-key-modal", await withOpenModal("/admin/settings", "mkey-openrouter"));
+// The server button's panel, as hovering over it shows it.
+await save("admin-server-panel", new Response((await (await admin("/admin")).text())
+  .replace("</head>", "<style>.me .srv .srvpanel{display:block}</style></head>")));
 await save("admin-stats", await admin("/admin/stats?u=owner"));
 await save("admin-stats-90-days", await admin("/admin/stats?u=owner&r=90"));
 await save("admin-stats-new-profile", await admin("/admin/stats?u=sam-lee&r=7"));
