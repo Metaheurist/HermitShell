@@ -1,5 +1,7 @@
 node_modules/
 .wrangler/
 dist/
+playwright-report/
+test-results/
 .dev.vars
 wrangler.local.jsonc

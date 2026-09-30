@@ -5,10 +5,12 @@
   "description": "Cloudflare Worker behind the Daily Vacancy Report feedback buttons",
   "scripts": {
     "test": "vitest run",
+    "e2e": "playwright test",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "vitest": "^5.0.2",
     "wrangler": "^4.143.0"
   }

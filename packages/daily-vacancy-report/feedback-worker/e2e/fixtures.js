@@ -1,0 +1,67 @@
+// Shared settings and helpers for the Playwright tests. Everything here is made up: the Worker runs locally
+// under `wrangler dev` with these throwaway secrets and an empty local KV.
+
+import { sign, today } from "../src/lib.js";
+
+export const PORT = 8787;
+export const BASE_URL = `http://127.0.0.1:${PORT}`;
+export const LINK_SECRET = "e2e-link-secret";
+export const API_TOKEN = "e2e-api-token";
+export const ADMIN_PASSWORD = "e2e-admin-password";
+export const RECRUITER = { name: "Riley Chen", username: "riley", password: "e2e-recruiter-password" };
+export const JOB_TITLE = "Data Engineer (Python, Airflow) at Northwind Traders";
+
+const DAY = 86400000;
+const JOB = { titles: ["Data Engineer", "Analytics Engineer"], region: "Greater Manchester", places: ["Manchester", "Salford"],
+  country: "gb", remote_anywhere: true, level: "mid", types: ["Permanent"], modes: ["Hybrid", "Remote"], min_salary: "45000",
+  currency: "GBP", hide_agency: true };
+
+function person(id, name, email, location, extra = {}) {
+  const now = Date.now();
+  return { id, name, email, status: "active", has_cv: true, created: now - 30 * DAY, last_run: now - 3 * 3600000,
+    details: { name, email, phone: "", location }, job: JOB,
+    report: { time: "08:00", days: "daily", schedule: "0 8 * * *", job: true, pending: false }, ...extra };
+}
+
+// What HermitShell reports every few minutes (profiles.py), for three fictional recruits.
+export function hermitShellStatus({ samRecruiter = "" } = {}) {
+  return {
+    profiles: [
+      person("owner", "Alex Morgan", "alex.morgan@example.com", "Salford", { owner: true }),
+      person("sam-lee", "Sam Lee", "sam.lee@example.com", "York", { recruiter: samRecruiter }),
+      person("jordan-patel", "Jordan Patel", "jordan.patel@example.net", "Leeds", { status: "paused" }),
+    ],
+    scheduler: true,
+    timezone: "Europe/London",
+    email: { host: "smtp.example.com", port: "587", user: "alex.morgan@example.com", from: "", password_set: true, source: "dashboard" },
+    keys: { firecrawl: { source: "none", hint: "" }, tavily: { source: "none", hint: "" }, scrapfly: { source: "none", hint: "" } },
+    problems: [],
+    tasks: [],
+  };
+}
+
+export async function reportStatus(request, status = hermitShellStatus()) {
+  const res = await request.post("/api/status", { headers: { Authorization: `Bearer ${API_TOKEN}` }, data: status });
+  if (!res.ok()) throw new Error(`/api/status answered ${res.status()}`);
+}
+
+export async function signIn(page, username = "admin", password = ADMIN_PASSWORD) {
+  await page.goto("/admin");
+  await page.getByLabel("Username").fill(username);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+}
+
+// An email button's link, signed the way job_tracker.sign() signs it in HermitShell.
+export async function emailLink(action, title, { job = "job-northwind-data-engineer", profile = "", day = today() } = {}) {
+  const params = { j: job, a: action, n: title };
+  if (profile) params.u = profile;
+  params.d = String(day);
+  params.t = await sign(LINK_SECRET, job, action, title, "", profile, params.d);
+  return `/f?${new URLSearchParams(params)}`;
+}
+
+// A document's width beyond its window, in pixels; 0 when nothing scrolls sideways.
+export function sidewaysOverflow(page) {
+  return page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+}

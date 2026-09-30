@@ -15,6 +15,10 @@ requirements-dev.txt
 scripts/screenshots
 packages/*/feedback-worker/package*.json
 packages/*/feedback-worker/vitest.config.*
+packages/*/feedback-worker/playwright.config.*
+packages/*/feedback-worker/e2e
+**/playwright-report
+**/test-results
 .env
 **/.env
 data
