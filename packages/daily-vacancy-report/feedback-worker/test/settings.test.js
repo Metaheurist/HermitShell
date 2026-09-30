@@ -291,6 +291,24 @@ describe("profile page", () => {
     expect(body).toContain('enctype="multipart/form-data"');
   });
 
+  it("offers the currency as a list, opening an old symbol setting on its code", async () => {
+    const { get } = await setup();
+    const { body } = await get("/admin/profile?u=sam-lee");
+    expect(body).toContain('<select id="currency" name="currency"><option value="">As advertised</option>');
+    expect(body).toContain('<option value="GBP" selected>£ Pound sterling (GBP)</option>');
+    expect(body).toContain('<option value="CAD">C$ Canadian dollar (CAD)</option>');
+    expect(body).not.toContain('<input id="currency"');
+    expect(body).toContain("converted to this one at the day&#39;s exchange rate");
+  });
+
+  it("queues a picked currency, and one that isn't offered as salaries as advertised", async () => {
+    const { env, get, act } = await setup();
+    await save(get, act, "owner", { currency: "EUR" });
+    await save(get, act, "sam-lee", { currency: "<script>alert(1)</script>" });
+    expect(valuesWith(env, "queue:").map((i) => [i.u, i.job])).toEqual([["owner", { currency: "EUR" }], ["sam-lee", { currency: "" }]]);
+    expect((await get("/admin/profile?u=owner")).body).toContain('<option value="EUR" selected>');
+  });
+
   it("is not found for a profile HermitShell hasn't reported", async () => {
     const { get } = await setup();
     expect((await get("/admin/profile?u=casey-quinn")).res.status).toBe(404);

@@ -119,6 +119,18 @@ describe("stats page", () => {
     });
   });
 
+  it("shows the median salary with the profile's currency symbol and icon", async () => {
+    const withCurrency = (currency) => ({ ...STATUS, profiles: [{ ...STATUS.profiles[0], job: { currency } }] });
+    const pound = await statsPage(STATUS, sample(), "owner", "30").text();
+    expect(pound).toMatch(/<svg [^>]*>[^<]*<path d="M3\.85[^"]*"\/><path d="M8 12h4M10 16V9\.5[^"]*"\/><\/svg>Median salary <b>£52k/);
+    const euro = await statsPage(withCurrency("EUR"), sample(), "owner", "30").text();
+    expect(euro).toMatch(/<path d="M7 12h5M15 9\.4[^"]*"\/><\/svg>Median salary <b>€52k/);
+    const plain = await statsPage(withCurrency(""), sample(), "owner", "30").text();
+    expect(plain).toMatch(/<rect width="20" height="12"[^>]*\/>.*<\/svg>Median salary <b>52k/);
+    const odd = await statsPage(withCurrency("<b>"), sample(), "owner", "30").text();
+    expect(odd).toContain("Median salary <b>52k");
+  });
+
   it("falls back to 30 days for an unknown range and has no arrows without earlier data", async () => {
     const body = await statsPage(STATUS, { ...sample(), since: daysAgo(3) }, "owner", "9999").text();
     expect(body).toContain('aria-current="page">30 days');
@@ -205,6 +217,18 @@ describe("jobs sent page", () => {
       expect(body).toContain(part);
     }
     expect(body).toContain("Salary not listed");
+  });
+
+  it("draws each salary's icon from its own symbol, else the profile's currency", async () => {
+    const s = sample();
+    s.sent[1] = { ...s.sent[1], salary: "C$90,000 a year" };
+    s.sent[2] = { ...s.sent[2], salary: "55,000 a year" };
+    const body = await sentOf(s, "sam-lee", { range: "7" });
+    const icons = [...body.matchAll(/<div class="salary"><svg [^>]*>(.*?)<\/svg><b>([^<]*)<\/b>/g)].map((m) => [m[2], m[1]]);
+    expect(icons.map(([t]) => t)).toEqual(["£55,000", "C$90,000 a year", "55,000 a year"]);
+    expect(icons[0][1]).toContain("M8 12h4M10 16V9.5");
+    expect(icons[1][1]).toContain("M16 8h-6a2 2 0 1 0 0 4h4");
+    expect(icons[2][1]).toContain("M8 12h4M10 16V9.5");
   });
 
   it("draws its arrows as icons, never as arrow characters", async () => {

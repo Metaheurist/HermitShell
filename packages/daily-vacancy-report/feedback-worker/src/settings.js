@@ -4,6 +4,7 @@
 // it; saving only queues the change, which profiles.py validates again and applies, within seconds over the live link.
 
 import { COUNTRIES, countryCode } from "./countries.js";
+import { CURRENCIES, currencyCode, currencySymbol } from "./currency.js";
 import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem } from "./join.js";
 import { BACK_TO_RECRUITS, CSP, SECURITY_HEADERS, ago, esc, limitedForm, newId, note, page, redirect, safeEqual, when } from "./lib.js";
 import { KEY_STYLE, MODAL_STYLE, PROVIDERS, keyModals, keysSection } from "./keys.js";
@@ -143,6 +144,11 @@ function hint(text) {
   return `<span class="hint">${esc(text)}</span>`;
 }
 
+function currencySelect(current) {
+  return `<select id="currency" name="currency"><option value="">As advertised</option>${CURRENCIES.map(([c, s, name]) =>
+    `<option value="${c}"${c === current ? " selected" : ""}>${esc(`${s} ${name} (${c})`)}</option>`).join("")}</select>`;
+}
+
 function countrySelect(current) {
   const code = countryCode(current);
   return `<select id="country" name="country"><option value="">Any country</option>${COUNTRIES.map(([c, name]) =>
@@ -200,7 +206,7 @@ export function profileValues(src = {}) {
     level: LEVELS.includes(level) ? level : "any",
     types: EMPLOYMENT_TYPES.filter((t) => items(src.types, 10, 20).includes(t)),
     modes: WORK_MODES.filter((m) => items(src.modes, 5, 20).includes(m)),
-    min_salary: salary(src.min_salary), currency: tidy(src.currency, 4), hide_agency: src.hide_agency === true,
+    min_salary: salary(src.min_salary), currency: currencyCode(tidy(src.currency, 4)), hide_agency: src.hide_agency === true,
     report_time: TIME_RE.test(String(src.report_time ?? "")) ? String(src.report_time) : "",
     report_days: src.report_days === "weekdays" ? "weekdays" : "daily",
   };
@@ -276,6 +282,7 @@ export function profileChange(p, queue, form) {
 
 function shown(key, value) {
   if (key === "min_salary" && value === "0") return "no minimum";
+  if (key === "currency") return value ? `${currencySymbol(value)} (${value})` : "as advertised";
   if (key === "report_days") return REPORT_DAYS.find(([d]) => d === value)?.[1] || value;
   if (key === "country") return COUNTRIES.find(([c]) => c === value)?.[1] || "any country";
   if (Array.isArray(value)) return value.join(", ") || "none";
@@ -341,7 +348,7 @@ ${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
 <label class="check"><input type="checkbox" name="remote_anywhere" value="1"${checked(v.remote_anywhere)}> <span>Include fully remote jobs based anywhere</span></label>
 <div class="grid2"><div><label for="level">Seniority</label>${select("level", LEVELS, v.level)}</div>
 <div><label for="min_salary">Minimum salary</label><input id="min_salary" name="min_salary" value="${esc(v.min_salary === "0" ? "" : v.min_salary)}" maxlength="12" placeholder="No minimum" inputmode="decimal">${hint("For example 45000 or 45k. Jobs that don't show a salary are always included.")}</div>
-<div><label for="currency">Currency</label><input id="currency" name="currency" value="${esc(v.currency)}" maxlength="4" placeholder="£">${hint("The symbol adverts use, such as £, € or $.")}</div></div>
+<div><label for="currency">Currency</label>${currencySelect(v.currency)}${hint("Salaries in other currencies are converted to this one at the day's exchange rate, and the minimum is in it. As advertised leaves them as they are.")}</div></div>
 <label>Employment types</label>${boxes("types", EMPLOYMENT_TYPES, v.types)}
 <label>Work location</label>${boxes("modes", WORK_MODES, v.modes)}
 <label class="check"><input type="checkbox" name="hide_agency" value="1"${checked(v.hide_agency)}> <span>Hide agency adverts that don't name the employer</span></label>

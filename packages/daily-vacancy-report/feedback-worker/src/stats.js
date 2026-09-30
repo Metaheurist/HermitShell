@@ -3,6 +3,7 @@
 // Pages may not run scripts (see CSP), so the charts are inline SVG, the motion is CSS (off for reduced motion)
 // and hovering a bar shows its numbers through the SVG <title>.
 
+import { currencyCode, currencySymbol, moneyIcon } from "./currency.js";
 import { DOC_STYLE, docActions, jobHash, validJobKey } from "./docs.js";
 import { BACK_TO_RECRUITS, EXTERNAL_ICON, ago, esc, page } from "./lib.js";
 
@@ -121,7 +122,10 @@ const ICONS = {
   star: '<path class="beat" d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z" fill="currentColor" fill-opacity=".18"/>',
   chart: '<path d="M4 20h16"/><rect class="grow" x="5.5" y="11" width="3" height="7" rx="1"/><rect class="grow g2" x="10.5" y="6" width="3" height="12" rx="1"/><rect class="grow g3" x="15.5" y="9" width="3" height="9" rx="1"/>',
   bolt: '<path class="beat" d="M13 2.5L5 13.5h6l-1 8 8-11h-6z" fill="currentColor" fill-opacity=".18"/>',
-  coin: '<circle cx="12" cy="12" r="8.5"/><path d="M14.5 8.8c-.6-.8-1.5-1.2-2.6-1.2-1.6 0-2.7.8-2.7 2 0 2.8 5.7 1.6 5.7 4.6 0 1.3-1.2 2.2-2.9 2.2-1.2 0-2.2-.5-2.8-1.3M12 6v1.6M12 16.4V18"/>',
+  coin: '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>',
+  "money-gbp": '<path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="M8 12h4M10 16V9.5a2.5 2.5 0 0 1 5 0M8 16h7"/>',
+  "money-eur": '<path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="M7 12h5M15 9.4a4 4 0 1 0 0 5.2"/>',
+  "money-usd": '<path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 18V6"/>',
 };
 
 export function icon(name, cls = "") {
@@ -196,7 +200,7 @@ function chips(stats, win, now, range, currency) {
     ["bolt", `<b>${compact(now.strong)}</b> strong matches (8+)`],
     ["radar", `<b>${compact(now.runs)}</b> scan${now.runs === 1 ? "" : "s"}`],
     best ? ["chart", `Best ${range === 365 ? "month" : range === 90 ? "week" : "day"} <b>${esc(best.b.name)}</b> (${compact(best.t.sent)} sent)`] : null,
-    salary ? ["coin", `Median salary <b>${esc(currency || "")}${compact(salary)}</b>`] : null,
+    salary ? [moneyIcon("", currency), `Median salary <b>${esc(currencySymbol(currencyCode(currency)))}${compact(salary)}</b>`] : null,
     now.not_for_me ? ["target", `<b>${compact(now.not_for_me)}</b> not for me`] : null,
   ].filter(Boolean);
   return `<div class="chips">${items.map(([ico, html], i) => `<span class="chip" style="animation-delay:${300 + i * 60}ms">${icon(ico)}${html}</span>`).join("")}</div>`;
@@ -382,12 +386,12 @@ function skillChips(label, items, cls) {
 }
 
 // What the job's email card showed, below its title line.
-function jobMore(j, fit, color, today, docs) {
+function jobMore(j, fit, color, today, docs, currency = "") {
   const m = j.more && typeof j.more === "object" && !Array.isArray(j.more) ? j.more : {};
   const chips = [closingPill(m.closing, today), ...[m.type, j.mode, m.seniority].map((v) => text(v, 40)).filter((v) => v && v !== "Unknown")
     .map((v) => `<span class="fact">${esc(v)}</span>`), text(m.published, 30) ? `<span class="fact soft">Posted ${esc(text(m.published, 30))}</span>` : "",
   j.salary ? "" : '<span class="fact soft">Salary not listed</span>'].join("");
-  const salary = text(j.salary, 60) ? `<div class="salary">${icon("coin")}<b>${esc(text(j.salary, 60))}</b></div>` : "";
+  const salary = text(j.salary, 60) ? `<div class="salary">${icon(moneyIcon(j.salary, currency))}<b>${esc(text(j.salary, 60))}</b></div>` : "";
   const meters = [meter("HermitShell fit", fit, 10, color, "/10"), meter("Confidence", percent(m.confidence), 100, "#6366f1", "%"),
     meter("CV keyword match", percent(m.coverage), 100, "#0ea5e9", "%")].join("");
   const why = text(m.reasoning, 600) ? `<p class="why">${esc(text(m.reasoning, 600))}</p>` : "";
@@ -418,7 +422,7 @@ async function sentRow(j, i, ctx) {
   return `<li id="job-${id}" style="animation-delay:${Math.min(i, 12) * 35}ms"><details${ctx.open === id ? " open" : ""}><summary>${
     fit === null ? '<span class="nofit">&ndash;</span>' : ring(fit, 10, { size: 40, color, label: String(fit) })}
 <div class="job"><b>${esc(cut(j.title, 90))}</b><span class="muted">${meta}</span></div><div class="tags">${badge}${source}</div><span class="chev" aria-hidden="true"></span></summary>
-${jobMore(j, fit, color, ctx.today, docs)}</details></li>`;
+${jobMore(j, fit, color, ctx.today, docs, ctx.currency)}</details></li>`;
 }
 
 const SENT_NOTES = {
@@ -446,7 +450,7 @@ export async function sentPage(status, stats, pid, opts = {}) {
   const open = /^[0-9a-f]{16}$/.test(opts.open || "") ? opts.open : "";
   const recipient = p.owner ? "you" : cut(String(p.name || "").trim().split(/\s+/)[0], 40) || "this recruit";
   const ctx = { profile: pid, csrf: opts.csrf || "", docs: opts.docs || [], emailed: opts.emailed || [], recipient,
-    pending: opts.pending || new Set(), today, open, back: `r=${range}${answer ? `&a=${answer}` : ""}` };
+    pending: opts.pending || new Set(), today, open, currency: p.job?.currency, back: `r=${range}${answer ? `&a=${answer}` : ""}` };
   const rows = await Promise.all(shown.map((j, i) => sentRow(j, i, ctx)));
   const byDay = [];
   shown.forEach((j, i) => {
