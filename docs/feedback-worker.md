@@ -767,7 +767,11 @@ opens the [jobs sent](#jobs-sent).
 - **Where applications stand**: every job's latest answer, whatever the period: waiting (applied),
   heard back, rejected and interested, with the reply rate.
 - **Top employers**, **Top sources** (with the split between hybrid, remote and on-site) and the
-  **best matches sent**.
+  **best matches sent**, each with a ring of its score.
+
+Scores share one colour scale on every chart and list: green from 8, amber from 6, orange at 5 and grey
+below. Rings sweep in as the page opens and scores of 8 and over glow; this stops if the browser asks
+for reduced motion.
 
 <table><tr><th>90 days</th><th>Someone who joined last week</th></tr>
 <tr><td><img src="images/worker/admin-stats-90-days.png" alt="The stats page for 90 days" width="360"></td>

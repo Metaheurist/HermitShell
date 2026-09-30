@@ -651,6 +651,14 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Livelier stats page, one colour scale for scores, bigger icons.** Match scores use the same colours
+  everywhere (green from 8, amber from 6, orange at 5, grey below): the best-match rings, the match
+  scores chart and the rings on Jobs sent. Rings sit on a tinted disc, sweep in when the page opens and
+  again on hover, and scores of 8 and over glow gently. Best matches are tinted cards with an accent edge.
+  Each card title has a coloured icon badge, chips have round icons, and the answer colours match the
+  rest of the theme. Icons are larger across the page (tiles, chips, applications), and the header and
+  row buttons on every dashboard page draw their icons at 18px. Motion stops for anyone who asks for
+  reduced motion. Tests cover the scale, ring colours and badges; screenshots updated.
 - **Job cards end with their buttons.** The job's full web address is no longer printed under each card
   in the daily report and job emails; **View job** opens it, and the plain-text version still lists it.
   Email screenshots updated.
@@ -746,6 +754,9 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Score rings drew short.** A ring's dash pattern repeated every 100 plus the score's share, so the
+  part past its starting point fell in the gap and a 9 out of 10 filled about two thirds of the circle.
+  Rings on the stats page and Jobs sent now fill exactly their share, and a test checks the pattern.
 - **View job readable in Gmail.** Gmail painted the purple **View job** button's text in its own link blue
   (#1155cc), which barely showed. The label is now a white span inside the link (`hermes_common.white_label`),
   which Gmail leaves alone, in the daily report and the cover letter and tailored CV emails.
