@@ -40,6 +40,14 @@ describe("pending sign-ups", () => {
     expect(body).not.toContain('id="key-"');
   });
 
+  it("sweeps one shine across the whole row, not a separate one in each cell", async () => {
+    const { env, get } = await setup();
+    await queueItem(env, SIGNUP);
+    const body = await get();
+    expect(body).toMatch(/tr\.pendingrow\{background:linear-gradient\([^}]*animation:sweep/);
+    expect(body).not.toMatch(/tr\.pendingrow td\{[^}]*animation/);
+  });
+
   it("keeps the row until HermitShell reports the profile, then shows the profile instead", async () => {
     const { env, get, report } = await setup();
     await queueItem(env, SIGNUP);

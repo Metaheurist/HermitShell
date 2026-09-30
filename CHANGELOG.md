@@ -816,6 +816,9 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A smooth shine on pending sign-ups.** The glow across a sign-up waiting to be set up (always one in
+  demo mode) was drawn separately in each cell, so it moved at a different speed in every column and
+  showed seams, which looked choppy. It is now one sweep across the whole row.
 - **Saved changes show without a reload.** Adding a key, changing a model or the email server, or
   pausing, resuming, deleting, assigning or sending from the dashboard looked like it did nothing until
   the page was reloaded, because HermitShell applies them a few seconds later. Now the change shows at

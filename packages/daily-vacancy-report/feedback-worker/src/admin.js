@@ -263,7 +263,7 @@ function toggleButton(p, csrf) {
 
 const PENDING_STYLE = `
 .pill.pending{background:#fff7ed;color:#c2410c}.pill.pending::before{animation:blink .8s ease-in-out infinite alternate}
-tr.pendingrow td{background:linear-gradient(90deg,rgba(255,247,237,0),rgba(255,247,237,.7),rgba(255,247,237,0)) 0 0/200% 100%;
+tr.pendingrow{background:linear-gradient(90deg,rgba(255,247,237,0),rgba(255,237,213,.9),rgba(255,247,237,0)) 0 0/200% 100%;
 animation:sweep 2.4s linear infinite}
 tr.pendingrow .avatar{background:linear-gradient(135deg,#fdba74,#fb923c);box-shadow:0 6px 14px -8px rgba(234,88,12,.9)}
 @keyframes sweep{to{background-position:-200% 0}}
