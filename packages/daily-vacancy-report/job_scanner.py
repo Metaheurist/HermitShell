@@ -54,7 +54,8 @@ from hermes_common import (BROWSER_HEADERS, EMAIL_HEAD, STATE_DIR, WebClient, co
                            email_header, env_bool, env_int, first_sentences, html_to_text, inline_images,
                            load_env_file, log, ollama_chat)
 from job_extras import (below_min_salary, closing_date, combined_level, days_left, group_agency_posts,
-                        parse_salary, rating_failed, rating_profile, repost_key, second_opinion, trim_listing,
+                        parse_salary, prescreened_out, rating_failed, rating_profile, repost_key, second_look,
+                        second_opinion, settle_second, trim_listing,
                         triage_titles)
 from job_tracker import (ACTIONS, FOLLOWUP_ACTIONS, Tracker, card_links, prompt_examples, skill_link, skills_text,
                          sync_feedback, unsubscribe_link)
@@ -855,6 +856,22 @@ def gap_tags(gaps: list[str], link: str) -> str:
             f'color:{C_MUTED}">{hint}</span></div><div>{tags}</div>')
 
 
+def second_note(job: dict) -> str:
+    """A line on the card when a second look changed the score."""
+    second = job.get("second_opinion")
+    if second is None or second == job["model_fit"]:
+        return ""
+    if job.get("second_kind") == "doubt":
+        text = (f"Checked twice: the first look was unsure, and a second scored it {second}/10, so the score shown "
+                "is between the two.")
+    elif second < job["model_fit"]:
+        text = (f"Checked twice: a stricter second look scored it {second}/10, so the score shown is the average "
+                "of the two.")
+    else:
+        return ""
+    return f'<div style="font-size:11px;color:{C_MUTED};margin-top:6px">{esc(text)}</div>'
+
+
 def job_card(job: dict, rank: int | None) -> str:
     colour = fit_colour(job["fit"])
     shown = job.get("employer") or job["company"]
@@ -875,10 +892,7 @@ def job_card(job: dict, rank: int | None) -> str:
     if job.get("also_advertised_by"):
         note += (f'<div style="font-size:12px;color:{C_MUTED};margin-top:6px">Also advertised by '
                  f'{esc(", ".join(job["also_advertised_by"]))}.</div>')
-    if job.get("second_opinion") is not None:
-        note += (f'<div style="font-size:11px;color:{C_MUTED};margin-top:6px">Checked twice: a stricter second look '
-                 f'scored it {job["second_opinion"]}/10, so the score shown is the average of the two.</div>'
-                 if job["second_opinion"] < job["model_fit"] else "")
+    note += second_note(job)
     rating = rating_buttons(job.get("actions") or {})
     rating_cell = f'<td width="78" valign="top" style="width:78px;padding-left:10px">{rating}</td>' if rating else ""
     # Salary and tags get a row of their own under the title, beside the thumbs, rather than a column between the
@@ -970,7 +984,8 @@ def report_footer(stats: dict) -> str:
     skipped = [(stats["excluded_location"] if CFG.region_re else 0, "outside the area"),
                (stats["excluded_type"], "wrong type or work mode"), (stats["below_min"], "low fit"),
                (stats.get("excluded_salary"), "low salary"), (stats.get("excluded_closed"), "closed"),
-               (stats.get("reposts"), "reposts"), (stats.get("grouped"), "duplicates")]
+               (stats.get("prescreened"), "no CV keywords"), (stats.get("reposts"), "reposts"),
+               (stats.get("grouped"), "duplicates")]
     run = [esc(stats["model"]), esc(stats["sources"]), esc(stats["web_usage"])]
 
     def line(label: str, parts: list[str]) -> str:
@@ -1188,6 +1203,8 @@ def run(args: argparse.Namespace) -> int:
     def salary_of(text: str) -> dict | None:
         return money.shown_salary(parse_salary(text), salary_currency, fx, CFG.country or "")
     verify_from = env_int("JOB_VERIFY_MIN_FIT", 8)
+    doubt_below = env_int("JOB_VERIFY_BELOW_CONFIDENCE", 60)
+    min_hits = env_int("JOB_PRESCREEN_MIN_KEYWORDS", 1)
 
     try:
         web = WebClient(env_int("JOB_SCANNER_MIN_CREDITS", 40))
@@ -1224,6 +1241,7 @@ def run(args: argparse.Namespace) -> int:
     verdicts = triage_titles(host, model, num_ctx, profile, [c["title"] for _, c in pool]) if pool else []
     ranked, off_target = [], []
     for (rel, c), verdict in zip(pool, verdicts):
+        c["triage"] = verdict
         if verdict == "no" and rel < 3:
             off_target.append(c)
         else:
@@ -1240,11 +1258,11 @@ def run(args: argparse.Namespace) -> int:
     repost_keys: list[str] = []
     texts: dict[str, str] = {}
     results = []
-    excluded_location = excluded_type = below_min = excluded_salary = excluded_closed = reposts = 0
+    excluded_location = excluded_type = below_min = excluded_salary = excluded_closed = reposts = prescreened = 0
 
     def prepare(i: int, job: dict) -> str | dict:
         """Fetch and filter one queued job before the model: "skipped", or what `finish` needs."""
-        nonlocal excluded_location, excluded_type, excluded_salary, excluded_closed, reposts
+        nonlocal excluded_location, excluded_type, excluded_salary, excluded_closed, reposts, prescreened
         facts, text = {}, ""
         if job["source"] == "nijobs.com":
             facts, text = nijobs.job(job["url"]) or ({}, "")
@@ -1298,6 +1316,13 @@ def run(args: argparse.Namespace) -> int:
             excluded_closed += 1
             done.append(job["key"])
             log(f"[{i}/{len(queue)}] skip (closed) {job['title'][:60]}")
+            return "skipped"
+        matched, _ = keyword_match(full_text, cv_kw, other_kw)
+        if prescreened_out(job["text"], matched, len(cv_kw), min_hits,
+                           trusted=job.get("triage") == "yes" or job["key"] in retries):
+            prescreened += 1
+            done.append(job["key"])
+            log(f"[{i}/{len(queue)}] skip (none of your CV keywords in the listing) {job['title'][:60]}")
             return "skipped"
         return {"loc_text": loc_text, "remote_ok": remote_ok, "full_text": full_text, "det_type": det_type,
                 "mode": mode}
@@ -1454,14 +1479,16 @@ def run(args: argparse.Namespace) -> int:
 
     progress("Checking the best matches again", len(queue), len(queue))
     for r in results:
-        if verify_from and r["fit"] >= verify_from:
-            second = second_opinion(host, model, num_ctx, profile, r["title"], texts.get(r["key"], ""),
-                                    r["model_fit"], r["reasoning"])
-            if second is not None:
-                r["second_opinion"] = second
-                if second < r["model_fit"]:
-                    r["fit"] = max(0, r["fit"] - (r["model_fit"] - second + 1) // 2)
-                    log(f"second opinion lowered {r['title'][:50]} to {r['fit']}/10")
+        kind = second_look(r, verify_from, min_score, doubt_below)
+        if not kind:
+            continue
+        second = second_opinion(host, model, num_ctx, profile, r["title"], texts.get(r["key"], ""),
+                                r["model_fit"], r["reasoning"])
+        if second is not None:
+            before = r["fit"]
+            settle_second(r, second, kind)
+            if r["fit"] != before:
+                log(f"second opinion moved {r['title'][:50]} from {before} to {r['fit']}/10")
     below_min += sum(r["fit"] < min_score for r in results)
     results = [r for r in results if r["fit"] >= min_score]
     results.sort(key=lambda r: (r["fit"], r["confidence"], r["coverage"]), reverse=True)
@@ -1490,6 +1517,7 @@ def run(args: argparse.Namespace) -> int:
         "excluded_type": excluded_type, "below_min": below_min, "model": model,
         "min_salary": min_salary, "salary_currency": salary_currency, "excluded_salary": excluded_salary,
         "excluded_closed": excluded_closed, "reposts": reposts, "grouped": grouped, "verify_from": verify_from,
+        "prescreened": prescreened,
         "feedback": bool(fb_url and fb_secret), "unsubscribe": report_unsubscribe_link(),
         "sources": ", ".join(f"{name} {info['found']}" for name, info in health.items()) or "none",
         "web_usage": web.usage(), "cv_added": cv_added,

@@ -324,6 +324,44 @@ def second_opinion(host: str, model: str, num_ctx: int | None, profile: str, tit
         return None
 
 
+PRESCREEN_MIN_LISTING = 1500
+PRESCREEN_MIN_CV_KEYWORDS = 8
+
+
+def prescreened_out(text: str, matched: list[str], cv_keywords: int, min_hits: int, trusted: bool = False) -> bool:
+    """True when a full listing names fewer than `min_hits` of the CV's keywords, so rating it would be wasted.
+
+    Never for a short or snippet-only listing (too little text to judge), a CV with few keywords, or a job the
+    title screen called a clear match (`trusted`); `min_hits` 0 turns it off."""
+    return (min_hits > 0 and not trusted and cv_keywords >= PRESCREEN_MIN_CV_KEYWORDS
+            and len(text) >= PRESCREEN_MIN_LISTING and len(matched) < min_hits)
+
+
+def second_look(job: dict, verify_from: int, min_score: int, doubt_below: int) -> str | None:
+    """Why a rated job gets a second opinion: "high" for a score of `verify_from` or more, "doubt" for a score
+    that would be shown but that the model was unsure of (confidence under `doubt_below`) on a full listing."""
+    if verify_from and job["fit"] >= verify_from:
+        return "high"
+    if doubt_below and not job.get("snippet_only") and job["fit"] >= min_score and job["confidence"] < doubt_below:
+        return "doubt"
+    return None
+
+
+def settle_second(job: dict, second: int, kind: str) -> None:
+    """Apply a second opinion: a high score only ever comes down, by half the gap rounded up; an unsure one
+    moves halfway towards the second score either way, and two close readings make it more certain."""
+    job["second_opinion"], job["second_kind"] = second, kind
+    gap = second - job["model_fit"]
+    if kind == "high":
+        if gap < 0:
+            job["fit"] = max(0, job["fit"] - (1 - gap) // 2)
+        return
+    step = (abs(gap) + 1) // 2
+    job["fit"] = max(0, min(10, job["fit"] + (step if gap > 0 else -step)))
+    if abs(gap) <= 1:
+        job["confidence"] = max(job["confidence"], 70)
+
+
 # --------------------------------------------------------------------------- seen-state rules
 
 def repost_key(title: str, company: str) -> str | None:

@@ -452,6 +452,22 @@ def test_a_match_report_from_a_hostile_map_is_escaped_in_the_email():
     assert all(len(i["need"]) <= evidence.LIMITS["need"] for i in found)
 
 
+@pytest.mark.parametrize("reply, expected", [
+    ('{"fit_score": 99, "reason": "x"}', 10), ('{"fit_score": -5, "reason": "x"}', 0),
+    ('{"fit_score": "ten", "reason": "x"}', None), ('not json', None), ('{"reason": "x"}', None),
+])
+def test_a_hostile_second_opinion_cannot_push_a_score_out_of_range(monkeypatch, reply, expected):
+    import job_extras
+    monkeypatch.setattr(job_extras, "ollama_chat", lambda *a, **k: reply)
+    second = job_extras.second_opinion("http://ollama.invalid", "m", None, "CV", "Job", "text", 6, "why")
+    assert second == expected
+    for kind in ("high", "doubt"):
+        job = {"fit": 6, "model_fit": 6, "confidence": 40}
+        if second is not None:
+            job_extras.settle_second(job, second, kind)
+        assert 0 <= job["fit"] <= 10 and 0 <= job["confidence"] <= 100
+
+
 @POSIX
 def test_backups_are_owner_only_and_encrypted(tmp_path, monkeypatch):
     pytest.importorskip("cryptography")
