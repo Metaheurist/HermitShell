@@ -55,14 +55,6 @@ def job_for(listing: dict, rating: dict | None = None) -> dict:
             "gaps": rating.get("missing_skills", []), "reasoning": rating.get("reasoning", "")}
 
 
-def cv_text(cv: dict) -> str:
-    """Every figure and phrase the tailored CV shows, for the checks."""
-    parts = [cv.get("headline", ""), cv.get("summary", ""), ", ".join(cv.get("skills", []))]
-    parts += [b for role in cv.get("experience", []) for b in role.get("bullets", [])]
-    parts += [p.get("description", "") for p in cv.get("projects", [])]
-    return "\n".join(p for p in parts if p)
-
-
 def run_case(case: dict, data: dict, tasks: tuple[str, ...], model_info, masters: dict,
              evidence_dir: Path | None = None) -> dict:
     cv, listing = data["cvs"][case["cv"]], data["listings"][case["listing"]]
@@ -97,11 +89,13 @@ def run_case(case: dict, data: dict, tasks: tuple[str, ...], model_info, masters
         try:
             if case["cv"] not in masters:
                 masters[case["cv"]] = tailored_cv.build_master(cv["text"], model_info) | {"source_text": cv["text"]}
-            made = tailored_cv.tailored_cv(masters[case["cv"]], job, listing["text"], "", model_info)
+            found = evidence.for_job(model_info, f"{case['cv']}/{case['listing']}", job, cv["text"], listing["text"],
+                                     evidence_dir) if evidence_dir else []
+            made = tailored_cv.tailored_cv(masters[case["cv"]], job, listing["text"], "", model_info, found=found)
         except (RuntimeError, ValueError) as exc:
             out["tailored_cv"] = {"error": str(exc)}
         else:
-            text = cv_text(made)
+            text = tailored_cv.cv_text(made)
             got, missing = writing_checks.coverage(listing["requirements"], text)
             out["tailored_cv"] = {"invented_figures": writing_checks.invented_figures(text, cv["text"]),
                          "coverage": round(len(got) / max(1, len(got) + len(missing)), 2), "missing": missing,

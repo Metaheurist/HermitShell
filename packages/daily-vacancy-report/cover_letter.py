@@ -397,10 +397,13 @@ def make_cv(tracker: Tracker, key: str, note: str, model_info: tuple[str, str, i
     master = tailored_cv.master_cv(lambda: model_info, tracker)
     name = candidate_name(profile_text(tracker)) or "Candidate"
     master |= {"name": name, "contact": env("COVER_LETTER_CONTACT", "") or ""}
-    cv = tailored_cv.tailored_cv(master, job, listing_text(job), note, model_info)
+    listing, profile = listing_text(job), profile_text(tracker)
+    found = evidence.for_job(model_info, key, job, profile, listing) if profile else []
+    cv = tailored_cv.tailored_cv(master, job, listing, note, model_info, found=found)
     pdf = cv_pdf(cv, title=f"CV - {name} - {job_title(job)}")
     filename = file_name(f"CV - {name} - {job_title(job)}")
-    preview = [p for p in (cv["headline"], cv["summary"], "Skills: " + ", ".join(cv["skills"])) if p]
+    preview = [p for p in (cv["headline"], cv["summary"], "Skills: " + ", ".join(cv["skills"]),
+                           *tailored_cv.report_lines(cv.get("match"))) if p]
     path = save_doc(CV_DIR, job, pdf, filename, preview)
     if send and not dry_run:
         email_doc("tailored_cv", job, pdf, filename, preview, note)

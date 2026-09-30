@@ -482,3 +482,26 @@ def test_a_letter_in_another_length_or_tone_is_written_rather_than_reused(kept, 
     assert styles == [("short", "warm", MAP)] and looked == ["k1"] and "made earlier" not in lines[0]
     tracker.add_event("e2", "k1", "cover_letter")
     assert cover_letter.process_pending(tracker, lambda: ("h", "m", None))[0].endswith("(the one made earlier)")
+
+
+def test_a_tailored_cv_uses_the_jobs_evidence_map_and_its_email_says_what_it_covers(setup, tmp_path, monkeypatch):
+    tracker, sent = setup
+    monkeypatch.setattr(cover_letter, "CV_DIR", tmp_path / "cvs")
+    tracker.upsert_job("k1", JOB, emailed=True)
+    tracker.add_event("e1", "k1", "tailored_cv")
+    master = {"headline": "Engineer", "summary": "Engineer building Airflow pipelines and Python services for teams.",
+              "skills": ["Python", "Airflow"], "projects": [], "education": [], "certifications": [],
+              "experience": [{"title": "Engineer", "employer": "Northwind", "start": "", "end": "", "location": "",
+                              "bullets": ["built Airflow pipelines and Python services"]}], "source_text": CV}
+    looked = []
+    monkeypatch.setattr(cover_letter.tailored_cv, "master_cv", lambda factory, tracker: dict(master))
+    monkeypatch.setattr(cover_letter.evidence, "for_job", lambda info, key, job, cv, listing: looked.append((key, cv)) or MAP)
+    monkeypatch.setattr(cover_letter.tailored_cv, "ollama_chat", lambda *a, **k: json.dumps(
+        {"headline": "", "summary": "", "skills": ["Python", "Airflow"], "experience": [], "projects": []}))
+    lines = cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    assert lines == ["Tailored CV sent for AI Engineer"] and looked == [("k1", "Candidate: Sam Taylor, AI engineer")]
+    [path] = (tmp_path / "cvs").glob("*.pdf")
+    preview = cover_letter.doc_info(path, "tailored_cv", JOB)[1]
+    assert "Covers 2 of the 2 requirements your CV shows: Python, Airflow pipelines" in preview
+    assert "The advert also asks for, not shown in your CV: Kubernetes" in preview
+

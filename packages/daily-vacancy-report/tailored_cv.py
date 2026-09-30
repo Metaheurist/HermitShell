@@ -2,9 +2,11 @@
 
 The "Tailored CV" button queues a request the same way as "Cover letter"; cover_letter.py (the 5-minute cron
 job) picks both up. The CV text (COVER_LETTER_CV_FILE, else the profile) is turned into a structured copy once
-(state/cv.json, rebuilt when the CV changes). For each job the model only chooses and rephrases: job titles,
-employers, dates and education always come from that copy, and any figure the CV does not contain is refused,
-so the tailored CV cannot claim anything the real one does not.
+(state/cv.json, rebuilt when the CV changes; a long CV is read in sections). For each job the model only chooses
+and rephrases, led by the job's evidence map (evidence.py, shared with the cover letter): job titles, employers,
+dates and education always come from that copy, and any figure the CV does not contain is refused, so the
+tailored CV cannot claim anything the real one does not. Bullets are ordered by what the job asks for and cut to
+about two pages, and the email says which of the job's requirements the CV covers and what it doesn't show.
 
 Skills added from an email's missing-skill tags are worked into the profile by the model (the previous version
 is kept as a .bak copy) and join the skills section of every tailored CV.
@@ -15,19 +17,28 @@ import json
 import re
 from pathlib import Path
 
+import evidence
 import hermes_common as hc
 import profiles
 from hermes_common import STATE_DIR, env, fit_ctx, log, ollama_chat
 from job_settings import term_regex
 from job_tracker import Tracker
-from writing_checks import honest
+from writing_checks import coverage, covers, honest
 from writing_checks import numbers as _numbers
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 MASTER_FILE = STATE_DIR / "cv.json"
 MERGED_FILE = STATE_DIR / "cv_skills_merged.json"
+# One model request reads up to MAX_SOURCE_CHARS of the CV; a longer one is read in sections, up to MAX_CV_CHARS.
 MAX_SOURCE_CHARS = 14_000
+MAX_CV_CHARS = 42_000
+MAX_PARTS = 4
 MAX_SKILLS = 16
+LISTING_WITH_MAP = 2500
+# About two A4 pages: bullets for each role, newest first, then OLDER_BULLETS, and MAX_BULLET_WORDS in all.
+ROLE_BULLETS = (6, 5, 4, 3)
+OLDER_BULLETS = 2
+MAX_BULLET_WORDS = 650
 
 _STR = {"type": "string"}
 MASTER_SCHEMA = {
@@ -82,7 +93,7 @@ def cv_source() -> tuple[str, Path | None]:
     for name in (env("COVER_LETTER_CV_FILE"), env("JOB_PROFILE_FILE") or "job_profile.md"):
         path = Path(name) if name and Path(name).is_absolute() else PACKAGE_DIR / (name or "")
         if name and path.is_file():
-            return hc.read_private_text(path, errors="replace")[:MAX_SOURCE_CHARS], path
+            return hc.read_private_text(path, errors="replace")[:MAX_CV_CHARS], path
     return "", None
 
 
@@ -131,16 +142,56 @@ def clean_master(data: dict, source: str) -> dict:
     }
 
 
+def sections(source: str, limit: int | None = None) -> list[str]:
+    """The CV in parts of at most `limit` (MAX_SOURCE_CHARS) characters, split between paragraphs."""
+    limit = limit or MAX_SOURCE_CHARS
+    if len(source) <= limit:
+        return [source]
+    parts, current, size = [], [], 0
+    for block in re.split(r"\n\s*\n", source):
+        block = block[:limit]
+        if current and size + len(block) + 2 > limit:
+            parts.append("\n\n".join(current))
+            current, size = [], 0
+        current.append(block)
+        size += len(block) + 2
+    return parts + (["\n\n".join(current)] if current else [])
+
+
+def merge_parts(first: dict, more: dict) -> dict:
+    """Two sections' copies as one: the first headline and summary, lists joined, a role split across sections
+    kept once with all its bullets."""
+    merged = {k: first.get(k) or more.get(k) or "" for k in ("headline", "summary")}
+    for key in ("skills", "projects", "education", "certifications"):
+        merged[key] = [*(first.get(key) or []), *(more.get(key) or [])]
+    roles: dict = {}
+    for job in [*(first.get("experience") or []), *(more.get("experience") or [])]:
+        if not isinstance(job, dict):
+            continue
+        key = (_norm(str(job.get("title", ""))), _norm(str(job.get("employer", ""))))
+        if key in roles:
+            roles[key]["bullets"] = [*(roles[key].get("bullets") or []), *(job.get("bullets") or [])]
+        else:
+            roles[key] = dict(job)
+    merged["experience"] = list(roles.values())
+    return merged
+
+
 def build_master(source: str, model_info) -> dict:
     host, model, num_ctx = model_info
-    prompt = (f"CV:\n{source}\n\nCopy this CV into the JSON fields. Bullets are the CV's own achievement and "
-              "responsibility lines for each role, most important first.")
-    raw = ollama_chat(host, model, MASTER_SYSTEM, prompt, fit_ctx(num_ctx, MASTER_SYSTEM, prompt, num_predict=3000),
-                      fmt=MASTER_SCHEMA, num_predict=3000, task="cv_read")
-    try:
-        return clean_master(json.loads(raw), source)
-    except ValueError as exc:
-        raise RuntimeError(f"the model did not return valid JSON ({exc})") from exc
+    parts, merged = sections(source)[:MAX_PARTS], {}
+    for n, part in enumerate(parts, 1):
+        which = f" (part {n} of {len(parts)}; copy only what this part contains)" if len(parts) > 1 else ""
+        prompt = (f"CV{which}:\n{part}\n\nCopy this CV into the JSON fields. Bullets are the CV's own achievement and "
+                  "responsibility lines for each role, most important first.")
+        raw = ollama_chat(host, model, MASTER_SYSTEM, prompt, fit_ctx(num_ctx, MASTER_SYSTEM, prompt, num_predict=3000),
+                          fmt=MASTER_SCHEMA, num_predict=3000, task="cv_read")
+        try:
+            data = json.loads(raw)
+        except ValueError as exc:
+            raise RuntimeError(f"the model did not return valid JSON ({exc})") from exc
+        merged = merge_parts(merged, data if isinstance(data, dict) else {})
+    return clean_master(merged, source)
 
 
 def master_cv(model_info_factory, tracker: Tracker | None = None) -> dict:
@@ -164,7 +215,8 @@ def master_cv(model_info_factory, tracker: Tracker | None = None) -> dict:
 
 # --------------------------------------------------------------------------- tailoring for one job
 
-def tailor_prompt(master: dict, job: dict, listing: str, note: str) -> str:
+def tailor_prompt(master: dict, job: dict, listing: str, note: str, found: list[dict] | None = None) -> str:
+    listing = listing[:LISTING_WITH_MAP] if found else listing
     roles = "\n".join(f"[{i}] {j['title']} at {j['employer']} ({j['start']} - {j['end']})\n"
                       + "\n".join(f"  - {b}" for b in j["bullets"]) for i, j in enumerate(master["experience"]))
     projects = "\n".join(f"[{i}] {p['name']}: {p['description']}" for i, p in enumerate(master["projects"]))
@@ -172,7 +224,8 @@ def tailor_prompt(master: dict, job: dict, listing: str, note: str) -> str:
         f"CV SUMMARY:\n{master['summary']}\n\nCV SKILLS: {', '.join(master['skills'])}\n\nROLES:\n{roles}\n\n"
         + (f"PROJECTS:\n{projects}\n\n" if projects else "")
         + f"JOB: {job.get('title', '')} at {job.get('employer') or job.get('company') or ''}\n"
-        f"LISTING:\n{listing or '(not available: use the job title)'}\n\n"
+        + (f"WHAT THE JOB ASKS FOR AND WHERE THE CV SHOWS IT:\n{evidence.as_text(found)}\n\n" if found else "")
+        + f"LISTING:\n{listing or '(not available: use the job title)'}\n\n"
         + (f"CANDIDATE'S NOTE (follow it if it fits the CV):\n{note}\n\n" if note else "")
         + "Tailor the CV to this job:\n"
           "- headline: the candidate's own current or most relevant job title from ROLES, optionally with one "
@@ -181,13 +234,64 @@ def tailor_prompt(master: dict, job: dict, listing: str, note: str) -> str:
           "ROLES, leading with what this job asks for.\n"
           f"- skills: up to {MAX_SKILLS} skills copied from CV SKILLS, most relevant to the listing first.\n"
           "- experience: for each role index, 2 to 6 bullets rephrased from that role's own bullets, most "
-          "relevant first. Keep every figure exactly as the CV states it; add none.\n"
+          "relevant to the job's requirements first. Start each with an action verb (past tense, or present for "
+          "a current role), keep the CV's facts, and keep every figure exactly as the CV states it; add none.\n"
           "- projects: the indexes of the projects worth showing for this job (may be empty).\n"
           "No placeholders, no em dashes, no cliches."
     )
 
 
-def tailor(master: dict, tailored: dict, job: dict) -> dict:
+def order_bullets(bullets: list[str], needs: list[str]) -> list[str]:
+    """The bullets naming more of the job's requirements first, otherwise in the CV's order."""
+    return sorted(bullets, key=lambda b: -sum(covers(n, b) for n in needs))
+
+
+def fit_pages(experience: list[dict]) -> list[dict]:
+    """Cut the bullets to about two pages: ROLE_BULLETS for the newest roles, fewer for older ones, and
+    MAX_BULLET_WORDS in all, always keeping each role's first bullet."""
+    out, words = [], 0
+    for i, role in enumerate(experience):
+        cap = ROLE_BULLETS[i] if i < len(ROLE_BULLETS) else OLDER_BULLETS
+        kept: list[str] = []
+        for bullet in role["bullets"][:cap]:
+            if kept and words + len(bullet.split()) > MAX_BULLET_WORDS:
+                break
+            kept.append(bullet)
+            words += len(bullet.split())
+        out.append({**role, "bullets": kept})
+    return out
+
+
+def cv_text(cv: dict) -> str:
+    """Everything the tailored CV says, as plain text for the checks."""
+    parts = [cv.get("headline", ""), cv.get("summary", ""), ", ".join(cv.get("skills", []))]
+    parts += [b for role in cv.get("experience", []) for b in role.get("bullets", [])]
+    parts += [p.get("description", "") for p in cv.get("projects", [])]
+    return "\n".join(p for p in parts if p)
+
+
+def match_report(cv: dict, found: list[dict]) -> dict:
+    """Which of the requirements the CV shows the tailored CV names, which it leaves out, and what the advert
+    asks for that the CV doesn't show at all."""
+    covered, missing = coverage(evidence.shown(found), cv_text(cv))
+    return {"covered": covered, "missing": missing, "gaps": [i["need"] for i in found if not i["evidence"]]}
+
+
+def report_lines(report: dict | None) -> list[str]:
+    """The match report as lines for the email."""
+    if not report:
+        return []
+    lines = []
+    if shown := report["covered"] + report["missing"]:
+        lines.append(f"Covers {len(report['covered'])} of the {len(shown)} requirements your CV shows"
+                     + (f": {', '.join(report['covered'])}" if report["covered"] else "")
+                     + (f" (left out: {', '.join(report['missing'])})" if report["missing"] else ""))
+    if report["gaps"]:
+        lines.append(f"The advert also asks for, not shown in your CV: {', '.join(report['gaps'])}")
+    return lines
+
+
+def tailor(master: dict, tailored: dict, job: dict, needs: list[str] = ()) -> dict:
     """Assemble the final CV from the model's choices; anything unsupported falls back to the CV's own text."""
     source = master["source_text"]
     known = {s.lower(): s for s in master["skills"]}
@@ -200,7 +304,8 @@ def tailor(master: dict, tailored: dict, job: dict) -> dict:
             bullets = [b for b in (_clean(x)[:300] for x in entry.get("bullets") or []) if b and honest(b, source)]
             if bullets:
                 picked[entry["index"]] = bullets[:6]
-    experience = [{**j, "bullets": picked.get(i) or j["bullets"][:5]} for i, j in enumerate(master["experience"])]
+    experience = fit_pages([{**j, "bullets": picked.get(i) or order_bullets(j["bullets"], list(needs))}
+                            for i, j in enumerate(master["experience"])])
     projects = [master["projects"][i] for i in dict.fromkeys(tailored.get("projects") or [])
                 if isinstance(i, int) and 0 <= i < len(master["projects"])]
     summary = _clean(tailored.get("summary"))[:900]
@@ -215,16 +320,17 @@ def tailor(master: dict, tailored: dict, job: dict) -> dict:
     }
 
 
-def tailored_cv(master: dict, job: dict, listing: str, note: str, model_info) -> dict:
+def tailored_cv(master: dict, job: dict, listing: str, note: str, model_info, found: list[dict] | None = None) -> dict:
     host, model, num_ctx = model_info
-    prompt = tailor_prompt(master, job, listing, note)
+    prompt = tailor_prompt(master, job, listing, note, found)
     raw = ollama_chat(host, model, TAILOR_SYSTEM, prompt, fit_ctx(num_ctx, TAILOR_SYSTEM, prompt, num_predict=2200),
                       fmt=TAILOR_SCHEMA, num_predict=2200, task="cv_tailor")
     try:
         data = json.loads(raw)
     except ValueError as exc:
         raise ValueError(f"the model did not return valid JSON ({exc})") from exc
-    return tailor(master, data if isinstance(data, dict) else {}, job)
+    cv = tailor(master, data if isinstance(data, dict) else {}, job, evidence.shown(found or []))
+    return {**cv, "match": match_report(cv, found)} if found else cv
 
 
 # --------------------------------------------------------------------------- skills from the email, into the CV

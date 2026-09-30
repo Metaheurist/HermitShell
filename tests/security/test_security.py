@@ -437,6 +437,21 @@ def test_a_letters_length_and_tone_are_only_ever_the_fixed_choices(hostile):
     assert hostile not in prompt and "Tone: plain and professional." in prompt
 
 
+def test_a_match_report_from_a_hostile_map_is_escaped_in_the_email():
+    import cover_letter
+    import evidence
+    import tailored_cv
+    hostile = '<img src=x onerror=alert(1)>'
+    found = evidence.clean([{"need": hostile, "evidence": "", "where": ""},
+                            {"need": "Python" + hostile, "evidence": "Python", "where": hostile}], "Python")
+    report = tailored_cv.match_report({"skills": ["Python"]}, found)
+    lines = tailored_cv.report_lines(report)
+    _, body, _ = cover_letter.email_bodies({"title": "Data Engineer", "url": "https://jobs.example.com/1"}, lines,
+                                           "CV.pdf", "", kind="tailored_cv")
+    assert hostile not in body and "&lt;img src=x onerror=alert(1)&gt;" in body
+    assert all(len(i["need"]) <= evidence.LIMITS["need"] for i in found)
+
+
 @POSIX
 def test_backups_are_owner_only_and_encrypted(tmp_path, monkeypatch):
     pytest.importorskip("cryptography")
