@@ -166,6 +166,8 @@ describe("demo mode keeps real data apart", () => {
       ["/admin/action", { action: "api_key", provider: "tavily", key: "not-a-real-search-key" }],
       ["/admin/users", { op: "add", name: "Demo User", username: "demouser", password: "a-long-demo-password", roles: "recruiter" }],
       ["/admin/doc", { u: "owner", j: "https://jobs.example.com/demo/owner/1001", k: "tailored_cv", n: "AI Engineer" }],
+      ["/admin/doc", { u: "owner", j: "https://jobs.example.com/demo/owner/1001", k: "cover_letter", n: "AI Engineer", send: "1" }],
+      ["/admin/tasks", { task: "report:jamie-walsh" }],
       ["/admin/skill", { u: "owner", j: "https://jobs.example.com/demo/owner/1000", s: "Kubernetes" }],
       ["/admin/cv", cv],
     ];

@@ -130,6 +130,36 @@ describe("asking for a letter or CV from the dashboard", () => {
     expect(mine.u).toBeUndefined();
   });
 
+  it("emails the kept one with its Email button, and says so on the job and in the history", async () => {
+    const { env, ask, get } = await setup();
+    await sentWith(env);
+    await upload(env);
+    const h = await jobHash(JOB);
+    const res = await ask({ send: "1" });
+    expect(res.headers.get("Location")).toBe(`/admin/sent?u=sam-lee&r=30&a=applied&open=${h.slice(0, 16)}&done=docmail#job-${h.slice(0, 16)}`);
+    const [event] = valuesWith(env, "event:sam-lee:");
+    expect(event).toMatchObject({ a: "cover_letter", via: "dashboard", send: 1 });
+    expect(event.fresh).toBeUndefined();
+    expect(event.id).toMatch(/:ce\d+$/);
+    const [held] = JSON.parse(env.FEEDBACK.store.get("tasks:requests"));
+    expect(held).toMatchObject({ id: event.id, send: 1 });
+    const page = await (await get(`/admin/sent?u=sam-lee&r=7&open=${h.slice(0, 16)}&done=docmail`)).text();
+    expect(page).toContain("the same PDF you can download");
+    expect(page).toContain("<b>Cover letter</b><small>Emailing to Sam&hellip;</small>");
+    const [entry] = valuesWith(env, "history:sam-lee:").flat();
+    expect(entry).toMatchObject({ k: "cover_letter", t: "Emailed the cover letter: Data Engineer at Northwind" });
+  });
+
+  it("does not email when Regenerate or a job email carries the Email flag", async () => {
+    const { env, ask } = await setup();
+    await ask({ fresh: "1", send: "1" });
+    await ask({ k: "send_job", send: "1" });
+    const events = valuesWith(env, "event:sam-lee:");
+    expect(events).toHaveLength(2);
+    expect(events.every((e) => e.send === undefined)).toBe(true);
+    expect(events.map((e) => e.id.match(/:([a-z]{2})\d+$/)[1]).sort()).toEqual(["cn", "mg"]);
+  });
+
   it("refuses a bad job, kind or profile without storing anything", async () => {
     const { env, ask } = await setup();
     for (const fields of [{ k: "applied" }, { j: "" }, { j: "x".repeat(301) }, { j: "a\nb" }, { u: "casey-quinn" }, { n: "x".repeat(201) }]) {

@@ -402,10 +402,21 @@ async function tasksAction(request, env, s) {
   if (!form || !safeEqual(String(form.get("csrf") || ""), s.csrf)) {
     return page("Expired form", "<p>Reload the admin page and try again.</p>", { status: 403 });
   }
-  const [current, queue] = await Promise.all([status(env), queued(env)]);
+  const [current, queue, held] = await Promise.all([status(env), queued(env), requests(env)]);
   const task = String(form.get("task") || "").slice(0, 200);
+  const row = taskRows(current, queue, held).find((t) => t.id === task);
   const done = await cancelTask(env, task, current, queue);
+  if (row?.u && row.state !== "stopping" && done !== "gone") await record(env, row.u, "cancel", cancelNote(row), { by: displayName(s.me, current) });
   return redirect(`${TASKS_URL}?done=${done}`);
+}
+
+// A cancelled task as the recruit's history tells it.
+function cancelNote(t) {
+  const what = { cover_letter: "cover letter", tailored_cv: "tailored CV", send_job: "job email" }[t.kind];
+  if (what) return `Cancelled the ${what}: ${t.title || "a job"}`;
+  if (t.kind === "report") return "Stopped the job report";
+  if (t.kind === "unsubscribe") return "Cancelled the unsubscribe";
+  return `Cancelled: ${t.title || "a change"}`;
 }
 
 // Where a letter or CV request from the list of jobs sent comes back to: the same filters, the job opened.
@@ -430,10 +441,12 @@ async function docRequest(request, env, s) {
     return redirect(sentBack(u, form.get("back"), "", "docbad"));
   }
   const fresh = form.get("fresh") === "1";
-  const h = await requestDoc(env, { profile: u, owner: Boolean(p.owner), j, kind, title, fresh });
-  const asked = kind === "send_job" ? "Emailed the job" : `Asked for a ${fresh ? "new " : ""}${kind === "cover_letter" ? "cover letter" : "tailored CV"}`;
+  const send = !fresh && kind !== "send_job" && form.get("send") === "1";
+  const h = await requestDoc(env, { profile: u, owner: Boolean(p.owner), j, kind, title, fresh, send });
+  const doc = kind === "cover_letter" ? "cover letter" : "tailored CV";
+  const asked = kind === "send_job" ? "Emailed the job" : send ? `Emailed the ${doc}` : `Asked for a ${fresh ? "new " : ""}${doc}`;
   await record(env, u, kind, `${asked}: ${title || "a job"}`, { by: displayName(s.me, current) });
-  return redirect(sentBack(u, form.get("back"), h.slice(0, 16), kind === "send_job" ? "mail" : "doc"));
+  return redirect(sentBack(u, form.get("back"), h.slice(0, 16), kind === "send_job" ? "mail" : send ? "docmail" : "doc"));
 }
 
 // A skill missing from the CV, added from the list of jobs sent (admins, and a recruiter for their own pool).

@@ -3,7 +3,7 @@ import worker, { sign } from "../src/index.js";
 import { queueItem } from "../src/join.js";
 import { today } from "../src/lib.js";
 import { REQUESTS_KEY, taskRows, tasksButton } from "../src/tasks.js";
-import { BASE, keysWith, testEnv } from "./helpers.js";
+import { BASE, keysWith, testEnv, valuesWith } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const API = { Authorization: "Bearer api-token" };
@@ -200,8 +200,24 @@ describe("cancelling a task", () => {
   });
 
   it("says a task that has already finished is gone", async () => {
-    const { cancel } = await setup();
+    const { env, cancel } = await setup();
     expect((await cancel("report:sam-lee-456789")).headers.get("Location")).toBe("/admin/tasks?done=gone");
     expect((await cancel("queue:1:0a0a0a0a")).headers.get("Location")).toBe("/admin/tasks?done=gone");
+    expect(keysWith(env, "history:")).toEqual([]);
+  });
+
+  it("writes the cancellation, and who made it, in the recruit's history", async () => {
+    const { env, cancel } = await setup([REPORT, LETTER]);
+    const [held] = await press(env, "tailored_cv", "AI Engineer", "sam-lee-456789");
+    const change = await queueItem(env, { type: "admin", action: "pause", u: "sam-lee-456789" });
+    for (const id of [held.id, REPORT.id, REPORT.id, change, LETTER.id]) await cancel(id);
+    const sam = valuesWith(env, "history:sam-lee-456789:").flat().filter((e) => e.k === "cancel");
+    expect(sam.map((e) => [e.k, e.t, e.by])).toEqual([
+      ["cancel", "Cancelled the tailored CV: AI Engineer", "Alex Morgan"],
+      ["cancel", "Stopped the job report", "Alex Morgan"],
+      ["cancel", "Cancelled: Pause reports", "Alex Morgan"],
+    ]);
+    const [mine] = valuesWith(env, "history:owner:").flat();
+    expect(mine).toMatchObject({ k: "cancel", t: "Cancelled the cover letter: Data Engineer at Northwind Traders" });
   });
 });

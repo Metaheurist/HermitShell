@@ -434,6 +434,7 @@ describe("task list", () => {
       body: new URLSearchParams({ csrf: "0".repeat(32), task: "report:sam-lee-456789" }) }), env);
     expect(res.status).toBe(403);
     expect(valuesWith(env, "queue:")).toEqual([]);
+    expect(valuesWith(env, "history:")).toEqual([]);
   });
 
   it("cannot delete a feedback answer, invent a task or send HermitShell a hostile one", async () => {
@@ -453,6 +454,7 @@ describe("task list", () => {
     expect(env.FEEDBACK.store.has(answer)).toBe(true);
     expect(env.FEEDBACK.store.has("status:profiles")).toBe(true);
     expect(valuesWith(env, "queue:")).toEqual([]);
+    expect(valuesWith(env, "history:")).toEqual([]);
   });
 
   it("escapes everything a task shows and never offers to cancel a malformed one", async () => {
@@ -627,14 +629,17 @@ describe("letters and CVs kept for download", () => {
   it("needs a signed-in session and the form's CSRF token to ask for one from the dashboard", async () => {
     const env = testEnv(ADMIN);
     await reportedStatus(env);
-    const fields = { u: "sam-lee", j: JOB, k: "cover_letter", n: "Data Engineer" };
-    const anonymous = await worker.fetch(new Request(`${BASE}/admin/doc`, { method: "POST", body: new URLSearchParams({ csrf: "x", ...fields }) }), env);
-    expect(await anonymous.text()).toContain("Admin sign-in");
     const cookie = await signIn(env, "203.0.113.34");
-    const forged = await worker.fetch(new Request(`${BASE}/admin/doc`, { method: "POST", headers: { Cookie: cookie },
-      body: new URLSearchParams({ csrf: "0".repeat(32), ...fields }) }), env);
-    expect(forged.status).toBe(403);
+    for (const extra of [{}, { send: "1" }]) {
+      const fields = { u: "sam-lee", j: JOB, k: "cover_letter", n: "Data Engineer", ...extra };
+      const anonymous = await worker.fetch(new Request(`${BASE}/admin/doc`, { method: "POST", body: new URLSearchParams({ csrf: "x", ...fields }) }), env);
+      expect(await anonymous.text()).toContain("Admin sign-in");
+      const forged = await worker.fetch(new Request(`${BASE}/admin/doc`, { method: "POST", headers: { Cookie: cookie },
+        body: new URLSearchParams({ csrf: "0".repeat(32), ...fields }) }), env);
+      expect(forged.status).toBe(403);
+    }
     expect([...env.FEEDBACK.store.keys()].filter((k) => k.startsWith("event:"))).toEqual([]);
+    expect(valuesWith(env, "history:")).toEqual([]);
   });
 
   it("serves an email button's document only for that link's job, profile and kind, and never for a changed or expired link", async () => {

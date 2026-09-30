@@ -6,7 +6,8 @@
 // list costs a read rather than one of the free plan's 1,000 daily list operations.
 //
 // Asking from the dashboard stores the same request an email button does, marked "via: dashboard" (kept for
-// download, not emailed) and "fresh" for Regenerate (a new one even if one was made recently).
+// download, not emailed), "fresh" for Regenerate (a new one even if one was made recently) and "send" for the kept
+// one's Email button (HermitShell emails the one it made, as the email button would).
 //
 // The same list has a third request, "send_job": the job's report card emailed to the profile (job_mail.py). Once
 // sent, HermitShell tells POST /api/emailed, and "emailed:<id>" keeps when each job last went (by its hash only).
@@ -159,13 +160,14 @@ export function pdfResponse(doc) {
 
 // A request from the dashboard, stored as the email button would store it. Asking again in the same minute is the
 // same request, so a double press makes one.
-export async function requestDoc(env, { profile, owner, j, kind, title, fresh }) {
+export async function requestDoc(env, { profile, owner, j, kind, title, fresh, send }) {
   const at = Date.now();
   const u = owner ? "" : profile;
   const h = await jobHash(j);
   fresh = fresh && Boolean(DOC_KINDS[kind]);
-  const event = { j, a: kind, r: "", at, via: "dashboard", ...(fresh ? { fresh: 1 } : {}), ...(u ? { u } : {}) };
-  event.id = `${eventPrefix(u)}dash-${h.slice(0, 20)}:${REQUEST_CODES[kind]}${fresh ? "n" : "g"}${Math.floor(at / 60000)}`;
+  send = send && !fresh && Boolean(DOC_KINDS[kind]);
+  const event = { j, a: kind, r: "", at, via: "dashboard", ...(fresh ? { fresh: 1 } : {}), ...(send ? { send: 1 } : {}), ...(u ? { u } : {}) };
+  event.id = `${eventPrefix(u)}dash-${h.slice(0, 20)}:${REQUEST_CODES[kind]}${fresh ? "n" : send ? "e" : "g"}${Math.floor(at / 60000)}`;
   await env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS });
   await setFlag(env, eventFlag(u), EVENT_TTL_SECONDS);
   await rememberRequest(env, event, title, EVENT_TTL_SECONDS);
@@ -197,15 +199,16 @@ export async function requestSkill(env, { profile, owner, j, skill }) {
   return h;
 }
 
-// Letters, CVs and job emails asked for and not done yet, as "<kind>\n<job key>": from HermitShell's task list and
-// from the requests it has not collected yet.
+// Letters, CVs and job emails asked for and not done yet, as "<kind>\n<job key>" to "send" when every request for it
+// only emails the kept one, "make" otherwise: from HermitShell's task list and from the requests it has not collected.
 export function pendingDocs(status, held, profile, owner) {
-  const busy = new Set();
+  const busy = new Map();
+  const mark = (key, send) => busy.set(key, send && busy.get(key) !== "make" ? "send" : "make");
   for (const t of Array.isArray(status.tasks) ? status.tasks : []) {
-    if (t && t.u === profile && REQUEST_KINDS[t.kind] && typeof t.j === "string") busy.add(`${t.kind}\n${t.j}`);
+    if (t && t.u === profile && REQUEST_KINDS[t.kind] && typeof t.j === "string") mark(`${t.kind}\n${t.j}`, t.send === true);
   }
   for (const r of held) {
-    if (r && (r.u || (owner ? profile : "")) === profile && REQUEST_KINDS[r.a] && typeof r.j === "string") busy.add(`${r.a}\n${r.j}`);
+    if (r && (r.u || (owner ? profile : "")) === profile && REQUEST_KINDS[r.a] && typeof r.j === "string") mark(`${r.a}\n${r.j}`, r.send === 1);
   }
   return busy;
 }
@@ -220,24 +223,28 @@ function docIcon(kind) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${DOC_ICONS[kind]}</svg>`;
 }
 
-// One job's letter and CV on the dashboard's list of jobs sent: Download and Regenerate when one is kept, a spinner
-// while one is being made, Generate otherwise. Then the job emailed to the profile: Send, a spinner while it goes,
-// then when it went and Send again. `ctx` has the profile, the job's hash, the kept documents, the jobs emailed,
-// what is pending, who the email goes to ("you" or a first name), the CSRF token and where to come back to.
+// One job's letter and CV on the dashboard's list of jobs sent: Download, Email and Regenerate when one is kept, a
+// spinner while one is being made or emailed, Generate otherwise. Then the job emailed to the profile: Send, a
+// spinner while it goes, then when it went and Send again. `ctx` has the profile, the job's hash, the kept documents,
+// the jobs emailed, what is pending, who the email goes to ("you" or a first name), the CSRF token and where to come
+// back to.
 export function docActions(j, h, ctx) {
   if (!validJobKey(j) || !HASH_RE.test(h || "")) return "";
-  const hidden = (kind, fresh) => `<input type="hidden" name="csrf" value="${esc(ctx.csrf)}"><input type="hidden" name="u" value="${esc(ctx.profile)}">
+  const to = esc(ctx.recipient || "the recruit");
+  const hidden = (kind, fresh, send) => `<input type="hidden" name="csrf" value="${esc(ctx.csrf)}"><input type="hidden" name="u" value="${esc(ctx.profile)}">
 <input type="hidden" name="j" value="${esc(j)}"><input type="hidden" name="k" value="${kind}"><input type="hidden" name="n" value="${esc(ctx.title)}">
-<input type="hidden" name="back" value="${esc(ctx.back)}">${fresh ? '<input type="hidden" name="fresh" value="1">' : ""}`;
+<input type="hidden" name="back" value="${esc(ctx.back)}">${fresh ? '<input type="hidden" name="fresh" value="1">' : ""}${send ? '<input type="hidden" name="send" value="1">' : ""}`;
   return Object.entries(DOC_KINDS).map(([kind, label]) => {
     const kept = ctx.docs.find((d) => d.k === kind && d.h === h);
-    if (ctx.pending.has(`${kind}\n${j}`)) {
-      return `<div class="doc busy">${docIcon(kind)}<span><b>${label}</b><small>Being made&hellip;</small></span><span class="dspin" aria-hidden="true"></span></div>`;
+    const busy = ctx.pending.get(`${kind}\n${j}`);
+    if (busy) {
+      return `<div class="doc busy">${docIcon(kind)}<span><b>${label}</b><small>${busy === "send" ? `Emailing to ${to}` : "Being made"}&hellip;</small></span><span class="dspin" aria-hidden="true"></span></div>`;
     }
     if (kept) {
       return `<div class="doc ready">${docIcon(kind)}<span><b>${label}</b><small title="Kept for download until ${esc(new Date(kept.exp).toISOString().slice(0, 10))}">made ${esc(ago(kept.at))}</small></span>
-<a class="dl" href="${DOC_URL}?u=${esc(ctx.profile)}&amp;k=${kind}&amp;h=${h}" download>Download</a>
-<form method="post" action="${DOC_URL}">${hidden(kind, true)}<button class="small quiet" title="Write a new one">Regenerate</button></form></div>`;
+<div class="dacts"><a class="dl" href="${DOC_URL}?u=${esc(ctx.profile)}&amp;k=${kind}&amp;h=${h}" download>Download</a>
+<form method="post" action="${DOC_URL}">${hidden(kind, false, true)}<button class="small quiet" title="Email this ${kind === "cover_letter" ? "cover letter" : "tailored CV"} to ${to}">Email to ${to}</button></form>
+<form method="post" action="${DOC_URL}">${hidden(kind, true)}<button class="small quiet" title="Write a new one">Regenerate</button></form></div></div>`;
     }
     return `<form class="doc" method="post" action="${DOC_URL}">${docIcon(kind)}<span><b>${label}</b><small>for this job</small></span>${hidden(kind, false)}
 <button class="small">Generate</button></form>`;
@@ -247,7 +254,7 @@ export function docActions(j, h, ctx) {
 function emailAction(j, h, ctx, hidden) {
   const to = esc(ctx.recipient || "the recruit");
   const sent = (ctx.emailed || []).find((e) => e.h === h);
-  if (ctx.pending.has(`send_job\n${j}`)) {
+  if (ctx.pending.get(`send_job\n${j}`)) {
     return `<div class="doc busy">${docIcon("send_job")}<span><b>Email to ${to}</b><small>Sending&hellip;</small></span><span class="dspin" aria-hidden="true"></span></div>`;
   }
   if (sent) {
@@ -267,6 +274,7 @@ flex:1 1 250px;min-width:0;transition:border-color .15s,box-shadow .15s}
 .doc span:not(.dspin){display:grid;min-width:0;flex:1}.doc span b{font-size:13.5px}.doc small{font-size:12px;color:var(--muted)}
 .doc form{margin:0}.doc button{margin:0;white-space:nowrap}
 .doc.ready>svg{background:var(--ok-bg);color:#047857}
+div.doc.ready{flex-wrap:wrap}.dacts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-left:auto}
 .doc a.dl{display:inline-flex;align-items:center;padding:7px 13px;border-radius:10px;font-size:13px;font-weight:650;color:#fff;text-decoration:none;
 background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 8px 18px -10px rgba(5,150,105,.8);transition:transform .15s var(--ease),filter .15s}
 .doc a.dl:hover{transform:translateY(-1px);filter:brightness(1.05);color:#fff}

@@ -460,6 +460,7 @@ const SENT_NOTES = {
   docbad: ["bad", "That request could not be made. Reload the page and try again."],
   docgone: ["bad", "That document is no longer kept. Generate a new one below."],
   mail: ["ok", "HermitShell will email this job within a few minutes. This page checks every 15 seconds until it has gone."],
+  docmail: ["ok", "HermitShell will email it within a few minutes, the same PDF you can download. This page checks every 15 seconds until it has gone."],
   skill: ["ok", "Added. HermitShell counts it as on the CV within a few minutes, for ratings, cover letters and tailored CVs."],
   skillbad: ["bad", "That skill could not be added. Reload the page and try again."],
 };
@@ -482,7 +483,7 @@ export async function sentPage(status, stats, pid, opts = {}) {
   const open = /^[0-9a-f]{16}$/.test(opts.open || "") ? opts.open : "";
   const recipient = p.owner ? "you" : cut(String(p.name || "").trim().split(/\s+/)[0], 40) || "this recruit";
   const ctx = { profile: pid, csrf: opts.csrf || "", docs: opts.docs || [], emailed: opts.emailed || [], recipient,
-    pending: opts.pending || new Set(), today, open, currency: p.job?.currency, back: `r=${range}${answer ? `&a=${answer}` : ""}`,
+    pending: opts.pending || new Map(), today, open, currency: p.job?.currency, back: `r=${range}${answer ? `&a=${answer}` : ""}`,
     skills: new Set((Array.isArray(stats?.skills) ? stats.skills : []).map((k) => cleanSkill(k).toLowerCase()).filter(Boolean)) };
   ctx.adding = new Set((opts.added || []).map((e) => e.s.toLowerCase()).filter((k) => !ctx.skills.has(k)));
   const rows = await Promise.all(shown.map((j, i) => sentRow(j, i, ctx)));
@@ -503,7 +504,8 @@ export async function sentPage(status, stats, pid, opts = {}) {
 <div class="statbar">${sentTabs(pid, range, answer)}<span class="muted">${updated}${links}</span></div>
 ${inRange.length ? answerFilter(pid, range, answer, inRange) : ""}${body}
 <p class="muted small">Press a job for everything its email showed, the advert, and its cover letter and tailored CV. Letters and CVs made from
-here are kept to download for a few days and are not emailed; &ldquo;Email&rdquo; sends the job itself to ${p.owner ? "you" : "the recruit"}, as its report card.
+here are kept to download for a few days, and emailed only when you press &ldquo;Email to ${esc(recipient)}&rdquo; beside one. The last tile sends the job itself
+to ${p.owner ? "you" : "the recruit"}, as its report card.
 Notes typed on the buttons are never shown here.</p>`, { ...back, refresh: waiting ? 15 : 0 });
 }
 

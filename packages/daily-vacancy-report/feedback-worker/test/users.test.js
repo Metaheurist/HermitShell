@@ -187,6 +187,7 @@ describe("recruiter sign-in and what they can see", () => {
         expect((await casey.send("/admin/action", { action: act, u })).status).toBe(404);
       }
       expect((await casey.send("/admin/doc", { u, j: "a".repeat(16), k: "cover_letter", n: "Analyst" })).status).toBe(404);
+      expect((await casey.send("/admin/doc", { u, j: "a".repeat(16), k: "tailored_cv", n: "Analyst", send: "1" })).status).toBe(404);
       expect((await casey.send("/admin/skill", { u, j: "a".repeat(16), s: "dbt" })).status).toBe(404);
       expect((await casey.send("/admin/cv", { u })).status).toBe(404);
     }

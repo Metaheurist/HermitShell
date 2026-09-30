@@ -243,12 +243,13 @@ describe("jobs sent page", () => {
     const h = await jobHash("https://jobs.example.com/1");
     const other = await jobHash("nijobs:1234567");
     const docs = [{ k: "cover_letter", h, name: "Cover letter.pdf", at: Date.now() - 3600000, exp: Date.now() + 86400000 }];
-    const pending = new Set(["tailored_cv\nnijobs:1234567"]);
+    const pending = new Map([["tailored_cv\nnijobs:1234567", "make"]]);
     const body = await sentOf(detailed(), "sam-lee", { range: "7", csrf: "c".repeat(32), docs, pending, open: h.slice(0, 16), done: "doc" });
     expect(body).toContain(`<li id="job-${h.slice(0, 16)}"`);
     expect(body).toContain(`<li id="job-${h.slice(0, 16)}" style="animation-delay:0ms"><details open>`);
     expect(body).toContain(`href="/admin/doc?u=sam-lee&amp;k=cover_letter&amp;h=${h}" download>Download</a>`);
     expect(body).toMatch(/name="k" value="cover_letter">[\s\S]*?name="fresh" value="1">[\s\S]*?>Regenerate</);
+    expect(body).toMatch(/name="k" value="cover_letter">[^]*?name="send" value="1"><button class="small quiet" title="Email this cover letter to Sam">Email to Sam</);
     expect(body).toMatch(/name="k" value="tailored_cv">[\s\S]*?<button class="small">Generate<\/button>/);
     expect(body).toContain('name="j" value="https://jobs.example.com/1"');
     expect(body).toContain(`name="csrf" value="${"c".repeat(32)}"`);
@@ -261,6 +262,9 @@ describe("jobs sent page", () => {
     const waiting = await sentOf(detailed(), "sam-lee", { range: "7", pending, open: other.slice(0, 16) });
     expect(waiting).toContain('<meta http-equiv="refresh" content="15">');
     expect(waiting).toContain(`<li id="job-${other.slice(0, 16)}" style="animation-delay:35ms"><details open>`);
+    expect(waiting).toContain("Being made&hellip;");
+    const emailing = await sentOf(detailed(), "sam-lee", { range: "7", pending: new Map([["tailored_cv\nnijobs:1234567", "send"]]) });
+    expect(emailing).toContain("<b>Tailored CV</b><small>Emailing to Sam&hellip;</small>");
   });
 
   it("turns each missing skill into a button that adds it, and ticks those counted or being added", async () => {

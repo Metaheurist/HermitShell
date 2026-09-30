@@ -30,7 +30,7 @@ export async function rememberRequest(env, event, title, ttl) {
   const list = await env.FEEDBACK.get(REQUESTS_KEY, "json");
   const next = [...(Array.isArray(list) ? list : []).filter((r) => r.id !== event.id),
     { id: event.id, a: event.a, n: String(title || "").slice(0, 120), u: event.u || "", at: event.at, j: String(event.j || "").slice(0, 300),
-      ...(event.via === "dashboard" ? { via: "dashboard" } : {}) }].slice(-MAX_REQUESTS);
+      ...(event.via === "dashboard" ? { via: "dashboard" } : {}), ...(event.send ? { send: 1 } : {}) }].slice(-MAX_REQUESTS);
   await env.FEEDBACK.put(REQUESTS_KEY, JSON.stringify(next), { expirationTtl: ttl });
 }
 
