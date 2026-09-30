@@ -75,7 +75,8 @@ def home(tmp_path, monkeypatch):
                        "COVER_LETTER_CONTACT": "owner@example.com", "JOB_KEYWORDS_FILE": str(keywords),
                        "JOB_REGION_NAME": "Belfast", "JOB_FEEDBACK_URL": "https://fb.example.workers.dev",
                        "JOB_FEEDBACK_SECRET": "test-secret", "FIRECRAWL_API_KEY": "fc-envkey-longer0001",
-                       "FIRECRAWL_BACKUP_KEYS": "fc-envkey-longer0002", "JOB_SCANNER_QUERIES": "owner query"}.items():
+                       "FIRECRAWL_BACKUP_KEYS": "fc-envkey-longer0002", "JOB_SCANNER_QUERIES": "owner query",
+                       "WEB_KEY_USAGE_MINUTES": "0"}.items():
         monkeypatch.setenv(key, value)
     for key in ("JOB_PROFILE_ID", "JOB_SCANNER_NIJOBS_KEYWORDS", "JOB_SEARCH_LOCATION"):
         monkeypatch.delenv(key, raising=False)
@@ -285,7 +286,8 @@ def test_admin_actions_set_global_keys_pause_and_delete(home, monkeypatch):
     for row in payload["profiles"]:
         assert not {"crawler", "provider", "key_hint"} & set(row)
     assert "fc-test-own-long-key" not in json.dumps(payload) and "fc-global-longer0001" not in json.dumps(payload)
-    assert payload["keys"]["firecrawl"] == {"source": "dashboard", "hint": "fc-...0001", "backups": 1}
+    assert payload["keys"]["firecrawl"] == {"source": "dashboard", "hint": "fc-...0001", "backups": 1, "keys": [
+        {"hint": "fc-...0001", "role": "main"}, {"hint": "fc-...0002", "role": "backup"}]}
     assert profiles.dashboard_env()["FIRECRAWL_API_KEY"] == "fc-global-longer0001"
     assert profiles.os.environ["FIRECRAWL_API_KEY"] == "fc-global-longer0001"
     assert profiles.os.environ["FIRECRAWL_BACKUP_KEYS"] == "fc-global-longer0002"
@@ -298,7 +300,8 @@ def test_a_global_key_from_the_dashboard_reaches_the_owner_and_every_recruit(hom
     assert profiles.dashboard_env()["TAVILY_API_KEY"] == "tvly-global-longer-key9"
     assert profiles.os.environ["TAVILY_API_KEY"] == "tvly-global-longer-key9"
     assert profiles.child_env(profiles.load("sam-lee-456789"))["TAVILY_API_KEY"] == "tvly-global-longer-key9"
-    assert api.statuses[-1]["keys"]["tavily"] == {"source": "dashboard", "hint": "tvl...key9"}
+    assert api.statuses[-1]["keys"]["tavily"] == {"source": "dashboard", "hint": "tvl...key9",
+                                                 "keys": [{"hint": "tvl...key9", "role": "main"}]}
 
 
 def test_a_leftover_recruit_crawler_key_is_never_used_and_is_removed(home, monkeypatch):

@@ -23,6 +23,7 @@ sys.path[:0] = [str(PACKAGE), str(REPO / "common")]
 import cv_text  # noqa: E402
 import hermes_common as hc  # noqa: E402
 import job_settings  # noqa: E402
+import key_usage  # noqa: E402
 import maintenance  # noqa: E402
 import money  # noqa: E402
 import profiles  # noqa: E402
@@ -595,6 +596,65 @@ def test_a_tampered_rate_cache_is_not_trusted(tmp_path, monkeypatch, cache):
     (tmp_path / money.FX_FILE).write_text(cache, encoding="utf-8")
     monkeypatch.setattr(money.requests, "get", lambda url, **kw: _Reply({}))
     assert money.rates(tmp_path, "https://rates.example/latest", now=1_790_000_000.0) == {}
+
+
+# --------------------------------------------------------------------------- web search key usage
+
+class _Usage:
+    def __init__(self, data, status=200):
+        self.data, self.status_code, self.ok, self.content = data, status, 200 <= status < 300, b"x" * 100
+
+    def json(self):
+        return self.data
+
+
+KEY = "fc-secret-key-do-not-leak-0001"
+
+
+def test_key_usage_is_only_asked_of_the_providers_over_https_without_redirects(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(key_usage.requests, "get", lambda url, **kw: calls.append((url, kw)) or _Usage({}, 401))
+    key_usage.report({"firecrawl": [KEY], "tavily": [KEY], "scrapfly": [KEY]}, tmp_path, 60, 1_790_000_000.0)
+    assert {u for u, _ in calls} == {"https://api.firecrawl.dev/v2/team/credit-usage", "https://api.tavily.com/usage",
+                                    "https://api.scrapfly.io/account"}
+    assert all(kw["allow_redirects"] is False and kw["timeout"] <= 10 for _, kw in calls)
+
+
+def test_key_usage_never_stores_or_reports_the_key(monkeypatch, tmp_path):
+    def failing(url, **kw):
+        raise key_usage.requests.ConnectionError(f"{url}?key={KEY}")
+    monkeypatch.setattr(key_usage.requests, "get", failing)
+    found = key_usage.report({"scrapfly": [KEY], "firecrawl": [KEY]}, tmp_path, 60, 1_790_000_000.0)
+    cache = (tmp_path / key_usage.USAGE_FILE).read_text()
+    for text in (json.dumps(found), cache):
+        assert KEY not in text and KEY[:-4] not in text
+    assert found["scrapfly"][0]["error"] == "could not reach it"
+
+
+@POSIX
+def test_the_key_usage_cache_is_private(monkeypatch, tmp_path):
+    monkeypatch.setattr(key_usage.requests, "get", lambda url, **kw: _Usage({"data": {"remainingCredits": 5}}))
+    key_usage.report({"firecrawl": [KEY]}, tmp_path, 60, 1_790_000_000.0)
+    assert (tmp_path / key_usage.USAGE_FILE).stat().st_mode & 0o077 == 0
+
+
+def test_hostile_usage_replies_are_cleaned(monkeypatch):
+    monkeypatch.setattr(key_usage.requests, "get", lambda url, **kw: _Usage({"subscription": {
+        "plan_name": HOSTILE, "period": {"end": HOSTILE}, "usage": {"scrape": {"current": float("nan"), "limit": True,
+                                                                             "remaining": 7}}}}))
+    found = key_usage.check("scrapfly", KEY)
+    assert found["used"] is None and found["limit"] is None and found["left"] == 7
+    assert found["resets"] == "" and not set(found["plan"]) & set("<>\"'=/") and len(found["plan"]) <= key_usage.MAX_PLAN
+    monkeypatch.setattr(key_usage.requests, "get", lambda url, **kw: _Usage({"data": {"remainingCredits": -3, "planCredits": "9"}}))
+    with pytest.raises(key_usage.UsageError):
+        key_usage.check("firecrawl", KEY)
+
+
+@pytest.mark.parametrize("cache", ["not json", "[1]", json.dumps({"firecrawl:x": {"at": "soon", "usage": {}}}),
+                                   json.dumps({"firecrawl:x": {"at": 1, "usage": {"left": -1, "plan": HOSTILE}}})])
+def test_a_tampered_key_usage_cache_is_not_trusted(monkeypatch, tmp_path, cache):
+    (tmp_path / key_usage.USAGE_FILE).write_text(cache, encoding="utf-8")
+    assert key_usage._read(tmp_path / key_usage.USAGE_FILE) == {}
 
 
 def test_a_profiles_currency_is_one_of_the_offered_codes():

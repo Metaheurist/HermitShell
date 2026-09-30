@@ -48,6 +48,7 @@ import requests
 import cv_text
 import hermes_common as hc
 import job_settings
+import key_usage
 import money
 import profile_stats
 from hermes_common import EMAIL_HEAD, STATE_DIR, connect_model, email_header, env, load_env_file, log, ollama_chat
@@ -1011,6 +1012,9 @@ def status_payload() -> dict:
                            "to": test.get("to", "")} if test else None}
     keys = {name: _key_info(API_KEYS[name]) for name in ("firecrawl", "tavily", "scrapfly")}
     keys["firecrawl"]["backups"] = len([k for k in (env("FIRECRAWL_BACKUP_KEYS") or "").split(",") if k.strip()])
+    every = key_usage.minutes(env("WEB_KEY_USAGE_MINUTES", str(key_usage.EVERY_MINUTES)))
+    for name, rows in key_usage.report(key_usage.configured_keys(), STATE_DIR, every).items():
+        keys[name]["keys"] = rows
     problems = [{"at": _ms(p["at"]), "what": p.get("what", ""), "error": p.get("error", "")} for p in recent_problems()]
     return {"profiles": profiles, "email": email, "keys": keys, "problems": problems, "timezone": timezone_name(),
             "scheduler": jobs is not None, "tasks": tasks()}
