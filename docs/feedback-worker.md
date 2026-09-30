@@ -425,7 +425,7 @@ secret, as before, and always has the Admin role. Everyone else gets an account 
 | Role | What they can do |
 |---|---|
 | **Admin** | Everything: every recruit, assigning recruits, users and roles, global settings and deleting recruits |
-| **Recruiter** | Their own pool only: the people they invite and the recruits assigned to them. They manage those recruits' details, CVs and daily reports, send jobs now, pause or resume them and see their stats and jobs sent, but never see anyone else, the tasks of other recruits or the settings |
+| **Recruiter** | Their own pool only: the people they invite and the recruits assigned to them. They manage those recruits' details, CVs and daily reports, send jobs now, pause or resume them and see their stats and jobs sent, but never see anyone else, the task list or the settings |
 
 - **Add user** opens a window for a name, a username (2 to 32 lower-case letters, numbers, `-` or
   `_`) and a password, and the roles. Passwords shorter than 12 characters are allowed but marked
@@ -566,8 +566,8 @@ HermitShell refuses the request and says so under **HermitShell could not apply*
 
 #### Tasks
 
-The **Tasks** button next to the search shows a loading circle while something is running and, in its
-corner, how many tasks there are. It opens a window listing everything HermitShell is doing or has
+The **Tasks** button next to the search (admins only) shows a loading circle while something is running
+and, in its corner, how many tasks there are. It opens a window listing everything HermitShell is doing or has
 waiting, whoever started it. Each running task has the same circle round its icon, and it keeps
 turning smoothly as the list refreshes:
 
@@ -591,6 +591,9 @@ turning smoothly as the list refreshes:
   cancelled in the tracker (`letters.status = 'cancelled'`) and stops its writer. The row shows
   **Stopping…** meanwhile.
 - Answers to the email buttons are not tasks and can't be removed here.
+
+Recruiters don't get the button or the window, and `/admin/tasks` answers them with 403; the status line
+still tells them how many of their changes are **Waiting for HermitShell**.
 
 The window has no JavaScript: its list is a frame (`/admin/tasks`, only embeddable by the dashboard)
 that reloads every 5 seconds for 2 minutes, then every 15 seconds for 9 more, then stops; with

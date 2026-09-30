@@ -150,7 +150,7 @@ describe("recruiter sign-in and what they can see", () => {
 
   it("stops a recruiter at every admin-only page and action", async () => {
     const { env, casey } = await setup();
-    for (const path of ["/admin/settings", "/admin/users"]) {
+    for (const path of ["/admin/settings", "/admin/users", "/admin/tasks"]) {
       const res = await casey.get(path);
       expect(res.status).toBe(403);
       expect(await res.text()).toContain("Only an admin can open this page.");
@@ -191,15 +191,18 @@ describe("recruiter sign-in and what they can see", () => {
     expect(await admin.text("/admin/profile?u=sam-lee")).toContain("Global settings");
   });
 
-  it("lists only a recruiter's own tasks and will not cancel anyone else's", async () => {
-    const { env, casey } = await setup();
-    const theirs = await queueItem(env, { type: "admin", action: "pause", u: "jordan-patel" });
-    await queueItem(env, { type: "admin", action: "pause", u: "sam-lee" });
-    const tasks = await casey.text("/admin/tasks");
-    expect(tasks).toContain('<span class="twho">Sam Lee</span>');
-    expect(tasks).not.toContain("Jordan Patel");
-    expect(await casey.where("/admin/tasks", { task: theirs })).toBe("/admin/tasks?done=gone");
-    expect(keysWith(env, "queue:")).toContain(theirs);
+  it("keeps the task list to admins: no button, window or link for a recruiter, and no cancelling", async () => {
+    const { env, admin, casey } = await setup();
+    const mine = await queueItem(env, { type: "admin", action: "pause", u: "sam-lee" });
+    const page = await casey.text("/admin");
+    expect(page).toContain("Waiting for HermitShell: 1 change.");
+    for (const bit of ['class="tasksbtn', 'id="tasks"', 'href="#tasks"', "<iframe"]) expect(page).not.toContain(bit);
+    expect((await casey.get("/admin")).headers.get("Content-Security-Policy")).not.toContain("frame-src");
+    const res = await casey.send("/admin/tasks", { task: mine });
+    expect(res.status).toBe(403);
+    expect(keysWith(env, "queue:")).toContain(mine);
+    const theirs = await admin.text("/admin");
+    for (const bit of ['class="tasksbtn', 'id="tasks"', 'href="#tasks"']) expect(theirs).toContain(bit);
   });
 });
 

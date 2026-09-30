@@ -198,13 +198,6 @@ function mineOnly(s, current, queue) {
   return queue.filter((i) => (i.type === "signup" ? i.recruiter === s.me.id : mine.has(String(i.u || ""))));
 }
 
-function tasksFor(s, current, queue, held) {
-  const rows = taskRows(current, queue, held);
-  if (s.me.admin) return rows;
-  const mine = new Set((current.profiles || []).filter((p) => canSee(s.me, p)).map((p) => p.id));
-  return rows.filter((r) => (r.kind === "signup" ? r.recruiter === s.me.id : mine.has(r.u)));
-}
-
 // One save for a profile's details and job search: only the fields changed since the form opened are queued,
 // and a clash with someone else's change shows the page again, with both versions, before anything is saved.
 async function saveProfile(env, s, form, u) {
@@ -225,9 +218,9 @@ async function saveProfile(env, s, form, u) {
 // HermitShell checks in at least every 15 minutes, so a much older check-in means its profiles job has stopped.
 const STALE_MS = 45 * 60 * 1000;
 
-function lastUpdate(current, queued, presence) {
-  const waiting = queued.length
-    ? ` <a href="#tasks">Waiting for HermitShell: ${queued.length} change${queued.length === 1 ? "" : "s"}</a>.` : "";
+function lastUpdate(current, queued, presence, admin) {
+  const count = `Waiting for HermitShell: ${queued.length} change${queued.length === 1 ? "" : "s"}`;
+  const waiting = !queued.length ? "" : admin ? ` <a href="#tasks">${count}</a>.` : ` ${count}.`;
   const report = current.updated ? ` Recruits last reported ${esc(ago(current.updated))}.` : "";
   if (presence.live) {
     return `<p class="muted"><span class="live" aria-hidden="true"></span><b>HermitShell is connected</b>: changes reach it within seconds.${report}${waiting}</p>`;
@@ -349,7 +342,7 @@ async function dashboard(request, env, s) {
     status(env), env.FEEDBACK.list({ prefix: "invite:", limit: 100 }), queued(env), hubPresence(env), requests(env)]);
   const recs = recruiters(s.acc, current, env);
   const byId = new Map(recs.map((r) => [r.id, r]));
-  const tasks = tasksButton(tasksFor(s, current, queue, held).length);
+  const tasks = admin ? tasksButton(taskRows(current, queue, held).length) : "";
   const signups = pendingSignups(queue, current.profiles || []).filter((p) => admin || p.recruiter === s.me.id);
   const mine = mineOnly(s, current, queue);
   const waiting = describe(mine.filter((i) => !signups.some((p) => i.type === "signup" && p.email === String(i.email || ""))));
@@ -382,16 +375,17 @@ async function dashboard(request, env, s) {
       : "You have no recruits yet. The people you invite join your recruits, and an admin can assign others to you."}</td></tr>`);
   const deletes = admin ? shown.filter(({ p }) => !p.owner && !p.pending).map(({ p }) => deleteRecruitModal(p, s.csrf)).join("") : "";
   return page("Recruits", `<style>${LINK_STYLE}${MODAL_STYLE}${CONFIRM_STYLE}${SEARCH_STYLE}${PENDING_STYLE}${TASKS_STYLE}${RECRUITER_STYLE}</style>${nav("profiles", admin)}${done ? note(done) : ""}
-${lastUpdate(current, waiting, presence)}
+${lastUpdate(current, waiting, presence, admin)}
 ${admin ? `${problems(current)}${checklist(current)}` : ""}
-${all.length ? searchBar(q, shown.length, all.length, tasks) : `<div class="tabletools"><span></span><div class="tools">${tasks}</div></div>`}
+${all.length ? searchBar(q, shown.length, all.length, tasks) : tasks ? `<div class="tabletools"><span></span><div class="tools">${tasks}</div></div>` : ""}
 <table class="list"><tr><th>Recruit</th><th>Status</th>${admin ? "<th>Recruiter</th>" : ""}<th></th></tr>
 ${rows}</table>
 ${admin ? `<p class="muted">The email server and web search keys everyone shares are under <a href="${SETTINGS_URL}">Global settings</a>; dashboard users and recruiters under <a href="${USERS_URL}">Users and roles</a>.</p>` : ""}
 ${inviteForm(s, recs)}
 ${inviteRows ? `<table class="list">${inviteRows}</table>` : ""}
 `,
-  { wide: true, before: tasksModal() + passwordModal(s.me, s.csrf, env) + deletes, headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` } });
+  { wide: true, before: (admin ? tasksModal() : "") + passwordModal(s.me, s.csrf, env) + deletes,
+    headers: admin ? { "Content-Security-Policy": `${CSP}; frame-src 'self'` } : {} });
 }
 
 async function tasksAction(request, env, s) {
@@ -399,9 +393,8 @@ async function tasksAction(request, env, s) {
   if (!form || !safeEqual(String(form.get("csrf") || ""), s.csrf)) {
     return page("Expired form", "<p>Reload the admin page and try again.</p>", { status: 403 });
   }
-  const [current, queue, held] = await Promise.all([status(env), queued(env), requests(env)]);
+  const [current, queue] = await Promise.all([status(env), queued(env)]);
   const task = String(form.get("task") || "").slice(0, 200);
-  if (!s.me.admin && !tasksFor(s, current, queue, held).some((r) => r.id === task)) return redirect(`${TASKS_URL}?done=gone`);
   const done = await cancelTask(env, task, current, queue);
   return redirect(`${TASKS_URL}?done=${done}`);
 }
@@ -596,11 +589,12 @@ async function signedInRoute(request, env, s, path) {
   }
   if (path === USERS_URL && ["GET", "POST"].includes(request.method)) return usersRequest(request, env, s);
   if (path === PASSWORD_URL && request.method === "POST") return passwordRequest(request, env, s);
+  if (path === TASKS_URL && !s.me.admin) return page(...ADMINS_ONLY);
   if (path === TASKS_URL && request.method === "POST") return tasksAction(request, env, s);
   if (path === TASKS_URL && request.method === "GET") {
     const url = new URL(request.url);
     const [current, queue, held] = await Promise.all([status(env), queued(env), requests(env)]);
-    return tasksPage(tasksFor(s, current, queue, held), s.csrf, current.timezone,
+    return tasksPage(taskRows(current, queue, held), s.csrf, current.timezone,
       Math.min(Math.max(Math.trunc(Number(url.searchParams.get("n"))) || 0, 0), 99), url.searchParams.get("done") || "");
   }
   if (path === SETTINGS_URL && request.method === "GET") {
