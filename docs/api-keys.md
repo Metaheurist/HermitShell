@@ -131,7 +131,9 @@ to a cloud model instead. Add a key on the **Global settings** tab under **AI mo
 `.env`). With **Cloud first** (the default) the providers with a key are asked in order (OpenRouter,
 BazaarLink, Featherless, Hugging Face, or `LLM_PROVIDERS`), and the local Ollama answers when none has
 a key or credits left. **Local first** (`LLM_ORDER=local`) asks Ollama first and the cloud only when
-Ollama doesn't answer, so the cloud covers for a machine that is off or busy.
+Ollama doesn't answer, so the cloud covers for a machine that is off or busy. With the cloud first, a
+run rates `LLM_CLOUD_CONCURRENCY` jobs at once (2 by default, up to 8); free plans allow only a few
+requests a minute, so raise it only for a paid plan.
 
 A provider that runs out of credits or reaches its daily limit rests until midnight UTC; one that
 rejects its key rests for six hours, and one that is down or rate limited for a few minutes. Each

@@ -317,3 +317,61 @@ def test_the_status_command_prints_no_part_of_any_key(monkeypatch, capsys):
     assert "OpenRouter" in out
     for value in KEYS.values():
         assert value[:3] not in out and value[-4:] not in out
+
+
+# --------------------------------------------------------------------------- requests at the same time
+
+def test_requests_at_the_same_time_keep_every_count(monkeypatch):
+    import threading
+    use(monkeypatch, "openrouter")
+    started = threading.Barrier(4)
+
+    def post(url, json=None, headers=None, timeout=None, allow_redirects=None):
+        started.wait(timeout=5)
+        return answer("ok")
+
+    monkeypatch.setattr(lp.requests, "post", post)
+    threads = [threading.Thread(target=lp.chat, args=("s", "u")) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert lp.load()["openrouter"]["today"] == 4
+
+
+def test_a_rest_from_one_request_survives_another_finishing_later(monkeypatch):
+    import threading
+    use(monkeypatch, "openrouter")
+    limited = threading.Event()
+
+    def post(url, json=None, headers=None, timeout=None, allow_redirects=None):
+        if threading.current_thread().name == "slow":
+            limited.wait(timeout=5)
+            return answer("ok")
+        return Reply(status=429, headers={"Retry-After": "60"}, text="slow down")
+
+    monkeypatch.setattr(lp.requests, "post", post)
+    slow = threading.Thread(target=lp.chat, args=("s", "u"), name="slow")
+    slow.start()
+    lp.chat("s", "u")
+    limited.set()
+    slow.join()
+    state = lp.load()["openrouter"]
+    assert state["why"] == "rate limited" and state["rest_until"] > 0
+    assert state["today"] == 1 and state["failed"] == 1
+
+
+def test_cloud_concurrency_is_two_by_default_and_kept_between_one_and_eight(monkeypatch):
+    monkeypatch.delenv("LLM_CLOUD_CONCURRENCY", raising=False)
+    assert lp.concurrency() == 2
+    for raw, want in (("5", 5), ("0", 1), ("50", 8), ("lots", 2)):
+        monkeypatch.setenv("LLM_CLOUD_CONCURRENCY", raw)
+        assert lp.concurrency() == want
+
+
+def test_cloud_first_needs_a_key_and_follows_llm_order(monkeypatch):
+    assert not lp.cloud_first("http://ollama:11434")
+    use(monkeypatch, "openrouter")
+    assert lp.cloud_first("http://ollama:11434") and lp.cloud_first("")
+    monkeypatch.setenv("LLM_ORDER", "local")
+    assert not lp.cloud_first("http://ollama:11434") and lp.cloud_first("")

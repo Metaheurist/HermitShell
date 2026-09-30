@@ -22,6 +22,13 @@ os.environ.pop("HERMES_DASHBOARD_APPLIED", None)
 
 
 @pytest.fixture(autouse=True)
+def _plain_requests(monkeypatch):
+    """Scripts send through hermes_common.http(); tests mock requests.get and requests.post, so http() hands those out."""
+    if "hermes_common" in sys.modules:
+        monkeypatch.setattr(sys.modules["hermes_common"], "http", lambda: sys.modules["requests"])
+
+
+@pytest.fixture(autouse=True)
 def _no_retry_waits(monkeypatch):
     """worker_link retries a dropped connection after 1 and 2 seconds; tests don't wait for them."""
     if "worker_link" in sys.modules:

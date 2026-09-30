@@ -17,6 +17,7 @@ used and redirects are not followed.
 """
 from __future__ import annotations
 
+import copy
 import json
 import math
 import re
@@ -185,7 +186,7 @@ def _post(name: str, body: dict):
     headers = {"Authorization": f"Bearer {key(name)}", "Content-Type": "application/json", "Accept": "application/json"}
     if name == "openrouter":
         headers["X-Title"] = "HermitShell"
-    return requests.post(f"{PROVIDERS[name]['base']}/chat/completions", json=body, headers=headers, timeout=TIMEOUT,
+    return hc.http().post(f"{PROVIDERS[name]['base']}/chat/completions", json=body, headers=headers, timeout=TIMEOUT,
                          allow_redirects=False)
 
 
@@ -250,6 +251,25 @@ def ask(name: str, system: str, user: str, fmt: dict | None, num_predict: int, s
     return text
 
 
+def _merge(name: str, before: dict, after: dict) -> None:
+    """Saves what one request changed for `name` (`before` and `after` are its view of the state), applied to the
+    state as it is now, so requests running at the same time on other threads or processes keep their counts."""
+    with hc.file_lock(_path()):
+        state = load()
+        e, b, a = state[name], before[name], after[name]
+        if e["day"] != a["day"]:
+            e.update(day=a["day"], today=0, failed=0)
+        same_day = a["day"] == b["day"]
+        e["today"] += a["today"] - (b["today"] if same_day else 0)
+        e["failed"] += a["failed"] - (b["failed"] if same_day else 0)
+        for field in ("rest_until", "why", "last_ok", "last_model"):
+            if a[field] != b[field]:
+                e[field] = a[field]
+        if after["_last"] != before["_last"]:
+            state["_last"] = after["_last"]
+        _save(state)
+
+
 def chat(system: str, user: str, fmt: dict | None = None, num_predict: int = 500,
          task: str = "other") -> tuple[str, str, str] | None:
     """(reply, provider, model) from the first cloud provider that answers, or None when none did; `task` is what
@@ -259,26 +279,37 @@ def chat(system: str, user: str, fmt: dict | None = None, num_predict: int = 500
         return None
     now = time.time()
     state = load()
-    try:
-        for name in names:
-            if resting(name, state, now):
-                continue
-            text = ask(name, system, user, fmt, num_predict, state, now, task)
-            if text:
-                return text, name, state[name]["last_model"]
-        return None
-    finally:
-        _save(state)
+    for name in names:
+        if resting(name, state, now):
+            continue
+        before = copy.deepcopy(state)
+        text = ask(name, system, user, fmt, num_predict, state, now, task)
+        _merge(name, before, state)
+        if text:
+            return text, name, state[name]["last_model"]
+    return None
+
+
+def cloud_first(host: str = "") -> bool:
+    """Whether model requests go to the cloud providers before Ollama."""
+    return bool(configured()) and (not host or not local_first())
+
+
+def concurrency() -> int:
+    """How many cloud requests a run sends at once (LLM_CLOUD_CONCURRENCY, 1-8): free plans limit requests per
+    minute, and a provider that answers 429 rests while the next one answers."""
+    return max(1, min(8, hc.env_int("LLM_CLOUD_CONCURRENCY", 2)))
 
 
 def used_local(model_name: str) -> None:
     """Note that the local Ollama answered (for the dashboard), at most once a minute."""
-    state = load()
-    last, now = state["_last"], time.time()
+    last, now = load()["_last"], time.time()
     if last["provider"] == "ollama" and last["model"] == model_name and now - last["at"] < LAST_EVERY:
         return
-    state["_last"] = {"provider": "ollama", "model": str(model_name)[:120], "at": now}
-    _save(state)
+    with hc.file_lock(_path()):
+        state = load()
+        state["_last"] = {"provider": "ollama", "model": str(model_name)[:120], "at": now}
+        _save(state)
 
 
 def summary(now: float | None = None) -> dict:

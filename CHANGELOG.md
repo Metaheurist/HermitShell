@@ -836,6 +836,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Cloud model counts and rests are no longer lost.** Two model requests at once (from two scripts, or
+  ratings running side by side) each saved the whole provider state when they finished, so the later one
+  undid the other's request count or a provider's rest after a 429. Each request now saves only what it
+  changed, under a lock.
 - **Waiting pages keep the account box and the demo ribbon.** A page reloading itself while HermitShell
   applied a change lost the **Sign out** box (and the demo ribbon), and on phones the card jumped as it
   came and went.
@@ -937,6 +941,10 @@ using [Semantic Versioning](https://semver.org/).
 - A signed poll of `/api/queue/flag` checks its nonce and records HermitShell's check-in in one call
   to the live link's Durable Object instead of two, halving that object's requests when HermitShell
   polls.
+- Calls to Firecrawl, Tavily, Scrapfly, Ollama and the cloud models reuse one connection per thread
+  instead of opening a new one (and a new TLS handshake) for every request.
+- With the cloud models first, a run rates `LLM_CLOUD_CONCURRENCY` jobs at once (2 by default) instead of
+  one at a time.
 - The recruits list reads every recruit's sparkline from one KV key and its invites from one list,
   instead of one read per recruit and per invite.
 - Styles shared by every page moved from each page (about 15 KB) into `/app.css`, which the browser

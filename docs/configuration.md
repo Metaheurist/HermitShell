@@ -239,6 +239,7 @@ Full template: [`.env.example`](../.env.example).
 | `OPENROUTER_MODEL` / `BAZAARLINK_MODEL` / `FEATHERLESS_MODEL` / `HUGGINGFACE_MODEL` | `openrouter/free` / `auto:free` / `Qwen/Qwen2.5-7B-Instruct` / `openai/gpt-oss-20b:cheapest` | Each provider's model |
 | `LLM_PROVIDERS` | `openrouter,bazaarlink,featherless,huggingface` | The order the cloud providers are asked in |
 | `LLM_ORDER` | `cloud` | `cloud` asks the cloud providers first and Ollama when none answers; `local` asks Ollama first |
+| `LLM_CLOUD_CONCURRENCY` | `2` | How many jobs a run rates at once when the cloud models answer first (1-8) |
 | `HERMES_TIMEZONE` | `UTC` | IANA timezone for dates shown in emails and for the schedules |
 | `HERMES_STATE_DIR` | `<scripts>/state` | Seen-state, caches and last reports |
 | `HERMITSHELL_HOME` | parent of the scripts directory | HermitShell's home: `.env`, the schedule, backups. `/data` in the container. Environment only (`HERMES_HOME` is still read) |

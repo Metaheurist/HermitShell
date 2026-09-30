@@ -19,11 +19,13 @@ import secrets
 import smtplib
 import ssl
 import sys
+import threading
 import time
 from collections import Counter
 from email.message import EmailMessage
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
+from http import cookiejar as http_cookiejar
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -34,6 +36,20 @@ if DEPS_DIR.is_dir() and str(DEPS_DIR) not in sys.path:
     sys.path.insert(0, str(DEPS_DIR))
 
 import requests  # noqa: E402
+
+_HTTP = threading.local()
+
+
+def http():
+    """This thread's keep-alive HTTP session: repeat calls to the same API reuse one connection (and TLS handshake)
+    instead of opening a new one each time. It keeps no cookies, so no call carries state from an earlier one."""
+    session = getattr(_HTTP, "session", None)
+    if session is None:
+        session = requests.Session()
+        session.cookies.set_policy(http_cookiejar.DefaultCookiePolicy(allowed_domains=[]))
+        _HTTP.session = session
+    return session
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 # HermitShell's home: .env, cron/ (the scheduler's jobs), backups/ and scripts/ with its state. HERMES_HOME is the
@@ -161,6 +177,34 @@ def write_atomic(path: Path, data: str | bytes) -> None:
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+_FILE_LOCKS: dict[str, threading.Lock] = {}
+_FILE_LOCKS_GUARD = threading.Lock()
+
+
+@contextlib.contextmanager
+def file_lock(path: Path):
+    """Held by one thread and one process at a time, around reading, changing and writing back a shared state
+    file (`<path>.lock` beside it). Where flock is missing (Windows) only threads are kept apart."""
+    with _FILE_LOCKS_GUARD:
+        lock = _FILE_LOCKS.setdefault(str(path), threading.Lock())
+    with lock:
+        fd = None
+        try:
+            import fcntl
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd = os.open(path.with_name(f"{path.name}.lock"), os.O_RDWR | os.O_CREAT, 0o600)
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        except (ImportError, OSError):
+            if fd is not None:
+                os.close(fd)
+                fd = None
+        try:
+            yield
+        finally:
+            if fd is not None:
+                os.close(fd)
 
 
 # --------------------------------------------------------------------------- encryption at rest
@@ -397,7 +441,7 @@ class Firecrawl:
             self._last = time.monotonic()
             self.calls += 1
             try:
-                resp = requests.post(f"{FIRECRAWL}/{path}", json=payload, headers=self.headers, timeout=timeout)
+                resp = http().post(f"{FIRECRAWL}/{path}", json=payload, headers=self.headers, timeout=timeout)
             except requests.RequestException as exc:
                 self.network_failures += 1
                 log(f"Firecrawl {path} error (attempt {attempt}): {exc.__class__.__name__}")
@@ -481,7 +525,7 @@ class Tavily:
 
     def _post(self, path: str, payload: dict) -> dict:
         try:
-            resp = requests.post(f"{TAVILY}/{path}", json=payload, headers=self.headers, timeout=90)
+            resp = http().post(f"{TAVILY}/{path}", json=payload, headers=self.headers, timeout=90)
         except requests.RequestException as exc:
             raise RuntimeError(f"Tavily {path} error: {exc.__class__.__name__}") from exc
         if resp.status_code in (401, 403, 432, 433) or \
@@ -530,7 +574,7 @@ class Scrapfly:
             params = {"key": self.key, "url": url, "format": "markdown"}
             if env("SCRAPFLY_COUNTRY"):
                 params["country"] = env("SCRAPFLY_COUNTRY")
-            resp = requests.get(f"{SCRAPFLY}/scrape", params=params, timeout=120)
+            resp = http().get(f"{SCRAPFLY}/scrape", params=params, timeout=120)
         except requests.RequestException as exc:
             raise RuntimeError(f"Scrapfly error: {exc.__class__.__name__}") from exc
         if resp.status_code in (401, 402) or (resp.status_code in (403, 429) and
@@ -1021,7 +1065,7 @@ def _ollama_post(host: str, model: str, system: str, user: str, num_ctx: int | N
         target, extra = autofit.choose(host, model, num_ctx, chars, num_predict, slot)
         body["options"] = {"temperature": temp, "num_predict": num_predict, **extra}
         try:
-            resp = requests.post(f"{target}/api/chat", json=body, timeout=600)
+            resp = http().post(f"{target}/api/chat", json=body, timeout=600)
             resp.raise_for_status()
         except requests.RequestException as exc:
             autofit.failed(target, model, extra, exc)
@@ -1030,7 +1074,7 @@ def _ollama_post(host: str, model: str, system: str, user: str, num_ctx: int | N
             log(f"{target} failed ({exc.__class__.__name__}); trying {host}")
             target, extra = autofit.choose(host, model, num_ctx, chars, num_predict, 0)
             body["options"] = {"temperature": temp, "num_predict": num_predict, **extra}
-            resp = requests.post(f"{target}/api/chat", json=body, timeout=600)
+            resp = http().post(f"{target}/api/chat", json=body, timeout=600)
             resp.raise_for_status()
         reply = resp.json()
         autofit.record(target, model, extra, reply)

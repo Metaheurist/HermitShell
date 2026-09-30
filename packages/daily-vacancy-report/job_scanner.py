@@ -45,6 +45,7 @@ import requests
 
 import autofit
 import hermes_common as hc
+import llm_providers
 import money
 import profiles
 import tailored_cv
@@ -1462,9 +1463,10 @@ def run(args: argparse.Namespace) -> int:
             return None
         return None if ctx == "skipped" else ctx
 
-    workers = max(1, min(8, autofit.slots(host)))
+    cloud = llm_providers.cloud_first(host)
+    workers = llm_providers.concurrency() if cloud else max(1, min(8, autofit.slots(host)))
     if workers > 1:
-        log(f"Rating {workers} jobs at a time over the model instances in use")
+        log(f"Rating {workers} jobs at a time " + ("with the cloud models" if cloud else "over the model instances in use"))
     rate_in_order(enumerate(queue, 1), prepared, model_rating, settle, workers)
     companies.save()
 
