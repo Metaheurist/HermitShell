@@ -2,7 +2,7 @@
 """Score the configured AI models on HermitShell's own tasks, with made-up CVs and adverts (scripts/bench/cases.json).
 
 Each case rates one CV against one advert with the real prompts and checks the fit lands in the expected range; the
-good matches also get a cover letter and a tailored CV, checked with writing_checks.py (figures and job titles the CV
+good matches also get a cover letter (with its evidence map and rewrites, as in production) and a tailored CV, checked with writing_checks.py (figures and job titles the CV
 doesn't have, stock phrases, length, and how many of the advert's requirements they cover). The tokens each task
 used are counted in a throwaway llm_usage file, so a change to a prompt or a model can be judged on both quality and
 tokens before it goes live. Nothing is emailed or saved, and the real usage counts are left alone.
@@ -27,6 +27,7 @@ for folder in (HERE.parent / "common", HERE.parent / "packages" / "daily-vacancy
         sys.path.insert(0, str(folder))
 
 import cover_letter  # noqa: E402
+import evidence  # noqa: E402
 import hermes_common as hc  # noqa: E402
 import job_scanner  # noqa: E402
 import llm_usage  # noqa: E402
@@ -62,7 +63,8 @@ def cv_text(cv: dict) -> str:
     return "\n".join(p for p in parts if p)
 
 
-def run_case(case: dict, data: dict, tasks: tuple[str, ...], model_info, masters: dict) -> dict:
+def run_case(case: dict, data: dict, tasks: tuple[str, ...], model_info, masters: dict,
+             evidence_dir: Path | None = None) -> dict:
     cv, listing = data["cvs"][case["cv"]], data["listings"][case["listing"]]
     host, model, num_ctx = model_info
     out = {"cv": case["cv"], "listing": case["listing"], "expected_fit": case["fit"]}
@@ -79,14 +81,17 @@ def run_case(case: dict, data: dict, tasks: tuple[str, ...], model_info, masters
     job = job_for(listing, rating)
     if "letter" in tasks:
         started = time.monotonic()
+        found = evidence.for_job(model_info, f"{case['cv']}/{case['listing']}", job, cv["text"], listing["text"],
+                                 evidence_dir) if evidence_dir else []
         try:
-            paragraphs = cover_letter.write_letter(host, model, num_ctx, job, cv["text"], listing["text"], tries=1)
+            paragraphs = cover_letter.write_letter(host, model, num_ctx, job, cv["text"], listing["text"], found=found)
         except ValueError as exc:
             out["letter"] = {"error": str(exc)}
         else:
             source = f"{listing['title']} {listing['employer']} {listing['location']}\n{listing['text']}"
             out["letter"] = writing_checks.letter_score(paragraphs, cv["text"], source, listing["requirements"]) | {
-                "seconds": round(time.monotonic() - started, 1), "text": paragraphs}
+                "seconds": round(time.monotonic() - started, 1), "text": paragraphs,
+                "evidence": f"{len(evidence.shown(found))}/{len(found)}"}
     if "cv" in tasks:
         started = time.monotonic()
         try:
@@ -123,7 +128,8 @@ def verdict(results: list[dict]) -> dict:
 
 def run(data: dict, tasks: tuple[str, ...], model_info) -> dict:
     masters: dict = {}
-    results = [run_case(case, data, tasks, model_info, masters) for case in data["cases"]]
+    with tempfile.TemporaryDirectory(prefix="hermitshell-bench-evidence-") as tmp:
+        results = [run_case(case, data, tasks, model_info, masters, Path(tmp)) for case in data["cases"]]
     return {"model": model_info[1], "summary": verdict(results), "tokens": llm_usage.summary(days=1)["tasks"],
             "cases": results}
 

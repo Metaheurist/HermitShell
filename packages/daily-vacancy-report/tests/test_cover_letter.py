@@ -14,6 +14,7 @@ sys.path[:0] = [str(PACKAGE), str(PACKAGE.parents[1] / "common")]
 
 import cover_letter  # noqa: E402
 import letter_pdf  # noqa: E402
+import writing_checks  # noqa: E402
 from job_tracker import Tracker  # noqa: E402
 
 PARAGRAPHS = [
@@ -95,8 +96,8 @@ def test_write_letter_rewrites_letters_that_invent_a_job_title(monkeypatch):
     invented = ["As an AI Solutions Engineer at Northwind Ltd, I built pipelines. " * 6] + PARAGRAPHS[1:]
     honest = ["As an Automation Project Lead at Northwind Ltd, and as a Machine Learning Researcher at Contoso, "
               "I built pipelines. " * 4] + PARAGRAPHS[1:]
-    assert cover_letter.invented_titles(invented, cv) == ["AI Solutions Engineer"]
-    assert cover_letter.invented_titles(honest, cv) == []
+    assert writing_checks.invented_titles(invented, cv) == ["AI Solutions Engineer"]
+    assert writing_checks.invented_titles(honest, cv) == []
     replies = iter([json.dumps({"paragraphs": invented}), json.dumps({"paragraphs": honest})])
     monkeypatch.setattr(cover_letter, "ollama_chat", lambda *a, **k: next(replies))
     assert cover_letter.write_letter("h", "m", None, JOB, cv, "listing")[0].startswith("As an Automation Project Lead")
@@ -140,6 +141,7 @@ def setup(tmp_path, monkeypatch):
     monkeypatch.setenv("COVER_LETTER_CONTACT", "Belfast")
     monkeypatch.setattr(cover_letter, "LETTER_DIR", tmp_path / "letters")
     monkeypatch.setattr(cover_letter, "WRITING_FILE", tmp_path / "writing.json")
+    monkeypatch.setattr(cover_letter.evidence, "for_job", lambda *a, **k: [])
     sent = []
     monkeypatch.setattr(cover_letter.hc, "send_email",
                         lambda subject, body, text, sender, attachments=None: sent.append((subject, attachments)))
@@ -153,7 +155,7 @@ def test_process_pending_writes_and_emails_each_request_once(setup, monkeypatch)
     tracker.add_event("e1", "k1", "cover_letter", reason="mention Azure")
     notes = []
     monkeypatch.setattr(cover_letter, "write_letter",
-                        lambda host, model, ctx, job, profile, listing, note: notes.append(note) or PARAGRAPHS)
+                        lambda host, model, ctx, job, profile, listing, note, **style: notes.append(note) or PARAGRAPHS)
     lines = cover_letter.process_pending(tracker, lambda: ("h", "m", None))
     assert lines[0].startswith("Cover letter sent for AI Engineer") and "Acme" not in "\n".join(lines)
     assert notes == ["mention Azure"]
@@ -173,7 +175,7 @@ def test_process_pending_marks_the_request_it_is_writing_and_skips_cancelled_one
     marks, pushes = [], []
     monkeypatch.setattr(cover_letter.profiles, "tasks_changed", lambda: pushes.append(1))
 
-    def write(host, model, ctx, job, profile, listing, note):
+    def write(host, model, ctx, job, profile, listing, note, **style):
         marks.append(json.loads(cover_letter.WRITING_FILE.read_text())["event_id"])
         tracker.cancel_letter("e3")
         return PARAGRAPHS
@@ -219,7 +221,7 @@ def kept(setup, tmp_path, monkeypatch):
                         or Response())
     written = []
     monkeypatch.setattr(cover_letter, "write_letter",
-                        lambda host, model, ctx, job, profile, listing, note: written.append(note) or PARAGRAPHS)
+                        lambda host, model, ctx, job, profile, listing, note, **style: written.append(note) or PARAGRAPHS)
     tracker.upsert_job("k1", JOB, emailed=True)
     tracker.add_event("e0", "k1", "cover_letter")
     cover_letter.process_pending(tracker, lambda: ("h", "m", None))
@@ -364,7 +366,7 @@ def test_process_pending_retries_failures_and_skips_unknown_jobs(setup, monkeypa
     tracker.add_event("e1", "k1", "cover_letter")
     tracker.add_event("e2", "gone", "cover_letter")
 
-    def broken(*args):
+    def broken(*args, **style):
         raise ValueError("letter too short (1 paragraphs, 20 words)")
 
     monkeypatch.setattr(cover_letter, "write_letter", broken)
@@ -372,3 +374,111 @@ def test_process_pending_retries_failures_and_skips_unknown_jobs(setup, monkeypa
     assert lines[0].startswith("Cover letter will retry for AI Engineer: ValueError")
     assert lines[1] == "Cover letter skipped for gone: job gone is not in the tracker"
     assert [p["event_id"] for p in tracker.pending_letters()] == ["e1"] and sent == []
+
+
+# --------------------------------------------------------------------------- length, tone, evidence and rewrites
+
+MAP = [{"need": "Python", "evidence": "Python services", "where": "Skills"},
+       {"need": "Airflow pipelines", "evidence": "built Airflow pipelines", "where": "Engineer at Northwind"},
+       {"need": "Kubernetes", "evidence": "", "where": ""}]
+CV = "Candidate: Sam Taylor, engineer\nExperience:\n- Engineer at Northwind: built Airflow pipelines and Python services"
+GOOD = [("I would like to join Acme as an AI Engineer because the listing describes retrieval systems built in Python "
+         "and pipelines that serve real users. ") * 4,
+        "At Northwind I built Airflow pipelines and Python services, owning the code from design to support. " * 5,
+        "Earlier projects gave me practice with data quality checks, testing and clear documentation for colleagues. " * 5,
+        "I would welcome a conversation about the role and how my work could help your team."]
+GENERIC = ["I would like to join Acme because the role suits my background and the team sounds good to me. " * 5,
+           "In my work I have delivered projects on time and kept colleagues informed of progress throughout. " * 5,
+           "I also enjoy learning new tools, sharing what I learn and helping others on the team do the same. " * 5,
+           "I would welcome a conversation about the role and how my work could help your team."]
+
+
+def replies_to(monkeypatch, *letters):
+    prompts, replies = [], iter(letters)
+
+    def chat(host, model, system, user, num_ctx, **kw):
+        prompts.append((user, kw))
+        return json.dumps({"paragraphs": next(replies)})
+    monkeypatch.setattr(cover_letter, "ollama_chat", chat)
+    return prompts
+
+
+def test_the_sample_letters_fit_the_standard_length():
+    assert all(250 <= sum(len(p.split()) for p in letter) <= 380 for letter in (GOOD, GENERIC))
+
+
+def test_letter_style_reads_the_request_flags():
+    assert cover_letter.letter_style({"short", "warm", "quiet"}) == ("short", "warm")
+    assert cover_letter.letter_style({"detailed", "formal", "fresh"}) == ("detailed", "formal")
+    assert cover_letter.letter_style(set()) == cover_letter.letter_style({"evil", "long"}) == ("standard", "professional")
+
+
+@pytest.mark.parametrize("length, tone, count, words", [("short", "warm", 3, "170 to 260"),
+                                                       ("standard", "professional", 4, "250 to 380"),
+                                                       ("detailed", "direct", 5, "350 to 480")])
+def test_the_prompt_follows_the_length_and_tone_asked_for(length, tone, count, words):
+    prompt = cover_letter.letter_prompt(JOB, CV, "Python, LLMs and Azure.", "", length, tone)
+    assert f"as {count} paragraphs, {words} words" in prompt and f"Tone: {cover_letter.TONES[tone]}." in prompt
+    assert f"{count}. A short, confident close" in prompt and f"{count + 1}. " not in prompt
+    assert prompt.endswith("[" + ", ".join(['"..."'] * count) + "]}.")
+
+
+def test_with_an_evidence_map_the_prompt_uses_it_and_less_of_the_advert():
+    listing = "A" * 3000 + "LATE"
+    mapped = cover_letter.letter_prompt(JOB, CV, listing, "", found=MAP)
+    plain = cover_letter.letter_prompt(JOB, CV, listing, "")
+    assert "EVIDENCE MAP" in mapped and "- Kubernetes: not shown in the CV" in mapped and "never claim" in mapped
+    assert "LATE" not in mapped and "LATE" in plain and "EVIDENCE MAP" not in plain
+    assert "Experience: Engineer at Northwind" in mapped
+
+
+def test_a_draft_with_stock_phrases_is_revised_once_with_a_short_prompt(monkeypatch):
+    prompts = replies_to(monkeypatch, ["I am excited to apply. " + GOOD[0]] + GOOD[1:], GOOD)
+    listing = "Acme builds retrieval systems. " * 60
+    assert cover_letter.write_letter("h", "m", None, JOB, CV, listing, found=MAP) == [" ".join(p.split()) for p in GOOD]
+    (first, kw), (second, _) = prompts
+    assert kw["task"] == "letter" and kw["num_predict"] == cover_letter.LENGTHS["standard"][2]
+    assert "DRAFT COVER LETTER" in second and "'i am excited'" in second and "built Airflow pipelines" in second
+    assert "LISTING TEXT" not in second and "CANDIDATE CV" not in second and len(second) < len(first) * 0.7
+
+
+def test_soft_problems_get_one_rewrite_and_the_better_draft_is_kept(monkeypatch):
+    cliche = ["I am excited to apply. " + GOOD[0]] + GOOD[1:]
+    worse = ["I am excited to apply. " + GENERIC[0]] + GENERIC[1:]
+    prompts = replies_to(monkeypatch, worse, cliche, cliche)
+    assert cover_letter.write_letter("h", "m", None, JOB, CV, "", found=MAP)[0].startswith("I am excited to apply. I would like to join Acme as")
+    assert len(prompts) == 2
+    replies_to(monkeypatch, cliche, worse)
+    assert "Python" in cover_letter.write_letter("h", "m", None, JOB, CV, "", found=MAP)[0]
+
+
+def test_invented_figures_are_rewritten_and_refused_if_they_stay(monkeypatch):
+    listing = "You will join a team of 12 engineers."
+    team = [GOOD[0] + "I would join your team of 12 gladly."] + GOOD[1:]
+    replies_to(monkeypatch, team)
+    assert cover_letter.write_letter("h", "m", None, JOB, CV, listing, tries=1)[0].endswith("team of 12 gladly.")
+    invented = [GOOD[0] + "I cut costs by 30 percent."] + GOOD[1:]
+    prompts = replies_to(monkeypatch, invented, invented, invented)
+    with pytest.raises(ValueError, match="figures the CV does not state: 30"):
+        cover_letter.write_letter("h", "m", None, JOB, CV, listing)
+    assert len(prompts) == 3 and "remove figures the CV does not state: 30" in prompts[1][0]
+
+
+def test_a_job_title_problem_sends_the_cv_with_the_rewrite(monkeypatch):
+    titled = ["As a Lead Architect at Northwind, I built Airflow pipelines. " + GOOD[0]] + GOOD[1:]
+    prompts = replies_to(monkeypatch, titled, GOOD)
+    cover_letter.write_letter("h", "m", None, JOB, CV, "", found=MAP)
+    assert "not Lead Architect" in prompts[1][0] and "Candidate: Sam Taylor, engineer" in prompts[1][0]
+
+
+def test_a_letter_in_another_length_or_tone_is_written_rather_than_reused(kept, monkeypatch):
+    tracker, sent, uploads, written = kept
+    styles, looked = [], []
+    monkeypatch.setattr(cover_letter, "write_letter",
+                        lambda *a, **style: styles.append((style["length"], style["tone"], style["found"])) or PARAGRAPHS)
+    monkeypatch.setattr(cover_letter.evidence, "for_job", lambda info, key, *a: looked.append(key) or MAP)
+    tracker.add_event("e1", "k1", "cover_letter", flags="short,warm")
+    lines = cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    assert styles == [("short", "warm", MAP)] and looked == ["k1"] and "made earlier" not in lines[0]
+    tracker.add_event("e2", "k1", "cover_letter")
+    assert cover_letter.process_pending(tracker, lambda: ("h", "m", None))[0].endswith("(the one made earlier)")

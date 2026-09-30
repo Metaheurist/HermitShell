@@ -92,7 +92,9 @@ def letter_problems(paragraphs: list[str], cv: str, source: str = "", requiremen
     count = word_count(paragraphs)
     problems = []
     if not paragraph_range[0] <= len(paragraphs) <= paragraph_range[1]:
-        problems.append(f"write {paragraph_range[0]} to {paragraph_range[1]} paragraphs (it has {len(paragraphs)})")
+        wanted = (f"{paragraph_range[0]}" if paragraph_range[0] == paragraph_range[1]
+                  else f"{paragraph_range[0]} to {paragraph_range[1]}")
+        problems.append(f"write {wanted} paragraphs (it has {len(paragraphs)})")
     if count < words[0]:
         problems.append(f"it is too short at {count} words: write at least {words[0]}")
     elif count > words[1]:

@@ -145,7 +145,10 @@ DETAIL_FIELDS = ("location", "employment_type", "work_mode", "seniority", "salar
                  "salary_shown", "salary_code")
 # How a letter or CV request was made: "fresh" asks for a new one even if one was made recently, "quiet" (from
 # the dashboard) keeps it for download instead of emailing it, "send" (the dashboard's Email button) emails it.
-REQUEST_FLAGS = ("fresh", "quiet", "send")
+# A cover letter's length and tone ride along as flags too (cover_letter.LENGTHS and TONES; the defaults need none).
+LETTER_LENGTHS = ("short", "detailed")
+LETTER_TONES = ("warm", "direct", "formal")
+REQUEST_FLAGS = ("fresh", "quiet", "send") + LETTER_LENGTHS + LETTER_TONES
 
 
 def clean_flags(flags) -> str:
@@ -448,6 +451,9 @@ def sync_feedback(tracker: Tracker, base_url: str, api_token: str, ack: bool = T
             at = None
         dash, send = ev.get("via") == "dashboard", bool(ev.get("send"))
         flags = [f for f, on in (("fresh", ev.get("fresh")), ("quiet", dash and not send), ("send", dash and send)) if on]
+        if ev.get("a") == "cover_letter":
+            flags += [v for v, allowed in ((ev.get("len"), LETTER_LENGTHS), (ev.get("tone"), LETTER_TONES))
+                      if isinstance(v, str) and v in allowed]
         saved += tracker.add_event(event_id, str(ev.get("j") or ""), str(ev.get("a") or ""),
                                    str(ev.get("r") or ""), at, skills, ",".join(flags))
         ids.append(event_id)

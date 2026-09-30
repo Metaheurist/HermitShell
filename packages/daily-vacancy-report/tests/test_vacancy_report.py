@@ -379,6 +379,20 @@ def test_sync_feedback_keeps_how_a_request_was_made(tracker, monkeypatch):
     assert flags == {"event:1:a": "fresh", "event:1:b": "quiet", "event:1:c": "", "event:1:d": "send", "event:1:e": ""}
 
 
+def test_sync_feedback_keeps_a_letters_length_and_tone_and_nothing_else(tracker, monkeypatch):
+    events = [{"id": "event:1:a", "j": "k1", "a": "cover_letter", "r": "", "at": 1, "len": "short", "tone": "warm"},
+              {"id": "event:1:b", "j": "k1", "a": "cover_letter", "r": "", "at": 2, "len": "detailed", "tone": "formal",
+               "via": "dashboard"},
+              {"id": "event:1:c", "j": "k1", "a": "cover_letter", "r": "", "at": 3, "len": "send", "tone": "fresh"},
+              {"id": "event:1:d", "j": "k1", "a": "cover_letter", "r": "", "at": 4, "len": ["short"], "tone": "warm,send"},
+              {"id": "event:1:e", "j": "k1", "a": "tailored_cv", "r": "", "at": 5, "len": "short", "tone": "direct"}]
+    monkeypatch.setattr(job_tracker.requests, "get", lambda *a, **k: FakeResponse({"events": events}))
+    assert sync_feedback(tracker, "https://fb.example.workers.dev", "tok", ack=False) == (5, None)
+    flags = {r["event_id"]: r["flags"] for r in tracker.open_requests()}
+    assert flags == {"event:1:a": "short,warm", "event:1:b": "quiet,detailed,formal", "event:1:c": "", "event:1:d": "",
+                     "event:1:e": ""}
+
+
 def test_sync_feedback_reports_errors(tracker, monkeypatch):
     monkeypatch.setattr(job_tracker.requests, "get", lambda *a, **k: FakeResponse(status=401))
     assert sync_feedback(tracker, "https://fb.example.workers.dev", "bad") == \

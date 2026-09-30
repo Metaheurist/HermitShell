@@ -32,6 +32,11 @@ TAILORED = {"headline": "Cloud Engineer", "summary": "Cloud engineer with 6 year
             "experience": [{"index": 0, "bullets": ["Built 40 Terraform modules on Azure for 12 teams, on Linux runners."]}]}
 
 
+EVIDENCE = {"requirements": [{"need": "Terraform", "evidence": "Built and maintain 40 Terraform modules",
+                                "where": "Cloud Engineer at Contoso Payments"},
+                               {"need": "Go", "evidence": "", "where": ""}]}
+
+
 @pytest.fixture
 def canned(monkeypatch):
     def rating(host, model, num_ctx, profile, keywords, job, feedback=""):
@@ -39,10 +44,10 @@ def canned(monkeypatch):
         return {"fit_score": fit, "matched_skills": ["Azure", "Made Up"], "missing_skills": [], "reasoning": "r"}
 
     def chat(host, model, system, user, num_ctx, fmt=None, num_predict=500, task="other"):
-        return json.dumps({"letter": LETTER, "cv_read": MASTER, "cv_tailor": TAILORED}[task])
+        return json.dumps({"letter": LETTER, "cv_read": MASTER, "cv_tailor": TAILORED, "evidence": EVIDENCE}[task])
 
     monkeypatch.setattr(llm_bench.job_scanner, "rate_job", rating)
-    for module in (llm_bench.cover_letter, llm_bench.tailored_cv):
+    for module in (llm_bench.cover_letter, llm_bench.tailored_cv, llm_bench.evidence):
         monkeypatch.setattr(module, "ollama_chat", chat)
 
 
@@ -65,6 +70,7 @@ def test_a_run_scores_ratings_letters_and_cvs(canned):
     first = found["cases"][0]
     assert first["rating"]["in_range"] and first["rating"]["stray_skills"] == ["Made Up"]
     assert first["letter"]["problems"] == [] and first["letter"]["coverage"] >= 0.8
+    assert first["letter"]["evidence"] == "1/2"
     assert first["tailored_cv"]["invented_figures"] == [] and "Azure" in first["tailored_cv"]["skills"]
     assert "letter" not in found["cases"][1] and "tailored_cv" not in found["cases"][1]
     summary = found["summary"]

@@ -78,9 +78,9 @@ def compact_profile(text: str) -> str:
         line = " ".join(raw.split())
         if not line or re.fullmatch(r"[-*]\s*none stated\.?", line, re.I):
             continue
-        if line.startswith("#"):
+        if line.startswith("#") or (line.endswith(":") and len(line) <= 60 and not re.match(r"^[-*]\s+", line)):
             flush()
-            heading = line.lstrip("#").strip()
+            heading = line.lstrip("#").strip().rstrip(":").strip()
         elif re.match(r"^[-*]\s+", line):
             items.append(re.sub(r"^[-*]\s+", "", line))
         else:

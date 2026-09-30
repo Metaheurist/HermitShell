@@ -18,6 +18,7 @@ it is sent from here too, without the model, and the Worker is told so it can ma
 
     python3 cover_letter.py                         # fetch requests from the Worker and send them
     python3 cover_letter.py --job KEY [--note ...]  # write a letter for a tracked job now
+    python3 cover_letter.py --job KEY --length short --tone warm   # choose its length and tone
     python3 cover_letter.py --job KEY --cv          # tailor the CV for it instead
     python3 cover_letter.py --job KEY --dry-run     # save the PDF under state/, no email
 
@@ -41,6 +42,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
+import evidence
 import hermes_common as hc
 import job_mail
 import profiles
@@ -49,8 +51,9 @@ import worker_link
 from hermes_common import (EMAIL_HEAD, STATE_DIR, connect_model, env, env_int, load_env_file, log, ollama_chat,
                            white_label)
 from job_tracker import REQUEST_ACTIONS, Tracker, secure_base, skills_text, sync_feedback
+from job_extras import compact_profile
 from letter_pdf import cv_pdf, letter_pdf
-from writing_checks import PLACEHOLDER_RE, invented_titles
+from writing_checks import letter_problems
 
 hc.LOG_TAG = "cover_letter"
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -66,6 +69,8 @@ WRITING_FILE = STATE_DIR / profiles.WRITING_NAME
 FULL_SYNC_FILE = STATE_DIR / "feedback_full_sync"
 FULL_SYNC_EVERY = 3600
 MAX_LISTING_CHARS = 5000
+# With an evidence map the requirements are already distilled, so the letter gets less of the advert.
+LISTING_WITH_MAP = 2500
 MAX_KEEP_DAYS = 30
 DAY = 86400
 C_BG, C_CARD, C_INK, C_MUTED, C_ACCENT = "#eef1f7", "#ffffff", "#0f172a", "#64748b", "#4f46e5"
@@ -77,6 +82,31 @@ LETTER_SCHEMA = {
     },
     "required": ["paragraphs"],
 }
+# Letter length and tone, chosen on the request (job_tracker.REQUEST_FLAGS): paragraphs, words, reply tokens.
+LENGTHS = {"short": (3, (170, 260), 800), "standard": (4, (250, 380), 1100), "detailed": (5, (350, 480), 1400)}
+TONES = {
+    "professional": "plain and professional",
+    "warm": "warm and personable, while staying professional",
+    "direct": "direct and concise: short sentences that lead with evidence",
+    "formal": "formal and measured",
+}
+STYLE_FLAGS = (set(LENGTHS) | set(TONES)) - {"standard", "professional"}
+_WHY = "Why this role at this employer: name both, and show you read the listing."
+_RECENT = ("The most relevant current or recent experience from the CV, tied to the listing's main requirements, with "
+           "concrete systems, tools and responsibilities from the CV.")
+_FURTHER = ("Further evidence: other roles, projects or qualifications from the CV that fit. If a requirement is missing "
+            "from the CV, focus on transferable experience instead of claiming it.")
+_CLOSE = "A short, confident close inviting a conversation."
+PLANS = {
+    3: [_WHY, "The strongest evidence from the CV for the listing's main requirements, with concrete systems, tools and "
+              "responsibilities from the CV.", _CLOSE],
+    4: [_WHY, _RECENT, _FURTHER, _CLOSE],
+    5: [_WHY, _RECENT, _FURTHER, "How that experience would help with the role's main responsibilities in the listing, "
+                                 "staying within what the CV shows.", _CLOSE],
+}
+# Hard problems fail the letter if a rewrite can't fix them; the rest are asked for but a letter can go without.
+MIN_WORDS = 150
+HARD = ("too short", "placeholder", "job titles", "figures")
 SYSTEM_PROMPT = (
     "You write concise, specific cover letters in UK English for a job candidate. You only use facts that "
     "appear in the candidate's CV: never invent employers, job titles, dates, numbers, qualifications, "
@@ -131,8 +161,14 @@ def job_title(job: dict) -> str:
 
 # --------------------------------------------------------------------------- writing
 
-def letter_prompt(job: dict, profile: str, listing: str, note: str) -> str:
-    facts = "\n".join(f"{label}: {value}" for label, value in (
+def letter_style(flags) -> tuple[str, str]:
+    """The (length, tone) a request asked for; unknown flags are ignored."""
+    flags = set(flags or ())
+    return (next((k for k in LENGTHS if k in flags), "standard"), next((k for k in TONES if k in flags), "professional"))
+
+
+def job_facts(job: dict) -> str:
+    return "\n".join(f"{label}: {value}" for label, value in (
         ("Job title", job_title(job)), ("Employer", employer(job)),
         ("Advertised by", job.get("company") if job.get("employer") and job.get("company") != job.get("employer")
          else ""),
@@ -142,46 +178,92 @@ def letter_prompt(job: dict, profile: str, listing: str, note: str) -> str:
         ("Requirements the CV does not show", ", ".join(job.get("gaps") or [])),
         ("Why it was rated a fit", job.get("reasoning")),
     ) if value)
+
+
+def letter_prompt(job: dict, profile: str, listing: str, note: str, length: str = "standard",
+                  tone: str = "professional", found: list[dict] | None = None) -> str:
+    count, (low, high), _ = LENGTHS[length]
+    plan = "\n".join(f"{n}. {step}" for n, step in enumerate(PLANS[count], 1))
+    listing = listing[:LISTING_WITH_MAP] if found else listing
     return (
-        f"CANDIDATE CV:\n{profile}\n\nJOB:\n{facts}\n\n"
-        f"LISTING TEXT:\n{listing or '(not available: rely on the job details above)'}\n\n"
+        f"CANDIDATE CV:\n{compact_profile(profile)}\n\nJOB:\n{job_facts(job)}\n\n"
+        + (f"EVIDENCE MAP (the listing's main requirements and where the CV shows them):\n{evidence.as_text(found)}\n\n"
+           if found else "")
+        + f"LISTING TEXT:\n{listing or '(not available: rely on the job details above)'}\n\n"
         + (f"CANDIDATE'S NOTE FOR THIS LETTER (follow it if it is consistent with the CV):\n{note}\n\n" if note else "")
-        + "Write the body of a cover letter for this job as 4 paragraphs, 250 to 380 words in total:\n"
-          "1. Why this role at this employer: name both, and show you read the listing.\n"
-          "2. The most relevant current or recent experience from the CV, tied to the listing's main "
-          "requirements, with concrete systems, tools and responsibilities from the CV.\n"
-          "3. Further evidence: other roles, projects or qualifications from the CV that fit. If a requirement "
-          "is missing from the CV, focus on transferable experience instead of claiming it.\n"
-          "4. A short, confident close inviting a conversation.\n"
-          "Rules: first person; plain professional tone; no salutation, no sign-off and no name (they are added "
+        + f"Write the body of a cover letter for this job as {count} paragraphs, {low} to {high} words in total:\n"
+          f"{plan}\n"
+        + ("Build the evidence on the map: cover the requirements it shows, most important first, and never claim "
+           "one it marks as not shown.\n" if found else "")
+        + f"Tone: {TONES[tone]}.\n"
+          "Rules: first person; no salutation, no sign-off and no name (they are added "
           "separately); no placeholders or brackets; no em dashes; avoid cliches such as 'I am excited' or "
           "'passionate'; do not mention salary, and do not say the letter was written by AI.\n"
           "Accuracy: use job titles exactly as the CV writes them; only tie a skill or tool to an employer "
           "when the CV lists it in that role's own description (core competencies are general skills, and "
           "personal projects are described as projects, never as work at an employer); never add outcomes, "
           "reviews, approvals, awards, metrics or team sizes the CV does not state.\n"
-          'Return {"paragraphs": ["...", "...", "...", "..."]}.'
+          'Return {"paragraphs": [' + ", ".join(['"..."'] * count) + ']}.'
     )
 
 
+def rewrite_prompt(paragraphs: list[str], problems: list[str], facts: str, length: str, tone: str) -> str:
+    """A short follow-up that sends only the draft, what is wrong with it and the facts it may use."""
+    count, (low, high), _ = LENGTHS[length]
+    return (f"FACTS FROM THE CANDIDATE'S CV (the only facts you may use):\n{facts}\n\n"
+            f"DRAFT COVER LETTER:\n{json.dumps({'paragraphs': paragraphs}, ensure_ascii=False)}\n\n"
+            "Revise the draft to fix these problems, keeping what is already right:\n"
+            + "\n".join(f"- {p}" for p in problems)
+            + f"\nKeep {count} paragraphs and {low} to {high} words in total, tone {TONES[tone]}; first person; no "
+              "salutation, sign-off, name, placeholders or em dashes; job titles exactly as the CV writes them.\n"
+              'Return {"paragraphs": [...]}.')
+
+
+def _paragraphs(reply: str) -> list[str]:
+    got = json.loads(reply).get("paragraphs", [])
+    return [" ".join(str(p).split()) for p in (got if isinstance(got, list) else []) if str(p).strip()]
+
+
+def _problems(paragraphs: list[str], profile: str, source: str, needs: list[str], length: str) -> tuple[list, list]:
+    """(hard, soft) problems, each an instruction a rewrite can follow."""
+    count, words, _ = LENGTHS[length]
+    found = letter_problems(paragraphs, profile, source, needs, words=words, paragraph_range=(count, count))
+    total = sum(len(p.split()) for p in paragraphs)
+    short = len(paragraphs) < 3 or total < MIN_WORDS
+    hard = [p for p in found if any(h in p for h in HARD) and (short or "too short" not in p)]
+    if short and not any("too short" in p for p in hard):
+        hard.insert(0, f"it is too short at {total} words in {len(paragraphs)} paragraphs: write {count} paragraphs "
+                       f"of at least {words[0]} words in total")
+    return hard, [p for p in found if p not in hard]
+
+
 def write_letter(host: str, model: str, num_ctx: int | None, job: dict, profile: str, listing: str,
-                 note: str = "", tries: int = 2) -> list[str]:
-    prompt = letter_prompt(job, profile, listing, note)
+                 note: str = "", tries: int = 3, length: str = "standard", tone: str = "professional",
+                 found: list[dict] | None = None) -> list[str]:
+    """The letter's paragraphs. A draft with problems is sent back with exactly what failed: once for soft problems
+    (stock phrases, requirements missed, off the length asked for), up to `tries - 1` times for hard ones (too
+    short, placeholders, job titles or figures the CV doesn't have). A letter that keeps a hard problem is refused."""
+    length, tone = (length if length in LENGTHS else "standard"), (tone if tone in TONES else "professional")
+    budget = LENGTHS[length][2]
+    source, needs = f"{job_facts(job)}\n{listing}", evidence.shown(found or [])
+    facts = evidence.as_text(found) if found else compact_profile(profile)
+    prompt, best = letter_prompt(job, profile, listing, note, length, tone, found), None
     for attempt in range(1, tries + 1):
-        reply = ollama_chat(host, model, SYSTEM_PROMPT, prompt, num_ctx, fmt=LETTER_SCHEMA, num_predict=1200, task="letter")
-        paragraphs = [" ".join(str(p).split()) for p in json.loads(reply).get("paragraphs", []) if str(p).strip()]
-        words = sum(len(p.split()) for p in paragraphs)
-        if len(paragraphs) < 3 or words < 150:
-            problem = f"letter too short ({len(paragraphs)} paragraphs, {words} words)"
-        elif any(PLACEHOLDER_RE.search(p) for p in paragraphs):
-            problem = "letter contains a placeholder"
-        elif titles := invented_titles(paragraphs, profile):
-            problem = f"letter uses job titles the CV does not: {', '.join(titles)}"
-        else:
-            return paragraphs
+        reply = ollama_chat(host, model, SYSTEM_PROMPT, prompt, num_ctx, fmt=LETTER_SCHEMA, num_predict=budget,
+                            task="letter")
+        paragraphs = _paragraphs(reply)
+        hard, soft = _problems(paragraphs, profile, source, needs, length)
+        if not hard and (best is None or len(soft) < best[1]):
+            best = (paragraphs, len(soft))
+        if not hard and (not soft or attempt > 1):
+            return best[0]
         if attempt < tries:
-            log(f"Rewriting: {problem}")
-    raise ValueError(problem)
+            log(f"Rewriting the letter: {'; '.join(hard + soft)[:240]}")
+            titles = any("job titles" in p for p in hard)
+            prompt = rewrite_prompt(paragraphs, hard + soft, compact_profile(profile) if titles else facts, length, tone)
+    if best:
+        return best[0]
+    raise ValueError("; ".join(hard))
 
 
 def slug(text: str) -> str:
@@ -286,7 +368,7 @@ def email_doc(kind: str, job: dict, pdf: bytes, filename: str, preview: list[str
 
 
 def make_letter(tracker: Tracker, key: str, note: str, model_info: tuple[str, str, int | None],
-                dry_run: bool, send: bool = True) -> Path:
+                dry_run: bool, send: bool = True, flags=()) -> Path:
     job = tracker.job(key)
     if not job:
         raise LookupError(f"job {key} is not in the tracker")
@@ -294,7 +376,10 @@ def make_letter(tracker: Tracker, key: str, note: str, model_info: tuple[str, st
     if not profile:
         raise FileNotFoundError("no CV profile found (JOB_PROFILE_FILE / job_profile.md)")
     name = candidate_name(profile)
-    paragraphs = write_letter(*model_info, job, profile, listing_text(job), note)
+    listing = listing_text(job)
+    length, tone = letter_style(flags)
+    found = evidence.for_job(model_info, key, job, profile, listing)
+    paragraphs = write_letter(*model_info, job, profile, listing, note, length=length, tone=tone, found=found)
     when = datetime.now(ZoneInfo(env("HERMES_TIMEZONE", "UTC") or "UTC"))
     pdf = build_pdf(job, name, paragraphs, when)
     filename = file_name(f"Cover letter - {name or 'Candidate'} - {job_title(job)}")
@@ -305,7 +390,7 @@ def make_letter(tracker: Tracker, key: str, note: str, model_info: tuple[str, st
 
 
 def make_cv(tracker: Tracker, key: str, note: str, model_info: tuple[str, str, int | None],
-            dry_run: bool, send: bool = True) -> Path:
+            dry_run: bool, send: bool = True, flags=()) -> Path:
     job = tracker.job(key)
     if not job:
         raise LookupError(f"job {key} is not in the tracker")
@@ -421,7 +506,7 @@ def process_pending(tracker: Tracker, model_info_factory, dry_run: bool = False)
         profiles.tasks_changed()
         path = earlier = None
         try:
-            if kind != SEND_JOB and not note and "fresh" not in flags:
+            if kind != SEND_JOB and not note and "fresh" not in flags and not flags & STYLE_FLAGS:
                 earlier = recent_doc(tracker, kind, req["key"])
             if kind == SEND_JOB:
                 job_mail.send_job(tracker, req["key"], dry_run)
@@ -430,7 +515,7 @@ def process_pending(tracker: Tracker, model_info_factory, dry_run: bool = False)
                 send_again(tracker, kind, req["key"], path, note, send, dry_run)
             else:
                 model = model or [model_info_factory()]
-                path = MAKERS[kind](tracker, req["key"], note, model[0], dry_run, send=send)
+                path = MAKERS[kind](tracker, req["key"], note, model[0], dry_run, send=send, flags=flags)
         except LookupError as exc:
             tracker.mark_letter(req["event_id"], req["key"], "error", str(exc), max_attempts=1)
             lines.append(f"{what} skipped for {label}: {exc}")
@@ -465,6 +550,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--job", help="tracker key of a job to write a letter for now")
     parser.add_argument("--note", default="", help="extra guidance for the letter (with --job)")
     parser.add_argument("--cv", action="store_true", help="tailor the CV instead of writing a letter (with --job)")
+    parser.add_argument("--length", choices=list(LENGTHS), default="standard", help="letter length (with --job)")
+    parser.add_argument("--tone", choices=list(TONES), default="professional", help="letter tone (with --job)")
     parser.add_argument("--dry-run", action="store_true", help="save the PDF but send no email")
     args = parser.parse_args(argv)
     load_env_file()
@@ -481,7 +568,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.job:
             kind = "tailored_cv" if args.cv else "cover_letter"
-            path = MAKERS[kind](tracker, args.job, args.note, model_info(), args.dry_run)
+            path = MAKERS[kind](tracker, args.job, args.note, model_info(), args.dry_run, flags={args.length, args.tone})
             print(f"{KIND_LABELS[kind]} {'saved' if args.dry_run else 'sent'}: {path}")
             return 0
         with hc.run_lock(LOCK_FILE) as held:  # overlapping cron runs must not send the same letter twice
