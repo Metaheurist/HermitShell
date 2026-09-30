@@ -87,6 +87,7 @@ definitely ruled out; ratings that fail are retried on the next runs, up to 4 at
 | `letter_pdf.py` | Dependency-free A4 PDF writer for the letters |
 | `profiles.py` | Extra profiles: sign-ups from the Worker become profiles built from the CV, unsubscribes, admin changes, each profile's report job, Send jobs now; entry point for the 5-minute job |
 | `profile_report.py` | One extra profile's daily report: the script of its `vacancy-report-<id>` job |
+| `key_usage.py` | The credits left on each web search key, from each provider's account endpoint, for the dashboard's Global settings (`python3 key_usage.py` prints them) |
 | `profile_stats.py` | A profile's daily counts, top lists and recent jobs sent from its tracker, for the dashboard's stats and jobs sent pages |
 | `maintenance.py` | Nightly retention, encryption of older files, file permissions and encrypted backups; `--restore`, `--decrypt`, `--new-key` ([data protection](../../docs/configuration.md#data-protection)) |
 | `cv_text.py` | Dependency-free text extraction from PDF, Word .docx and text CVs |

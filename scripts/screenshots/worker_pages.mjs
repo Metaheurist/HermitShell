@@ -130,7 +130,14 @@ const STATUS = {
   scheduler: true,
   email: { host: "smtp.gmail.com", port: "587", user: "alex.morgan@example.com", from: "", password_set: true,
     source: "dashboard", last_test: { at: now - 2 * day, ok: true, to: "alex.morgan@example.com", error: "" } },
-  keys: { firecrawl: { source: "env", hint: "fc-...41b7", backups: 1 }, tavily: { source: "dashboard", hint: "tvly...8c1e" },
+  keys: {
+    firecrawl: { source: "env", hint: "fc-...41b7", backups: 1, keys: [
+      { hint: "fc-...41b7", role: "main", at: now - 18 * 60000,
+        usage: { used: 2360, limit: 3000, left: 640, plan: "Hobby", resets: new Date(now + 12 * day).toISOString().slice(0, 10) } },
+      { hint: "fc-...9a03", role: "backup", at: now - 18 * 60000,
+        usage: { used: 120, limit: 500, left: 380, plan: "Free", resets: new Date(now + 20 * day).toISOString().slice(0, 10) } }] },
+    tavily: { source: "dashboard", hint: "tvly...8c1e", keys: [{ hint: "tvly...8c1e", role: "main", at: now - 18 * 60000,
+      usage: { used: 412, limit: 1000, left: 588, plan: "Researcher", resets: "" } }] },
     scrapfly: { source: "none", hint: "" } },
   problems: [],
   timezone: "Europe/London",
@@ -270,6 +277,9 @@ await save("admin-global-key-modal", await withOpenModal("/admin/settings", "gke
 await save("admin-profile", await framed(await admin("/admin/profile?u=owner"), admin));
 await save("admin-profile-scanning", await framed(await admin("/admin/profile?u=sam-lee"), admin));
 await save("admin-settings", await admin("/admin/settings"));
+// Firecrawl's card pressed open: its main and backup keys with what is left of each.
+await save("admin-settings-key-usage", new Response((await (await admin("/admin/settings")).text())
+  .replace('<details class="keycard cr-firecrawl">', '<details class="keycard cr-firecrawl" open>')));
 await save("admin-stats", await admin("/admin/stats?u=owner"));
 await save("admin-stats-90-days", await admin("/admin/stats?u=owner&r=90"));
 await save("admin-stats-new-profile", await admin("/admin/stats?u=sam-lee&r=7"));

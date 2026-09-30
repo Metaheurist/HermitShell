@@ -17,6 +17,12 @@ using [Semantic Versioning](https://semver.org/).
   Frankfurter (no key), fetched once a day and cached (`money.py`, `JOB_FX_URL`, `off` to turn it off).
   Adverts can write `US$`, `C$`, `A$`, `NZ$` or an ISO code (`50,000 EUR`); a bare `$` is the profile's
   dollar, else the search country's. Old `£`, `€` and `$` settings keep working as `GBP`, `EUR` and `USD`.
+- **Web search key usage on Global settings.** Each provider with a key shows the credits left, and pressing
+  it opens its keys in the order they are tried (Firecrawl's main key, then its backups), masked, each with a
+  bar of what is left, the plan, when it resets and when it was checked, or why the check failed.
+  HermitShell asks Firecrawl's credit usage, Tavily's usage and Scrapfly's account endpoints (no search credits
+  spent) at most every `WEB_KEY_USAGE_MINUTES` (60; `0` turns it off) and caches the answers in
+  `state/key_usage.json` (`key_usage.py`).
 - **Add missing skills from the dashboard.** On the jobs sent list, each amber **Missing from the CV** skill
   of an opened job is now a button: an admin, or the recruiter whose pool it is, presses one the recruit has
   and it is stored as the email's **Add to my skills** answer, so HermitShell counts it as on the CV for
@@ -709,6 +715,10 @@ using [Semantic Versioning](https://semver.org/).
 
 A review of the whole app; none of these were known to be exploited.
 
+- Key usage checks go only to the three providers' HTTPS endpoints, without following redirects, with an
+  8-second timeout and replies capped at 64 KB. The cache and the dashboard get a masked hint and a hash of
+  each key, never the key, even when a check fails; the cache file is private (0600) and a tampered one is
+  ignored. Plan names, dates and counts are checked on the server and again in the Worker, and escaped.
 - Adding a skill from the dashboard (`POST /admin/skill`) needs a signed-in session and the form's CSRF
   token, answers "not found" for a recruit outside a recruiter's pool, and keeps only the skill cleaned to
   the characters the email's form allows (60 at most); skills in the stats are checked before they are

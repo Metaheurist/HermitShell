@@ -94,6 +94,7 @@ Full template: [`.env.example`](../.env.example).
 | `WEB_SEARCH_ORDER` | `firecrawl,tavily` | Search provider priority |
 | `WEB_SCRAPE_ORDER` | `firecrawl,scrapfly,tavily` | Scrape provider priority |
 | `SCRAPFLY_COUNTRY` | none | Scrapfly proxy country (two-letter code) for geo-blocked sites |
+| `WEB_KEY_USAGE_MINUTES` | `60` | How often the dashboard's Global settings checks the credits left on each key, with the provider's free account endpoint (no search credits spent); `0` turns it off |
 | `OLLAMA_HOST` / `OLLAMA_FALLBACK_HOST` / `OLLAMA_MODEL` | see above | The Ollama server and model |
 | `OLLAMA_NUM_CTX` | autofit | Context size (tokens) for `OLLAMA_MODEL` |
 | `HERMES_MODEL_CONCURRENCY` | `auto` | Model requests allowed at once across all scripts and profiles; the rest queue. `auto` = one per working Ollama instance |

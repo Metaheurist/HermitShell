@@ -499,6 +499,17 @@ python3 profiles.py --assign sam-lee-456789 casey   # "" puts them in nobody's p
   (CSS only, no JavaScript) to pick the provider and paste the key; Firecrawl takes several keys,
   comma separated, used in turn. **Use the .env key** undoes a dashboard key. These keys are used for
   everyone: recruits no longer have keys of their own. [Where to get each key](api-keys.md).
+- **Key usage**: a provider with a key shows how many credits are left, and pressing it opens its
+  keys in the order they are tried (Firecrawl's main key, then its backups). Each key shows its start
+  and end, a bar of what is left (green, amber under 40%, red under 15%), the plan, when the allowance
+  resets and when it was checked, or why it couldn't be checked (a rejected key, for example).
+  HermitShell asks each provider's own account endpoint (Firecrawl's credit usage, Tavily's usage,
+  Scrapfly's account), which spends no search credits, at most every `WEB_KEY_USAGE_MINUTES`
+  (60; `0` turns it off), and a failed check again after 15 minutes. It keeps the answers in
+  `state/key_usage.json` under a hash of each key; the keys themselves never leave the server.
+  `python3 key_usage.py` prints the same on the server.
+
+<img src="images/worker/admin-settings-key-usage.png" alt="Global settings with Firecrawl opened: its main and backup keys, each with a bar of the credits left, its plan and when it resets" width="620">
 
 <img src="images/worker/admin-global-key-modal.png" alt="The Add key window on Global settings: Firecrawl, Tavily or Scrapfly" width="380">
 

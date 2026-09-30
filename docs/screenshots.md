@@ -419,9 +419,12 @@ Applied…) are never listed and can't be cancelled here.
 | Email server + **Save email server** | SMTP server, port, username, password and sender for everyone's emails. The password box stays empty; leave it empty to keep the saved password |
 | **Send a test email** | Sends a test to the address typed (default: yours); the result shows under Email server after HermitShell's next check |
 | **Go back to the .env email settings** | Shown when the email server was set here; undoes it |
-| Web search API keys | One row per provider (Firecrawl, Tavily, Scrapfly): **set here** or **from .env**, the start and end of the key, and Firecrawl's backup keys. These keys are used for every recruit |
+| Web search API keys | One row per provider (Firecrawl, Tavily, Scrapfly): **set here** or **from .env**, the start and end of the key, the credits left, and Firecrawl's backup keys. These keys are used for every recruit |
+| A provider, pressed | Opens its keys in the order they are tried: each one's start and end, a bar of the credits left (amber under 40%, red under 15%), the plan, when it resets and when HermitShell last checked, or why it couldn't. Pressed again, it closes |
 | **Add key** / **Change** | Opens a window to pick the provider and paste the key. Firecrawl takes several keys, comma separated |
 | **Use the .env key** | Shown next to a key set here; goes back to the one in `.env` |
+
+<img src="images/worker/admin-settings-key-usage.png" alt="Firecrawl opened on Global settings: the main key with 21% left and a backup key with 76% left" width="620">
 
 <img src="images/worker/admin-global-key-modal.png" alt="The Add key window: Firecrawl, Tavily or Scrapfly, and the API key" width="380">
 
