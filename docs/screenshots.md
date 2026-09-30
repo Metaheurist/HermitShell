@@ -418,7 +418,7 @@ HermitShell rejected in the last day, with the reason.
 | Waiting tasks (clock) | Requests queued behind the one being made, dashboard changes, sign-ups and resume requests HermitShell hasn't picked up yet, and email-button requests it hasn't fetched |
 | Chips | Where the task came from: **scheduled**, **from the dashboard**, **email button**, **sign-up form** or **unsubscribe link** |
 | **Stop** | Stops a running report (nothing is emailed and it runs again at its next time) or the letter being written. The row says **Stopping…** until HermitShell confirms |
-| **Cancel** | Drops a waiting task. An email-button request is removed before HermitShell sees it, or skipped if it already has it |
+| **Cancel** | Drops a waiting task. An email-button request is removed before HermitShell sees it, or skipped if it already has it. Stops and cancels are written in the recruit's **History** with who pressed them |
 
 The list refreshes by itself while the window is open. Answers to the email buttons (Interested,
 Applied…) are never listed and can't be cancelled here.
@@ -564,7 +564,7 @@ Notes typed on the buttons' confirmation pages are never shown.
 An opened job shows what its email card did, its cover letter and tailored CV, and a button to email
 it to the profile:
 
-<img src="images/worker/admin-sent-open.png" alt="A job opened to its full details, with Download and Regenerate for its cover letter, its tailored CV being made and Send to email the job to the profile" width="620">
+<img src="images/worker/admin-sent-open.png" alt="A job opened to its full details, with Download, Email to you and Regenerate for its cover letter, its tailored CV being made and Send to email the job to the profile" width="620">
 
 | Part | What it shows |
 | --- | --- |
@@ -574,7 +574,7 @@ it to the profile:
 | Why | Why it was rated a fit, with anything it lacks (contact details and your name are removed) |
 | **About the company** | The employer, what it does, its website, what the role is, and the agency when one posted it |
 | **Strongest matches** / **Missing from the CV** | The skills found, and the ones the advert wants that your CV doesn't show. Press a missing skill the profile has (**+**) to count it as on the CV, as the email's missing-skill tag does: it shows dashed with a tick until HermitShell's next stats update, then with a solid tick |
-| **Cover letter** / **Tailored CV** | **Generate** has one made (not emailed), shown with a loading circle until it is ready. **Download** gets the one made in the last `COVER_LETTER_KEEP_DAYS` days (7 by default), from here or an email button; **Regenerate** replaces it |
+| **Cover letter** / **Tailored CV** | **Generate** has one made (not emailed), shown with a loading circle until it is ready. **Download** gets the one made in the last `COVER_LETTER_KEEP_DAYS` days (7 by default), from here or an email button; **Email to Sam** (**Email to you**) has HermitShell email that same PDF to the profile, showing **Emailing to Sam…** until it has gone; **Regenerate** replaces it |
 | **Email to Sam** (**Email to you**) | **Send** has HermitShell email the job to the profile as its report card, with a loading circle while it goes; then **Emailed to Sam** with when, and **Send again** |
 | **View the advert** | Opens the advert in a new tab, when the report had a link |
 

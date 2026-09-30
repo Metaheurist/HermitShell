@@ -16,6 +16,15 @@ using [Semantic Versioning](https://semver.org/).
   sign-ups and the privacy notice keep the real data, so reports carry on. A ribbon at the foot of each
   page says it is on, with a **Turn off** link for admins. Tests check that no press changes the real KV
   and that no real names show, and Playwright covers it on a phone.
+- **Email a kept cover letter or tailored CV from Jobs sent.** Generating one from the dashboard keeps it
+  for download only, so it never reached the recruit's inbox. A kept one now has **Email to Sam**
+  (**Email to you**) beside **Download**: HermitShell emails that same PDF, without the model, and the tile
+  says **Emailing to Sam…** until it has gone. The request carries `send: 1`, kept by the tracker as a
+  new `send` flag instead of the download-only `quiet`. It is CSRF-checked, limited to a recruiter's own
+  pool, written in the recruit's History and saves nothing in demo mode.
+- **Cancels in History.** Stopping or cancelling a task from the Tasks window is written in that recruit's
+  History with who did it (**Cancelled the tailored CV: …**, **Stopped the job report**); global settings
+  changes go in the owner's.
 - **Cloud AI models for servers that can't run one.** OpenRouter, BazaarLink, Featherless and Hugging Face
   (all OpenAI-compatible) can rate jobs and write letters and CVs instead of, or before, the local Ollama
   (`common/llm_providers.py`). Keys and models are added on Global settings under **AI model API keys**,

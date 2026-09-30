@@ -683,7 +683,9 @@ Each entry says who did it: an admin or recruiter by name, the recruit **from an
 - saves on their page (which fields changed: details, job search or report time), CV uploads and pasted CVs;
 - **Send jobs now**, pausing and resuming, assigning or unassigning a recruiter (also when their
   recruiter's account is deleted);
-- cover letters and tailored CVs asked for, jobs emailed to them and skills added from the Jobs sent list;
+- cover letters and tailored CVs asked for or emailed, jobs emailed to them and skills added from the
+  Jobs sent list;
+- tasks stopped or cancelled from the Tasks window;
 - every email button they press (Interested, Applied, a cover letter and so on), once, even if they
   press Confirm again; their notes are never copied in;
 - from HermitShell's status reports: each job report that ran and each time it read a new CV.
@@ -723,6 +725,10 @@ turning smoothly as the list refreshes:
   cancelled in the tracker (`letters.status = 'cancelled'`) and stops its writer. The row shows
   **Stopping…** meanwhile.
 - Answers to the email buttons are not tasks and can't be removed here.
+
+Each cancel is written in that recruit's [history](#history) with who pressed it, for example
+**Cancelled the tailored CV: Data Engineer at Northwind** or **Stopped the job report**. Global
+settings changes go in the owner's history; a cancelled sign-up has no recruit yet, so it is not kept.
 
 Recruiters don't get the button or the window, and `/admin/tasks` answers them with 403; the status line
 still tells them how many of their changes are **Waiting for HermitShell**.
@@ -798,6 +804,11 @@ and a **Tailored CV**:
   emailed; it waits here for download.
 - **Download** appears once one has been made for that job in the last `COVER_LETTER_KEEP_DAYS`
   days (7 by default), from here or from an email button.
+- **Email to Sam** (**Email to you** on your own list) sits beside **Download** and has HermitShell
+  email the one kept to that recruit, as an email button would: the same PDF, with no model used
+  (a new one is written only if the file has gone from your server). The tile says
+  **Emailing to Sam…** until it has gone. The request carries `send: 1`, which HermitShell's tracker
+  keeps as the `send` flag in place of the download-only `quiet`.
 - **Regenerate** writes a new one, replacing the one kept.
 
 The third tile, **Email to Sam** (**Email to you** on your own list), sends the job itself to that
@@ -809,7 +820,7 @@ and **Send again**. The Worker keeps only when each job was emailed, under a has
 asked for from the signed-in dashboard, never from an email link
 ([the email](images/emails/job-email.png)).
 
-<img src="images/worker/admin-sent-open.png" alt="A job on the jobs sent list opened to its full details, with Download and Regenerate for the cover letter, Generate for the CV and Send to email the job to the recruit" width="620">
+<img src="images/worker/admin-sent-open.png" alt="A job on the jobs sent list opened to its full details, with Download, Email and Regenerate for the cover letter, the CV being made and Send to email the job to the recruit" width="620">
 
 Only `http` and `https` advert and company links are kept, both on your server and again on the
 Worker, and they open with `rel="noopener noreferrer"`.
