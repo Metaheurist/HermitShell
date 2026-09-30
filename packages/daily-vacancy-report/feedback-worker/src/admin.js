@@ -283,7 +283,7 @@ form.assign select:hover{border-color:var(--line);background:var(--field)}
 .rowacts button.small{white-space:nowrap}
 .iconbtn{margin:0;display:inline-grid;place-items:center;width:34px;height:34px;padding:0;border-radius:10px;
 background:var(--soft);color:var(--brand-ink);box-shadow:none}
-.iconbtn:hover{background:#e2e5ff;filter:none;box-shadow:none}.iconbtn svg{width:15px;height:15px}
+.iconbtn:hover{background:#e2e5ff;filter:none;box-shadow:none}.iconbtn svg{width:18px;height:18px}
 .rowlinks{display:flex;gap:10px;align-items:center;flex-wrap:nowrap;margin-top:8px}
 .rowlinks .statpair,.rowlinks .statlink{margin-top:0}
 table.recruits th:first-child{width:34%}
@@ -620,7 +620,7 @@ border-radius:14px;box-shadow:0 8px 24px -12px rgba(15,23,42,.25)}
 font-weight:650;color:var(--brand-ink);text-decoration:none;background:rgba(255,255,255,.92);border:1px solid var(--line);
 box-shadow:0 8px 24px -12px rgba(15,23,42,.25);cursor:pointer;transition:transform .18s var(--ease),box-shadow .18s,background .18s}
 .mebtn:hover{transform:translateY(-1px);background:#fff;filter:none;box-shadow:0 12px 28px -12px rgba(15,23,42,.3)}
-a.mebtn{width:34px;padding:0;justify-content:center}.mebtn svg{flex:none;width:16px;height:16px}
+a.mebtn{width:34px;padding:0;justify-content:center}.mebtn svg{flex:none;width:18px;height:18px}
 @media (max-width:1360px){.me{position:absolute;top:-46px;right:10px;flex-direction:row;align-items:center}
 .mecard{padding:3px}.mename{display:none}.mecard .avatar{width:30px;height:30px;border-radius:10px;font-size:12px}}
 @media (max-width:1860px){body:has(main.full) .me{position:absolute;top:-46px;right:10px;flex-direction:row;align-items:center}

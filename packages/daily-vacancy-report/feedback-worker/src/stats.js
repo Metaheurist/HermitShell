@@ -158,12 +158,22 @@ function delta(now, before) {
   return `<span class="delta ${pct > 0 ? "up" : "down"}" title="Compared with the period before">${pct > 0 ? "&#9650;" : "&#9660;"} ${Math.abs(pct)}%</span>`;
 }
 
-function ring(value, max, { size = 44, color = "currentColor", label = "" } = {}) {
+// One colour scale for match scores wherever they show: the rings, the match scores chart and the jobs sent list.
+export function scoreTone(fit) {
+  return fit >= 8 ? "green" : fit >= 6 ? "amber" : fit >= 5 ? "orange" : "slate";
+}
+
+const TONE_HEX = { green: "#059669", amber: "#d97706", orange: "#ea580c", slate: "#64748b", sky: "#0284c7" };
+
+// A score ring in one of the k- tones: a tinted disc and track, an arc that sweeps in (again on hover) and, for
+// strong scores (`hot`), a soft glow that breathes.
+function ring(value, max, { size = 44, tone = "indigo", label = "", sub = "", hot = false } = {}) {
   const pct = max ? Math.min(100, (value / max) * 100) : 0;
-  return `<svg class="ring" viewBox="0 0 36 36" width="${size}" height="${size}" aria-hidden="true">
-<circle cx="18" cy="18" r="15.915" fill="none" stroke="#eceef6" stroke-width="3.5"/>
-<circle class="arc" cx="18" cy="18" r="15.915" fill="none" stroke="${color}" stroke-width="3.5" stroke-linecap="round"
- stroke-dasharray="${pct.toFixed(1)} 100" stroke-dashoffset="25"/>${label ? `<text x="18" y="21.5" text-anchor="middle">${esc(label)}</text>` : ""}</svg>`;
+  return `<svg class="ring k-${tone}${hot ? " hot" : ""}" viewBox="0 0 36 36" width="${size}" height="${size}" aria-hidden="true">
+<circle class="disc" cx="18" cy="18" r="12.4"/><circle class="track" cx="18" cy="18" r="15.915"/>
+<circle class="arc" cx="18" cy="18" r="15.915" stroke-dasharray="${pct.toFixed(1)} ${(100 - pct).toFixed(1)}" stroke-dashoffset="25"/>${
+    label ? `<text class="val" x="18" y="${sub ? 19.6 : 21.6}" text-anchor="middle">${esc(label)}</text>` : ""}${
+    sub ? `<text class="sub" x="18" y="25.4" text-anchor="middle">${esc(sub)}</text>` : ""}</svg>`;
 }
 
 // ------------------------------------------------------------------------- the page's sections
@@ -207,7 +217,7 @@ function chips(stats, win, now, range, currency) {
     salary ? [moneyIcon("", currency), `Median salary <b>${esc(currencySymbol(currencyCode(currency)))}${compact(salary)}</b>`] : null,
     now.not_for_me ? ["target", `<b>${compact(now.not_for_me)}</b> not for me`] : null,
   ].filter(Boolean);
-  return `<div class="chips">${items.map(([ico, html], i) => `<span class="chip" style="animation-delay:${300 + i * 60}ms">${icon(ico)}${html}</span>`).join("")}</div>`;
+  return `<div class="chips">${items.map(([ico, html], i) => `<span class="chip" style="animation-delay:${300 + i * 60}ms"><span class="ci">${icon(ico)}</span>${html}</span>`).join("")}</div>`;
 }
 
 function activity(stats, win) {
@@ -248,8 +258,9 @@ function funnel(now) {
   }).join("")}</div>`;
 }
 
-const ANSWERS = [["interested", "Interested", "#6366f1"], ["good_match", "Good match", "#f59e0b"], ["applied", "Applied", "#10b981"],
-  ["heard_back", "Heard back", "#0ea5e9"], ["rejected", "Rejected", "#94a3b8"], ["not_for_me", "Not for me", "#f43f5e"]];
+// The same colours as the tiles and bubbles for the same answers: rose for liked, green applied, sky heard back.
+const ANSWERS = [["interested", "Interested", "#e11d48"], ["good_match", "Good match", "#d97706"], ["applied", "Applied", "#059669"],
+  ["heard_back", "Heard back", "#0284c7"], ["rejected", "Rejected", "#64748b"], ["not_for_me", "Not for me", "#ea580c"]];
 
 function donut(now) {
   const parts = ANSWERS.map(([k, label, color]) => [label, now[k], color]).filter((p) => p[1]);
@@ -273,10 +284,9 @@ function histogram(fit) {
   const counts = Array.from({ length: 11 }, (_, i) => num(fit?.[i]));
   const W = 330, H = 150, bottom = 20, max = Math.max(1, ...counts);
   const slot = W / 11;
-  const color = (i) => (i >= 8 ? "#10b981" : i >= 7 ? "#84cc16" : i >= 5 ? "#f59e0b" : "#cbd5e1");
   const bars = counts.map((c, i) => {
     const h = ((H - bottom - 8) * c) / max;
-    return `<g><title>Score ${i}: ${c} job${c === 1 ? "" : "s"}</title><rect x="${(i * slot + 3).toFixed(1)}" y="${(H - bottom - h).toFixed(1)}" width="${(slot - 6).toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${color(i)}" class="bar" style="animation-delay:${i * 50}ms"/>
+    return `<g><title>Score ${i}: ${c} job${c === 1 ? "" : "s"}</title><rect x="${(i * slot + 3).toFixed(1)}" y="${(H - bottom - h).toFixed(1)}" width="${(slot - 6).toFixed(1)}" height="${h.toFixed(1)}" rx="3" class="bar score k-${scoreTone(i)}" style="animation-delay:${i * 50}ms"/>
 <text x="${(i * slot + slot / 2).toFixed(1)}" y="${H - 5}" text-anchor="middle" class="axis">${i}</text></g>`;
   }).join("");
   const empty = counts.every((c) => !c) ? `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" class="empty">No jobs rated yet</text>` : "";
@@ -289,7 +299,7 @@ function pipeline(p) {
   const applications = num(p?.applied) + num(p?.heard_back) + num(p?.rejected);
   const replies = num(p?.heard_back) + num(p?.rejected);
   const rate = applications ? Math.round((replies / applications) * 100) : 0;
-  return `<div class="pipe"><div class="rate">${ring(replies, applications, { size: 92, color: "#0ea5e9", label: applications ? `${rate}%` : "–" })}
+  return `<div class="pipe"><div class="rate">${ring(replies, applications, { size: 96, tone: "sky", label: applications ? `${rate}%` : "–" })}
 <span class="muted">reply rate</span></div><div class="bubbles">${items.map(([k, label, ico, color]) =>
     `<div class="bubble k-${color}"><span class="ico">${icon(ico)}</span><b>${compact(num(p?.[k]))}</b><span>${label}</span></div>`).join("")}</div></div>`;
 }
@@ -316,14 +326,14 @@ function bestMatches(best) {
   if (!rows.length) return '<p class="muted">No jobs sent in this period yet.</p>';
   return `<ul class="best">${rows.map((b, i) => {
     const fit = Math.min(10, num(b.fit));
-    const color = fit >= 8 ? "#10b981" : fit >= 7 ? "#84cc16" : "#f59e0b";
-    return `<li style="animation-delay:${i * 80}ms">${ring(fit, 10, { size: 42, color, label: String(fit) })}<div><b>${esc(String(b.title).slice(0, 90))}</b>
+    const tone = scoreTone(fit);
+    return `<li class="k-${tone}" style="animation-delay:${i * 80}ms">${ring(fit, 10, { size: 56, tone, label: String(fit), sub: "/ 10", hot: fit >= 8 })}<div><b>${esc(String(b.title).slice(0, 90))}</b>
 <span class="muted">${esc(String(b.employer || "").slice(0, 60))}${DATE_RE.test(b.day || "") ? ` &middot; ${shortDay(b.day)}` : ""}</span></div></li>`;
   }).join("")}</ul>`;
 }
 
-function card(title, ico, body, cls = "") {
-  return `<section class="card ${cls}"><h3>${icon(ico)}${esc(title)}</h3>${body}</section>`;
+function card(title, ico, body, cls = "", tone = "indigo") {
+  return `<section class="card ${cls}"><h3><span class="ico sm k-${tone}">${icon(ico)}</span>${esc(title)}</h3>${body}</section>`;
 }
 
 function rangeTabs(pid, range) {
@@ -439,18 +449,19 @@ ${docs ? `<div class="docs">${docs}</div>` : ""}${advert}</div>`;
 
 async function sentRow(j, i, ctx) {
   const fit = Number.isInteger(j.fit) && j.fit >= 0 && j.fit <= 10 ? j.fit : null;
-  const color = fit >= 8 ? "#10b981" : fit >= 7 ? "#84cc16" : fit >= 5 ? "#f59e0b" : "#94a3b8";
+  const tone = fit === null ? "slate" : scoreTone(fit);
+  const color = TONE_HEX[tone];
   const key = validJobKey(j.key) ? j.key : "";
   const h = key ? await jobHash(key) : "";
   const id = h ? h.slice(0, 16) : `n${i}`;
   const meta = [j.employer, j.location, j.mode, j.salary].map((v) => cut(v, 60).trim()).filter(Boolean).map(esc).join(" &middot; ");
-  const [label, tone] = ANSWER_LABELS[j.answer] || [];
-  const badge = label ? `<span class="answer" style="--a:${tone}">${esc(label)}</span>` : "";
+  const [label, answerColor] = ANSWER_LABELS[j.answer] || [];
+  const badge = label ? `<span class="answer" style="--a:${answerColor}">${esc(label)}</span>` : "";
   const source = j.source ? `<span class="source">${esc(cut(j.source, 60))}</span>` : "";
   const title = [cut(j.title, 90), cut(j.employer, 60)].filter(Boolean).join(" at ");
   const docs = key ? docActions(key, h, { ...ctx, title: title.slice(0, 120) }) : "";
   return `<li id="job-${id}" style="animation-delay:${Math.min(i, 12) * 35}ms"><details${ctx.open === id ? " open" : ""}><summary>${
-    fit === null ? '<span class="nofit">&ndash;</span>' : ring(fit, 10, { size: 40, color, label: String(fit) })}
+    fit === null ? '<span class="nofit">&ndash;</span>' : ring(fit, 10, { size: 46, tone, label: String(fit), hot: fit >= 8 })}
 <div class="job"><b>${esc(cut(j.title, 90))}</b><span class="muted">${meta}</span></div><div class="tags">${badge}${source}</div><span class="chev" aria-hidden="true"></span></summary>
 ${jobMore(j, fit, color, docs, key, ctx)}</details></li>`;
 }
@@ -530,16 +541,16 @@ export function statsPage(status, stats, pid, rangeParam) {
   return page(heading, `<style>${STYLE}</style>
 <div class="statbar">${rangeTabs(pid, range)}<span class="muted">${updated}${updated ? " &middot; " : ""}${manage}</span></div>
 ${tiles(stats, win, now, before)}${chips(stats, win, now, String(range), p.job?.currency)}
-${card("Activity", "chart", `<div class="legend row key"><span><i class="sw" style="background:#e0e7ff"></i>Rated</span><span><i class="sw" style="background:#6366f1"></i>Sent</span><span><i class="sw round" style="background:#10b981"></i>Applied</span></div>${activity(stats, win)}`, "wide")}
+${card("Activity", "chart", `<div class="legend row key"><span><i class="sw" style="background:#e0e7ff"></i>Rated</span><span><i class="sw" style="background:#6366f1"></i>Sent</span><span><i class="sw round" style="background:#059669"></i>Applied</span></div>${activity(stats, win)}`, "wide")}
 <div class="cards">
-${card("Funnel", "bolt", funnel(now))}
-${card("Answers", "heart", donut(now))}
-${card("Match scores", "star", histogram(r.fit))}
-${card("Where applications stand", "plane", pipeline(stats.pipeline))}
-${card("Top employers", "target", topList(r.employers, "violet"))}
-${card("Top sources", "radar", `${topList(r.sources, "blue")}${modes(r.modes)}`)}
+${card("Funnel", "bolt", funnel(now), "", "violet")}
+${card("Answers", "heart", donut(now), "", "rose")}
+${card("Match scores", "star", histogram(r.fit), "", "amber")}
+${card("Where applications stand", "plane", pipeline(stats.pipeline), "", "green")}
+${card("Top employers", "target", topList(r.employers, "violet"), "", "violet")}
+${card("Top sources", "radar", `${topList(r.sources, "blue")}${modes(r.modes)}`, "", "blue")}
 </div>
-${card("Best matches sent", "star", bestMatches(r.best), "wide")}`, back);
+${card("Best matches sent", "star", bestMatches(r.best), "wide", "green")}`, back);
 }
 
 // ------------------------------------------------------------------------- look and motion
@@ -555,8 +566,10 @@ const STYLE = `
 animation:rise .5s var(--ease) both;transition:transform .2s var(--ease),box-shadow .2s}
 .kpi:hover{transform:translateY(-3px);box-shadow:0 16px 30px -18px rgba(30,27,75,.4)}
 .kpi-top{display:flex;justify-content:space-between;align-items:center;gap:6px}
-.ico{flex:none;width:36px;height:36px;border-radius:12px;display:grid;place-items:center;color:var(--c);background:var(--cb)}
-.ico svg{width:21px;height:21px;overflow:visible}
+.ico{flex:none;width:44px;height:44px;border-radius:14px;display:grid;place-items:center;color:var(--c);background:var(--cb);
+box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--c) 14%,transparent)}
+.ico svg{width:25px;height:25px;overflow:visible}
+.ico.sm{width:32px;height:32px;border-radius:10px}.ico.sm svg{width:19px;height:19px}
 .kpi-num{font-size:32px;font-weight:800;letter-spacing:-.035em;line-height:1.05;margin-top:12px;color:var(--ink)}
 .kpi-num small{font-size:14px;color:var(--muted);font-weight:650;letter-spacing:0;margin-left:2px}
 .kpi-label{font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;margin-top:3px}
@@ -567,14 +580,14 @@ svg.spark .area{fill:var(--cb);animation:fade 1s ease both .6s}svg.mini .area{fi
 .delta{font-size:11.5px;font-weight:750;border-radius:99px;padding:2px 8px;white-space:nowrap}
 .delta.up{background:var(--ok-bg);color:#047857}.delta.down{background:var(--bad-bg);color:#b91c1c}.delta.flat{background:#f1f5f9;color:var(--muted)}
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
-.chip{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:99px;background:#fff;border:1px solid var(--line);
-font-size:13px;color:var(--text);animation:rise .45s var(--ease) both}
-.chip svg{width:16px;height:16px;color:var(--brand)}.chip b{color:var(--ink)}
+.chip{display:inline-flex;align-items:center;gap:8px;padding:5px 14px 5px 5px;border-radius:99px;background:#fff;border:1px solid var(--line);
+font-size:13.5px;color:var(--text);animation:rise .45s var(--ease) both}
+.chip .ci{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--soft);color:var(--brand)}
+.chip svg{width:18px;height:18px;overflow:visible}.chip b{color:var(--ink)}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px;margin:14px 0}
 .card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px 18px;animation:rise .55s var(--ease) both .1s;min-width:0}
 .card.wide{margin:14px 0}
-.card h3{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:750}
-.card h3 svg{width:17px;height:17px;color:var(--brand)}
+.card h3{display:flex;align-items:center;gap:10px;margin:0 0 14px;font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;color:#475569;font-weight:750}
 svg.chart{display:block;width:100%;height:auto;overflow:visible}
 .chart .gridline{stroke:#eef0f5;stroke-width:1}.chart .axis{font-size:11px;fill:#94a3b8}
 .chart .empty{font-size:14px;fill:#94a3b8;font-weight:600}
@@ -587,7 +600,8 @@ svg.chart{display:block;width:100%;height:auto;overflow:visible}
 .legend li{display:flex;align-items:center;gap:8px}.legend b{margin-left:auto;color:var(--ink)}
 .legend.row{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px}.legend.row b{margin-left:4px}
 .legend.key{margin:0 0 8px;font-size:12.5px;color:var(--muted)}.legend.key span{display:inline-flex;align-items:center;gap:6px}
-.sw{display:inline-block;width:10px;height:10px;border-radius:3px;flex:none}.sw.round{border-radius:50%}
+.score{fill:var(--c)}.chart .score.k-slate{fill:#cbd5e1}
+.sw{display:inline-block;width:12px;height:12px;border-radius:4px;flex:none}.sw.round{border-radius:50%}
 .funnel{display:grid;gap:9px}
 .step{display:grid;grid-template-columns:82px 1fr 44px 40px;align-items:center;gap:8px;font-size:13px}
 .step-label{color:var(--text);font-weight:600}.step b{text-align:right;color:var(--ink);font-size:15px}
@@ -598,21 +612,35 @@ transform-origin:left;animation:growx .9s var(--ease) both}
 .donut{display:grid;grid-template-columns:130px 1fr;gap:16px;align-items:center}
 .donut svg{width:130px;height:130px}.donut .big{font-size:9px;font-weight:800;fill:var(--ink)}.donut .small{font-size:3.6px;fill:#94a3b8;font-weight:600}
 .arc{animation:arc 1.1s var(--ease) both .2s}
-.ring text{font-size:9px;font-weight:800;fill:var(--ink)}
+.ring{flex:none;overflow:visible}
+.ring .disc{fill:var(--cb);transform-box:fill-box;transform-origin:center;animation:pop .5s var(--ease) both .1s}
+.ring .track{fill:none;stroke:color-mix(in srgb,var(--c) 16%,#fff);stroke-width:3.6}
+.ring .arc{fill:none;stroke:var(--c);stroke-width:3.6;stroke-linecap:round;animation:arc 1.3s var(--ease) both .2s;
+filter:drop-shadow(0 1px 1.5px color-mix(in srgb,var(--c) 45%,transparent))}
+.ring .val{font-size:11px;font-weight:800;fill:var(--c);animation:fade .5s ease both .7s}
+.ring .sub{font-size:4.4px;font-weight:700;fill:var(--muted);letter-spacing:.02em}
+.ring.hot{animation:halo 2.6s ease-in-out infinite 1.5s}
+li:hover .ring .arc,summary:hover .ring .arc{animation:arc2 .9s var(--ease) both}
+@keyframes halo{50%{filter:drop-shadow(0 0 5px color-mix(in srgb,var(--c) 60%,transparent))}}
+@keyframes arc2{from{stroke-dasharray:0 100}}
 .pipe{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center}
 .rate{display:grid;justify-items:center;gap:2px}
 .bubbles{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .bubble{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:9px;align-items:center;padding:8px 10px;
 border-radius:14px;background:var(--cb)}
-.bubble .ico{grid-row:span 2;width:30px;height:30px;background:#fff}.bubble .ico svg{width:17px;height:17px}
+.bubble .ico{grid-row:span 2;width:38px;height:38px;border-radius:12px;background:#fff}.bubble .ico svg{width:21px;height:21px}
 .bubble b{font-size:19px;line-height:1.1;color:var(--ink)}.bubble span:last-child{font-size:11.5px;color:var(--muted);font-weight:650}
 .toplist{list-style:none;padding:0;margin:0;display:grid;gap:9px}
 .toplist li{display:grid;grid-template-columns:minmax(0,1.3fr) 1fr 30px;gap:10px;align-items:center;font-size:13px}
 .toplist .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);font-weight:600}.toplist b{text-align:right}
 .stack{display:flex;height:12px;border-radius:99px;overflow:hidden;gap:2px;margin-top:16px;animation:growx .9s var(--ease) both .3s;transform-origin:left}
-.best{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
-.best li{display:flex;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:14px;animation:rise .45s var(--ease) both}
-.best li div{min-width:0;display:grid}.best b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.best{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+.best li{position:relative;overflow:hidden;display:flex;gap:14px;align-items:center;padding:12px 16px 12px 12px;border-radius:16px;
+border:1px solid color-mix(in srgb,var(--c) 22%,var(--line));background:linear-gradient(135deg,var(--cb),#fff 65%);
+animation:rise .45s var(--ease) both;transition:transform .2s var(--ease),box-shadow .2s}
+.best li::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--c)}
+.best li:hover{transform:translateY(-3px);box-shadow:0 16px 30px -20px color-mix(in srgb,var(--c) 70%,#1e1b4b)}
+.best li div{min-width:0;display:grid;gap:2px}.best b{font-size:14.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .best .muted{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.best svg{flex:none}
 .nostats{display:grid;justify-items:center;text-align:center;gap:6px;padding:30px 10px}
 .nostats svg.hero{width:84px;height:84px;color:var(--brand)}
@@ -653,7 +681,7 @@ nav.answers a.on{background:var(--soft);border-color:#c7cbf5;color:var(--brand-i
 transition:box-shadow .2s,border-color .2s}
 .sentlist li:hover{box-shadow:0 14px 26px -20px rgba(30,27,75,.45)}
 .sentlist li:has(details[open]){border-color:#c7cbf5;box-shadow:0 18px 40px -26px rgba(30,27,75,.5)}
-.sentlist summary{display:grid;grid-template-columns:40px minmax(0,1fr) auto 16px;gap:14px;align-items:center;padding:12px 16px;cursor:pointer;
+.sentlist summary{display:grid;grid-template-columns:46px minmax(0,1fr) auto 16px;gap:14px;align-items:center;padding:12px 16px;cursor:pointer;
 list-style:none;border-radius:16px;transition:background .15s}
 .sentlist summary::-webkit-details-marker{display:none}
 .sentlist summary:hover{background:#fafaff}
@@ -702,8 +730,8 @@ transition:background .15s,border-color .15s,transform .15s}
 a.advert{justify-self:start;font-size:13px;font-weight:650;text-decoration:none}a.advert:hover{text-decoration:underline}
 .answer{font-size:11.5px;font-weight:750;padding:3px 10px;border-radius:99px;color:var(--a);background:color-mix(in srgb,var(--a) 13%,#fff);white-space:nowrap}
 .source{font-size:11.5px;color:#94a3b8;white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis}
-.nofit{width:40px;height:40px;display:grid;place-items:center;border-radius:50%;background:#f1f3f9;color:var(--muted);font-weight:700}
-@media (max-width:640px){.sentlist summary{grid-template-columns:40px minmax(0,1fr) 16px}.sentlist .tags{grid-column:2;flex-direction:row;align-items:center}
+.nofit{width:46px;height:46px;display:grid;place-items:center;border-radius:50%;background:#f1f3f9;color:var(--muted);font-weight:700}
+@media (max-width:640px){.sentlist summary{grid-template-columns:46px minmax(0,1fr) 16px}.sentlist .tags{grid-column:2;flex-direction:row;align-items:center}
 .sentlist .chev{grid-row:1;grid-column:3}.more{padding:4px 14px 16px}.meters{grid-template-columns:1fr}}
 `;
 

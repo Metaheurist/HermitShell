@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import worker from "../src/index.js";
 import { jobHash } from "../src/docs.js";
-import { FIELDS, sentPage, splitStats, statsPage, totals, validStats, windowFor, zonedToday } from "../src/stats.js";
+import { FIELDS, scoreTone, sentPage, splitStats, statsPage, totals, validStats, windowFor, zonedToday } from "../src/stats.js";
 import { BASE, keysWith, testEnv } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
@@ -123,11 +123,11 @@ describe("stats page", () => {
   it("shows the median salary with the profile's currency symbol and icon", async () => {
     const withCurrency = (currency) => ({ ...STATUS, profiles: [{ ...STATUS.profiles[0], job: { currency } }] });
     const pound = await statsPage(STATUS, sample(), "riley-chen", "30").text();
-    expect(pound).toMatch(/<svg [^>]*>[^<]*<path d="M3\.85[^"]*"\/><path d="M8 12h4M10 16V9\.5[^"]*"\/><\/svg>Median salary <b>£52k/);
+    expect(pound).toMatch(/<svg [^>]*>[^<]*<path d="M3\.85[^"]*"\/><path d="M8 12h4M10 16V9\.5[^"]*"\/><\/svg><\/span>Median salary <b>£52k/);
     const euro = await statsPage(withCurrency("EUR"), sample(), "riley-chen", "30").text();
-    expect(euro).toMatch(/<path d="M7 12h5M15 9\.4[^"]*"\/><\/svg>Median salary <b>€52k/);
+    expect(euro).toMatch(/<path d="M7 12h5M15 9\.4[^"]*"\/><\/svg><\/span>Median salary <b>€52k/);
     const plain = await statsPage(withCurrency(""), sample(), "riley-chen", "30").text();
-    expect(plain).toMatch(/<rect width="20" height="12"[^>]*\/>.*<\/svg>Median salary <b>52k/);
+    expect(plain).toMatch(/<rect width="20" height="12"[^>]*\/>.*<\/svg><\/span>Median salary <b>52k/);
     const odd = await statsPage(withCurrency("<b>"), sample(), "riley-chen", "30").text();
     expect(odd).toContain("Median salary <b>52k");
   });
@@ -141,6 +141,42 @@ describe("stats page", () => {
   it("explains when HermitShell hasn't sent stats and 404s for an unknown profile", async () => {
     expect(await statsPage(STATUS, null, "sam-lee", "7").text()).toContain("No stats yet");
     expect(statsPage(STATUS, sample(), "casey-quinn", "7").status).toBe(404);
+  });
+
+  it("colours match scores on one scale: green from 8, amber from 6, orange at 5, grey below", () => {
+    expect([10, 8, 7, 6, 5, 4, 0].map(scoreTone)).toEqual(["green", "green", "amber", "amber", "orange", "slate", "slate"]);
+  });
+
+  it("draws best-match rings and score bars in the score's colour, with the top scores glowing", async () => {
+    const body = await statsPage(STATUS, sample(), "riley-chen", "30").text();
+    const best = body.slice(body.indexOf('class="best"'));
+    const cards = [...best.matchAll(/<li class="k-(\w+)"[^>]*>[\s\S]*?<svg class="ring k-(\w+)( hot)?"[\s\S]*?<text class="val"[^>]*>(\d+)<\/text><text class="sub"[^>]*>\/ 10<\/text>/g)];
+    expect(cards.length).toBeGreaterThan(0);
+    for (const m of cards) {
+      const fit = Number(m[4]);
+      expect(m[1]).toBe(scoreTone(fit));
+      expect(m[2]).toBe(scoreTone(fit));
+      expect(Boolean(m[3])).toBe(fit >= 8);
+    }
+    expect(best).toMatch(/<svg class="ring k-green hot"/);
+    const arcs = [...body.matchAll(/class="arc" cx="18" cy="18" r="15\.915" stroke-dasharray="([\d.]+) ([\d.]+)"/g)];
+    expect(arcs.length).toBeGreaterThanOrEqual(2);
+    for (const [, dash, gap] of arcs) {
+      expect(Number(dash) + Number(gap)).toBeCloseTo(100, 5);
+    }
+    expect(body).toMatch(/class="bar score k-green"/);
+    expect(body).not.toMatch(/class="bar score" fill=/);
+    expect(body).toContain("@keyframes halo");
+    expect(body).toContain("prefers-reduced-motion");
+  });
+
+  it("gives every card a tinted icon badge and every chip a round icon", async () => {
+    const body = await statsPage(STATUS, sample(), "riley-chen", "30").text();
+    const heads = [...body.matchAll(/<h3><span class="ico sm k-(\w+)"><svg /g)].map((m) => m[1]);
+    expect(heads.length).toBeGreaterThanOrEqual(6);
+    expect(new Set(heads).size).toBeGreaterThan(3);
+    expect(body).not.toMatch(/<h3><svg /);
+    expect(body).toMatch(/<span class="ci"><svg /);
   });
 
   it("draws empty charts rather than failing on a profile with nothing yet", async () => {
@@ -207,7 +243,7 @@ describe("jobs sent page", () => {
 
   it("opens each job, when pressed, to everything its email card showed", async () => {
     const body = await sentOf(detailed(), "sam-lee", { range: "7" });
-    expect(body).toMatch(/<details><summary><svg class="ring"[\s\S]*?<b>Data Engineer<\/b>[\s\S]*?<span class="chev"/);
+    expect(body).toMatch(/<details><summary><svg class="ring k-green hot"[\s\S]*?<b>Data Engineer<\/b>[\s\S]*?<span class="chev"/);
     expect(body).not.toContain("<details open");
     for (const part of ["Closes in 2 days", "Full-time permanent", "Hybrid", "Mid", "Posted 2 days ago", "HermitShell fit</span><b>9/10",
       "Confidence</span><b>80%", "CV keyword match</span><b>65%", '<p class="why">Strong SQL and Python overlap with the CV.</p>',
