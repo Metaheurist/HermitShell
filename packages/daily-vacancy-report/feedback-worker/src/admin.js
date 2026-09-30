@@ -462,7 +462,7 @@ async function docRequest(request, env, s) {
   const doc = kind === "cover_letter" ? "cover letter" : "tailored CV";
   const how = styleLabel(style) ? ` (${styleLabel(style)})` : "";
   const asked = kind === "send_job" ? "Emailed the job" : send ? `Emailed the ${doc}` : `Asked for a ${fresh ? "new " : ""}${doc}${how}`;
-  await record(env, u, kind, `${asked}: ${title || "a job"}`, { by: displayName(s.me, current) });
+  await record(env, u, kind, `${asked}: ${title || "a job"}`, { by: displayName(s.me, current), h });
   return redirect(sentBack(u, form.get("back"), h.slice(0, 16), kind === "send_job" ? "mail" : send ? "docmail" : "doc"));
 }
 

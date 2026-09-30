@@ -746,13 +746,14 @@ Each entry says who did it: an admin or recruiter by name, the recruit **from an
 - **Send jobs now**, pausing and resuming, assigning or unassigning a recruiter (also when their
   recruiter's account is deleted);
 - cover letters and tailored CVs asked for or emailed, jobs emailed to them and skills added from the
-  Jobs sent list;
+  Jobs sent list; while the letter or CV is still kept for download (`COVER_LETTER_KEEP_DAYS`, 7 days
+  by default) its entry has a green **Download** button, for the newest one made for that job;
 - tasks stopped or cancelled from the Tasks window;
 - every email button they press (Interested, Applied, a cover letter and so on), once, even if they
   press Confirm again; their notes are never copied in;
 - from HermitShell's status reports: each job report that ran and each time it read a new CV.
 
-<img src="images/worker/admin-history.png" alt="A recruit's History tab: a timeline of reports, changes by their recruiter and email answers, grouped by day" width="720">
+<img src="images/worker/admin-history.png" alt="A recruit's History tab: a timeline of reports, changes by their recruiter and email answers, grouped by day, with a Download button on a tailored CV still kept" width="720">
 
 Entries are kept in KV by month (`history:<id>:YYYY-MM`, at most 1,000 a month); the pills at the
 top switch months and the oldest ends with the day they joined. Recruiters see only their own

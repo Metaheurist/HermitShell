@@ -14,7 +14,7 @@
 // passwords is kept there, and the switch itself is "demo:mode".
 
 import { PROTOCOL } from "./apiauth.js";
-import { DOC_KINDS, markEmailed, storeDoc } from "./docs.js";
+import { DOC_KINDS, jobHash, markEmailed, storeDoc } from "./docs.js";
 import { historyKey } from "./history.js";
 import { esc, limitedForm, newId, page, redirect, rememberWeek, safeEqual, when } from "./lib.js";
 import { SEAL_ALG } from "./seal.js";
@@ -565,9 +565,9 @@ async function seed(env) {
   // Each recruit's history, in the entries record() writes, one KV value per month.
   const names = Object.fromEntries([["admin", ADMIN_NAME], ...RECRUITERS.map((r) => [r.id, r.name])]);
   const months = new Map();
-  const log = (pid, k, t, at, { by = "", via = "dashboard" } = {}) => {
+  const log = (pid, k, t, at, { by = "", via = "dashboard", h = "" } = {}) => {
     const key = historyKey(pid, at);
-    months.set(key, [...(months.get(key) || []), { at, k, t, v: via, ...(by ? { by } : {}) }]);
+    months.set(key, [...(months.get(key) || []), { at, k, t, v: via, ...(by ? { by } : {}), ...(h ? { h } : {}) }]);
   };
   for (const p of PEOPLE) {
     const created = now - p.age * DAY;
@@ -583,6 +583,10 @@ async function seed(env) {
       log(p.id, "answer", `Answered ${ANSWER_LABELS[j.answer]}: ${j.title} at ${j.employer}`, Date.parse(`${j.day}T12:00:00Z`) + 5 * HOUR, { via: "email" });
     }
   }
+  // The request for the cover letter kept below, so its history entry has a Download button.
+  const first = jobsFor(PEOPLE[0], end)[0];
+  log(PEOPLE[0].id, "cover_letter", `Asked for a cover letter: ${first.title} at ${first.employer}`, now - 50 * 60000,
+    { by: names[PEOPLE[0].recruiter], h: await jobHash(first.key) });
   for (const [key, entries] of months) await put(env, key, entries);
 
   const signup = `queue:${now - 20 * 60000}:${newId()}`;
@@ -597,7 +601,6 @@ async function seed(env) {
   await put(env, "tasks:requests", [{ id: "event:sam-lee:demo-tailored-cv", a: "tailored_cv", n: `${sam.title} at ${sam.employer}`, u: "sam-lee",
     at: now - 40000, j: sam.key }]);
 
-  const first = jobsFor(PEOPLE[0], end)[0];
   const letter = textPdf([
     "Cover letter (demo)", "", "Avery Lane, Belfast", "", `Dear Hiring Manager at ${first.employer},`, "",
     `I am writing to apply for the ${first.title} role. Over the last six years I have built Python`,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import worker, { sign } from "../src/index.js";
+import { jobHash } from "../src/docs.js";
 import { MAX_MONTH, historyKey, listed, record } from "../src/history.js";
 import { today } from "../src/lib.js";
 import { BASE, keysWith, testEnv } from "./helpers.js";
@@ -52,6 +53,15 @@ async function answer(env, action, title, profile = "") {
   const t = await sign("test-secret", "nijobs:123", action, title, "", profile, d);
   return worker.fetch(post("/f", { j: "nijobs:123", a: action, n: title, ...(profile ? { u: profile } : {}), d, t, r: "" }), env);
 }
+
+// HermitShell has made the document and sent it to be kept for download.
+function keep(env, u, j, k) {
+  const q = new URLSearchParams({ u, j, k, days: "7", name: `${k} - Sam Lee` });
+  return worker.fetch(new Request(`${BASE}/api/doc?${q}`, { method: "POST", headers: { ...API, "Content-Type": "application/pdf" },
+    body: "%PDF-1.4\n%%EOF" }), env);
+}
+
+const downloads = (body) => [...body.matchAll(/<a class="hdl" href="([^"]+)"/g)].map((m) => m[1].replaceAll("&amp;", "&"));
 
 describe("a recruit's history", () => {
   it("records dashboard actions with who did them, newest first", async () => {
@@ -162,6 +172,48 @@ describe("a recruit's history", () => {
     expect(keysWith(env, "history:sam-lee:")).toEqual([]);
     await admin.act({ action: "delete", u: "jordan-patel", confirm: "yes" });
     expect(keysWith(env, "history:jordan-patel:")).toEqual([]);
+  });
+
+  it("offers a letter or CV asked for from the dashboard for download while it is kept", async () => {
+    const { env, casey } = await withCasey();
+    await casey.send("/admin/doc", { u: "sam-lee", j: "nijobs:9", k: "tailored_cv", n: "Data Analyst at Litware" });
+    await casey.send("/admin/doc", { u: "sam-lee", j: "nijobs:9", k: "send_job", n: "Data Analyst at Litware" });
+    await casey.act({ action: "send_now", u: "sam-lee" });
+    expect(downloads(await casey.text("/admin/history?u=sam-lee"))).toEqual([]);
+    await keep(env, "sam-lee", "nijobs:9", "tailored_cv");
+    const body = await casey.text("/admin/history?u=sam-lee");
+    const path = `/admin/doc?u=sam-lee&k=tailored_cv&h=${await jobHash("nijobs:9")}`;
+    expect(downloads(body)).toEqual([path]);
+    expect(body).toMatch(/Asked for a tailored CV: Data Analyst at Litware<\/b>[\s\S]*?<\/div><a class="hdl"[^>]*download[^>]*aria-label="Download the tailored CV">/);
+    const res = await casey.get(path);
+    expect(res.headers.get("Content-Type")).toBe("application/pdf");
+  });
+
+  it("offers a letter asked for from an email button once HermitShell has made it", async () => {
+    const { env, admin } = await setup();
+    await answer(env, "cover_letter", "BI Developer at Contoso", "sam-lee");
+    await keep(env, "sam-lee", "nijobs:123", "cover_letter");
+    await keep(env, "sam-lee", "nijobs:123", "tailored_cv");
+    expect(downloads(await admin.text("/admin/history?u=sam-lee"))).toEqual([`/admin/doc?u=sam-lee&k=cover_letter&h=${await jobHash("nijobs:123")}`]);
+  });
+
+  it("has no Download button for an entry recorded without its job, or a job with nothing kept", async () => {
+    const { env, admin } = await setup();
+    await record(env, "sam-lee", "tailored_cv", "Asked for a tailored CV: Data Analyst at Litware");
+    await keep(env, "sam-lee", "nijobs:9", "tailored_cv");
+    expect(downloads(await admin.text("/admin/history?u=sam-lee"))).toEqual([]);
+    await record(env, "sam-lee", "tailored_cv", "Asked for a tailored CV: BI Developer at Fabrikam", { h: await jobHash("nijobs:77") });
+    expect(downloads(await admin.text("/admin/history?u=sam-lee"))).toEqual([]);
+  });
+
+  it("reads the kept documents only when an entry could have one", async () => {
+    const { env, admin } = await setup();
+    await admin.act({ action: "pause", u: "sam-lee" });
+    const reads = [];
+    const get = env.FEEDBACK.get.bind(env.FEEDBACK);
+    env.FEEDBACK.get = (key, ...rest) => (reads.push(key), get(key, ...rest));
+    await admin.text("/admin/history?u=sam-lee");
+    expect(reads).not.toContain("docs:sam-lee");
   });
 
   it("is linked from the recruit's stats and jobs sent pages", async () => {

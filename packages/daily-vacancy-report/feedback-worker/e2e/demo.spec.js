@@ -44,6 +44,9 @@ test("demo mode fills the dashboard with made-up recruits, plays presses out wit
   await expect(page.locator("svg").first()).toBeVisible();
   await page.goto("/admin/history?u=jamie-walsh");
   await expect(page.getByText("Job report ran").first()).toBeVisible();
+  await page.goto("/admin/history?u=avery-lane");
+  const [file] = await Promise.all([page.waitForEvent("download"), page.getByRole("link", { name: "Download the cover letter" }).click()]);
+  expect(file.suggestedFilename()).toMatch(/^Cover letter - Avery Lane - .+\.pdf$/);
 
   await ribbon.getByRole("link", { name: "Turn off" }).click();
   await expect(page).toHaveURL(/\/admin\/settings#demo$/);

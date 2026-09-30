@@ -153,6 +153,9 @@ describe("demo mode pages", () => {
     expect(pdf.startsWith("%PDF-1.4")).toBe(true);
     expect(pdf).toContain("sample output from HermitShell's demo mode");
     expect(pdf.trimEnd().endsWith("%%EOF")).toBe(true);
+    const history = (await admin.get("/admin/history?u=avery-lane")).body;
+    expect(history).toMatch(/Asked for a cover letter: [^<]+<\/b>[\s\S]*?by Drew Harper<\/small><\/div><a class="hdl"/);
+    expect(history).toContain(`href="/admin/doc?u=avery-lane&amp;k=cover_letter&amp;h=${h}"`);
   });
 
   it("show a recruiter only their own made-up pool, without the switch", async () => {

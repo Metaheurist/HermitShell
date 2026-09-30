@@ -390,9 +390,14 @@ mine.set("email", "avery@example.org");
 mine.set("titles", `${mine.get("titles")}\nData Platform Engineer`);
 await save("admin-profile-conflict", await framed(await admin("/admin/action", { method: "POST", form: mine }), admin));
 
-// Sam Lee's history: two weeks of reports, changes and answers, then Casey asking for jobs now.
+// Sam Lee's history: two weeks of reports, changes and answers, then Casey asking for jobs now. The tailored CV
+// Casey emailed is still kept, so its entry has a Download button.
 const hour = 3600000;
-for (const [ago, kind, text, by, via] of [
+const LITWARE = "https://jobs.example.com/ad/sam-litware";
+await worker.fetch(new Request(`${BASE}/api/doc?${new URLSearchParams({ u: "sam-lee", j: LITWARE, k: "tailored_cv", days: "7",
+  name: "Tailored CV - Sam Lee - Data Analyst.pdf" })}`, { method: "POST",
+  headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/pdf" }, body: "%PDF-1.4\n%%EOF" }), env, {});
+for (const [ago, kind, text, by, via, job] of [
   [11 * day + 2 * hour, "cv_read", "Read the new CV and rebuilt the skills jobs are rated against", "", "hermitshell"],
   [10 * day, "report", "Job report ran", "", "hermitshell"],
   [8 * day + 5 * hour, "job", "Changed Job titles and Places", "Casey Quinn", "dashboard"],
@@ -400,11 +405,11 @@ for (const [ago, kind, text, by, via] of [
   [6 * day + 3 * hour, "answer", "Answered Interested: BI Developer at Fabrikam", "", "email"],
   [5 * day + 2 * hour, "tailored_cv", "Asked for a tailored CV: BI Developer at Fabrikam", "", "email"],
   [5 * day + hour, "cancel", "Cancelled the tailored CV: BI Developer at Fabrikam", "Casey Quinn", "dashboard"],
-  [4 * day + 5 * hour, "tailored_cv", "Emailed the tailored CV: Data Analyst at Litware", "Casey Quinn", "dashboard"],
+  [4 * day + 5 * hour, "tailored_cv", "Emailed the tailored CV: Data Analyst at Litware", "Casey Quinn", "dashboard", LITWARE],
   [3 * day + 4 * hour, "pause", "Paused reports", "Casey Quinn", "dashboard"],
   [2 * day + 6 * hour, "resume", "Resumed reports", "Casey Quinn", "dashboard"],
   [day, "report", "Job report ran", "", "hermitshell"],
-]) await record(env, "sam-lee", kind, text, { by, via, at: now - ago });
+]) await record(env, "sam-lee", kind, text, { by, via, at: now - ago, h: job ? await jobHash(job) : "" });
 await casey("/admin/action", { method: "POST", form: { csrf: caseyCsrf, action: "send_now", u: "sam-lee" } });
 await save("admin-history", await casey("/admin/history?u=sam-lee"));
 

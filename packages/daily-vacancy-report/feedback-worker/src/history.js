@@ -1,8 +1,10 @@
 // A recruit's history (/admin/history): a timeline of everything done to or for them, from the dashboard, their
 // email buttons and HermitShell itself. It is kept until they unsubscribe or are deleted (purgeProfileEvents);
 // the letters and CVs it mentions are not. One KV value per recruit and month (history:<id>:YYYY-MM), so an
-// event costs one read and one write, and the page one list and one read.
+// event costs one read and one write, and the page one list and one read. A letter or CV request keeps the job's
+// hash, so while that document is still kept its entry has a Download button (one more read, of the kept list).
 
+import { DOC_KINDS, DOC_URL, docIndex } from "./docs.js";
 import { BACK_TO_RECRUITS, esc, historyPrefix, page, when, PROFILE_RE } from "./lib.js";
 
 export const HISTORY_URL = "/admin/history";
@@ -11,6 +13,7 @@ const MAX_TEXT = 200;
 const MAX_BY = 80;
 const MAX_MONTHS_SHOWN = 24;
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+const HASH_RE = /^[0-9a-f]{32}$/;
 const VIA = { dashboard: "", email: "from an email button", hermitshell: "HermitShell" };
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -27,6 +30,7 @@ const PATHS = {
   reply: '<path d="M10 8 5 12l5 4"/><path d="M5 12h9a5 5 0 0 1 5 5v1"/>',
   clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2.5"/>',
   cross: '<circle cx="12" cy="12" r="8"/><path d="m9 9 6 6M15 9l-6 6"/>',
+  download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/>',
 };
 // Each kind of event: its icon and colour.
 const KINDS = {
@@ -50,10 +54,11 @@ export function listed(items) {
 }
 
 // A full KV write limit, or any other failure, must not stop the action being recorded.
-export async function record(env, pid, kind, text, { by = "", via = "dashboard", at = Date.now() } = {}) {
+// `h` is the job's hash (docs.js jobHash), kept for a letter or CV so the entry can offer the document.
+export async function record(env, pid, kind, text, { by = "", via = "dashboard", at = Date.now(), h = "" } = {}) {
   if (!PROFILE_RE.test(pid || "") || !Object.hasOwn(KINDS, kind) || !clean(text, MAX_TEXT)) return;
   const entry = { at, k: kind, t: clean(text, MAX_TEXT), v: Object.hasOwn(VIA, via) ? via : "dashboard",
-    ...(clean(by, MAX_BY) ? { by: clean(by, MAX_BY) } : {}) };
+    ...(clean(by, MAX_BY) ? { by: clean(by, MAX_BY) } : {}), ...(DOC_KINDS[kind] && HASH_RE.test(h) ? { h } : {}) };
   try {
     const key = historyKey(pid, at);
     const stored = await env.FEEDBACK.get(key, "json");
@@ -131,12 +136,24 @@ export function profileTabs(pid, active) {
     `<a href="${href}"${id === active ? ' class="on" aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
 }
 
-function entryRow(e, tz) {
+// The kept document an entry asked for, if it is still kept: the newest one made for that job.
+function keptFor(e, docs) {
+  return DOC_KINDS[e.k] && HASH_RE.test(e.h || "") ? docs.find((d) => d.k === e.k && d.h === e.h) || null : null;
+}
+
+function download(pid, e, kept, tz) {
+  const what = e.k === "cover_letter" ? "cover letter" : "tailored CV";
+  return `<a class="hdl" href="${DOC_URL}?u=${esc(pid)}&amp;k=${e.k}&amp;h=${e.h}" download title="Kept until ${esc(when(kept.exp, tz).slice(0, 10))}"
+aria-label="Download the ${what}"><svg ${ICON}>${PATHS.download}</svg>Download</a>`;
+}
+
+function entryRow(pid, e, tz, docs) {
   const [shape, tone] = KINDS[e.k];
   const who = e.v === "dashboard" ? (e.by ? `by ${esc(e.by)}` : "") : esc(VIA[e.v] || "");
   const stamp = when(e.at, tz);
+  const kept = keptFor(e, docs);
   return `<li class="hev"><span class="hdot ${tone}"><svg ${ICON}>${PATHS[shape]}</svg></span><div><b>${esc(e.t)}</b>
-<small title="${esc(stamp)}">${esc(stamp.slice(11, 16))}${who ? ` &middot; ${who}` : ""}</small></div></li>`;
+<small title="${esc(stamp)}">${esc(stamp.slice(11, 16))}${who ? ` &middot; ${who}` : ""}</small></div>${kept ? download(pid, e, kept, tz) : ""}</li>`;
 }
 
 export const HISTORY_STYLE = `
@@ -148,7 +165,11 @@ ol.htime{list-style:none;margin:0;padding:0 0 0 4px;position:relative}
 ol.htime::before{content:"";position:absolute;left:18px;top:6px;bottom:6px;width:2px;background:var(--line);border-radius:2px}
 .hev{position:relative;display:flex;gap:12px;align-items:flex-start;padding:7px 0}
 .hev b{display:block;font-size:14px;font-weight:600;color:var(--ink);line-height:1.4;overflow-wrap:anywhere}
-.hev small{font-size:12.5px;color:var(--muted)}
+.hev small{font-size:12.5px;color:var(--muted)}.hev>div{flex:1;min-width:0}
+.hev a.hdl{flex:none;align-self:center;display:inline-flex;align-items:center;gap:6px;padding:6px 12px 6px 10px;border-radius:10px;font-size:13px;
+font-weight:650;color:#fff;text-decoration:none;background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 8px 18px -10px rgba(5,150,105,.8);
+transition:transform .15s var(--ease),filter .15s}
+.hev a.hdl:hover{transform:translateY(-1px);filter:brightness(1.05);color:#fff}.hev a.hdl svg{width:15px;height:15px}
 .hdot{flex:none;position:relative;z-index:1;width:30px;height:30px;border-radius:10px;display:grid;place-items:center;border:1px solid}
 .hdot svg{width:15px;height:15px}
 .hdot.brand{color:#4338ca;background:#eef2ff;border-color:#c7d2fe}.hdot.violet{color:#7c3aed;background:#f5f3ff;border-color:#ddd6fe}
@@ -167,6 +188,7 @@ export async function historyPage(env, status, pid, monthParam) {
   const stored = month ? await env.FEEDBACK.get(`${historyPrefix(pid)}${month}`, "json") : null;
   const rows = (Array.isArray(stored) ? stored : []).filter(validEntry).map((e, i) => [e, i])
     .sort(([a, i], [b, j]) => b.at - a.at || j - i).map(([e]) => e);
+  const docs = rows.some((e) => DOC_KINDS[e.k] && HASH_RE.test(e.h || "")) ? await docIndex(env, pid) : [];
   const days = [];
   for (const e of rows) {
     const date = when(e.at, tz).slice(0, 10);
@@ -177,8 +199,8 @@ export async function historyPage(env, status, pid, monthParam) {
     `<a href="${HISTORY_URL}?u=${esc(pid)}&amp;m=${m}"${m === month ? ' class="on" aria-current="page"' : ""}>${monthName(m)}</a>`).join("")}</nav>` : "";
   const oldest = !all.length || month === all.at(-1);
   const start = oldest && p.created ? `<p class="hstart">Joined HermitShell on ${esc(when(p.created, tz).slice(0, 10))}.</p>` : "";
-  const timeline = days.map((d) => `<div class="hday">${esc(dayName(d.date))}</div><ol class="htime">${d.rows.map((e) => entryRow(e, tz)).join("")}</ol>`).join("");
-  const intro = `<p class="muted">Everything done to or for this recruit: changes and requests from the dashboard, answers from their email buttons, and the reports HermitShell ran. Kept until they unsubscribe or are deleted; letters and CVs are only kept for a short time.</p>`;
+  const timeline = days.map((d) => `<div class="hday">${esc(dayName(d.date))}</div><ol class="htime">${d.rows.map((e) => entryRow(pid, e, tz, docs)).join("")}</ol>`).join("");
+  const intro = `<p class="muted">Everything done to or for this recruit: changes and requests from the dashboard, answers from their email buttons, and the reports HermitShell ran. Kept until they unsubscribe or are deleted; letters and CVs are only kept for a short time, and can be downloaded here until then.</p>`;
   return page(p.name, `<style>${HISTORY_STYLE}</style>${profileTabs(pid, "history")}${intro}${picker}
 ${timeline || '<p class="muted">Nothing recorded yet. Changes, requests, answers and reports show here from now on.</p>'}${start}`,
   { wide: true, before: BACK_TO_RECRUITS });

@@ -517,12 +517,13 @@ the button waits until it has finished.*
 
 ### A recruit's history
 
-<img src="images/worker/admin-history.png" alt="A recruit's History tab: a timeline of reports, changes by their recruiter and email answers, grouped by day" width="620">
+<img src="images/worker/admin-history.png" alt="A recruit's History tab: a timeline of reports, changes by their recruiter and email answers, grouped by day, with a Download button on a tailored CV still kept" width="620">
 
 `/admin/history?u=<id>`, the **History** tab: everything done on the account, newest first and grouped
 by day. Each entry says who did it (an admin or recruiter by name, the recruit **from an email button**,
-or **HermitShell** for reports that ran and CVs it read). The pills at the top switch months; the
-oldest ends with the day they joined. It is kept until they unsubscribe or are deleted
+or **HermitShell** for reports that ran and CVs it read). A cover letter or tailored CV asked for or
+emailed has a green **Download** button while the document is still kept (7 days by default). The pills
+at the top switch months; the oldest ends with the day they joined. It is kept until they unsubscribe or are deleted
 ([more](feedback-worker.md#history)).
 
 ### A recruit's stats

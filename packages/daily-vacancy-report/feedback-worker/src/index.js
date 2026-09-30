@@ -217,10 +217,10 @@ async function saveAnswer(form, env) {
   // one again is a new request from the next minute on.
   const answer = await sha256Hex(`${event.r}\n${(event.skills || []).join("|")}${fresh ? `\nfresh:${Math.floor(at / 60000)}` : ""}${style ? `\nstyle:${style}` : ""}`);
   event.id = `${eventPrefix(u)}${p.t}:${answer.slice(0, 12)}`;
-  const repeat = await env.FEEDBACK.get(event.id);
+  const [repeat, h] = await Promise.all([env.FEEDBACK.get(event.id), DOC_KINDS[p.a] ? jobHash(p.j) : ""]);
   await Promise.all([
     env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS }),
-    repeat ? null : record(env, u || OWNER_ID, ...historyEntry(p, event, fresh), { via: "email", at }),
+    repeat ? null : record(env, u || OWNER_ID, ...historyEntry(p, event, fresh), { via: "email", at, h }),
     setFlag(env, eventFlag(u), EVENT_TTL_SECONDS),
     rememberRequest(env, event, p.n, EVENT_TTL_SECONDS),
   ]);

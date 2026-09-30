@@ -8,6 +8,11 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Download from History.** A cover letter or tailored CV asked for or emailed, from the dashboard or an email
+  button, has a **Download** button on the recruit's History tab while the document is still kept. The history
+  entry keeps the job's hash for this; entries recorded before this change have no button. The demo's kept
+  cover letter has one too.
+
 - **Waiting pages update in place.** On the dashboard, a page waiting for HermitShell now fetches itself
   in the background and swaps in the new card instead of reloading, so what you are typing, an open
   window or menu, focus and the scroll are kept; it holds off while a field is in use or the tab is

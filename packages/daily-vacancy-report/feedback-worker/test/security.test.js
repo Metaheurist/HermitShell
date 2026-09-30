@@ -687,6 +687,30 @@ describe("letters and CVs kept for download", () => {
     expect(body).toContain('name="j" value="k&lt;script&gt;');
   });
 
+  it("links a history entry only to that recruit's kept document for the same job and kind, never to a made-up hash", async () => {
+    const env = testEnv(ADMIN);
+    await reportedStatus(env);
+    await upload(env);
+    const { jobHash } = await import("../src/docs.js");
+    const { historyKey } = await import("../src/history.js");
+    const h = await jobHash(JOB);
+    await record(env, "sam-lee", "cover_letter", "Asked for a cover letter: Data Engineer", { h });
+    await record(env, "sam-lee", "cover_letter", "Hostile hash", { h: `${h}"><script>alert(1)</script>` });
+    await record(env, "sam-lee", "send_job", "Emailed the job: Data Engineer", { h });
+    await record(env, "sam-lee", "tailored_cv", "Asked for a tailored CV: Data Engineer", { h });
+    await record(env, "riley-chen", "cover_letter", "Asked for a cover letter: Data Engineer", { h });
+    const stored = JSON.parse(env.FEEDBACK.store.get(historyKey("sam-lee", Date.now())));
+    expect(stored.map((e) => e.h || "")).toEqual([h, "", "", h]);
+    const month = historyKey("sam-lee", Date.now());
+    await env.FEEDBACK.put(month, JSON.stringify([...stored, { at: Date.now(), k: "cover_letter", t: "Planted", v: "dashboard", h: `${h}"><script>` }]));
+    const cookie = await signIn(env, "203.0.113.36");
+    const body = await (await get("/admin/history?u=sam-lee", env, { Cookie: cookie })).text();
+    expect(body.match(/class="hdl"/g)).toHaveLength(1);
+    expect(body).toContain(`href="/admin/doc?u=sam-lee&amp;k=cover_letter&amp;h=${h}"`);
+    expect(body).not.toContain("<script>");
+    expect((await (await get("/admin/history?u=riley-chen", env, { Cookie: cookie })).text())).not.toContain('class="hdl"');
+  });
+
   it("refuses details that are not an object", async () => {
     const env = testEnv(ADMIN);
     const put = (sent) => worker.fetch(new Request(`${BASE}/api/stats`, { method: "POST", headers: API,
