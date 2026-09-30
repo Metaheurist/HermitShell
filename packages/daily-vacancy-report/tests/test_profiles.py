@@ -170,6 +170,38 @@ def test_a_new_profile_reaches_the_worker_before_its_signup_leaves_the_queue(hom
     assert order == [("status", ["owner", "sam-lee-456789"]), ("ack", ["queue:1700000000000:abcdef0123456789"])]
 
 
+def test_changes_queued_before_a_signup_are_confirmed_before_it_starts(home, monkeypatch):
+    order = []
+    email = {"id": "queue:1600000000000:0000000000000001", "type": "admin", "action": "email", "host": "smtp.example.com",
+             "port": "587", "user": "alex@example.com"}
+
+    class Ordered(FakeApi):
+        def ack(self, ids):
+            order.append(("ack", ids))
+            super().ack(ids)
+
+    real = profiles.create_profile
+    monkeypatch.setattr(profiles, "create_profile", lambda *a, **k: order.append(("signup starts",)) or real(*a, **k))
+    api = Ordered([signup(), email])
+    assert profiles.sync(api) == ["admin: done (email)", "signup: done (Sam Lee)"]
+    assert order == [("ack", [email["id"]]), ("signup starts",), ("ack", [signup()["id"]])]
+    assert [p["id"] for p in api.statuses[-1]["profiles"]] == ["owner", "sam-lee-456789"]
+
+
+def test_a_queue_of_quick_changes_is_confirmed_once(home):
+    items = [{"id": f"queue:160000000000{n}:000000000000000{n}", "type": "admin", "action": "email",
+              "host": "smtp.example.com", "port": "587", "user": "alex@example.com"} for n in (1, 2)]
+    calls = []
+
+    class Counted(FakeApi):
+        def ack(self, ids):
+            calls.append(list(ids))
+            super().ack(ids)
+
+    profiles.sync(Counted(items))
+    assert calls == [[i["id"] for i in items]]
+
+
 def test_nijobs_keywords_follow_the_owner(home, monkeypatch):
     monkeypatch.setenv("JOB_SCANNER_NIJOBS_KEYWORDS", "data-engineer")
     profiles.sync(FakeApi([signup()]))

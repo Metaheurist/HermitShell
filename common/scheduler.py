@@ -190,7 +190,7 @@ def load_jobs() -> list[dict] | None:
 
 @contextlib.contextmanager
 def editing():
-    """The job list, saved on leaving; one change at a time across processes."""
+    """The job list, saved on leaving when it changed; one change at a time across processes."""
     CRON_DIR.mkdir(parents=True, exist_ok=True)
     with open(CRON_DIR / ".jobs.lock", "a") as handle:
         try:
@@ -198,9 +198,12 @@ def editing():
             fcntl.flock(handle, fcntl.LOCK_EX)
         except ImportError:  # Windows development machines have no flock
             pass
-        jobs = load_jobs() or []
+        jobs = load_jobs()
+        before = None if jobs is None else json.dumps(jobs, sort_keys=True)
+        jobs = jobs or []
         yield jobs
-        hc.write_atomic(JOBS_FILE, json.dumps({"jobs": jobs, "updated_at": _now_iso()}, indent=2) + "\n")
+        if json.dumps(jobs, sort_keys=True) != before:
+            hc.write_atomic(JOBS_FILE, json.dumps({"jobs": jobs, "updated_at": _now_iso()}, indent=2) + "\n")
 
 
 def _now_iso() -> str:

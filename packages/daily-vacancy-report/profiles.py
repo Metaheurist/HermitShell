@@ -1330,8 +1330,15 @@ def lock(name: str):
     return hc.run_lock(PROFILES_DIR / f".{name}.lock")
 
 
+def slow_item(item: dict) -> bool:
+    """Queue items that take a model or an email server a while: a sign-up, a new CV, a test email."""
+    return item.get("type") == "signup" or (item.get("type") == "admin" and item.get("action") in ("cv", "test_email"))
+
+
 def sync(api: Api, full: bool = False) -> list[str]:
-    """Apply everything waiting in the Worker; returns one line per item handled."""
+    """Apply everything waiting in the Worker, in order; returns one line per item handled. What is done is
+    reported and acknowledged before each slow item starts, so changes queued ahead of it show as applied on the
+    dashboard at once instead of after it."""
     ensure_owner()
     with lock("sync") as got:
         if not got:
@@ -1350,8 +1357,24 @@ def sync(api: Api, full: bool = False) -> list[str]:
             marker.touch()
         attempts = read_json(PROFILES_DIR / ".attempts.json", {})
         done, report = [], []
+
+        def flush(force: bool) -> None:
+            write_json(PROFILES_DIR / ".attempts.json", attempts)
+            schedule_reports()
+            # The dashboard shows a sign-up as pending while it is queued, so the new profile must reach the Worker
+            # before the sign-up leaves the queue, or it vanishes from the dashboard in between.
+            push_status(api, force=force)
+            if done:
+                try:
+                    api.ack(list(done))
+                except requests.RequestException as exc:
+                    log(f"Could not acknowledge queue items: {worker_link.reason(exc)}")
+                done.clear()
+
         for item in sorted(items, key=lambda i: str(i.get("id", ""))):
             iid = str(item.get("id", ""))
+            if done and slow_item(item):
+                flush(True)
             try:
                 handle(item, api)
                 report.append(f"{item.get('type')}: done ({item.get('name') or item.get('u') or item.get('action')})")
@@ -1367,16 +1390,7 @@ def sync(api: Api, full: bool = False) -> list[str]:
                 report.append(f"{item.get('type')}: rejected ({exc})")
             done.append(iid)
             attempts.pop(iid, None)
-        write_json(PROFILES_DIR / ".attempts.json", attempts)
-        schedule_reports()
-        # The dashboard shows a sign-up as pending while it is queued, so the new profile must reach the Worker
-        # before the sign-up leaves the queue, or it vanishes from the dashboard in between.
-        push_status(api, force=bool(done))
-        if done:
-            try:
-                api.ack(done)
-            except requests.RequestException as exc:
-                log(f"Could not acknowledge queue items: {worker_link.reason(exc)}")
+        flush(bool(done))
         return report
 
 

@@ -30,7 +30,7 @@ RUN chmod 755 /app/entrypoint.sh && mkdir -p /data && chown "${UID}:${UID}" /dat
 ENV HERMITSHELL_HOME=/data \
     HERMITSHELL_VERSION=${VERSION} \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONPYCACHEPREFIX=/tmp/hermitshell-pycache
 VOLUME /data
 WORKDIR /data
 USER hermitshell

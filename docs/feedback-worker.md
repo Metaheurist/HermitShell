@@ -364,7 +364,9 @@ HermitShell applies the changes, since the Worker can't reach your server.
    applied within a second or two, and the dashboard shows **HermitShell is connected**. The link
    pings every 30 seconds, reconnects by itself after a drop (every Worker deploy closes it) and
    restarts when `profiles.py` changes; if the process dies, the next run starts another.
-   `python3 profiles.py --once` syncs once and exits.
+   `python3 profiles.py --once` syncs once and exits. Items are applied in the order they were
+   queued; before a slow one (a sign-up, a new CV or a test email) starts, everything already
+   applied is reported to the Worker, so those changes stop showing as waiting straight away.
 
    The link runs on a [Durable Object](https://developers.cloudflare.com/durable-objects/) (`Hub`,
    binding `HUB`) that `cloudflare_worker.py` creates with the Worker. It is on the free plan: the

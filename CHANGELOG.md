@@ -945,6 +945,10 @@ using [Semantic Versioning](https://semver.org/).
   instead of opening a new one (and a new TLS handshake) for every request.
 - With the cloud models first, a run rates `LLM_CLOUD_CONCURRENCY` jobs at once (2 by default) instead of
   one at a time.
+- Dashboard changes queued ahead of a sign-up, a new CV or a test email show as applied as soon as they
+  are, instead of after the slow item finishes.
+- The scheduler only rewrites `cron/jobs.json` when a job changed, not every minute, and the container
+  keeps compiled Python in `/tmp` so each script run no longer recompiles every module.
 - The recruits list reads every recruit's sparkline from one KV key and its invites from one list,
   instead of one read per recruit and per invite.
 - Styles shared by every page moved from each page (about 15 KB) into `/app.css`, which the browser

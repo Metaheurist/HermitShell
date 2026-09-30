@@ -279,6 +279,18 @@ def test_due_jobs_are_started_and_a_running_one_is_skipped(home, monkeypatch):
     assert scheduler.start_due(now, lambda *a, **k: pytest.fail("started twice")) == []
 
 
+def test_a_minute_with_nothing_due_leaves_the_job_list_unwritten(home):
+    scheduler.create("0 0 1 1 *", "t", "c", "c.py")
+    written = scheduler.JOBS_FILE.stat().st_mtime_ns
+    os.utime(scheduler.JOBS_FILE, ns=(written - 10**9, written - 10**9))
+    for minutes in range(3):
+        scheduler.start_due(datetime(2030, 6, 1, 12, minutes, tzinfo=UTC), lambda *a, **k: pytest.fail("not due"))
+    assert scheduler.JOBS_FILE.stat().st_mtime_ns == written - 10**9
+    scheduler.record(scheduler.load_jobs()[0]["id"], last_status="ok")
+    assert scheduler.JOBS_FILE.stat().st_mtime_ns != written - 10**9
+    assert scheduler.load_jobs()[0]["last_status"] == "ok"
+
+
 def test_the_service_checks_each_minute_and_reports_its_health(home):
     scheduler.create("* * * * *", "t", "a", "a.py")
     assert not scheduler.healthy()
