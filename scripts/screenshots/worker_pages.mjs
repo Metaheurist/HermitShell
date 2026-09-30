@@ -385,6 +385,18 @@ for (const [ago, kind, text, by, via] of [
 await casey("/admin/action", { method: "POST", form: { csrf: caseyCsrf, action: "send_now", u: "sam-lee" } });
 await save("admin-history", await casey("/admin/history?u=sam-lee"));
 
+// Demo mode, switched on from Global settings: the made-up desk on every signed-in page, then off again. The ribbon
+// is fixed to the window's foot, which the screenshots' tall window would push far below the page, so it is drawn
+// under the card, where it sits once the page is scrolled to the end.
+const ribbonAtFoot = async (response, style = "") => new Response((await response.text())
+  .replace("</head>", `<style>body{position:relative;min-height:0!important;padding-bottom:60px}.demoribbon{position:absolute!important;bottom:10px!important}${style}</style></head>`));
+await admin("/admin/demo", { method: "POST", form: { csrf, on: "1" } });
+await save("admin-dashboard-demo", await ribbonAtFoot(await admin("/admin")));
+await save("admin-settings-demo", await ribbonAtFoot(await admin("/admin/settings?done=demo_on"),
+  "main>:not(.eyebrow):not(h1):not(.note):not(#demo):not(#demo~*){display:none!important}"));
+await save("admin-stats-demo", await ribbonAtFoot(await admin("/admin/stats?u=jamie-walsh")));
+await admin("/admin/demo", { method: "POST", form: { csrf, on: "0" } });
+
 env = freshEnv();
 await save("admin-dashboard-empty", await call("/admin").then(async () => {
   const again = await call("/admin/login", { method: "POST", form: { username: "admin", password: PASSWORD } });
