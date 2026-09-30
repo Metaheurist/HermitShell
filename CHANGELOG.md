@@ -626,6 +626,9 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Job cards end with their buttons.** The job's full web address is no longer printed under each card
+  in the daily report and job emails; **View job** opens it, and the plain-text version still lists it.
+  Email screenshots updated.
 - **The CI workflow is now called Unit tests** (`.github/workflows/unit-tests.yml`, badge and README
   updated); its final job is **All unit tests passed**.
 - **A recruit's page has its own tabs.** **Manage** and **History** replace the dashboard's Recruits, Users
