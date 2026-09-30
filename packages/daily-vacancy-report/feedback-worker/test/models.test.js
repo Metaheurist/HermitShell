@@ -3,6 +3,8 @@ import worker from "../src/index.js";
 import { MODEL_PROVIDERS, modelModals, modelsSection, serverBox } from "../src/models.js";
 import { BASE, sealingKeys, testEnv, valuesWith } from "./helpers.js";
 
+const CLOUD_ICON = '<path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.7 4.7 0 0 0 7 18.5Z"/>';
+
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const API = { Authorization: "Bearer api-token" };
 const NOW = Date.now();
@@ -113,6 +115,13 @@ describe("AI model keys in Global settings", () => {
       { action: "model_keys", provider: "huggingface", key: undefined, model: undefined, clear: true, order: undefined },
       { action: "model_keys", provider: undefined, key: undefined, model: undefined, clear: undefined, order: "local" },
     ]);
+  });
+
+  it("draws Cloud first with a cloud and Local first with Ollama's chip", async () => {
+    const { settings } = await setup();
+    const choice = (value) => settings.split('<label class="crchoice">').find((c) => c.includes(`value="${value}"`));
+    expect(choice("cloud")).toContain(CLOUD_ICON);
+    expect(choice("local")).toContain('<rect x="7" y="7" width="10" height="10" rx="2"/>');
   });
 
   it("shows sensible rows before HermitShell reports any models", () => {

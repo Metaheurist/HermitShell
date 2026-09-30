@@ -15,8 +15,8 @@ using [Semantic Versioning](https://semver.org/).
   **Use the .env key**), or in `.env` (`OPENROUTER_API_KEY`, `BAZAARLINK_API_KEY`, `FEATHERLESS_API_KEY`,
   `HUGGINGFACE_API_KEY` and their `_MODEL`s, `LLM_PROVIDERS` for the order). Defaults are free or cheap models
   (`openrouter/free`, `auto:free`, `Qwen/Qwen2.5-7B-Instruct`, `openai/gpt-oss-20b:cheapest`). Providers
-  are asked in turn and Ollama is used when none has a key or credits left; **Local first**
-  (`LLM_ORDER=local`) turns that round. A provider that is out of credits or at its daily limit rests
+  are asked in turn and Ollama is used when none has a key or credits left (**Cloud first**, with a cloud
+  icon); **Local first** (`LLM_ORDER=local`, with Ollama's chip) turns that round. A provider that is out of credits or at its daily limit rests
   until the next UTC day, a rejected key for six hours and a rate limit for its Retry-After (at most an
   hour). Replies must be the JSON asked for (a JSON schema, or the schema in the prompt when a model
   refuses one), `<think>` blocks are dropped, and redirects are never followed. Each row shows what is
