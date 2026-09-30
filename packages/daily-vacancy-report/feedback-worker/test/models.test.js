@@ -117,11 +117,12 @@ describe("AI model keys in Global settings", () => {
     ]);
   });
 
-  it("draws Cloud first with a cloud and Local first with Ollama's chip", async () => {
+  it("draws Cloud first with a cloud and Local first with a computer", async () => {
     const { settings } = await setup();
     const choice = (value) => settings.split('<label class="crchoice">').find((c) => c.includes(`value="${value}"`));
     expect(choice("cloud")).toContain(CLOUD_ICON);
-    expect(choice("local")).toContain('<rect x="7" y="7" width="10" height="10" rx="2"/>');
+    expect(choice("local")).toContain('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>');
+    expect(card(settings, "ollama")).toContain('<rect x="7" y="7" width="10" height="10" rx="2"/>');
   });
 
   it("shows sensible rows before HermitShell reports any models", () => {

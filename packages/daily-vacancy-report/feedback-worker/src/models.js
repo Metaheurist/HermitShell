@@ -74,7 +74,7 @@ ${model ? `<code class="keyhint">${esc(model)}</code>` : '<div class="muted">No 
 function orderForm(llm, csrf) {
   const local = llm.order === "local";
   const choice = (value, title, detail, checked) => `<label class="crchoice"><input type="radio" name="order" value="${value}"${checked ? " checked" : ""}>
-<span>${logo(value === "local" ? "ollama" : "cloud")}<i class="mtext"><b>${title}</b><small>${detail}</small></i></span></label>`;
+<span>${logo(value === "local" ? "computer" : "cloud")}<i class="mtext"><b>${title}</b><small>${detail}</small></i></span></label>`;
   return `<form method="post" action="/admin/action" class="morder"><input type="hidden" name="csrf" value="${esc(csrf)}">
 <input type="hidden" name="action" value="model_order">
 <div class="crchoices">${choice("cloud", "Cloud first", "Ollama when no key or credits are left", !local)}${choice("local", "Local first", "The cloud only when Ollama doesn&rsquo;t answer", local)}</div>
