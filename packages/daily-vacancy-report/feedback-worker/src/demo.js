@@ -1,20 +1,37 @@
 // Demo mode (Global settings): every signed-in page shows a made-up recruitment desk (recruits, recruiters, stats,
 // jobs sent, history, tasks, invites, settings and a kept cover letter) instead of the real one, so HermitShell can
 // be shown to someone without showing anyone's data. The pages get an in-memory KV seeded with fictional data and a
-// live link that answers "connected" but reaches nothing, so whatever is pressed while it is on only changes that
-// request's copy: nothing reaches KV, the queue or HermitShell. Only the switch itself ("demo:mode") is stored. The
-// API, email buttons, sign-up and privacy pages never see demo data, and reports carry on as normal.
+// live link that answers "connected" but reaches nothing, so whatever is pressed while it is on never reaches the
+// real data, the queue or HermitShell. The API, email buttons, sign-up and privacy pages never see demo data, and
+// reports carry on as normal.
+//
+// Presses still play out, as they would for real: a pretend HermitShell (pretendWork) takes what they queued a few
+// seconds later, so a letter or tailored CV asked for is "being made" and then ready to download (a made-up PDF), a job
+// emailed shows as sent, an added skill as counted, and a pause, assignment, scan or recruit change shows on the
+// dashboard. What the demo needs to remember for that is kept in one KV value, "demo:state", for two hours and
+// cleared when the switch is pressed: only the demo's own keys (requests, kept documents, marks, history, invites and
+// the plain dashboard changes) and what the pretend HermitShell did. Nothing typed into settings, CVs, users or
+// passwords is kept there, and the switch itself is "demo:mode".
 
 import { PROTOCOL } from "./apiauth.js";
-import { storeDoc } from "./docs.js";
+import { DOC_KINDS, markEmailed, storeDoc } from "./docs.js";
 import { historyKey } from "./history.js";
 import { esc, limitedForm, newId, page, redirect, safeEqual, when } from "./lib.js";
 import { SEAL_ALG } from "./seal.js";
 import { SETTINGS_URL } from "./settings.js";
 import { splitStats, zonedToday } from "./stats.js";
+import { forgetRequests, requests } from "./tasks.js";
 
 export const DEMO_URL = "/admin/demo";
 const DEMO_KEY = "demo:mode";
+const STATE_KEY = "demo:state";
+const STATE_TTL_SECONDS = 2 * 3600;
+const MAX_STATE_BYTES = 256 * 1024;
+// How long the pretend HermitShell takes over each kind of work.
+export const WORK_MS = { send_job: 6000, cover_letter: 12000, tailored_cv: 14000, skill: 5000, change: 4000, scan: 25000 };
+// The demo's own keys worth remembering between pages. Queue items are only kept for the plain dashboard changes.
+const KEPT = /^(event:[a-z0-9_-]{1,40}:dash-|tasks:requests$|docs?:|emailed:|skilladd:|history:|invite:|queue:|flag:queue$)/;
+const KEPT_CHANGES = new Set(["pause", "resume", "assign", "send_now", "delete", "cancel", "profile"]);
 const TZ = "Europe/London";
 const DAY = 86400000;
 const HOUR = 3600000;
@@ -24,7 +41,7 @@ const RESEED_MS = 10 * 60 * 1000;
 const DEMO_SPKI = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAg+K1WTrvU4iw+ll3aFdVwXAI1rNNhwgEg9L4SKaHLgD6lP5h3fpde0gpHR2W3E3y40KRY2wuvQWGy1zxIHtep0AGrEeqmeHNkZ+mJTTWBF5dFe1CQK5SqN2f7RBxMHgh54yeM5vwT5SYdgHbbcUR78fTrW4Whu9pNKtt/4SbjbarToT1NIVKheO0jQrE7CTp0iXxuzxpYk1FL3uPkL8IqulyRqfkOpRRXUHf9EeSz+TOi/uTj2KLq4ipnfI7hdXTCnnoDkW9zP8gQrta2eb62KhfmhdZpr31K+RP9yjXLjX3fHfHDIKQoAi7oZegd8czVeIFbu3fhytYcuEr6THQzwIDAQAB";
 
 export const DEMO_DONE = {
-  demo_on: "Demo mode is on: every dashboard page now shows made-up data, and nothing pressed there is saved.",
+  demo_on: "Demo mode is on: every dashboard page now shows made-up data, and what is pressed there plays out on it without reaching anyone.",
   demo_off: "Demo mode is off: the dashboard shows your real recruits again.",
 };
 
@@ -46,6 +63,7 @@ export async function demoToggle(request, env, s) {
   const on = form.get("on") === "1";
   if (on) await env.FEEDBACK.put(DEMO_KEY, JSON.stringify({ at: Date.now() }));
   else await env.FEEDBACK.delete(DEMO_KEY);
+  await env.FEEDBACK.delete(STATE_KEY);
   return redirect(`${SETTINGS_URL}?done=${on ? "demo_on" : "demo_off"}#demo`);
 }
 
@@ -83,8 +101,9 @@ export function demoSection(demo, csrf, tz, moved = false) {
   return `<h2 id="demo">Demo mode</h2>
 <p class="muted">Shows a made-up recruitment desk on every dashboard page instead of the real one: recruits, recruiters,
 stats, jobs sent, history, tasks and settings, all fictional. Use it to show HermitShell to someone without showing
-anyone's data. While it is on, nothing pressed on the dashboard is saved or reaches HermitShell, and it applies to
-everyone signed in. Reports, email buttons and sign-ups carry on as normal.</p>
+anyone's data. While it is on, what is pressed on the dashboard plays out on the made-up data, a pretend HermitShell
+answering within seconds, and never reaches HermitShell or the real data. It applies to everyone signed in, and starts
+afresh each time it is turned on. Reports, email buttons and sign-ups carry on as normal.</p>
 ${demoSwitch(demo, csrf, tz, moved)}`;
 }
 
@@ -98,7 +117,7 @@ box-shadow:0 12px 30px -12px rgba(30,27,75,.7)}
 
 // Shown at the foot of every signed-in page while demo mode is on.
 export function demoRibbon(admin) {
-  return `<style>${RIBBON_STYLE}</style><div class="demoribbon" role="status"><span><b>Demo mode:</b> made-up data, and nothing you press is saved.</span>${
+  return `<style>${RIBBON_STYLE}</style><div class="demoribbon" role="status"><span><b>Demo mode:</b> made-up data, and nothing you press reaches anyone.</span>${
     admin ? `<a href="${SETTINGS_URL}#demo">Turn off</a>` : ""}</div>`;
 }
 
@@ -106,6 +125,7 @@ export function demoRibbon(admin) {
 
 function memoryKV(entries) {
   const store = new Map(entries);
+  const touched = new Set();
   return {
     async get(key, type) {
       const value = store.get(key);
@@ -115,13 +135,18 @@ function memoryKV(entries) {
       return typeof value === "string" ? value : new TextDecoder().decode(value);
     },
     async put(key, value) {
+      touched.add(key);
       store.set(key, typeof value === "string" ? value : value instanceof ArrayBuffer ? value : new Uint8Array(value).slice().buffer);
     },
-    async delete(key) { store.delete(key); },
+    async delete(key) {
+      touched.add(key);
+      store.delete(key);
+    },
     async list({ prefix = "", limit = 1000 } = {}) {
       return { keys: [...store.keys()].filter((k) => k.startsWith(prefix)).sort().slice(0, limit).map((name) => ({ name })), list_complete: true };
     },
     store,
+    touched,
   };
 }
 
@@ -131,15 +156,193 @@ const DEMO_HUB = {
 };
 
 let seeded = null;
+const states = new WeakMap();
 
-// The env the signed-in pages get while demo mode is on.
-export async function demoEnv(env) {
-  if (!seeded || seeded.secret !== env.JOB_FEEDBACK_SECRET || Date.now() - seeded.at > RESEED_MS) {
+// The env the signed-in pages get while demo mode is on: the made-up desk, what earlier presses changed, and what the
+// pretend HermitShell has done with them since. saveDemo keeps what this request changes.
+export async function demoEnv(env, now = Date.now()) {
+  if (!seeded || seeded.secret !== env.JOB_FEEDBACK_SECRET || now - seeded.at > RESEED_MS) {
     const kv = memoryKV([]);
     await seed({ ...env, FEEDBACK: kv, HUB: DEMO_HUB });
-    seeded = { secret: env.JOB_FEEDBACK_SECRET, at: Date.now(), entries: [...kv.store] };
+    seeded = { secret: env.JOB_FEEDBACK_SECRET, at: now, entries: [...kv.store], keys: new Set(kv.store.keys()) };
   }
-  return { ...env, FEEDBACK: memoryKV(seeded.entries), HUB: DEMO_HUB };
+  const kv = memoryKV(seeded.entries);
+  const state = await loadState(env);
+  for (const [key, value] of Object.entries(state.keys)) {
+    if (value === null) kv.store.delete(key);
+    else kv.store.set(key, typeof value.s === "string" ? value.s : fromBase64(value.b));
+  }
+  const pretend = { ...env, FEEDBACK: kv, HUB: DEMO_HUB };
+  await pretendWork(pretend, state, now);
+  applyPatch(kv, state.patch, now);
+  states.set(pretend, state);
+  return pretend;
+}
+
+// Keep what a request in demo mode changed in the demo's own keys, for the next page.
+export async function saveDemo(env, pretend) {
+  const state = states.get(pretend);
+  if (!state) return;
+  const kv = pretend.FEEDBACK;
+  let changed = state.dirty;
+  for (const key of kv.touched) {
+    if (!KEPT.test(key)) continue;
+    const value = kv.store.get(key);
+    if (value == null) {
+      if (seeded.keys.has(key)) state.keys[key] = null;
+      else delete state.keys[key];
+      changed = true;
+    } else if (!key.startsWith("queue:") || keptChange(value)) {
+      state.keys[key] = typeof value === "string" ? { s: value } : { b: toBase64(value) };
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  const body = JSON.stringify({ v: 1, keys: state.keys, patch: state.patch });
+  if (body.length <= MAX_STATE_BYTES) await env.FEEDBACK.put(STATE_KEY, body, { expirationTtl: STATE_TTL_SECONDS });
+}
+
+function keptChange(value) {
+  try {
+    const item = JSON.parse(value);
+    return item?.type === "admin" && KEPT_CHANGES.has(item.action);
+  } catch {
+    return false;
+  }
+}
+
+const emptyPatch = () => ({ profiles: {}, skills: {}, cancelled: [] });
+const isObject = (v) => v && typeof v === "object" && !Array.isArray(v);
+
+async function loadState(env) {
+  const got = await env.FEEDBACK.get(STATE_KEY, "json");
+  const keys = {};
+  for (const [key, value] of Object.entries(isObject(got?.keys) ? got.keys : {})) {
+    if (KEPT.test(key) && (value === null || typeof value?.s === "string" || typeof value?.b === "string")) keys[key] = value;
+  }
+  const patch = isObject(got?.patch) ? got.patch : {};
+  return { keys, dirty: false, patch: { profiles: isObject(patch.profiles) ? patch.profiles : {}, skills: isObject(patch.skills) ? patch.skills : {},
+    cancelled: Array.isArray(patch.cancelled) ? patch.cancelled.filter((t) => typeof t === "string") : [] } };
+}
+
+function toBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(out);
+}
+
+function fromBase64(text) {
+  return Uint8Array.from(atob(text), (c) => c.charCodeAt(0)).buffer;
+}
+
+// ------------------------------------------------------------------------- the pretend HermitShell
+
+const dashId = (id) => typeof id === "string" && id.includes(":dash-");
+
+// What HermitShell would have done by `now` with what was pressed: letters and CVs made, jobs emailed, skills counted
+// and dashboard changes applied. Sign-ups and the made-up desk's own requests stay waiting, as they are seeded.
+async function pretendWork(env, state, now) {
+  const kv = env.FEEDBACK;
+  const current = await kv.get("status:profiles", "json");
+  const names = new Map((current?.profiles || []).map((p) => [p.id, p.name]));
+  const ready = (await requests(env)).filter((r) => dashId(r.id) && now - Number(r.at) >= (WORK_MS[r.a] ?? WORK_MS.change));
+  for (const r of ready) {
+    const q = new URLSearchParams({ u: r.u, j: r.j });
+    if (r.a === "send_job") {
+      await markEmailed(new Request(`https://demo.invalid/api/emailed?${q}`, { method: "POST" }), env);
+    } else if (!r.send && DOC_KINDS[r.a]) {
+      const event = (await kv.get(r.id, "json")) || {};
+      q.set("k", r.a);
+      q.set("days", "7");
+      q.set("name", `${DOC_KINDS[r.a]} - ${names.get(r.u) || "Recruit"} - ${r.n || "a job"}`);
+      await storeDoc(new Request(`https://demo.invalid/api/doc?${q}`, { method: "POST", body: demoDoc(r, event, names.get(r.u)) }), env);
+    }
+    await kv.delete(r.id);
+  }
+  if (ready.length) await forgetRequests(env, ready.map((r) => r.id));
+
+  for (const { name } of (await kv.list({ prefix: "event:" })).keys) {
+    if (!dashId(name)) continue;
+    const event = await kv.get(name, "json");
+    if (event?.a !== "add_skill" || now - Number(event.at) < WORK_MS.skill) continue;
+    const list = Array.isArray(state.patch.skills[event.u]) ? state.patch.skills[event.u] : [];
+    state.patch.skills[event.u] = [...new Set([...list, ...(event.skills || [])])].slice(-50);
+    state.dirty = true;
+    await kv.delete(name);
+  }
+
+  for (const { name } of (await kv.list({ prefix: "queue:" })).keys) {
+    const item = await kv.get(name, "json");
+    if (item?.type !== "admin" || now - Number(item.at) < WORK_MS.change) continue;
+    applyChange(state.patch, item, now);
+    state.dirty = true;
+    await kv.delete(name);
+  }
+}
+
+function applyChange(patch, item, now) {
+  const u = String(item.u || "");
+  const mine = () => (patch.profiles[u] = isObject(patch.profiles[u]) ? patch.profiles[u] : {});
+  if (item.action === "pause" || item.action === "resume") mine().status = item.action === "pause" ? "paused" : "active";
+  else if (item.action === "assign") mine().recruiter = String(item.recruiter || "");
+  else if (item.action === "delete") mine().deleted = true;
+  else if (item.action === "send_now") Object.assign(mine(), { scan: now, stopped: false });
+  else if (item.action === "profile") {
+    for (const part of ["details", "job", "report"]) if (isObject(item[part])) mine()[part] = { ...mine()[part], ...item[part] };
+  } else if (item.action === "cancel" && typeof item.task === "string") {
+    patch.cancelled = [...new Set([...patch.cancelled, item.task])].slice(-50);
+    if (item.task === `report:${u}`) Object.assign(mine(), { stopped: true, scan: 0 });
+  }
+}
+
+// Lay the pretend HermitShell's changes over the made-up desk, as its next check-in would report them.
+function applyPatch(kv, patch, now) {
+  const current = JSON.parse(kv.store.get("status:profiles"));
+  const scans = [];
+  current.profiles = current.profiles.filter((p) => !patch.profiles[p.id]?.deleted).map((p) => {
+    const c = patch.profiles[p.id];
+    if (!isObject(c)) return p;
+    const next = { ...p, details: { ...p.details, ...c.details }, job: { ...p.job, ...c.job }, report: { ...p.report, ...c.report } };
+    if (c.status) next.status = c.status;
+    if (typeof c.recruiter === "string") next.recruiter = c.recruiter;
+    if (c.details?.name) next.name = c.details.name;
+    if (c.details?.email) next.email = c.details.email;
+    if (c.stopped) delete next.scanning;
+    if (c.scan && now - c.scan < WORK_MS.scan) {
+      next.scanning = c.scan;
+      scans.push({ id: `report:${p.id}`, kind: "report", u: p.id, state: "running", at: c.scan, trigger: "dashboard", stage: "Rating jobs",
+        done: Math.floor(((now - c.scan) / WORK_MS.scan) * 20), total: 20, expected: WORK_MS.scan });
+    } else if (c.scan) {
+      delete next.scanning;
+      next.last_run = c.scan + WORK_MS.scan;
+    }
+    return next;
+  });
+  const left = new Set(current.profiles.map((p) => p.id));
+  current.tasks = [...(current.tasks || []).filter((t) => !patch.cancelled.includes(t.id) && left.has(t.u)
+    && !(t.kind === "report" && (patch.profiles[t.u]?.stopped || scans.some((s) => s.u === t.u)))), ...scans];
+  kv.store.set("status:profiles", JSON.stringify(current));
+  for (const [u, added] of Object.entries(patch.skills)) {
+    const stats = kv.store.get(`stats:${u}`);
+    if (!stats || !Array.isArray(added)) continue;
+    const parsed = JSON.parse(stats);
+    parsed.skills = [...new Set([...(Array.isArray(parsed.skills) ? parsed.skills : []), ...added.filter((s) => typeof s === "string")])];
+    kv.store.set(`stats:${u}`, JSON.stringify(parsed));
+  }
+}
+
+// The made-up PDF the pretend HermitShell "writes" for a letter or tailored CV asked for in demo mode.
+function demoDoc(r, event, name = "The recruit") {
+  const [title, employer] = String(r.n || "the role").split(" at ");
+  const style = [event.len, event.tone].filter(Boolean).join(", ");
+  const lines = r.a === "cover_letter"
+    ? [`Cover letter (demo${style ? `, ${style}` : ""})`, "", name, "", `Dear Hiring Manager${employer ? ` at ${employer}` : ""},`, "",
+      `I am writing to apply for the ${title} role. This letter was made in HermitShell's demo mode,`,
+      "so the candidate, the company and the role are all made up, and no model wrote it.", "", "Yours sincerely,", name]
+    : ["Tailored CV (demo)", "", name, "", `Tailored for: ${r.n || "the role"}`, "",
+      "This CV was made in HermitShell's demo mode: the candidate, the company and the role are all", "made up, and no model wrote it."];
+  return textPdf(lines.map((line) => line.replace(/[^\x20-\x7e]/g, "-")));
 }
 
 // ------------------------------------------------------------------------- the made-up desk

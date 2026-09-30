@@ -11,7 +11,7 @@
 // list: tasks.js; the live link: hub.js; demo mode, made-up data on every signed-in page: demo.js). Nothing here can
 // reach the HermitShell server: HermitShell connects out to /api/live and reads /api/queue with its API token.
 
-import { DEMO_DONE, DEMO_URL, demoEnv, demoMode, demoRibbon, demoSection, demoToggle } from "./demo.js";
+import { DEMO_DONE, DEMO_URL, demoEnv, demoMode, demoRibbon, demoSection, demoToggle, saveDemo } from "./demo.js";
 import { HISTORY_URL, historyPage, listed, moveOwnerHistory, record, recordReported } from "./history.js";
 import { hubConnect, hubPresence, hubSeen } from "./hub.js";
 import { createInvite, queueItem } from "./join.js";
@@ -612,7 +612,9 @@ export async function handleAdmin(request, env, ctx) {
   if (!demo) return withSignedIn(await signedInRoute(request, env, s, path), env, s, path, request.method);
   const pretend = await demoEnv(env);
   const seen = { ...s, acc: await accounts(pretend), demo };
-  return withSignedIn(await signedInRoute(request, pretend, seen, path), pretend, seen, path, request.method);
+  const res = await withSignedIn(await signedInRoute(request, pretend, seen, path), pretend, seen, path, request.method);
+  await saveDemo(env, pretend);
+  return res;
 }
 
 const LOGOUT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h3.5A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5H14"/><path d="M10 16.5 5.5 12 10 7.5M5.5 12H15"/></svg>';

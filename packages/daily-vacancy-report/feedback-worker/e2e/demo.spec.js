@@ -16,7 +16,7 @@ test.afterEach(async ({ page }) => {
   }
 });
 
-test("demo mode fills the dashboard with made-up recruits, saves nothing and turns off again", async ({ page, request }) => {
+test("demo mode fills the dashboard with made-up recruits, plays presses out without queuing them and turns off again", async ({ page, request }) => {
   await signIn(page);
   await page.goto("/admin/settings");
   await expect(page.getByRole("heading", { name: "Demo mode" })).toBeVisible();
@@ -30,7 +30,7 @@ test("demo mode fills the dashboard with made-up recruits, saves nothing and tur
   await page.goto("/admin");
   const ribbon = page.locator(".demoribbon");
   await expect(ribbon).toBeVisible();
-  await expect(ribbon).toContainText("made-up data, and nothing you press is saved");
+  await expect(ribbon).toContainText("made-up data, and nothing you press reaches anyone");
   const recruits = page.locator("table.recruits");
   for (const name of ["Jamie Walsh", "Morgan Ellis", "Taylor Reid", "Riley Chen"]) await expect(recruits.getByText(name, { exact: true })).toBeVisible();
 
@@ -38,6 +38,7 @@ test("demo mode fills the dashboard with made-up recruits, saves nothing and tur
   await expect(page).toHaveURL(/done=queued/);
   const queue = await (await hermitShellApi(request, "GET", "/api/queue?full=1")).json();
   expect(queue.items.filter((i) => i.u === "jamie-walsh")).toEqual([]);
+  await expect(page.getByRole("button", { name: "Resume reports for Jamie Walsh" })).toBeVisible({ timeout: 20000 });
 
   await page.goto("/admin/stats?u=jamie-walsh");
   await expect(page.locator("svg").first()).toBeVisible();

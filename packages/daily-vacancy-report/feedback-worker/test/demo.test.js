@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { WORK_MS } from "../src/demo.js";
 import { jobHash } from "../src/docs.js";
 import worker from "../src/index.js";
 import { BASE, memoryHub, sealingKeys, testEnv } from "./helpers.js";
@@ -167,7 +168,7 @@ describe("demo mode pages", () => {
 });
 
 describe("demo mode keeps real data apart", () => {
-  it("saves nothing pressed on the dashboard and never tells HermitShell", async () => {
+  it("keeps only the demo's own state, with nothing typed into it, and never tells HermitShell", async () => {
     const { env, admin } = await setup();
     await demoOn(admin);
     const before = snapshot(env);
@@ -195,10 +196,17 @@ describe("demo mode keeps real data apart", () => {
       expect(res.status, path).toBeLessThan(400);
       expect(res.headers.get("Location") || "", path).not.toContain("nokey");
     }
-    expect(snapshot(env)).toEqual(before);
+    const after = snapshot(env);
+    const state = after.get("demo:state");
+    after.delete("demo:state");
+    expect(after).toEqual(before);
+    for (const typed of ["demo-password", "test-openrouter-key", "not-a-real-search-key", "a-long-demo-password", "demouser", "Data analyst with SQL",
+      "cvfile:", "smtp.example.com", "Real Recruit"]) expect(state, typed).not.toContain(typed);
     expect(hub.has("flag")).toBe(false);
     const queue = await (await worker.fetch(new Request(`${BASE}/api/queue?full=1`, { headers: API }), env)).json();
     expect(queue.items).toEqual([]);
+    await demoOff(admin);
+    expect(env.FEEDBACK.store.has("demo:state")).toBe(false);
   });
 
   it("leaves HermitShell's API, email buttons and reports on the real data", async () => {
@@ -224,5 +232,104 @@ describe("demo mode keeps real data apart", () => {
     const again = await worker.fetch(new Request(`${BASE}/admin/login`, { method: "POST",
       body: form({ username: "casey", password: "another-long-password" }), headers: { "CF-Connecting-IP": "203.0.113.10" } }), env);
     expect(again.headers.get("Location")).toBe("/admin");
+  });
+});
+
+describe("demo mode presses play out", () => {
+  afterEach(() => vi.useRealTimers());
+
+  const later = (ms) => vi.setSystemTime(Date.now() + ms);
+  const SENT = "/admin/sent?u=avery-lane&r=30";
+  const JOB = "https://jobs.example.com/demo/avery-lane/1001";
+
+  async function demoAdmin() {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { env, admin } = await setup();
+    await demoOn(admin);
+    return { env, admin };
+  }
+
+  it("makes a letter and a tailored CV a few seconds after they are asked for, ready to download", async () => {
+    const { admin } = await demoAdmin();
+    await admin.post("/admin/doc", { u: "avery-lane", j: JOB, k: "cover_letter", n: "Data Engineer at Northwind", len: "short", tone: "warm" });
+    await admin.post("/admin/doc", { u: "avery-lane", j: JOB, k: "tailored_cv", n: "Data Engineer at Northwind" });
+    const h = await jobHash(JOB);
+    const job = (body) => body.slice(body.indexOf(`id="job-${h.slice(0, 16)}"`)).split("</li>")[0];
+    expect(job((await admin.get(SENT)).body).match(/Being made/g)).toHaveLength(2);
+    expect((await admin.get("/admin/tasks")).body).toContain("Data Engineer at Northwind");
+    later(WORK_MS.tailored_cv + 1000);
+    const ready = job((await admin.get(SENT)).body);
+    expect(ready).not.toContain("Being made");
+    expect(ready.match(/>Download</g)).toHaveLength(2);
+    const letter = await admin.get(`/admin/doc?u=avery-lane&k=cover_letter&h=${h}`);
+    expect(letter.res.headers.get("Content-Type")).toBe("application/pdf");
+    const pdf = new TextDecoder().decode(await letter.res.arrayBuffer());
+    expect(pdf).toContain("Cover letter \\(demo, short, warm\\)");
+    expect(pdf).toContain("Dear Hiring Manager at Northwind");
+    const cvPdf = new TextDecoder().decode(await (await admin.get(`/admin/doc?u=avery-lane&k=tailored_cv&h=${h}`)).res.arrayBuffer());
+    expect(cvPdf).toContain("Tailored CV \\(demo\\)");
+    expect((await admin.get("/admin/tasks")).body).not.toContain("Data Engineer at Northwind");
+  });
+
+  it("marks a job emailed once the pretend HermitShell has sent it", async () => {
+    const { admin } = await demoAdmin();
+    await admin.post("/admin/doc", { u: "avery-lane", j: JOB, k: "send_job", n: "Data Engineer at Northwind" });
+    expect((await admin.get(SENT)).body).toContain("Sending&hellip;");
+    later(WORK_MS.send_job + 1000);
+    const body = (await admin.get(SENT)).body;
+    expect(body).not.toContain("Sending&hellip;");
+    expect(body).toContain("<b>Emailed to Avery</b>");
+  });
+
+  it("shows an added skill as being added, then counted as on the CV", async () => {
+    const { admin } = await demoAdmin();
+    await admin.post("/admin/skill", { u: "avery-lane", j: "https://jobs.example.com/demo/avery-lane/1000", s: "Kubernetes" });
+    expect((await admin.get(SENT)).body).toMatch(/<span class="adding"[^>]*>.*?Kubernetes<\/span>/);
+    later(WORK_MS.skill + 1000);
+    const body = (await admin.get(SENT)).body;
+    expect(body).toMatch(/<span class="added" title="Counted as on the CV">.*?Kubernetes<\/span>/);
+    expect(body).not.toMatch(/<span class="adding"[^>]*>.*?Kubernetes/);
+  });
+
+  it("applies pauses, assignments, deletions and scans to the dashboard", async () => {
+    const { admin } = await demoAdmin();
+    await admin.post("/admin/action", { action: "pause", u: "sam-lee" });
+    await admin.post("/admin/action", { action: "assign", u: "robin-shaw", recruiter: "casey" });
+    await admin.post("/admin/action", { action: "delete", u: "taylor-reid", confirm: "yes" });
+    await admin.post("/admin/action", { action: "send_now", u: "morgan-ellis" });
+    expect((await admin.get("/admin")).body).toContain("Saving.");
+    later(WORK_MS.change + 1000);
+    const body = (await admin.get("/admin")).body;
+    expect(body).not.toContain("Saving.");
+    expect(body).toContain('aria-label="Resume reports for Sam Lee"');
+    const robin = body.slice(body.indexOf('aria-label="Recruiter for Robin Shaw"')).split("</select>")[0];
+    expect(robin).toContain('<option value="casey" selected>');
+    expect(body).not.toContain("Taylor Reid");
+    const morgan = () => body.slice(body.indexOf("<b>Morgan Ellis</b>")).split("</tr>")[0];
+    expect(morgan()).toContain("scanning now");
+    later(WORK_MS.scan);
+    const done = (await admin.get("/admin")).body;
+    expect(done.slice(done.indexOf("<b>Morgan Ellis</b>")).split("</tr>")[0]).not.toContain("scanning now");
+  });
+
+  it("starts afresh each time it is turned on", async () => {
+    const { env, admin } = await demoAdmin();
+    await admin.post("/admin/action", { action: "delete", u: "taylor-reid", confirm: "yes" });
+    later(WORK_MS.change + 1000);
+    expect((await admin.get("/admin")).body).not.toContain("Taylor Reid");
+    await demoOff(admin);
+    await demoOn(admin);
+    expect(env.FEEDBACK.store.has("demo:state")).toBe(false);
+    expect((await admin.get("/admin")).body).toContain("Taylor Reid");
+  });
+
+  it("ignores a hand-made state with keys outside the demo's own", async () => {
+    const { env, admin } = await demoAdmin();
+    await env.FEEDBACK.put("demo:state", JSON.stringify({ v: 1, keys: { "status:profiles": { s: "{}" }, accounts: { s: "{}" },
+      "invite:ffff": { s: JSON.stringify({ id: "ffff", note: "Kept invite", created: Date.now(), expires: Date.now() + 86400000, recruiter: "" }) } },
+      patch: { profiles: "nope", skills: [], cancelled: [1, "x"] } }));
+    const body = (await admin.get("/admin")).body;
+    expect(body).toContain("Avery Lane");
+    expect(body).toContain("Kept invite");
   });
 });
