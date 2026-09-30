@@ -357,8 +357,8 @@ def capture(chrome: str, profile: Path, html: Path, png: Path, width: int, heigh
 
 
 def capture_phone(chrome: str, profile: Path, html: Path, png: Path, width: int = 390, height: int = 1900) -> None:
-    """The top of an email as a phone shows it. Headless Chrome's window is at least 500px wide, so the email is
-    put in a frame as wide as a phone, where its media queries apply, and the shot is cut to the frame."""
+    """The top of an email or page as a phone shows it. Headless Chrome's window is at least 500px wide, so the page
+    is put in a frame as wide as a phone, where its media queries apply, and the shot is cut to the frame."""
     from PIL import Image
     frame = html.with_name(f"{html.stem}-phone-frame.html")
     frame.write_text(f'<html><body style="margin:0;background:#eef1f7"><iframe src="{html.name}" width="{width}" '
@@ -400,10 +400,12 @@ def main() -> int:
         print("emails/daily-report-phone.png")
         for html in sorted((html_dir / "worker").glob("*.html")):
             capture(chrome, profile, html, args.out / "worker" / f"{html.stem}.png",
-                    1440 if html.stem == "admin-signed-in" else
-                    1000 if html.stem.startswith(("admin-dashboard", "admin-profile", "admin-settings", "admin-stats",
-                                                  "admin-sent", "admin-global-key", "admin-tasks", "admin-user",
-                                                  "admin-recruiter", "admin-delete", "admin-password")) else
+                    1900 if html.stem == "admin-signed-in" else
+                    # Recruits and Users grow with the window and stack their rows below 900px.
+                    1280 if html.stem.startswith(("admin-dashboard", "admin-tasks", "admin-user", "admin-recruiter",
+                                                  "admin-delete", "admin-password")) else
+                    1000 if html.stem.startswith(("admin-profile", "admin-settings", "admin-stats", "admin-sent",
+                                                  "admin-global-key")) else
                     760 if html.stem == "privacy" else 600,
                     # A modal covers the whole window, so the page cannot be trimmed to its content.
                     720 if html.stem in ("admin-global-key-modal", "admin-user-modal", "admin-delete-modal",
@@ -411,6 +413,10 @@ def main() -> int:
                     # A wide window, where the signed-in box sits beside the card; only the top is kept.
                     240 if html.stem == "admin-signed-in" else None)
             print(f"worker/{html.stem}.png")
+        for stem in ("admin-dashboard", "admin-users"):
+            capture_phone(chrome, profile, html_dir / "worker" / f"{stem}.html", args.out / "worker" / f"{stem}-phone.png",
+                          height=1500)
+            print(f"worker/{stem}-phone.png")
     return 0
 
 

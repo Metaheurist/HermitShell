@@ -456,7 +456,8 @@ own; the main admin's **Sign out** still signs out every main-admin session.
 
 Every dashboard page shows who is signed in at the top right: a badge with your initials, name and
 roles, and under it the key button (**Change password**) and **Sign out**. On narrower windows they sit
-in a row above the page, with just your initials.
+in a row above the page, with just your initials. Recruits and Users and roles grow with the window (up
+to 1320px), so they keep the row above the page up to 1860px wide.
 
 <img src="images/worker/admin-signed-in.png" alt="The signed-in badge at the top right: initials, name and role, then the key button and Sign out" width="720">
 

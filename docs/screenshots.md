@@ -317,6 +317,18 @@ deleted ([data protection](configuration.md#data-protection)).
 
 <img src="images/worker/admin-dashboard.png" alt="Admin page with three recruits" width="760">
 
+The Recruits and Users and roles pages grow with the window, up to 1320px wide, so the columns keep their
+room. Under 900px each row becomes a card: the name on top, status and recruiter side by side, then the
+buttons. On a phone everything is in one column.
+
+<table>
+<tr><th>Recruits on a phone</th><th>Users and roles on a phone</th></tr>
+<tr>
+<td><img src="images/worker/admin-dashboard-phone.png" alt="Recruits on a phone: each recruit as a card, with its buttons in a row" width="260"></td>
+<td><img src="images/worker/admin-users-phone.png" alt="Users and roles on a phone: the role cards, then each user as a card" width="260"></td>
+</tr>
+</table>
+
 <img src="images/worker/admin-signed-in.png" alt="On a wide window: the signed-in badge beside the page, with the key button and Sign out under it" width="760">
 
 | Control | What it does |
@@ -336,7 +348,7 @@ deleted ([data protection](configuration.md#data-protection)).
 | **Recruits** / **Users and roles** / **Global settings** tabs | Switch between the recruits, [who can sign in](#users-and-roles) and the [settings shared by the whole tool](#global-settings). Recruiters only have **Recruits** |
 | Invite someone + recruiter list + **Create invite link** | Makes a one-time `/join` link; the note is only for you. Admins pick whose recruit the person becomes; a recruiter's invites join their own pool |
 | **Revoke** | Cancels an unused invite |
-| Badge + key + **Sign out** (top right) | Your initials, name and roles, on every dashboard page (just the initials on narrower windows). The key button opens **Change password**: your current password and the new one twice; you stay signed in here and are signed out everywhere else. For the main admin it shows the `wrangler secret put ADMIN_PASSWORD` command instead. Signing out ends that user's sessions |
+| Badge + key + **Sign out** (top right) | Your initials, name and roles, on every dashboard page (just the initials, above the page, on narrower windows, and on Recruits and Users and roles below 1860px). The key button opens **Change password**: your current password and the new one twice; you stay signed in here and are signed out everywhere else. For the main admin it shows the `wrangler secret put ADMIN_PASSWORD` command instead. Signing out ends that user's sessions |
 
 <img src="images/worker/admin-delete-modal.png" alt="Deleting a recruit: the confirm window with the CV and history tick box" width="380">
 

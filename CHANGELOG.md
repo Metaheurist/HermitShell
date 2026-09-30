@@ -572,6 +572,13 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Recruits and Users and roles fit the screen.** Both pages now grow with the window, up to 1320px wide,
+  instead of stopping at 900px, so the Recruit, Status and Recruiter columns no longer squeeze together.
+  Under 900px each row becomes a card (name on top, status and recruiter side by side, then the buttons),
+  and on a phone everything is in one column with the tabs on one line. Pills such as **owner, active** no
+  longer wrap. The signed-in badge sits compactly above these pages up to 1860px so the card never runs
+  under it. Other pages keep their width. Screenshots of the table pages are now taken at 1280px, with new
+  phone screenshots of both.
 - **Icon buttons on Users and roles.** Each user's actions are now matching square icon buttons, named when
   pointed at and to screen readers: a pencil for **Edit**, a key for **Reset password** (or **Change password**
   on your own row) and the red bin for **Delete**, instead of text links.
