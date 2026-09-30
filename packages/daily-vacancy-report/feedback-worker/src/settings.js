@@ -465,13 +465,13 @@ body.wait::before{border:2px solid #c7d2fe;border-top-color:#6366f1;animation:sp
 body.idle{background:#fffbeb;border-color:#fde68a;color:#92400e}body.idle::before{border:2px solid #f59e0b}
 body.ok,body.done{background:#f0fdf6;border-color:#bbf7d0;color:#166534}
 body.ok::before{background:#22c55e;width:8px;height:8px;left:19px;top:17px;box-shadow:0 0 0 4px rgba(34,197,94,.2)}
-body.done::before{background:#059669;animation:pop .45s cubic-bezier(.2,.8,.2,1) both}
+body.done::before{background:#059669;animation:donepop .45s cubic-bezier(.2,.8,.2,1) both}
 body.done::after{content:"";position:absolute;left:21px;top:15px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;
 transform:rotate(45deg)}
 body.bad{background:#fef2f2;border-color:#fecaca;color:#991b1b}body.bad::before{background:#dc2626}
 body.bad::after{content:"!";position:absolute;left:14px;top:0;width:18px;text-align:center;color:#fff;font-weight:800;font-size:12px}
 a{color:inherit;text-underline-offset:3px}
-@keyframes spin{to{transform:rotate(360deg)}}@keyframes pop{from{transform:scale(.3);opacity:0}}@keyframes in{from{opacity:0}}
+@keyframes spin{to{transform:rotate(360deg)}}@keyframes donepop{from{transform:scale(.3);opacity:0}}@keyframes in{from{opacity:0}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important}}`;
 
 // ------------------------------------------------------------------------- turning forms into queue items

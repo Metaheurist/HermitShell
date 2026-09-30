@@ -259,7 +259,8 @@ export const SERVER_STYLE = `
 .srv:focus-visible .srvbtn{outline:3px solid rgba(99,102,241,.35);outline-offset:2px}
 .srvpanel{display:none;position:absolute;top:42px;right:0;z-index:20;width:min(340px,calc(100vw - 32px));box-sizing:border-box;padding:16px;
 background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 60px -20px rgba(15,23,42,.45);text-align:left;
-font-size:13px;color:var(--ink);animation:pop .2s var(--ease) both}
+font-size:13px;color:var(--ink);animation:panelin .2s var(--ease) both}
+@keyframes panelin{from{opacity:0;transform:translateY(-4px)}}
 .srv:hover .srvpanel,.srv:focus-within .srvpanel{display:block}
 .srvpanel:before{content:"";position:absolute;top:-10px;left:0;right:0;height:10px}
 .stitle{display:flex;align-items:center;gap:8px;margin-bottom:10px}.stitle svg{width:18px;height:18px;color:var(--brand)}

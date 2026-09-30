@@ -611,6 +611,22 @@ def test_the_live_link_reconnects_after_a_drop_and_catches_up(home, monkeypatch)
     assert clock.sleeps == [5]
 
 
+def test_a_failing_sync_keeps_the_live_link_and_is_retried(home, monkeypatch):
+    clock, synced = Clock(), []
+
+    def sync(api, full=False):
+        synced.append(clock.now)
+        if len(synced) < 3:
+            raise RuntimeError("the data key does not open this file")
+        return ["admin: done (pause)"]
+    monkeypatch.setattr(profiles, "sync", sync)
+    result, calls = listen(profiles.Api("https://fb.example", "t"), 100, clock,
+                           [FakeSocket(clock, [(0, '{"flag": "queue:1:a"}')])])
+    assert result == "done" and len(calls) == 1
+    assert synced == [0, 5, 20]
+    assert clock.sleeps == []
+
+
 def test_a_worker_without_the_live_link_is_left_to_polling(home, monkeypatch):
     monkeypatch.setattr(profiles, "sync", lambda api, full=False: [])
     for status in (401, 403):

@@ -217,7 +217,8 @@ describe("admin gateway", () => {
     const { cookie } = await signIn(env);
     const { csrf } = await dashboard(env, cookie);
     const res = await adminAction(env, cookie, csrf, { action: "invite", note: "Sam from the meetup" });
-    const link = (await res.text()).match(/\/join\?i=([0-9a-f]{32})/)[1];
+    const shown = await worker.fetch(new Request(`${BASE}${res.headers.get("Location")}`, { headers: { Cookie: cookie } }), env);
+    const link = (await shown.text()).match(/\/join\?i=([0-9a-f]{32})/)[1];
     expect(keysWith(env, "invite:")).toEqual([`invite:${link}`]);
     expect((await dashboard(env, cookie)).body).toContain("Sam from the meetup");
     await adminAction(env, cookie, csrf, { action: "revoke", invite: link });

@@ -1431,6 +1431,16 @@ def _print_report(report: list[str]) -> list[str]:
     return report
 
 
+def _sync_on_link(api: Api) -> list[str]:
+    """A sync for the live link. A sync that fails (a bad file, the Worker busy) is logged and retried like one that
+    found nothing: it is not the link failing, so it neither drops the link nor counts towards giving it up."""
+    try:
+        return _print_report(sync(api))
+    except Exception as exc:  # any bug in a sync step; the link itself is fine
+        log(f"Sync failed ({exc.__class__.__name__}); the live link stays up and tries again")
+        return []
+
+
 def listen(api: Api, seconds: float, connect=None, clock=time.monotonic, sleep=time.sleep, stamp=_code_stamp) -> str:
     """Hold the Worker's live link and sync the moment it says something was queued, reconnecting when it drops
     (a Worker deploy closes it). Syncs on every (re)connect too, for anything queued while it was down.
@@ -1464,13 +1474,13 @@ def listen(api: Api, seconds: float, connect=None, clock=time.monotonic, sleep=t
                         next_ping = now + LIVE_PING
                     if retries and retries[0] <= now:
                         retries.pop(0)
-                        if _print_report(sync(api)):
+                        if _sync_on_link(api):
                             retries = []
                     flag = _pushed_flag(message) if message is not None else None
                     if flag is None or flag == last:
                         continue
                     last = flag
-                    found = _print_report(sync(api))
+                    found = _sync_on_link(api)
                     retries = [] if found or not flag else [clock() + d for d in LIVE_RETRIES]
         except Exception as exc:  # websockets raises its own errors as well as OSError; a sync bug must not end the link
             status = getattr(getattr(exc, "response", None), "status_code", 0)

@@ -655,9 +655,8 @@ describe("daily report and Send jobs now", () => {
     expect((await get("/admin?done=sending")).body).toContain("HermitShell starts the scan within seconds");
     const back = await act({ action: "send_now", u: "sam-lee", back: "profile" });
     expect(back.headers.get("Location")).toBe("/admin/profile?u=sam-lee&done=sending");
-    expect(valuesWith(env, "queue:")).toEqual([
-      expect.objectContaining({ type: "admin", action: "send_now", u: "sam-lee" }),
-      expect.objectContaining({ type: "admin", action: "send_now", u: "sam-lee" })]);
+    // The second press came within a minute, so it is the same scan and is not queued again.
+    expect(valuesWith(env, "queue:")).toEqual([expect.objectContaining({ type: "admin", action: "send_now", u: "sam-lee" })]);
     const page = (await get("/admin/profile?u=sam-lee&done=sending")).body;
     expect(page).toContain('src="/admin/profile/status?u=sam-lee&amp;n=1"');
     expect((await get("/admin/profile/status?u=sam-lee&n=1")).body).toContain("Starting the scan&hellip;");

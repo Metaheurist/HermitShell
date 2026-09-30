@@ -109,7 +109,7 @@ describe("asking for a letter or CV from the dashboard", () => {
     expect(event).toMatchObject({ j: JOB, a: "cover_letter", r: "", u: "sam-lee", via: "dashboard" });
     expect(event.fresh).toBeUndefined();
     expect(event.id).toMatch(/^event:sam-lee:dash-[0-9a-f]{20}:cg\d+$/);
-    expect(env.FEEDBACK.store.get("flag:events:sam-lee")).toBe("1");
+    expect(env.FEEDBACK.store.get("flag:events:sam-lee")).toMatch(/^\d{13}$/);
     const [held] = JSON.parse(env.FEEDBACK.store.get("tasks:requests"));
     expect(held).toMatchObject({ id: event.id, a: "cover_letter", j: JOB, via: "dashboard", n: "Data Engineer at Northwind" });
     expect(await (await get("/admin/tasks")).text()).toContain("from the dashboard");

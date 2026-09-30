@@ -16,7 +16,7 @@ import { HISTORY_URL, historyPage, listed, moveOwnerHistory, record, recordRepor
 import { hubConnect, hubPresence, hubSeen } from "./hub.js";
 import { createInvite, queueItem } from "./join.js";
 import {
-  CSP, SECURITY_HEADERS, accessUser, ago, authorised, cleanSkill, deleteAndUnflag, esc, hmacHex, json, limitedForm, limitedJson, listFlagged,
+  CSP, SECURITY_HEADERS, accessUser, ago, authorised, cleanSkill, deleteAndUnflag, esc, flaggedItems, hmacHex, json, limitedForm, limitedJson, listFlagged,
   purgeProfileEvents,
   APPLIED, note, page, redirect, safeEqual, savingTag, secretEqual, text, waitBar, waitRefresh, when,
 } from "./lib.js";
@@ -47,6 +47,9 @@ const MAX_GLOBAL_FAILURES = 30;
 const MAX_FORM_BYTES = 64 * 1024;
 const COOKIE = "__Host-hv_admin";
 const PROFILE_RE = /^[a-z0-9-]{1,40}$/;
+const INVITE_URL = "/admin/invite";
+// KV's shortest expiry: how long a second Send jobs for the same recruit is taken as the same press.
+const SEND_NOW_SECONDS = 60;
 // What a recruiter may do from the dashboard, and then only for their own recruits.
 const RECRUITER_ACTIONS = new Set(["invite", "revoke", "profile", "send_now", "pause", "resume"]);
 const DONE = {
@@ -165,9 +168,8 @@ async function status(env) {
 // What is still waiting for HermitShell. The queue flag is only set while something is queued, so an empty
 // queue costs one read rather than one of the free plan's 1,000 daily list operations.
 async function queued(env) {
-  if (!(await env.FEEDBACK.get("flag:queue"))) return [];
-  const listed = await env.FEEDBACK.list({ prefix: "queue:", limit: 50 });
-  return (await Promise.all(listed.keys.map((k) => env.FEEDBACK.get(k.name, "json")))).filter(Boolean);
+  const flag = await env.FEEDBACK.get("flag:queue");
+  return flag ? flaggedItems(env, "queue:", "flag:queue", 50, flag) : [];
 }
 
 function describe(items) {
@@ -508,11 +510,7 @@ async function action(request, env, s) {
     const chosen = s.me.admin ? String(form.get("recruiter") ?? (s.me.recruiter ? s.me.id : "")) : s.me.id;
     if (chosen && !recs.some((r) => r.id === chosen)) return redirect("/admin?done=badrecruiter");
     const invite = await createInvite(env, form.get("note") || "", chosen);
-    const link = `${new URL(request.url).origin}/join?i=${invite.id}`;
-    const joins = recs.find((r) => r.id === chosen);
-    return page("Invite link", `<p>Send this link to ${esc(invite.note || "the person")}. It works once and expires on ${esc(when(invite.expires, current.timezone))}.${joins
-      ? ` They join ${chosen === s.me.id ? "your" : `${esc(joins.name)}'s`} recruits.` : ""}</p>
-<code class="link">${esc(link)}</code><p><a href="/admin">Back to recruits</a></p>`);
+    return redirect(`${INVITE_URL}?i=${invite.id}`);
   }
   if (act === "revoke") {
     const id = String(form.get("invite") || "").replace(/[^0-9a-f]/g, "");
@@ -523,8 +521,12 @@ async function action(request, env, s) {
   if (act === "profile") return saveProfile(env, s, form, u);
   const by = { by: displayName(s.me, current) };
   if (act === "send_now") {
-    await queueItem(env, { type: "admin", action: act, u });
-    await record(env, u, "send", "Asked for jobs now", by);
+    // A second press within a minute (a double click, a reload) asks for the same scan, so it is not queued again.
+    if (!(await env.FEEDBACK.get(`sendnow:${u}`))) {
+      await env.FEEDBACK.put(`sendnow:${u}`, "1", { expirationTtl: SEND_NOW_SECONDS });
+      await queueItem(env, { type: "admin", action: act, u });
+      await record(env, u, "send", "Asked for jobs now", by);
+    }
     return redirect(form.get("back") === "profile" ? `/admin/profile?u=${u}&done=sending` : "/admin?done=sending");
   }
   if (act === "assign") {
@@ -655,18 +657,35 @@ function signedInBox(s, current) {
 <div class="mebtns">${s.me.admin ? serverBox(current) : ""}<a class="mebtn" href="/admin#password" title="Change password" aria-label="Change password">${KEY_ICON}</a><form method="post" action="/admin/logout"><button class="mebtn">${LOGOUT_ICON}Sign out</button></form></div></div>`;
 }
 
+// The invite link just made, on its own address so reloading it doesn't make another. Only its maker (or an admin)
+// sees it.
+async function invitePage(request, env, s) {
+  const id = new URL(request.url).searchParams.get("i") || "";
+  const invite = /^[0-9a-f]{32}$/.test(id) ? await env.FEEDBACK.get(`invite:${id}`, "json") : null;
+  if (!invite || invite.expires <= Date.now() || (!s.me.admin && invite.recruiter !== s.me.id)) {
+    return page("Invite not found", "<p>This invite has been used, revoked or has expired.</p><p><a href=\"/admin\">Back to recruits</a></p>", { status: 404 });
+  }
+  const current = await status(env);
+  const joins = invite.recruiter ? recruiters(s.acc, current, env).find((r) => r.id === invite.recruiter) : null;
+  const link = `${new URL(request.url).origin}/join?i=${invite.id}`;
+  return page("Invite link", `<p>Send this link to ${esc(invite.note || "the person")}. It works once and expires on ${esc(when(invite.expires, current.timezone))}.${joins
+    ? ` They join ${invite.recruiter === s.me.id ? "your" : `${esc(joins.name)}'s`} recruits.` : ""}</p>
+<code class="link">${esc(link)}</code><p><a href="/admin">Back to recruits</a></p>`);
+}
+
 // Every signed-in page gets the box, except those shown inside another page (the Tasks window, save status).
 async function withSignedIn(res, env, s, path, method) {
   if (method === "GET" && [TASKS_URL, STATUS_URL].includes(path)) return res;
   if (!(res.headers.get("Content-Type") || "").startsWith("text/html")) return res;
   const [html, current] = await Promise.all([res.text(), status(env)]);
   const ribbon = s.demo ? demoRibbon(s.me.admin) : "";
-  return new Response(html.replace("<body>", () => `<body>${signedInBox(s, current)}${ribbon}`), { status: res.status, headers: res.headers });
+  return new Response(html.replace(/<body[^>]*>/, (tag) => `${tag}${signedInBox(s, current)}${ribbon}`), { status: res.status, headers: res.headers });
 }
 
 async function signedInRoute(request, env, s, path) {
   if (path === "/admin" && request.method === "GET") return dashboard(request, env, s);
   if (path === "/admin/action" && request.method === "POST") return action(request, env, s);
+  if (path === INVITE_URL && request.method === "GET") return invitePage(request, env, s);
   if (path === "/admin/cv" && request.method === "POST") {
     return cvUpload(request, env, s, async (u) => allowed(s, await status(env), u),
       async (u, what) => record(env, u, "cv", what, { by: displayName(s.me, await status(env)) }));

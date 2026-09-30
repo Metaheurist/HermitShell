@@ -118,10 +118,8 @@ class Link:
         return out
 
     def _wait(self, resp, attempt: int) -> float:
-        try:
-            asked = float(resp.headers.get("Retry-After") or 0)
-        except (TypeError, ValueError, AttributeError):
-            asked = 0
+        headers = getattr(resp, "headers", None) or {}
+        asked = hc.retry_after(headers.get("Retry-After"), 0)
         return min(MAX_WAIT, max(asked, 2 ** (attempt - 1)))
 
     def request(self, method: str, path: str, *, params: dict | None = None, json_body=None, data: bytes | None = None,

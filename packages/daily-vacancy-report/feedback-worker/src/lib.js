@@ -98,8 +98,27 @@ export function eventFlag(profile) {
   return `flag:events:${profile || "_"}`;
 }
 
+// A flag holds when it was last set, so a flag left on after its items went can be told from one just set.
 export async function setFlag(env, flag, ttl) {
-  if (!(await env.FEEDBACK.get(flag))) await env.FEEDBACK.put(flag, "1", { expirationTtl: ttl });
+  await env.FEEDBACK.put(flag, String(Date.now()), { expirationTtl: ttl });
+}
+
+// KV lists can lag deletes by about a minute: an empty listing only proves nothing is waiting once the flag was last
+// set longer ago than that.
+const FLAG_SETTLE_MS = 2 * 60 * 1000;
+
+function flagAge(value, now) {
+  const at = /^\d{12,}$/.test(value) ? Number(value) : Number((/^queue:(\d{12,}):/.exec(value) || [])[1] || 0);
+  return now - at;
+}
+
+// Read the items under a set flag; a flag with nothing left under it, set long enough ago, is taken down so the
+// next poll costs one read again instead of a list.
+export async function flaggedItems(env, prefix, flag, limit, value, now = Date.now()) {
+  const listed = await env.FEEDBACK.list({ prefix, limit });
+  const items = (await Promise.all(listed.keys.map((k) => env.FEEDBACK.get(k.name, "json")))).filter(Boolean);
+  if (!items.length && value && flagAge(value, now) > FLAG_SETTLE_MS) await env.FEEDBACK.delete(flag);
+  return items;
 }
 
 export function safeEqual(a, b) {
@@ -365,9 +384,9 @@ export function page(heading, body, { status = 200, wide = false, headers = {}, 
 // Free-plan KV allows 1,000 list operations a day, so polling reads a flag key (set when something
 // is stored) and only lists when it is set or when ?full=1 asks for a real listing.
 export async function listFlagged(env, request, prefix, flag, limit) {
-  if (new URL(request.url).searchParams.get("full") !== "1" && !(await env.FEEDBACK.get(flag))) return [];
-  const listed = await env.FEEDBACK.list({ prefix, limit });
-  return (await Promise.all(listed.keys.map((k) => env.FEEDBACK.get(k.name, "json")))).filter(Boolean);
+  const value = await env.FEEDBACK.get(flag);
+  if (new URL(request.url).searchParams.get("full") !== "1" && !value) return [];
+  return flaggedItems(env, prefix, flag, limit, value);
 }
 
 export async function deleteAndUnflag(env, ids, prefix, flag) {

@@ -141,7 +141,7 @@ def rest_for(status: int, text: str, retry_after: str, now: float) -> tuple[floa
     if status == 429:
         if _DAILY.search(text or ""):
             return next_utc_day(now), "daily limit reached"
-        seconds = int(retry_after) if str(retry_after or "").isdigit() else RATE_REST
+        seconds = hc.retry_after(retry_after, RATE_REST, now)
         return now + max(1, min(seconds, MAX_RATE_REST)), "rate limited"
     return now + DOWN_REST, "not answering" if status == 0 else f"HTTP {status}"
 

@@ -23,14 +23,21 @@ const EXPIRED = ["Invite not valid", "<p>This invite link has expired or has alr
 let lastQueued = 0;
 
 export async function queueItem(env, item, ttl = QUEUE_TTL_SECONDS) {
-  const at = lastQueued = Math.max(Date.now(), lastQueued + 1);
-  const id = `queue:${at}:${newId()}`;
-  await env.FEEDBACK.put(id, JSON.stringify({ id, at, ...item }), { expirationTtl: ttl });
-  // A new value for every item: pushed down the live link at once, and read from /api/queue/flag when HermitShell
+  return (await queueItems(env, [item], ttl))[0];
+}
+
+// Several items at once raise the flag and ring HermitShell once: KV takes about one write a second to a key.
+export async function queueItems(env, items, ttl = QUEUE_TTL_SECONDS) {
+  if (!items.length) return [];
+  const ids = items.map(() => `queue:${lastQueued = Math.max(Date.now(), lastQueued + 1)}:${newId()}`);
+  await Promise.all(items.map((item, i) => env.FEEDBACK.put(ids[i], JSON.stringify({ id: ids[i], at: Number(ids[i].split(":")[1]), ...item }),
+    { expirationTtl: ttl })));
+  // A new value for every batch: pushed down the live link at once, and read from /api/queue/flag when HermitShell
   // polls instead.
-  await env.FEEDBACK.put("flag:queue", id, { expirationTtl: QUEUE_TTL_SECONDS });
-  await hubBump(env, id);
-  return id;
+  const last = ids[ids.length - 1];
+  await env.FEEDBACK.put("flag:queue", last, { expirationTtl: QUEUE_TTL_SECONDS });
+  await hubBump(env, last);
+  return ids;
 }
 
 // A CV file kept until HermitShell collects it: sealed for HermitShell when it has sent its key (seal.js), so KV

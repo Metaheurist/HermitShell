@@ -159,7 +159,7 @@ text-decoration:none;color:var(--brand-ink);background:var(--soft);border:1px da
 .modal:target{display:grid}
 .scrim{position:absolute;inset:0;background:rgba(15,23,42,.45);backdrop-filter:blur(3px);animation:fade .2s ease both}
 .sheet{position:relative;width:100%;max-width:420px;max-height:calc(100vh - 32px);overflow:auto;box-sizing:border-box;background:#fff;
-border-radius:20px;padding:26px;box-shadow:0 30px 80px -20px rgba(15,23,42,.45);animation:pop .28s var(--ease) both}
+border-radius:20px;padding:26px;box-shadow:0 30px 80px -20px rgba(15,23,42,.45);animation:modalin .28s var(--ease) both}
 .sheet h2{margin:12px 0 2px}.sheet form{margin:0}
 .x{position:absolute;top:12px;right:14px;width:32px;height:32px;display:grid;place-items:center;border-radius:10px;font-size:22px;
 line-height:1;color:var(--muted);text-decoration:none}.x:hover{background:#f1f3f9;color:var(--ink)}
@@ -167,7 +167,7 @@ line-height:1;color:var(--muted);text-decoration:none}.x:hover{background:#f1f3f
 background:linear-gradient(135deg,var(--brand),var(--brand2));box-shadow:0 8px 18px -8px rgba(99,102,241,.9)}
 .sheeticon svg{width:22px;height:22px;animation:turn 2.4s var(--ease) infinite alternate}
 @keyframes fade{from{opacity:0}}
-@keyframes pop{from{opacity:0;transform:translateY(12px) scale(.97)}}
+@keyframes modalin{from{opacity:0;transform:translateY(12px) scale(.97)}}
 @keyframes turn{from{transform:rotate(-12deg)}to{transform:rotate(12deg)}}
 `;
 

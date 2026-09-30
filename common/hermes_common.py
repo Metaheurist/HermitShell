@@ -22,6 +22,7 @@ import sys
 import time
 from collections import Counter
 from email.message import EmailMessage
+from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -316,6 +317,27 @@ def firecrawl_keys() -> list[str]:
             [k.strip() for k in (env("FIRECRAWL_BACKUP_KEYS") or "").split(",")] if k]
 
 
+def retry_after(value, default: float, now: float | None = None) -> float:
+    """Seconds a Retry-After header asks to wait: a number of seconds or an HTTP date; default when absent or
+    unreadable."""
+    text = str(value or "").strip()
+    if not text:
+        return default
+    try:
+        return max(0.0, float(text))
+    except ValueError:
+        pass
+    try:
+        when = parsedate_to_datetime(text).timestamp()
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return default
+    return max(0.0, when - (time.time() if now is None else now))
+
+
+# Network failures in a row after which a web provider is left alone for the rest of the run.
+MAX_NETWORK_FAILURES = 3
+
+
 class Firecrawl:
     """Firecrawl client that fails over to backup API keys when credits run out."""
 
@@ -324,6 +346,7 @@ class Firecrawl:
         self.idx = -1
         self.calls = 0
         self._last = 0.0
+        self.network_failures = 0
         self.start_credits: dict[int, int | None] = {}
         self._activate_next(min_credits)
 
@@ -365,6 +388,8 @@ class Firecrawl:
     def _post(self, path: str, payload: dict, timeout: int = 120) -> dict | None:
         attempt = 0
         while attempt < 4:
+            if self.network_failures >= MAX_NETWORK_FAILURES:
+                return None
             attempt += 1
             wait = 2.0 - (time.monotonic() - self._last)
             if wait > 0:
@@ -374,9 +399,14 @@ class Firecrawl:
             try:
                 resp = requests.post(f"{FIRECRAWL}/{path}", json=payload, headers=self.headers, timeout=timeout)
             except requests.RequestException as exc:
+                self.network_failures += 1
                 log(f"Firecrawl {path} error (attempt {attempt}): {exc.__class__.__name__}")
+                if self.network_failures >= MAX_NETWORK_FAILURES:
+                    log("Firecrawl is not answering; leaving it for the rest of this run")
+                    return None
                 time.sleep(5 * attempt)
                 continue
+            self.network_failures = 0
             if resp.status_code == 200:
                 try:
                     body = resp.json()
@@ -394,9 +424,9 @@ class Firecrawl:
                 attempt -= 1
                 continue
             if resp.status_code == 429:
-                delay = int(resp.headers.get("Retry-After") or 15 * attempt)
-                log(f"Firecrawl rate limited; sleeping {delay}s")
-                time.sleep(min(delay, 90))
+                delay = min(retry_after(resp.headers.get("Retry-After"), 15 * attempt), 90)
+                log(f"Firecrawl rate limited; sleeping {delay:.0f}s")
+                time.sleep(delay)
                 continue
             if resp.status_code >= 500 and attempt < 3:
                 time.sleep(5 * attempt)

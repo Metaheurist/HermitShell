@@ -13,7 +13,7 @@
 
 import { CONFIRM_STYLE, binButton, deleteModal, iconButton } from "./confirm.js";
 import { record } from "./history.js";
-import { queueItem } from "./join.js";
+import { queueItems } from "./join.js";
 import { esc, hmacHex, newId, note, page, redirect, when } from "./lib.js";
 import { MODAL_STYLE } from "./keys.js";
 import { USERS_URL, nav } from "./settings.js";
@@ -346,10 +346,10 @@ export async function userAction(env, form, me, status, queue) {
     if (form.get("confirm") !== "yes") return back("confirmuser");
     acc.users = acc.users.filter((u) => u.id !== user.id);
     await saveAccounts(env, acc);
-    for (const p of (status.profiles || []).filter((x) => !x.owner && recruiterOf(x, queue) === user.id)) {
-      await queueItem(env, { type: "admin", action: "assign", u: p.id, recruiter: "" });
-      await record(env, p.id, "assign", `Unassigned: their recruiter ${user.name}'s account was deleted`, { by: displayName(me, status) });
-    }
+    const theirRecruits = (status.profiles || []).filter((x) => !x.owner && recruiterOf(x, queue) === user.id);
+    await queueItems(env, theirRecruits.map((p) => ({ type: "admin", action: "assign", u: p.id, recruiter: "" })));
+    await Promise.all(theirRecruits.map((p) => record(env, p.id, "assign", `Unassigned: their recruiter ${user.name}'s account was deleted`,
+      { by: displayName(me, status) })));
     const invites = await env.FEEDBACK.list({ prefix: "invite:", limit: 100 });
     const theirs = (await Promise.all(invites.keys.map((k) => env.FEEDBACK.get(k.name, "json"))))
       .filter((i) => i?.recruiter === user.id);

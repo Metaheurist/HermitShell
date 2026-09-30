@@ -594,7 +594,7 @@ svg.chart{display:block;width:100%;height:auto;overflow:visible}
 .chart .hover{fill:transparent}.chart g:hover .hover{fill:#f5f6ff}
 .chart .bar{transform-box:fill-box;transform-origin:50% 100%;animation:grow .8s var(--ease) both}
 .chart .rated{fill:#e0e7ff}.chart .sent{fill:url(#g-sent)}
-.chart .applied{fill:#10b981;stroke:#fff;stroke-width:2;transform-box:fill-box;transform-origin:center;animation:pop .5s var(--ease) both .6s}
+.chart .applied{fill:#10b981;stroke:#fff;stroke-width:2;transform-box:fill-box;transform-origin:center;animation:popscale .5s var(--ease) both .6s}
 .chart .count{font-size:9px;font-weight:800;fill:#fff}
 .legend{list-style:none;padding:0;margin:0;display:grid;gap:7px;font-size:13px;color:var(--text)}
 .legend li{display:flex;align-items:center;gap:8px}.legend b{margin-left:auto;color:var(--ink)}
@@ -613,7 +613,7 @@ transform-origin:left;animation:growx .9s var(--ease) both}
 .donut svg{width:130px;height:130px}.donut .big{font-size:9px;font-weight:800;fill:var(--ink)}.donut .small{font-size:3.6px;fill:#94a3b8;font-weight:600}
 .arc{animation:arc 1.1s var(--ease) both .2s}
 .ring{flex:none;overflow:visible}
-.ring .disc{fill:var(--cb);transform-box:fill-box;transform-origin:center;animation:pop .5s var(--ease) both .1s}
+.ring .disc{fill:var(--cb);transform-box:fill-box;transform-origin:center;animation:popscale .5s var(--ease) both .1s}
 .ring .track{fill:none;stroke:color-mix(in srgb,var(--c) 16%,#fff);stroke-width:3.6}
 .ring .arc{fill:none;stroke:var(--c);stroke-width:3.6;stroke-linecap:round;animation:arc 1.3s var(--ease) both .2s;
 filter:drop-shadow(0 1px 1.5px color-mix(in srgb,var(--c) 45%,transparent))}
@@ -661,7 +661,7 @@ svg .g2{animation-delay:.25s}svg .g3{animation-delay:.5s}
 @keyframes grow{from{transform:scaleY(0)}}
 @keyframes growx{from{transform:scaleX(0)}}
 @keyframes fade{from{opacity:0}}
-@keyframes pop{from{transform:scale(0)}}
+@keyframes popscale{from{transform:scale(0)}}
 @keyframes arc{from{stroke-dasharray:0 100}}
 @media (max-width:760px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.donut{grid-template-columns:1fr;justify-items:center}}
 `;

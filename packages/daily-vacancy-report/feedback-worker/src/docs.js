@@ -325,8 +325,8 @@ mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% -
 .dopts>summary{list-style:none;cursor:pointer;font-size:12px;font-weight:650;color:var(--brand-ink);padding:6px 8px;border-radius:9px;white-space:nowrap}
 .dopts>summary::-webkit-details-marker{display:none}.dopts>summary:hover,.dopts[open]>summary{background:var(--soft)}
 .dopts[open]>.lopts{position:absolute;right:0;top:calc(100% + 6px);z-index:6;width:240px;padding:12px;background:#fff;border:1px solid var(--line);
-border-radius:12px;box-shadow:0 18px 40px -20px rgba(30,27,75,.45);animation:pop .16s var(--ease)}
+border-radius:12px;box-shadow:0 18px 40px -20px rgba(30,27,75,.45);animation:menuin .16s var(--ease)}
 .dacts .dopts[open]>.lopts{left:0;right:auto}
 .lopts{display:grid;gap:10px}.lopt{display:grid;gap:4px;margin:0;font-size:12px;color:var(--muted);font-weight:600}.lopt select{margin:0;font-size:13px;padding:7px 9px}
-@keyframes pop{from{opacity:0;transform:translateY(-4px)}}
+@keyframes menuin{from{opacity:0;transform:translateY(-4px)}}
 `;

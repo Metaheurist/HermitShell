@@ -226,7 +226,7 @@ describe("recruiters' pools", () => {
   it("puts the people a recruiter invites in that recruiter's pool, whatever the form says", async () => {
     const { env, admin, casey } = await setup();
     await admin.where("/admin/users", { op: "add", name: "Riley Chen", username: "riley", password: "another good one", roles: "recruiter" });
-    const made = await (await casey.send("/admin/action", { action: "invite", note: "Jamie", recruiter: "riley" })).text();
+    const made = await casey.text(await casey.where("/admin/action", { action: "invite", note: "Jamie", recruiter: "riley" }));
     expect(made).toContain("They join your recruits.");
     const id = made.match(/\/join\?i=([0-9a-f]{32})/)[1];
     expect(JSON.parse(env.FEEDBACK.store.get(`invite:${id}`)).recruiter).toBe("casey");
@@ -245,9 +245,11 @@ describe("recruiters' pools", () => {
 
   it("lets a recruiter revoke only their own invites", async () => {
     const { env, admin, casey } = await setup();
-    const own = (await (await casey.send("/admin/action", { action: "invite", note: "Mine" })).text()).match(/\/join\?i=([0-9a-f]{32})/)[1];
-    const other = (await (await admin.send("/admin/action", { action: "invite", note: "Theirs", recruiter: "" })).text()).match(/\/join\?i=([0-9a-f]{32})/)[1];
+    const own = (await casey.where("/admin/action", { action: "invite", note: "Mine" })).match(/\?i=([0-9a-f]{32})$/)[1];
+    const other = (await admin.where("/admin/action", { action: "invite", note: "Theirs", recruiter: "" })).match(/\?i=([0-9a-f]{32})$/)[1];
     expect(await casey.text("/admin")).not.toContain("Theirs");
+    expect((await casey.get(`/admin/invite?i=${other}`)).status).toBe(404);
+    expect(await casey.text(`/admin/invite?i=${own}`)).toContain("Send this link to Mine");
     await casey.send("/admin/action", { action: "revoke", invite: other });
     await casey.send("/admin/action", { action: "revoke", invite: own });
     expect(keysWith(env, "invite:")).toEqual([`invite:${other}`]);
@@ -262,7 +264,7 @@ describe("recruiters' pools", () => {
     board = await admin.text("/admin");
     expect(board).toContain('<option value="admin" selected>Alex Morgan&#39;s recruit</option>');
     expect(board).toContain('aria-label="Signed in as Alex Morgan (admin, recruiter)"');
-    const made = await (await admin.send("/admin/action", { action: "invite", note: "For me", recruiter: "admin" })).text();
+    const made = await admin.text(await admin.where("/admin/action", { action: "invite", note: "For me", recruiter: "admin" }));
     expect(made).toContain("They join your recruits.");
     expect(await admin.where("/admin/action", { action: "invite", recruiter: "nobody" })).toBe("/admin?done=badrecruiter");
     expect(valuesWith(env, "invite:").map((i) => i.recruiter)).toEqual(["admin"]);
@@ -369,8 +371,7 @@ describe("signing users out", () => {
   it("deletes a user only when confirmed, signs them out, unassigns their recruits and drops their invites", async () => {
     const { env, admin, casey } = await setup();
     await casey.send("/admin/action", { action: "invite", note: "Mine" });
-    const adminInvite = await admin.send("/admin/action", { action: "invite", note: "Admin's", recruiter: "" });
-    expect(adminInvite.status).toBe(200);
+    expect(await admin.where("/admin/action", { action: "invite", note: "Admin's", recruiter: "" })).toMatch(/^\/admin\/invite\?i=[0-9a-f]{32}$/);
     expect(await admin.where("/admin/users", { op: "delete", id: "casey" })).toBe("/admin/users?done=confirmuser");
     expect(await admin.where("/admin/users", { op: "delete", id: "casey", confirm: "yes" })).toBe("/admin/users?done=deleted");
     expect(JSON.parse(env.FEEDBACK.store.get("accounts")).users).toEqual([]);

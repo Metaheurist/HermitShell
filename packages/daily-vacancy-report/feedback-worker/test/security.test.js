@@ -93,7 +93,8 @@ describe("escaping", () => {
     const csrf = dash.match(/name="csrf" value="([0-9a-f]+)"/)[1];
     const res = await worker.fetch(new Request(`${BASE}/admin/action`, {
       method: "POST", body: new URLSearchParams({ csrf, action: "invite", note: HOSTILE }), headers: { Cookie: cookie } }), env);
-    const body = await res.text();
+    const body = await (await get(res.headers.get("Location"), env, { Cookie: cookie })).text();
+    expect(body).toContain("Invite link");
     expect(body).not.toContain("<script>");
     expect(body).not.toContain("<img");
   });
