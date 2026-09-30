@@ -1,7 +1,7 @@
-# HermitShell - CI
+# HermitShell - Unit tests
 # Every push and pull request: lint, compile check, unit tests for each part of the repo on the
 # oldest and newest supported Python, the feedback Worker's tests and a Worker build check.
-name: CI
+name: Unit tests
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: unit-tests-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -122,7 +122,7 @@ jobs:
         run: npx wrangler deploy --dry-run --outdir dist
 
   all-checks:
-    name: "3 · All CI checks passed"
+    name: "3 · All unit tests passed"
     if: always()
     needs: [lint, compile, python-tests, worker-tests, worker-build]
     runs-on: ubuntu-24.04

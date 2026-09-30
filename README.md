@@ -1,6 +1,6 @@
 # HermitShell
 
-[![CI](https://github.com/Metaheurist/HermitShell/actions/workflows/ci.yml/badge.svg)](https://github.com/Metaheurist/HermitShell/actions/workflows/ci.yml)
+[![Unit tests](https://github.com/Metaheurist/HermitShell/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/Metaheurist/HermitShell/actions/workflows/unit-tests.yml)
 [![Security](https://github.com/Metaheurist/HermitShell/actions/workflows/security.yml/badge.svg)](https://github.com/Metaheurist/HermitShell/actions/workflows/security.yml)
 [![Image](https://github.com/Metaheurist/HermitShell/actions/workflows/image.yml/badge.svg)](https://github.com/Metaheurist/HermitShell/actions/workflows/image.yml)
 
@@ -132,7 +132,7 @@ docker-compose.yml         runs the image with its data in ./data
 scripts/screenshots/       regenerates the documentation screenshots from fictional data
 tests/security/            security tests: hostile input, encryption, backups, file permissions
 requirements.txt           run-time Python packages (requirements-dev.txt adds the test tools)
-.github/workflows/         CI (lint, tests, Worker build), Security (secrets, security tests, Bandit,
+.github/workflows/         Unit tests (lint, tests, Worker build), Security (secrets, security tests, Bandit,
                            CVEs, CodeQL) and Image (build, smoke test, scan, publish to GHCR)
 docs/                      installation, configuration, accounts and API keys, Cloudflare, feedback
                            Worker, email rendering, web providers, screenshots
@@ -205,7 +205,7 @@ Three GitHub Actions workflows run on every push and pull request:
 
 | Workflow | Jobs |
 | --- | --- |
-| [CI](.github/workflows/ci.yml) | Ruff lint; a compile check on Python 3.10; unit tests for the shared library, the job finder and the setup wizard, each on Python 3.10 and 3.12; the feedback Worker's Vitest tests and a `wrangler deploy --dry-run` build check; and a final "All CI checks passed" job to use as a required check |
+| [Unit tests](.github/workflows/unit-tests.yml) | Ruff lint; a compile check on Python 3.10; unit tests for the shared library, the job finder and the setup wizard, each on Python 3.10 and 3.12; the feedback Worker's Vitest tests and a `wrangler deploy --dry-run` build check; and a final "All unit tests passed" job to use as a required check |
 | [Security](.github/workflows/security.yml) | Gitleaks secret scan of the full history; the security test suites ([`tests/security`](tests/security) for hostile input, encryption, backups and file permissions; the Worker's `test/security.test.js` for headers, escaping, authentication, CSRF and size limits); Bandit static analysis of the Python code; CVE audits of the Python packages (`pip-audit`) and the Worker's npm packages (`npm audit`, high and critical fail); dependency review on pull requests; CodeQL code scanning of the Python, JavaScript and workflow files. It also runs every Monday, so newly published CVEs are reported even when nothing has changed |
 | [Image](.github/workflows/image.yml) | Builds the container image, starts it with an empty data folder and checks the scheduler comes up healthy with the standard jobs and every package imports, scans it with Trivy (fixable critical CVEs fail), then on `main` and version tags publishes it for amd64 and arm64 to `ghcr.io/metaheurist/hermitshell` and attaches it to a [release](https://github.com/Metaheurist/HermitShell/releases): its own for a version tag, the rolling `latest-build` pre-release for `main` |
 

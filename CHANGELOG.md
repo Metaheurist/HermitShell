@@ -581,6 +581,8 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The CI workflow is now called Unit tests** (`.github/workflows/unit-tests.yml`, badge and README
+  updated); its final job is **All unit tests passed**.
 - **A recruit's page has its own tabs.** **Manage** and **History** replace the dashboard's Recruits, Users
   and roles and Global settings tabs there; those stay on the dashboard, with **Back to recruits** to return.
 - **Recruits and Users and roles fit the screen.** Both pages now grow with the window, up to 1320px wide,
