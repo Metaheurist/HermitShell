@@ -33,8 +33,9 @@ providers, the email server) and the free-plan limits of those services.
   encrypted secrets, and every push is scanned for leaked secrets across the whole history.
   See [Keeping secrets safe](docs/configuration.md#keeping-secrets-safe).
 - **Encryption at rest.** With `HERMES_DATA_KEY` set (the wizard generates one), CVs, profiles,
-  cover letters, tailored CVs and backups are encrypted with AES-256-GCM, and files are readable by
-  HermitShell's account only. See [Data protection](docs/configuration.md#data-protection).
+  cover letters, tailored CVs, saved job reports and backups are encrypted with AES-256-GCM, and
+  every file is created readable by HermitShell's account only. Logs, which are not encrypted, name
+  the roles but never keys, employers or salaries. See [Data protection](docs/configuration.md#data-protection).
 - **A signed, HTTPS-only link to the Worker.** Every request is signed with HMAC-SHA256 over the
   method, path, body, time and a one-time nonce, and is refused if it is altered, replayed or more
   than five minutes old. Redirects are never followed.

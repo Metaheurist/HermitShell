@@ -222,16 +222,20 @@ This is how it is carried out:
 
 - **Encryption at rest.** With `HERMES_DATA_KEY` set, each profile's `profile.json`,
   `settings.json`, `cv.txt`, `job_profile.md` and `cv_keywords.json`, the tailored-CV cache and
-  every cover letter and tailored CV are written encrypted (AES-256-GCM, via the `cryptography`
-  package, in the container image). Files written before the key was set are encrypted by the
+  every cover letter and tailored CV, and the job finder's saved report, results and weekly roll-up
+  (`state/job_scanner_last.html`, `job_scanner_last.json`, `job_scanner_weekly.html`) are written
+  encrypted (AES-256-GCM, via the `cryptography` package, in the container image). Files written before the key was set are encrypted by the
   next maintenance run. Your own `job_profile.md` and `cv_keywords.json` in the scripts folder stay
   plain so you can edit them, as does the tracker database. The uploaded CV file is deleted once its
   text is read.
 - **The key.** The wizard generates it (or run `python3 maintenance.py --new-key`) and writes it to
   `.env`. Keep a copy in a password manager: without it the encrypted files and backups can't be
   read. Don't change it once set; `maintenance.py --decrypt FILE` opens a single file.
-- **Permissions.** The scripts create files readable by HermitShell's account only, and maintenance
-  resets everything under `state/`, the profiles folder and the backups to `0600`/`0700`.
+- **Permissions.** The scripts create files readable by HermitShell's account only (`0600`, whatever
+  the umask), and maintenance resets everything under `state/`, the profiles folder and the backups
+  to `0600`/`0700`.
+- **Logs.** Logs aren't encrypted, so they name the role a line is about but never a key, a password,
+  the employer or the salary.
 - **Retention.** Maintenance deletes tracker jobs with no sighting, answer or letter for
   `HERMES_RETENTION_DAYS` (with their answers), older cover letters and tailored CVs, and logs and
   scheduled-job output older than `HERMES_LOG_RETENTION_DAYS`. Deleted database rows are
