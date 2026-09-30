@@ -20,7 +20,7 @@
 
 import {
   CONTROL_RE, EVENT_TTL_SECONDS, SECURITY_HEADERS, ago, cleanSkill, docIndexKey, docKey, emailedKey, esc, eventFlag, eventPrefix, json,
-  limitedBytes, setFlag, sha256Hex, skillAddKey,
+  limitedBytes, setFlag, sha256Hex, skillAddKey, PROFILE_RE,
 } from "./lib.js";
 import { rememberRequest } from "./tasks.js";
 
@@ -40,7 +40,6 @@ export const MAX_DOC_DAYS = 30;
 const MAX_INDEX = 300;
 const MAX_ADDED = 100;
 const MAX_JOB_KEY = 300;
-const PROFILE_RE = /^[a-z0-9-]{1,40}$/;
 const HASH_RE = /^[0-9a-f]{32}$/;
 const IV_BYTES = 12;
 const encoder = new TextEncoder();

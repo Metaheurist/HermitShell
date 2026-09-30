@@ -10,7 +10,7 @@
 // dashboard warns when they differ.
 
 import { POLL_PATH, hubNonce } from "./hub.js";
-import { authorised, limitedBytes, safeEqual } from "./lib.js";
+import { authorised, limitedBytes, safeEqual, hex } from "./lib.js";
 
 export const PROTOCOL = 2;
 export const SIGN_WINDOW_MS = 5 * 60 * 1000;
@@ -22,7 +22,6 @@ const encoder = new TextEncoder();
 const keys = new Map();
 const latchedStores = new WeakSet();
 
-const hex = (buffer) => [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
 
 async function signingKey(secret) {
   let key = keys.get(secret);

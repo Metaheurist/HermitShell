@@ -17,7 +17,6 @@ import json
 import math
 import os
 import sys
-import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,7 +36,6 @@ KEEP_DAYS = 31
 SHOW_DAYS = 7
 MAX_TOKENS = 10_000_000
 _COUNTS = ("calls", "failed", "in", "out", "ms", "estimated")
-_lock = threading.Lock()
 
 
 def path() -> Path:
@@ -79,15 +77,8 @@ def load() -> dict:
 @contextlib.contextmanager
 def _locked():
     """One writer at a time, across threads and processes (flock where there is one)."""
-    with _lock:
-        path().parent.mkdir(parents=True, exist_ok=True)
-        with open(path().with_suffix(".lock"), "a") as handle:
-            try:
-                import fcntl
-                fcntl.flock(handle, fcntl.LOCK_EX)
-            except ImportError:
-                pass
-            yield
+    with hc.file_lock(path()):
+        yield
 
 
 def record(task: str, prompt_tokens, reply_tokens, ms, ok: bool = True, estimated: bool = False,

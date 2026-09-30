@@ -20,7 +20,7 @@ import { listed, record } from "./history.js";
 import { handleJoin, queueItem } from "./join.js";
 import {
   CONTROL_RE, EVENT_TTL_SECONDS, LINK_DAYS, MAX_SKILL, ago, authorised, cleanSkill, deleteAndUnflag, esc, eventFlag, eventPrefix, favicon, json, limitedForm,
-  limitedJson, listFlagged, page, purgeProfileEvents, safeEqual, setFlag, sha256Hex, sign, STYLE_PATH, stylesheet, text, today,
+  limitedJson, listFlagged, page, purgeProfileEvents, safeEqual, setFlag, sha256Hex, sign, STYLE_PATH, stylesheet, text, today, PROFILE_RE,
 } from "./lib.js";
 import { memoKV } from "./memo.js";
 import { privacyPage } from "./privacy.js";
@@ -62,7 +62,6 @@ const MAX_TITLE = 120;
 const MAX_REASON = 300;
 const MAX_SKILLS = 12;
 const MAX_FORM_BYTES = 16 * 1024;
-const PROFILE_RE = /^[a-z0-9-]{1,40}$/;
 const LINK_FIELDS = ["j", "a", "n", "s", "u", "d", "t"];
 
 function skillList(packed) {

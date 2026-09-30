@@ -710,6 +710,9 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Shared code in one place: the Worker's profile id pattern, hex and cache hashes, hidden form fields and
+  short month names now live in `lib.js` instead of being copied into several files, and `autofit.py`
+  and `llm_usage.py` lock their state files with `hermes_common.file_lock` like `llm_providers.py`.
 - **Smaller rating prompts.** Adverts are trimmed of menus, buttons, cookie and legal lines, share links and
   repeated lines before the first 5,000 characters are taken, so more of the job fits. The profile sent to
   title screening, ratings and second opinions is compacted, and a long one (over 3,500 characters) is

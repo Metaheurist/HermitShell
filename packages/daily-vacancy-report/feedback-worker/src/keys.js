@@ -7,7 +7,7 @@
 // A provider with a key opens, when pressed, to its keys in the order they are tried (Firecrawl's main key then its
 // backups), each masked, with what is left of its allowance as HermitShell last checked it (key_usage.py).
 
-import { ago, esc, savingTag } from "./lib.js";
+import { ago, esc, savingTag, MONTHS_SHORT as MONTHS } from "./lib.js";
 
 export const PROVIDERS = {
   firecrawl: { label: "Firecrawl", signup: "https://www.firecrawl.dev/app/api-keys" },
@@ -37,7 +37,6 @@ export function logo(name, cls = "") {
 const modalId = (name) => `gkey-${name}`;
 const MAX_KEYS = 6;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 export const CHEVRON = '<svg class="kchev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
 // What a key's allowance counts: credits (web search), requests (free models, per day), usd (dollars) or plan (only
 // the plan's name is known).

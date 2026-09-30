@@ -8,7 +8,7 @@ import { CURRENCIES, currencyCode, currencySymbol } from "./currency.js";
 import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem, storeCv } from "./join.js";
 import { PROTOCOL } from "./apiauth.js";
 import { sealInfo, sealItem } from "./seal.js";
-import { BACK_TO_RECRUITS, CSP, SECURITY_HEADERS, ago, esc, limitedForm, note, page, redirect, reloadTo, safeEqual, waitBar, waitRefresh, when } from "./lib.js";
+import { BACK_TO_RECRUITS, CSP, SECURITY_HEADERS, ago, esc, limitedForm, note, page, redirect, reloadTo, safeEqual, waitBar, waitRefresh, when, PROFILE_RE, hidden } from "./lib.js";
 import { KEY_STYLE, MODAL_STYLE, PROVIDERS, keyModals, keysSection } from "./keys.js";
 import { MODEL_KEY_RE, MODEL_PROVIDERS, MODEL_RE, MODEL_STYLE, modelModals, modelsSection, usageSection } from "./models.js";
 import { LINK_STYLE, STATS_URL, icon } from "./stats.js";
@@ -20,7 +20,6 @@ export const WORK_MODES = ["On-site", "Hybrid", "Remote"];
 const KEY_RE = /^[A-Za-z0-9_-]{8,120}$/;
 const HOST_RE = /^[A-Za-z0-9.-]{3,120}$/;
 const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
-const PROFILE_RE = /^[a-z0-9-]{1,40}$/;
 const MAX_TITLES = 8;
 const MAX_PLACES = 30;
 const MAX_CV_TEXT = 20000;
@@ -36,10 +35,6 @@ function field(form, name, max) {
 
 function list(value, sep, limit, maxLen) {
   return [...new Set(String(value || "").split(sep).map((v) => tidy(v, maxLen)).filter(Boolean))].slice(0, limit);
-}
-
-function hidden(fields) {
-  return Object.entries(fields).map(([k, v]) => `<input type="hidden" name="${k}" value="${esc(v)}">`).join("");
 }
 
 function checked(on) {

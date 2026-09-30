@@ -475,3 +475,25 @@ def test_send_email_does_not_retry_a_wrong_password(smtp, monkeypatch):
     with pytest.raises(hc.smtplib.SMTPAuthenticationError):
         hc.send_email("s", "<p>x</p>", "x", "n")
     assert smtp.attempts == 2
+
+
+def test_file_lock_lets_one_thread_at_a_time_change_a_state_file(tmp_path):
+    state = tmp_path / "state" / "shared.json"
+    inside, most = [0], [0]
+
+    def change():
+        with hc.file_lock(state):
+            inside[0] += 1
+            most[0] = max(most[0], inside[0])
+            time.sleep(0.01)
+            inside[0] -= 1
+
+    threads = [threading.Thread(target=change) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert most[0] == 1
+    if os.name == "posix":
+        assert (state.parent / "shared.json.lock").is_file()
+        assert (state.parent / "shared.json.lock").stat().st_mode & 0o077 == 0

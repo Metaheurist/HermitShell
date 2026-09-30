@@ -3,14 +3,13 @@
 // the letters and CVs it mentions are not. One KV value per recruit and month (history:<id>:YYYY-MM), so an
 // event costs one read and one write, and the page one list and one read.
 
-import { BACK_TO_RECRUITS, esc, historyPrefix, page, when } from "./lib.js";
+import { BACK_TO_RECRUITS, esc, historyPrefix, page, when, PROFILE_RE } from "./lib.js";
 
 export const HISTORY_URL = "/admin/history";
 export const MAX_MONTH = 1000;
 const MAX_TEXT = 200;
 const MAX_BY = 80;
 const MAX_MONTHS_SHOWN = 24;
-const PROFILE_RE = /^[a-z0-9-]{1,40}$/;
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 const VIA = { dashboard: "", email: "from an email button", hermitshell: "HermitShell" };
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];

@@ -14,7 +14,7 @@
 import { CONFIRM_STYLE, binButton, deleteModal, iconButton } from "./confirm.js";
 import { record } from "./history.js";
 import { openInvites, queueItems } from "./join.js";
-import { esc, hmacHex, newId, note, page, redirect, when } from "./lib.js";
+import { esc, hmacHex, newId, note, page, redirect, when, hidden, hex } from "./lib.js";
 import { MODAL_STYLE } from "./keys.js";
 import { USERS_URL, nav } from "./settings.js";
 
@@ -65,7 +65,6 @@ async function saveAccounts(env, acc) {
   await env.FEEDBACK.put(ACCOUNTS_KEY, JSON.stringify({ admin: acc.admin, users: acc.users }));
 }
 
-const hex = (bytes) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
 const unhex = (text) => new Uint8Array((String(text).match(/../g) || []).map((b) => parseInt(b, 16)));
 
 export async function hashPassword(env, password, salt = hex(crypto.getRandomValues(new Uint8Array(16))), iter = ITERATIONS) {
@@ -144,10 +143,6 @@ function roleIcon(role) {
 
 function pills(roles) {
   return roles.map((r) => `<span class="role ${r}">${esc(ROLES[r].label)}</span>`).join(" ");
-}
-
-function hidden(fields) {
-  return Object.entries(fields).map(([k, v]) => `<input type="hidden" name="${k}" value="${esc(v)}">`).join("");
 }
 
 function roleBoxes(prefix, roles, { lockAdmin = false } = {}) {

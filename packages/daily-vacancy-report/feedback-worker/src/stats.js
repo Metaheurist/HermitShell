@@ -6,7 +6,7 @@
 import { currencyCode, currencySymbol, moneyIcon } from "./currency.js";
 import { DOC_STYLE, SKILL_URL, docActions, jobHash, validJobKey } from "./docs.js";
 import { HISTORY_URL } from "./history.js";
-import { BACK_TO_RECRUITS, EXTERNAL_ICON, ago, cleanSkill, esc, page, reloadTo } from "./lib.js";
+import { BACK_TO_RECRUITS, EXTERNAL_ICON, ago, cleanSkill, esc, page, reloadTo, MONTHS_SHORT as MONTHS } from "./lib.js";
 
 export const STATS_URL = "/admin/stats";
 export const SENT_URL = "/admin/sent";
@@ -23,7 +23,6 @@ const DAY_MS = 86400000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // The skills HermitShell counts as on the CV (profile_stats.MAX_POOL).
 const MAX_POOL = 200;
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 // ------------------------------------------------------------------------- what HermitShell may store

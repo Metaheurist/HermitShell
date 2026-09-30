@@ -275,22 +275,10 @@ def _save(state: dict) -> None:
 @contextlib.contextmanager
 def _state():
     """The state, locked against other threads and processes, saved on the way out."""
-    with _lock:
-        fd = None
-        try:
-            import fcntl
-            STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-            fd = os.open(STATE_FILE.with_suffix(".lock"), os.O_RDWR | os.O_CREAT, 0o600)
-            fcntl.flock(fd, fcntl.LOCK_EX)
-        except (ImportError, OSError):
-            pass
-        try:
-            state = _load()
-            yield state
-            _save(state)
-        finally:
-            if fd is not None:
-                os.close(fd)
+    with _lock, hc.file_lock(STATE_FILE):
+        state = _load()
+        yield state
+        _save(state)
 
 
 def _host_state(state: dict, host: str) -> dict:

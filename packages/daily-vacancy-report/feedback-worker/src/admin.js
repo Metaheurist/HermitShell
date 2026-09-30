@@ -20,7 +20,7 @@ import { createInvite, openInvites, queueItem } from "./join.js";
 import {
   CSP, SECURITY_HEADERS, accessUser, ago, authorised, cleanSkill, deleteAndUnflag, esc, flaggedItems, hmacHex, json, limitedForm, limitedJson, listFlagged,
   purgeProfileEvents, recentStats, rememberWeek,
-  APPLIED, note, page, redirect, safeEqual, savingTag, secretEqual, text, waitBar, waitRefresh, when,
+  APPLIED, note, page, redirect, safeEqual, savingTag, secretEqual, text, waitBar, waitRefresh, when, PROFILE_RE,
 } from "./lib.js";
 import {
   SETTINGS_DONE, SETTINGS_URL, STATUS_URL, USERS_URL, button, checklist, cvUpload, nav, problems, profileChange, profilePage, saveStatus,
@@ -48,7 +48,6 @@ const MAX_FAILURES = 5;
 const MAX_GLOBAL_FAILURES = 30;
 const MAX_FORM_BYTES = 64 * 1024;
 const COOKIE = "__Host-hv_admin";
-const PROFILE_RE = /^[a-z0-9-]{1,40}$/;
 const INVITE_URL = "/admin/invite";
 // KV's shortest expiry: how long a second Send jobs for the same recruit is taken as the same press.
 const SEND_NOW_SECONDS = 60;

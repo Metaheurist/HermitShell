@@ -37,6 +37,22 @@ const LINE_ICON = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
 export const EXTERNAL_ICON = `<svg class="ext" ${LINE_ICON}><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg>`;
 export const BACK_TO_RECRUITS = `<a class="back" href="/admin"><svg ${LINE_ICON}><path d="M19 12H5M11 6l-6 6 6 6"/></svg>Back to recruits</a>`;
 
+export const PROFILE_RE = /^[a-z0-9-]{1,40}$/;
+export const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+export const hex = (bytes) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+// A 32-bit FNV-1a hash as 8 hex digits: for cache-busting URLs, never for security.
+export function fnv(text) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
+  return h.toString(16).padStart(8, "0");
+}
+
+export function hidden(fields) {
+  return Object.entries(fields).map(([k, v]) => `<input type="hidden" name="${k}" value="${esc(v)}">`).join("");
+}
+
 export function favicon() {
   return new Response(FAVICON, {
     headers: {
@@ -69,12 +85,12 @@ export async function hmacHex(secret, message) {
     hmacKeys.set(secret, cryptoKey);
   }
   const mac = await crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(message));
-  return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return hex(mac);
 }
 
 export async function sha256Hex(text) {
   const digest = await crypto.subtle.digest("SHA-256", encoder.encode(text));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return hex(digest);
 }
 
 export function today() {
@@ -385,12 +401,6 @@ export function savingTag(label = "saving") {
   return `<span class="savingtag keepanim">${esc(label)}&hellip;</span>`;
 }
 
-function fnv(text) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
-  return h.toString(16).padStart(8, "0");
-}
-
 // Every page's shared styles, fetched once and then cached for good: the URL changes whenever they do.
 export const STYLE_PATH = "/app.css";
 export const STYLE_URL = `${STYLE_PATH}?v=${fnv(STYLE)}`;
@@ -488,7 +498,7 @@ export async function rememberWeek(env, profile, stats, now = Date.now()) {
 // The recent stats of each profile id, in order; null for none.
 export async function recentStats(env, ids) {
   const all = (await env.FEEDBACK.get(WEEKS_KEY, "json")) || {};
-  return Promise.all(ids.map((u) => !/^[a-z0-9-]{1,40}$/.test(u || "") ? null
+  return Promise.all(ids.map((u) => !PROFILE_RE.test(u || "") ? null
     : Object.hasOwn(all, u) ? all[u] : env.FEEDBACK.get(`stats:${u}`, "json")));
 }
 

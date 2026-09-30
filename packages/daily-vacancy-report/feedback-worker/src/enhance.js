@@ -4,6 +4,8 @@
 //   only while nothing is being typed and no window or menu is open, so input, focus and scroll are kept. Without
 //   scripts the <noscript> refresh reloads the page as before.
 // - A form sends once: pressing again, or double clicking, while its page loads does nothing.
+import { fnv } from "./lib.js";
+
 const SOURCE = `(() => {
   "use strict";
   const idle = (form) => { delete form.dataset.sent; form.removeAttribute("aria-busy");
@@ -58,12 +60,6 @@ const SOURCE = `(() => {
 `;
 
 // A short digest of the script in its address, so browsers can keep it for a year and still get a changed one.
-function fnv(text) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
-  return h.toString(16).padStart(8, "0");
-}
-
 export const ENHANCE_PATH = "/enhance.js";
 export const ENHANCE_URL = `${ENHANCE_PATH}?v=${fnv(SOURCE)}`;
 export const ENHANCE_CSP = "script-src 'self'; connect-src 'self'";
