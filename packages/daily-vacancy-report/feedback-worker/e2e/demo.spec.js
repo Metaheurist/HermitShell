@@ -42,7 +42,13 @@ test("demo mode fills the dashboard with made-up recruits, plays presses out wit
 
   await page.goto("/admin/stats?u=jamie-walsh");
   await expect(page.locator("svg").first()).toBeVisible();
+  // On the first of a month the reports so far are all in the month before, behind its pill.
   await page.goto("/admin/history?u=jamie-walsh");
+  const months = await page.locator('a[href*="/admin/history?u=jamie-walsh&m="]').evaluateAll((links) => links.map((a) => a.href));
+  for (const month of months) {
+    if (await page.getByText("Job report ran").count()) break;
+    await page.goto(month);
+  }
   await expect(page.getByText("Job report ran").first()).toBeVisible();
   await page.goto("/admin/history?u=avery-lane");
   const [file] = await Promise.all([page.waitForEvent("download"), page.getByRole("link", { name: "Download the cover letter" }).click()]);
