@@ -14,7 +14,7 @@
 // passwords is kept there, and the switch itself is "demo:mode".
 
 import { PROTOCOL } from "./apiauth.js";
-import { DOC_KINDS, jobHash, markEmailed, storeDoc } from "./docs.js";
+import { DOC_KINDS, PROFILE_CV, jobHash, markEmailed, storeDoc, storeProfileCv } from "./docs.js";
 import { historyKey } from "./history.js";
 import { esc, limitedForm, newId, page, redirect, rememberWeek, safeEqual, when } from "./lib.js";
 import { SEAL_ALG } from "./seal.js";
@@ -28,9 +28,9 @@ const STATE_KEY = "demo:state";
 const STATE_TTL_SECONDS = 2 * 3600;
 const MAX_STATE_BYTES = 256 * 1024;
 // How long the pretend HermitShell takes over each kind of work.
-export const WORK_MS = { send_job: 6000, cover_letter: 12000, tailored_cv: 14000, skill: 5000, change: 4000, scan: 25000 };
+export const WORK_MS = { send_job: 6000, cover_letter: 12000, tailored_cv: 14000, profile_cv: 8000, skill: 5000, change: 4000, scan: 25000 };
 // The demo's own keys worth remembering between pages. Queue items are only kept for the plain dashboard changes.
-const KEPT = /^(event:[a-z0-9_-]{1,40}:dash-|tasks:requests$|docs?:|emailed:|skilladd:|history:|invite:|queue:|flag:queue$)/;
+const KEPT = /^(event:[a-z0-9_-]{1,40}:dash-|tasks:requests$|docs?:|cvpdf(info)?:|emailed:|skilladd:|history:|invite:|queue:|flag:queue$)/;
 const KEPT_CHANGES = new Set(["pause", "resume", "assign", "send_now", "delete", "cancel", "profile"]);
 const TZ = "Europe/London";
 const DAY = 86400000;
@@ -251,6 +251,10 @@ async function pretendWork(env, state, now) {
     const q = new URLSearchParams({ u: r.u, j: r.j });
     if (r.a === "send_job") {
       await markEmailed(new Request(`https://demo.invalid/api/emailed?${q}`, { method: "POST" }), env);
+    } else if (r.a === PROFILE_CV) {
+      const name = `CV - ${names.get(r.u) || "Recruit"}`;
+      await storeProfileCv(new Request(`https://demo.invalid/api/cv?${new URLSearchParams({ u: r.u, name })}`, { method: "POST",
+        body: demoDoc(r, {}, names.get(r.u)) }), env);
     } else if (!r.send && DOC_KINDS[r.a]) {
       const event = (await kv.get(r.id, "json")) || {};
       q.set("k", r.a);
@@ -340,6 +344,8 @@ function demoDoc(r, event, name = "The recruit") {
     ? [`Cover letter (demo${style ? `, ${style}` : ""})`, "", name, "", `Dear Hiring Manager${employer ? ` at ${employer}` : ""},`, "",
       `I am writing to apply for the ${title} role. This letter was made in HermitShell's demo mode,`,
       "so the candidate, the company and the role are all made up, and no model wrote it.", "", "Yours sincerely,", name]
+    : r.a === PROFILE_CV ? ["CV (demo)", "", name, "", "This CV was made in HermitShell's demo mode: the candidate and every role on it are",
+      "made up, and no model wrote it."]
     : ["Tailored CV (demo)", "", name, "", `Tailored for: ${r.n || "the role"}`, "",
       "This CV was made in HermitShell's demo mode: the candidate, the company and the role are all", "made up, and no model wrote it."];
   return textPdf(lines.map((line) => line.replace(/[^\x20-\x7e]/g, "-")));

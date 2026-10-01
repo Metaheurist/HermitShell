@@ -16,6 +16,10 @@ keeps them on this server only, and every request writes a new one.
 The dashboard's "Email" button on a job asks for that job's report card to be emailed to the profile (job_mail.py);
 it is sent from here too, without the model, and the Worker is told so it can mark the job as emailed.
 
+The profile page's "Generate" asks for the profile's own CV, for no job: every role from the structured copy of the
+uploaded CV (tailored_cv.py), laid out as the tailored ones are, saved as state/cv.pdf and sent to the Worker, which
+keeps it for download until the next one replaces it or the profile is unsubscribed or deleted. It is not emailed.
+
     python3 cover_letter.py                         # fetch requests from the Worker and send them
     python3 cover_letter.py --job KEY [--note ...]  # write a letter for a tracked job now
     python3 cover_letter.py --job KEY --length short --tone warm   # choose its length and tone
@@ -60,8 +64,10 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 TRACKER_FILE = STATE_DIR / "job_tracker.db"
 LETTER_DIR = STATE_DIR / "cover_letters"
 CV_DIR = STATE_DIR / "tailored_cvs"
-KIND_LABELS = {"cover_letter": "Cover letter", "tailored_cv": "Tailored CV", "send_job": "Job email"}
+KIND_LABELS = {"cover_letter": "Cover letter", "tailored_cv": "Tailored CV", "send_job": "Job email", "profile_cv": "CV"}
 SEND_JOB = "send_job"
+PROFILE_CV = "profile_cv"
+PROFILE_CV_FILE = STATE_DIR / "cv.pdf"
 LOCK_FILE = STATE_DIR / "cover_letter.lock"
 # The request being written right now, so the dashboard can show it and stop it (profiles.cancel_task).
 WRITING_FILE = STATE_DIR / profiles.WRITING_NAME
@@ -410,7 +416,21 @@ def make_cv(tracker: Tracker, key: str, note: str, model_info: tuple[str, str, i
     return path
 
 
-MAKERS = {"cover_letter": make_letter, "tailored_cv": make_cv}
+def profile_cv_name(tracker: Tracker) -> str:
+    return file_name(f"CV - {candidate_name(profile_text(tracker)) or 'Candidate'}")
+
+
+def make_profile_cv(tracker: Tracker, key: str, note: str, model_info: tuple[str, str, int | None],
+                    dry_run: bool, send: bool = True, flags=()) -> Path:
+    """The profile's own CV: every role, bullet, project and qualification in the structured copy, as written."""
+    master = tailored_cv.master_cv(lambda: model_info, tracker)
+    name = candidate_name(profile_text(tracker)) or "Candidate"
+    cv = {k: v for k, v in master.items() if k != "source_text"} | {"name": name, "contact": env("COVER_LETTER_CONTACT", "") or ""}
+    hc.write_private(PROFILE_CV_FILE, cv_pdf(cv, title=f"CV - {name}"))
+    return PROFILE_CV_FILE
+
+
+MAKERS = {"cover_letter": make_letter, "tailored_cv": make_cv, PROFILE_CV: make_profile_cv}
 
 
 # --------------------------------------------------------------------------- made before, kept for download
@@ -464,6 +484,20 @@ def upload_doc(kind: str, key: str, path: Path, filename: str, days: int | None 
     return ""
 
 
+def upload_profile_cv(path: Path, filename: str) -> str:
+    """Send the profile's own CV to the Worker, replacing the one it keeps; returns a problem to log, or ""."""
+    base, token = secure_base(env("JOB_FEEDBACK_URL", "") or ""), env("JOB_FEEDBACK_API_TOKEN", "")
+    if not (base and token):
+        return ""
+    params = {"u": env("JOB_PROFILE_ID", "") or profiles.OWNER, "name": filename}
+    try:
+        worker_link.Link(base, token).request("POST", "/api/cv", params=params, data=hc.read_private(path),
+                                              content_type="application/pdf")
+    except (requests.RequestException, OSError, RuntimeError) as exc:
+        return f"could not keep the CV on the Worker for download: {worker_link.reason(exc)}"
+    return ""
+
+
 def record_emailed(key: str) -> str:
     """Tell the Worker a job was emailed, for its "Emailed" mark on the dashboard; returns a problem to log, or ""."""
     base, token = secure_base(env("JOB_FEEDBACK_URL", "") or ""), env("JOB_FEEDBACK_API_TOKEN", "")
@@ -499,7 +533,7 @@ def process_pending(tracker: Tracker, model_info_factory, dry_run: bool = False)
         what = KIND_LABELS[kind]
         job = tracker.job(req["key"]) or {}
         # These lines go to the plain-text log, so they name the role but not the employer or the file.
-        label = job_title(job) if job else req["key"]
+        label = "the profile" if kind == PROFILE_CV else job_title(job) if job else req["key"]
         if tracker.letter_cancelled(req["event_id"]):
             lines.append(f"{what} for {label} was cancelled from the dashboard")
             continue
@@ -509,7 +543,7 @@ def process_pending(tracker: Tracker, model_info_factory, dry_run: bool = False)
         profiles.tasks_changed()
         path = earlier = None
         try:
-            if kind != SEND_JOB and not note and "fresh" not in flags and not flags & STYLE_FLAGS:
+            if kind not in (SEND_JOB, PROFILE_CV) and not note and "fresh" not in flags and not flags & STYLE_FLAGS:
                 earlier = recent_doc(tracker, kind, req["key"])
             if kind == SEND_JOB:
                 job_mail.send_job(tracker, req["key"], dry_run)
@@ -536,6 +570,16 @@ def process_pending(tracker: Tracker, model_info_factory, dry_run: bool = False)
                 if problem := record_emailed(req["key"]):
                     log(problem)
             lines.append(f"{what} {'not sent (dry run)' if dry_run else 'sent'} for {label}")
+            continue
+        if kind == PROFILE_CV:
+            problem = "" if dry_run else upload_profile_cv(path, profile_cv_name(tracker))
+            if problem:
+                status = tracker.mark_letter(req["event_id"], req["key"], "error", problem)
+                lines.append(f"{what} {'failed' if status == 'failed' else 'will retry'} for {label}: {problem}")
+                continue
+            if not dry_run:
+                tracker.mark_letter(req["event_id"], req["key"], "sent", file=path.name)
+            lines.append(f"{what} {'saved' if dry_run else 'made for download'} for {label}")
             continue
         if not dry_run:
             tracker.mark_letter(req["event_id"], req["key"], "sent", file=path.name)

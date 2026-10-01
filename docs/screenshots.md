@@ -490,6 +490,7 @@ older and how to update it ([why](feedback-worker.md#how-it-stays-safe)).
 | Section | What it sets |
 | --- | --- |
 | **Back to recruits** | Floats in the top-left corner while you scroll |
+| **CV** / **Generate** | Top right of the card: **Generate** makes their CV from the one uploaded (every role, not tailored); **CV** downloads it and only shows once one is made ([more](feedback-worker.md#a-recruits-page)) |
 | **Manage** / **History** | The page's own tabs: this page and [its timeline](#a-recruits-history); Users and roles and Global settings are only on the dashboard |
 | **View stats** | Opens [this profile's stats](#a-recruits-stats) |
 | Status box | Under the tabs: **Up to date**, **Waiting for HermitShell** while a save is queued (it checks again by itself), **Applied by HermitShell**, **Scanning for jobs since…** while a report runs, or why a change couldn't be applied |
@@ -514,6 +515,12 @@ yours. Changes to different fields are both kept.
 
 *While a report runs (here after **Send jobs now**), the status box says when the scan started and
 the button waits until it has finished.*
+
+<table><tr><th>Generate pressed</th><th>Their CV made and kept</th></tr>
+<tr><td><img src="images/worker/admin-profile-cv-making.png" alt="A profile's page with Generating and a spinner at the top right while its CV is being made" width="380"></td>
+<td><img src="images/worker/admin-profile-cv.png" alt="A profile's page with a green CV download button beside Generate at the top right" width="380"></td></tr></table>
+
+*The CV stays until **Generate** replaces it or the recruit unsubscribes or is deleted.*
 
 ### A recruit's history
 

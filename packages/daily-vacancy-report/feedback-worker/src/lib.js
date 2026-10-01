@@ -452,6 +452,15 @@ export function docIndexKey(profile) {
   return `docs:${profile}`;
 }
 
+// A recruit's own CV made from the one they uploaded (docs.js), and its file name and when it was made.
+export function profileCvKey(profile) {
+  return `cvpdf:${profile}`;
+}
+
+export function profileCvInfoKey(profile) {
+  return `cvpdfinfo:${profile}`;
+}
+
 export function emailedKey(profile) {
   return `emailed:${profile}`;
 }
@@ -497,13 +506,15 @@ export async function recentStats(env, ids) {
 }
 
 // An extra profile that unsubscribes or is deleted: its answers not yet collected by HermitShell, its stats, its
-// list of jobs sent, the skills added from it, the letters and CVs kept for download and its history are dropped.
+// list of jobs sent, the skills added from it, the letters and CVs kept for download, their own CV and their history
+// are dropped.
 export async function purgeProfileEvents(env, profile) {
   if (!profile) return;
   const docs = await env.FEEDBACK.get(docIndexKey(profile), "json");
   await Promise.all((Array.isArray(docs) ? docs : []).filter((d) => d && /^[0-9a-f]{32}$/.test(d.h) && /^[a-z_]{1,20}$/.test(d.k))
     .map((d) => env.FEEDBACK.delete(docKey(profile, d.k, d.h))));
   await Promise.all([env.FEEDBACK.delete(docIndexKey(profile)), env.FEEDBACK.delete(emailedKey(profile)), env.FEEDBACK.delete(skillAddKey(profile)),
+    env.FEEDBACK.delete(profileCvKey(profile)), env.FEEDBACK.delete(profileCvInfoKey(profile)),
     env.FEEDBACK.delete(`sent:${profile}`), env.FEEDBACK.delete(`stats:${profile}`), rememberWeek(env, profile, null)]);
   await Promise.all([deletePrefix(env, eventPrefix(profile)), deletePrefix(env, historyPrefix(profile))]);
   await env.FEEDBACK.delete(eventFlag(profile));

@@ -13,6 +13,7 @@ import { KEY_STYLE, MODAL_STYLE, PROVIDERS, keyModals, keysSection } from "./key
 import { MODEL_KEY_RE, MODEL_PROVIDERS, MODEL_RE, MODEL_STYLE, modelModals, modelsSection, usageSection } from "./models.js";
 import { LINK_STYLE, STATS_URL, icon } from "./stats.js";
 import { profileTabs } from "./history.js";
+import { DOC_STYLE, PROFILE_CV_STYLE, profileCvButtons } from "./docs.js";
 
 export const LEVELS = ["junior", "mid", "senior", "lead", "any"];
 export const EMPLOYMENT_TYPES = ["Permanent", "Contract", "Temporary", "Part-time", "Internship"];
@@ -360,7 +361,7 @@ export function sendSection(p, csrf, tz) {
 }
 
 export function profilePage(status, pid, csrf,
-  { done = "", error = "", queue = [], saving = false, draft = null, base = null, conflicts = [], code = 200 } = {}) {
+  { done = "", error = "", queue = [], saving = false, draft = null, base = null, conflicts = [], code = 200, cv = null } = {}) {
   const p = (status.profiles || []).find((x) => x.id === pid);
   if (!p) {
     return page("Recruit not found", '<p>HermitShell has not reported this recruit. <a href="/admin">Back to recruits</a></p>', { status: 404 });
@@ -368,7 +369,7 @@ export function profilePage(status, pid, csrf,
   const latest = latestValues(p, queue);
   const v = draft || latest;
   const message = error ? note(error, "bad") : done ? note(done) : "";
-  return page(p.name, `<style>${LINK_STYLE}</style>${profileTabs(pid, "manage")}
+  return page(p.name, `<style>${LINK_STYLE}${cv ? DOC_STYLE + PROFILE_CV_STYLE : ""}</style>${cv ? profileCvButtons(p, { csrf, ...cv }) : ""}${profileTabs(pid, "manage")}
 <p><a class="statlink" href="${STATS_URL}?u=${esc(pid)}">${icon("chart")}View stats</a></p>
 ${message}<iframe class="saving" src="${STATUS_URL}?u=${esc(pid)}${saving ? "&amp;n=1" : ""}" title="Save status"></iframe>
 ${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
@@ -405,7 +406,8 @@ ${sendSection(p, csrf, status.timezone)}
 <label for="cv">CV file</label><input id="cv" name="cv" type="file" accept=".pdf,.docx,.txt,.md">${hint("PDF, Word (.docx) or text, up to 5 MB.")}
 <label for="cv_text">Or paste the CV text</label><textarea id="cv_text" name="cv_text" maxlength="${MAX_CV_TEXT}"></textarea>
 <label for="roles">Roles you're after</label><input id="roles" name="roles" maxlength="300">${hint("Optional. Helps suggest job titles from the CV.")}
-<button>Upload CV</button></form>`, { wide: true, status: code, before: BACK_TO_RECRUITS, headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` } });
+<button>Upload CV</button></form>`, { wide: true, status: code, before: BACK_TO_RECRUITS, headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` },
+    refresh: cv?.busy ? 15 : 0, refreshTo: cv?.busy ? `/admin/profile?u=${pid}` : "" });
 }
 
 const WAIT_FAST = 12; // checks 5 seconds apart, then

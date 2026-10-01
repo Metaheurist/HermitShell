@@ -566,6 +566,72 @@ describe("AI models and the server panel", () => {
   });
 });
 
+describe("a recruit's own CV kept for download", () => {
+  const PDF = new TextEncoder().encode("%PDF-1.4\nprivate CV text\n%%EOF");
+  const API = { Authorization: "Bearer api-token" };
+  const keep = (env, params = {}, body = PDF, headers = API) => worker.fetch(new Request(`${BASE}/api/cv?${new URLSearchParams({
+    u: "sam-lee", name: "CV.pdf", ...params })}`, { method: "POST", headers, body }), env);
+  const reportedStatus = (env) => env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [
+    { id: "owner", owner: true, name: "Alex Morgan" }, { id: "sam-lee", name: "Sam Lee", has_cv: true }, { id: "riley-chen", name: "Riley Chen" }] }));
+
+  it("only takes a CV from HermitShell's API token, as a PDF within the size limit, for a real profile id", async () => {
+    const env = testEnv(ADMIN);
+    expect((await keep(env, {}, PDF, {})).status).toBe(401);
+    expect((await keep(env, {}, PDF, { Authorization: "Bearer wrong" })).status).toBe(401);
+    expect((await keep(env, {}, new TextEncoder().encode("<html><script>alert(1)</script>"))).status).toBe(400);
+    expect((await keep(env, {}, new Uint8Array(2 * 1024 * 1024 + 1).fill(37))).status).toBe(413);
+    for (const params of [{ u: "../owner" }, { u: "" }, { u: "Sam Lee" }]) expect((await keep(env, params)).status).toBe(400);
+    expect([...env.FEEDBACK.store.keys()].filter((k) => k.startsWith("cvpdf"))).toEqual([]);
+  });
+
+  it("stores it encrypted and bound to its recruit, so tampered or moved copies do not open", async () => {
+    const env = testEnv(ADMIN);
+    await reportedStatus(env);
+    await keep(env);
+    const stored = new Uint8Array(env.FEEDBACK.store.get("cvpdf:sam-lee"));
+    expect(new TextDecoder().decode(stored)).not.toContain("private CV text");
+    const cookie = await signIn(env, "203.0.113.40");
+    const download = (u = "sam-lee") => get(`/admin/cvpdf?u=${u}`, env, { Cookie: cookie });
+    expect((await download()).status).toBe(200);
+    const tampered = stored.slice();
+    tampered[tampered.length - 1] ^= 1;
+    env.FEEDBACK.store.set("cvpdf:sam-lee", tampered.buffer);
+    expect((await download()).status).toBe(303);
+    env.FEEDBACK.store.set("cvpdf:riley-chen", stored.buffer);
+    env.FEEDBACK.store.set("cvpdfinfo:riley-chen", env.FEEDBACK.store.get("cvpdfinfo:sam-lee"));
+    expect((await download("riley-chen")).status).toBe(303);
+  });
+
+  it("downloads only for a signed-in user, as an attachment that cannot run in the page", async () => {
+    const env = testEnv(ADMIN);
+    await reportedStatus(env);
+    await keep(env, { name: `CV"; filename=evil.html\r\n<script>.pdf` });
+    const anonymous = await get("/admin/cvpdf?u=sam-lee", env);
+    expect(await anonymous.text()).toContain("Admin sign-in");
+    const res = await get("/admin/cvpdf?u=sam-lee", env, { Cookie: await signIn(env, "203.0.113.41") });
+    const disposition = res.headers.get("Content-Disposition");
+    expect(disposition).toMatch(/^attachment; filename="[^"\r\n;]*"; filename\*=UTF-8''\S+$/);
+    expect(disposition).not.toMatch(/[\r\n<>]/);
+    expect(res.headers.get("Content-Security-Policy")).toBe("default-src 'none'; sandbox");
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+    expect((await get("/admin/cvpdf?u=../sam-lee", env, { Cookie: await signIn(env, "203.0.113.42") })).status).toBe(404);
+  });
+
+  it("needs a signed-in session and the form's CSRF token to ask for one, and never for the main admin", async () => {
+    const env = testEnv(ADMIN);
+    await reportedStatus(env);
+    const cookie = await signIn(env, "203.0.113.43");
+    const anonymous = await worker.fetch(new Request(`${BASE}/admin/cvpdf`, { method: "POST", body: new URLSearchParams({ csrf: "x", u: "sam-lee" }) }), env);
+    expect(await anonymous.text()).toContain("Admin sign-in");
+    const forged = await worker.fetch(new Request(`${BASE}/admin/cvpdf`, { method: "POST", headers: { Cookie: cookie },
+      body: new URLSearchParams({ csrf: "0".repeat(32), u: "sam-lee" }) }), env);
+    expect(forged.status).toBe(403);
+    expect([...env.FEEDBACK.store.keys()].filter((k) => k.startsWith("event:"))).toEqual([]);
+    expect(valuesWith(env, "history:")).toEqual([]);
+  });
+});
+
 describe("letters and CVs kept for download", () => {
   const PDF = new TextEncoder().encode("%PDF-1.4\nprivate letter text\n%%EOF");
   const API = { Authorization: "Bearer api-token" };

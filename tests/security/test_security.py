@@ -259,6 +259,30 @@ def test_letters_are_kept_on_the_worker_only_over_https_with_the_api_token(tmp_p
     assert "tok" not in str(kw["params"]) and "Sam Lee" not in str(kw["params"])
 
 
+def test_a_profiles_own_cv_goes_to_the_worker_only_over_https_with_the_api_token_and_is_encrypted_here(tmp_path,
+                                                                                                         monkeypatch):
+    import cover_letter
+    monkeypatch.setenv(hc.DATA_KEY_ENV, hc.new_data_key())
+    pdf = tmp_path / "cv.pdf"
+    hc.write_private(pdf, b"%PDF-1.4 private CV")
+    assert not pdf.read_bytes().startswith(b"%PDF")
+    posts = []
+    ok = type("Response", (), {"raise_for_status": lambda self: None})()
+    monkeypatch.setattr(cover_letter.requests, "post", lambda url, **kw: posts.append((url, kw)) or ok)
+    for url, token in (("http://fb.example.org", "tok"), ("https://fb.example.org", ""), ("", "tok"), ("ftp://x", "tok")):
+        monkeypatch.setenv("JOB_FEEDBACK_URL", url)
+        monkeypatch.setenv("JOB_FEEDBACK_API_TOKEN", token)
+        assert cover_letter.upload_profile_cv(pdf, "CV.pdf") == ""
+    assert posts == []
+    monkeypatch.setenv("JOB_FEEDBACK_URL", "https://fb.example.org/")
+    monkeypatch.setenv("JOB_FEEDBACK_API_TOKEN", "tok")
+    monkeypatch.setenv("JOB_PROFILE_ID", "sam-lee-456789")
+    assert cover_letter.upload_profile_cv(pdf, "CV.pdf") == ""
+    (url, kw), = posts
+    assert url == "https://fb.example.org/api/cv" and kw["headers"]["Authorization"] == "Bearer tok"
+    assert kw["params"] == {"u": "sam-lee-456789", "name": "CV.pdf"} and kw["data"] == b"%PDF-1.4 private CV"
+
+
 def test_stats_sent_to_the_worker_hold_no_notes_or_contact_details(tmp_path, monkeypatch):
     monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
     monkeypatch.setattr(profiles, "STATE_DIR", tmp_path / "state")

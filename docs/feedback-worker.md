@@ -72,10 +72,13 @@ email button ──> Worker /f (confirm page) ──> KV ──> HermitShell GET
   [Recruits](#recruits-and-the-admin-page).
 - **Size limits.** Request bodies are capped (answers and status reports at a few KB, sign-ups at
   the CV limit), and uploaded CVs are checked to really be a PDF, .docx or text file. Letters and
-  CVs kept for download (`POST /api/doc`) must be a PDF of at most 2 MB.
+  CVs kept for download (`POST /api/doc`, and a recruit's own CV through `POST /api/cv`) must be a PDF
+  of at most 2 MB.
 - **Short-lived data.** Answers are deleted once HermitShell has saved them, and expire after 30 days
   in any case. Only the job key, action, optional note and time are stored. Letters and CVs kept for
-  download are encrypted and deleted after `COVER_LETTER_KEEP_DAYS` (7 by default). Jobs emailed
+  download are encrypted and deleted after `COVER_LETTER_KEEP_DAYS` (7 by default); a recruit's own CV
+  made with **Generate** is kept encrypted until the next one replaces it or they unsubscribe or are
+  deleted. Jobs emailed
   from the dashboard (`POST /api/emailed`) are kept as a hash of the job key and a time, for 90 days.
 - **No outside content, and one script of its own.** Every page's Content-Security-Policy blocks
   anything loaded from elsewhere and all inline script. The HermitShell mark at the top of each page is
@@ -731,6 +734,18 @@ button; **Send jobs now** and the CV's **Upload CV** have their own.
 - **CV**: upload a PDF, Word or text file, or paste it. HermitShell reads it, rebuilds the profile and
   skills the jobs are rated against, and emails a summary. Your previous `job_profile.md` and
   `cv_keywords.json` are kept as `.bak` copies.
+
+**Their own CV.** Two buttons at the top right of the card download and make the recruit's CV as a PDF.
+**Generate** asks HermitShell to lay out the CV they uploaded, every role included and not tailored to any
+job; it spins as **Generating…** (the page checks again every 15 seconds) until the PDF is back, usually
+within a few minutes. HermitShell uploads it to the Worker (`POST /api/cv`, with the API token) instead of
+emailing it. **CV** only appears once one has been made, and downloads it as `CV - <name>.pdf`. The CV is
+kept encrypted in KV with no expiry: pressing **Generate** again replaces it, and it is deleted when the
+recruit unsubscribes or is deleted. A recruit with no uploaded CV has **Generate** greyed out.
+
+<table><tr><th>Generate pressed</th><th>Made and kept</th></tr>
+<tr><td><img src="images/worker/admin-profile-cv-making.png" alt="A recruit's page with Generating and a spinner at the top right while their CV is being made" width="360"></td>
+<td><img src="images/worker/admin-profile-cv.png" alt="A recruit's page with a green CV download button beside Generate at the top right" width="360"></td></tr></table>
 
 **Saving without losing anything.** The Worker can't reach your server, so a save waits in KV until
 `profiles.py` collects it: a second or two after the live link tells it, or at its next poll

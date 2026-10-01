@@ -8,6 +8,14 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A recruit's own CV.** A recruit's page has two buttons at the top right of the card. **Generate**
+  (with the CV icon) asks HermitShell to lay out the CV they uploaded as a PDF, every role included and not
+  tailored to a job, and spins until it is made. **CV** (with a download icon) only shows once one has been
+  made and downloads it. HermitShell uploads the PDF to the Worker (`POST /api/cv`, API token, PDF of at
+  most 2 MB) instead of emailing it; the Worker keeps it encrypted with no expiry until **Generate**
+  replaces it or the recruit unsubscribes or is deleted. Generate is greyed out without an uploaded CV.
+  The request shows on Tasks and History, can be cancelled, and works in demo mode.
+
 - **Theme and branding.** Admins get a palette button at the top right, beside the server button, that
   opens `/admin/theme`. It sets a name and logo (PNG, JPEG, GIF or WebP up to 200 KB, checked by content;
   SVG refused) shown on every page and optionally as the tab icon, one of eight palettes or two custom

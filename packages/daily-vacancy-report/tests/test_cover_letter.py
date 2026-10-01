@@ -505,3 +505,82 @@ def test_a_tailored_cv_uses_the_jobs_evidence_map_and_its_email_says_what_it_cov
     assert "Covers 2 of the 2 requirements your CV shows: Python, Airflow pipelines" in preview
     assert "The advert also asks for, not shown in your CV: Kubernetes" in preview
 
+
+# --------------------------------------------------------------------------- the profile's own CV
+
+EMPLOYERS = ("Northwind", "Contoso", "Fabrikam", "Proseware", "Litware", "Tailspin", "Wingtip")
+
+
+@pytest.fixture
+def own_cv(kept, tmp_path, monkeypatch):
+    """Seven roles with three bullets each, more than any tailored CV keeps, and the profile CV saved under tmp."""
+    tracker, sent, uploads, written = kept
+    monkeypatch.setattr(cover_letter, "PROFILE_CV_FILE", tmp_path / "cv.pdf")
+    master = {"headline": "Data engineer", "summary": "Data engineer building pipelines.", "skills": ["Python", "SQL"],
+              "projects": [{"name": "Route planner", "description": "A planner for delivery rounds."}],
+              "education": [{"qualification": "MSc Data Analytics", "institution": "", "dates": "", "details": ""}],
+              "certifications": [], "source_text": CV,
+              "experience": [{"title": f"Engineer {n}", "employer": employer, "start": str(2010 + n), "end": str(2011 + n),
+                              "location": "", "bullets": [f"Built pipeline {n}{b} for {employer}" for b in "abc"]}
+                             for n, employer in enumerate(EMPLOYERS)]}
+    read = []
+    monkeypatch.setattr(cover_letter.tailored_cv, "master_cv", lambda factory, tracker: read.append(1) or dict(master))
+    yield tracker, sent, uploads, read
+
+
+def test_the_profiles_own_cv_lays_out_every_role_and_is_kept_on_the_worker_not_emailed(own_cv):
+    tracker, sent, uploads, read = own_cv
+    assert tracker.add_event("e1", "profile:cv", "profile_cv", flags="quiet,fresh")
+    lines = cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    assert lines == ["CV made for download for the profile"] and sent == []
+    (url, params, data, headers), = uploads
+    assert url == "https://fb.example.org/api/cv" and params == {"u": "owner", "name": "CV - Sam Taylor.pdf"}
+    assert headers["Content-Type"] == "application/pdf" and data.startswith(b"%PDF")
+    text = page_text(data)
+    for n, employer in enumerate(EMPLOYERS):
+        assert employer in text and all(f"Built pipeline {n}{b}" in text for b in "abc")
+    assert "MSc Data Analytics" in text and "Route planner" in text and "Sam Taylor" in text
+    assert cover_letter.PROFILE_CV_FILE.read_bytes() == data
+    assert tracker.pending_letters(action="profile_cv") == [] and tracker.open_requests() == []
+
+
+def test_each_generate_makes_a_new_profile_cv_that_replaces_the_last(own_cv, monkeypatch):
+    tracker, sent, uploads, read = own_cv
+    monkeypatch.setenv("JOB_PROFILE_ID", "sam-lee-456789")
+    tracker.add_event("e1", "profile:cv", "profile_cv", flags="quiet,fresh")
+    cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    tracker.add_event("e2", "profile:cv", "profile_cv", flags="quiet,fresh", at=time.time() + 1)
+    lines = cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    assert lines == ["CV made for download for the profile"] and len(read) == 2 and len(uploads) == 2
+    assert uploads[-1][1]["u"] == "sam-lee-456789" and list(cover_letter.PROFILE_CV_FILE.parent.glob("cv*.pdf")) == [
+        cover_letter.PROFILE_CV_FILE]
+
+
+def test_a_profile_cv_the_worker_did_not_get_is_tried_again_then_given_up(own_cv, monkeypatch):
+    tracker, sent, uploads, read = own_cv
+
+    def down(*args, **kwargs):
+        raise cover_letter.requests.ConnectionError("worker down")
+    monkeypatch.setattr(cover_letter.requests, "post", down)
+    tracker.add_event("e1", "profile:cv", "profile_cv", flags="quiet,fresh")
+    lines = cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    assert lines == ["CV will retry for the profile: could not keep the CV on the Worker for download: "
+                     "feedback Worker unreachable (ConnectionError)"]
+    assert [r["attempts"] for r in tracker.pending_letters(action="profile_cv")] == [1]
+    cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    assert cover_letter.process_pending(tracker, lambda: ("h", "m", None))[0].startswith("CV failed for the profile")
+    assert tracker.pending_letters(action="profile_cv") == [] and sent == []
+
+
+def test_a_profile_cv_needs_a_cv_and_says_so(kept, tmp_path, monkeypatch):
+    tracker, sent, uploads, written = kept
+    monkeypatch.setattr(cover_letter, "PROFILE_CV_FILE", tmp_path / "cv.pdf")
+
+    def none(factory, tracker):
+        raise FileNotFoundError("no CV found (upload one on the dashboard, or set COVER_LETTER_CV_FILE)")
+    monkeypatch.setattr(cover_letter.tailored_cv, "master_cv", none)
+    tracker.add_event("e1", "profile:cv", "profile_cv", flags="quiet,fresh")
+    lines = cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    assert lines[0].startswith("CV will retry for the profile: FileNotFoundError: no CV found")
+    assert uploads == [] and not cover_letter.PROFILE_CV_FILE.exists()
+

@@ -36,6 +36,29 @@ test("a tailored CV being made keeps its circle turning while the page waits, an
   expect(motion).toEqual({ turning: true, entrances: 0 });
 });
 
+test("a recruit's own CV: Generate spins until it is made, then CV downloads it and stays beside Generate", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/admin/settings");
+  await page.getByRole("switch", { name: "Demo mode" }).press("Enter");
+  await expect(page).toHaveURL(/done=demo_on#demo$/);
+  await page.goto("/admin/profile?u=avery-lane");
+  const corner = page.locator("main > .pcv");
+  await expect(corner.getByRole("link", { name: "CV" })).toHaveCount(0);
+  const heading = await page.locator("main > h1").boundingBox();
+  const box = await corner.boundingBox();
+  expect(box.y).toBeLessThan(heading.y + heading.height);
+  await corner.getByRole("button", { name: "Generate" }).click();
+  await expect(page).toHaveURL(/done=cvmaking/);
+  await expect(corner.locator(".pcvbtn.busy .dspin")).toBeVisible();
+  const cv = page.locator("main > .pcv").getByRole("link", { name: "CV" });
+  await expect(cv).toBeVisible({ timeout: 30000 });
+  await expect(page.locator("main > .pcv").getByRole("button", { name: "Generate" })).toBeVisible();
+  const [file] = await Promise.all([page.waitForEvent("download"), cv.click()]);
+  expect(file.suggestedFilename()).toBe("CV - Avery Lane.pdf");
+  await page.reload();
+  await expect(page.locator("main > .pcv").getByRole("link", { name: "CV" })).toBeVisible();
+});
+
 test("demo mode fills the dashboard with made-up recruits, plays presses out without queuing them and turns off again", async ({ page, request }) => {
   await signIn(page);
   await page.goto("/admin/settings");

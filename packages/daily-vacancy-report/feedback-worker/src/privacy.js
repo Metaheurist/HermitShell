@@ -22,14 +22,15 @@ button you pressed on it), never your notes, until HermitShell next reports that
 what was done for you (changes to your profile, the requests and buttons you or the operator pressed with each job's title,
 and the reports that ran), never your notes, until you unsubscribe or are deleted. Only the operator's admins
 and your recruiter (the person who invited you, unless the operator moves you to another) can sign in to that page. Cover letters and
-tailored CVs made for you are also kept there, encrypted, for 7 days so they can be downloaded again, and when the
+tailored CVs made for you are also kept there, encrypted, for 7 days so they can be downloaded again, and a CV made from
+the one you uploaded is kept there, encrypted, until a new one replaces it or you unsubscribe. When the
 operator emails you a job from that list, the time it was sent is kept for 90 days (with a scrambled form of the job's
 link, not the link itself). Job searches send
 job titles and a location to web search services, never your CV or contact details. Emails go through the operator's
 email provider.`],
   ["How long", `Everything is kept while you are subscribed, except that by default jobs, answers, letters and CVs
 older than 12 months and logs older than 90 days are deleted, and letters and CVs kept for download on Cloudflare are
-deleted after 7 days. Encrypted nightly backups are kept for about two
+deleted after 7 days (the CV made from yours, when the next one replaces it). Encrypted nightly backups are kept for about two
 months (14 daily and 8 weekly copies), then deleted.`],
   ["How it is protected", `Every connection uses HTTPS. On the server your files are readable only by HermitShell's
 account and, when the operator has turned encryption on, your CV, profile, letters and CVs are encrypted

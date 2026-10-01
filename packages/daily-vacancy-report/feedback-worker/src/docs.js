@@ -17,15 +17,23 @@
 //
 // A skill the job's card showed as missing from the CV can be added from the list too: it is stored as the email's
 // "Add to my skills" answer, and "skilladd:<id>" remembers it until HermitShell's stats list it with the others.
+//
+// A recruit's own CV, not tailored to any job, is the profile page's Generate (a "profile_cv" request) and CV (its
+// download). HermitShell lays out every role from the CV they uploaded and sends it to POST /api/cv; it is encrypted
+// the same way and kept with no expiry, one per recruit, until the next one replaces it or they unsubscribe or are
+// deleted (purgeProfileEvents).
 
 import {
   CONTROL_RE, EVENT_TTL_SECONDS, SECURITY_HEADERS, ago, cleanSkill, docIndexKey, docKey, emailedKey, esc, eventFlag, eventPrefix, json,
-  limitedBytes, setFlag, sha256Hex, skillAddKey, PROFILE_RE,
+  limitedBytes, profileCvInfoKey, profileCvKey, setFlag, sha256Hex, skillAddKey, PROFILE_RE,
 } from "./lib.js";
 import { rememberRequest } from "./tasks.js";
 
 export const DOC_URL = "/admin/doc";
 export const SKILL_URL = "/admin/skill";
+export const CV_URL = "/admin/cvpdf";
+export const PROFILE_CV = "profile_cv";
+export const PROFILE_CV_JOB = "profile:cv";
 export const DOC_KINDS = { cover_letter: "Cover letter", tailored_cv: "Tailored CV" };
 export const REQUEST_KINDS = { ...DOC_KINDS, send_job: "Job email" };
 const REQUEST_CODES = { cover_letter: "c", tailored_cv: "v", send_job: "m" };
@@ -88,7 +96,7 @@ export async function jobHash(j) {
 function cleanName(name, kind) {
   const base = String(name || "").replace(/[\u0000-\u001f\u007f\\/:*?"<>|]+/g, "").replace(/\s+/g, " ").trim().replace(/\.pdf$/i, "")
     .slice(0, 116).trim();
-  return `${base || DOC_KINDS[kind]}.pdf`;
+  return `${base || DOC_KINDS[kind] || "CV"}.pdf`;
 }
 
 async function cipher(secret) {
@@ -123,37 +131,97 @@ export async function storeDoc(request, env) {
   if (!env.JOB_FEEDBACK_SECRET) return json({ error: "not configured" }, 503);
   const body = await limitedBytes(request, MAX_DOC_BYTES);
   if (!body) return json({ error: "too large" }, 413);
-  if (body.length < 8 || new TextDecoder().decode(body.subarray(0, 5)) !== "%PDF-") return json({ error: "not a PDF" }, 400);
+  if (!isPdf(body)) return json({ error: "not a PDF" }, 400);
   const h = await jobHash(j);
   const key = docKey(u, kind, h);
-  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
-  const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: encoder.encode(key) },
-    await cipher(env.JOB_FEEDBACK_SECRET), body));
-  const stored = new Uint8Array(IV_BYTES + sealed.length);
-  stored.set(iv);
-  stored.set(sealed, IV_BYTES);
   const at = Date.now();
-  await env.FEEDBACK.put(key, stored.buffer, { expirationTtl: days * 86400 });
+  await env.FEEDBACK.put(key, await sealPdf(env, key, body), { expirationTtl: days * 86400 });
   const index = (await docIndex(env, u, at)).filter((d) => !(d.k === kind && d.h === h));
   index.push({ k: kind, h, name: cleanName(q("name"), kind), at, exp: at + days * 86400000 });
   await env.FEEDBACK.put(docIndexKey(u), JSON.stringify(index.slice(-MAX_INDEX)), { expirationTtl: MAX_DOC_DAYS * 86400 });
   return json({ saved: true });
 }
 
+function isPdf(body) {
+  return body.length >= 8 && new TextDecoder().decode(body.subarray(0, 5)) === "%PDF-";
+}
+
+// The PDF encrypted and bound to the KV key it is stored under: a random IV, then the AES-GCM ciphertext.
+async function sealPdf(env, key, body) {
+  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
+  const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: encoder.encode(key) },
+    await cipher(env.JOB_FEEDBACK_SECRET), body));
+  const stored = new Uint8Array(IV_BYTES + sealed.length);
+  stored.set(iv);
+  stored.set(sealed, IV_BYTES);
+  return stored.buffer;
+}
+
+// The PDF stored under `key`, decrypted, or null when there is none or it does not open as that key's.
+async function openPdf(env, key) {
+  const stored = env.JOB_FEEDBACK_SECRET ? await env.FEEDBACK.get(key, "arrayBuffer") : null;
+  if (!stored || stored.byteLength <= IV_BYTES) return null;
+  const bytes = new Uint8Array(stored);
+  try {
+    return await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.subarray(0, IV_BYTES), additionalData: encoder.encode(key) },
+      await cipher(env.JOB_FEEDBACK_SECRET), bytes.subarray(IV_BYTES));
+  } catch {
+    return null;
+  }
+}
+
 // A kept document, decrypted: { bytes, name, at }, or null when there is none (or it does not open).
 export async function readDoc(env, profile, kind, h) {
   if (!DOC_KINDS[kind] || !HASH_RE.test(h || "") || !env.JOB_FEEDBACK_SECRET) return null;
   const entry = (await docIndex(env, profile)).find((d) => d.k === kind && d.h === h);
-  const stored = entry ? await env.FEEDBACK.get(docKey(profile, kind, h), "arrayBuffer") : null;
-  if (!stored || stored.byteLength <= IV_BYTES) return null;
-  const bytes = new Uint8Array(stored);
-  try {
-    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.subarray(0, IV_BYTES), additionalData: encoder.encode(docKey(profile, kind, h)) },
-      await cipher(env.JOB_FEEDBACK_SECRET), bytes.subarray(IV_BYTES));
-    return { bytes: plain, name: entry.name, at: entry.at };
-  } catch {
-    return null;
-  }
+  const bytes = entry ? await openPdf(env, docKey(profile, kind, h)) : null;
+  return bytes ? { bytes, name: entry.name, at: entry.at } : null;
+}
+
+// POST /api/cv?u=<id>&name=<file name>, the PDF as the body (HermitShell's API token): the recruit's own CV,
+// replacing the one before, kept until the next or until they unsubscribe or are deleted.
+export async function storeProfileCv(request, env) {
+  const url = new URL(request.url);
+  const u = url.searchParams.get("u") || "";
+  if (!PROFILE_RE.test(u)) return json({ error: "bad profile" }, 400);
+  if (!env.JOB_FEEDBACK_SECRET) return json({ error: "not configured" }, 503);
+  const body = await limitedBytes(request, MAX_DOC_BYTES);
+  if (!body) return json({ error: "too large" }, 413);
+  if (!isPdf(body)) return json({ error: "not a PDF" }, 400);
+  await env.FEEDBACK.put(profileCvKey(u), await sealPdf(env, profileCvKey(u), body));
+  await env.FEEDBACK.put(profileCvInfoKey(u), JSON.stringify({ name: cleanName(url.searchParams.get("name"), PROFILE_CV), at: Date.now() }));
+  return json({ saved: true });
+}
+
+// The recruit's own CV's file name and when it was made, { name, at }, or null when none is kept.
+export async function profileCvInfo(env, profile) {
+  if (!PROFILE_RE.test(profile || "")) return null;
+  const info = await env.FEEDBACK.get(profileCvInfoKey(profile), "json");
+  return info && typeof info.name === "string" && Number.isFinite(info.at) ? { name: info.name, at: info.at } : null;
+}
+
+export async function readProfileCv(env, profile) {
+  const info = await profileCvInfo(env, profile);
+  const bytes = info ? await openPdf(env, profileCvKey(profile)) : null;
+  return bytes ? { bytes, ...info } : null;
+}
+
+// Generate on the profile page, stored as a dashboard request is. A double press in the same minute makes one.
+export async function requestProfileCv(env, profile) {
+  const at = Date.now();
+  const event = { j: PROFILE_CV_JOB, a: PROFILE_CV, r: "", at, via: "dashboard", fresh: 1, u: profile,
+    id: `${eventPrefix(profile)}dash-cv:p${Math.floor(at / 60000)}` };
+  await Promise.all([
+    env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS }),
+    setFlag(env, eventFlag(profile), EVENT_TTL_SECONDS),
+    rememberRequest(env, event, "Their CV", EVENT_TTL_SECONDS),
+  ]);
+}
+
+// Whether the recruit's own CV is being made: asked for and not yet collected, or on HermitShell's task list.
+export function profileCvBusy(status, held, profile) {
+  return (Array.isArray(status.tasks) ? status.tasks : []).some((t) => t && t.u === profile && t.kind === PROFILE_CV)
+    || held.some((r) => r && r.u === profile && r.a === PROFILE_CV);
 }
 
 // When each job was last emailed from the dashboard: [{ h, at }], newest last.
@@ -266,6 +334,39 @@ const DOC_ICONS = {
 function docIcon(kind) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${DOC_ICONS[kind]}</svg>`;
 }
+
+const DOWNLOAD_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>';
+
+// The profile page's two buttons, top right: CV downloads their own CV (only once one has been made) and Generate
+// makes a new one from the CV they uploaded (a spinner while it is being made; off until a CV is uploaded).
+// `ctx` has the CSRF token, the kept CV's info (or null) and whether one is being made.
+export function profileCvButtons(p, ctx) {
+  const kept = ctx.info ? `<a class="pcvbtn dl" href="${CV_URL}?u=${esc(p.id)}" download title="Download their CV, made ${esc(ago(ctx.info.at))}">${DOWNLOAD_ICON}CV</a>` : "";
+  const make = ctx.busy
+    ? `<span class="pcvbtn busy" role="status">${docIcon("tailored_cv")}Generating&hellip;<span class="dspin" aria-hidden="true"></span></span>`
+    : p.has_cv === false
+      ? `<button class="pcvbtn" disabled title="Upload a CV first">${docIcon("tailored_cv")}Generate</button>`
+      : `<form method="post" action="${CV_URL}"><input type="hidden" name="csrf" value="${esc(ctx.csrf)}"><input type="hidden" name="u" value="${esc(p.id)}">
+<button class="pcvbtn" title="${ctx.info ? "Make a new CV from the one uploaded; it replaces the one kept" : "Make a CV from the one uploaded, with every role, to download"}">${docIcon("tailored_cv")}Generate</button></form>`;
+  return `<div class="pcv">${kept}${make}</div>`;
+}
+
+export const PROFILE_CV_STYLE = `
+main{position:relative}
+.pcv{position:absolute;top:28px;right:32px;display:flex;gap:8px;align-items:center}
+main:has(>.pcv)>h1{padding-right:230px}
+.pcv form{margin:0}
+.pcvbtn{display:inline-flex;align-items:center;gap:7px;margin:0;height:38px;padding:0 14px 0 10px;border-radius:12px;font:inherit;font-size:13.5px;
+font-weight:650;white-space:nowrap;text-decoration:none;color:var(--brand-ink);background:var(--soft);border:0;box-shadow:none;cursor:pointer;
+transition:transform .15s var(--ease),background .15s,filter .15s}
+.pcvbtn svg{flex:none;width:19px;height:19px}
+button.pcvbtn:hover{background:#e2e5ff;transform:translateY(-1px);filter:none;box-shadow:none}
+button.pcvbtn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+a.pcvbtn.dl{color:#fff;background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 8px 18px -10px rgba(5,150,105,.8)}
+a.pcvbtn.dl:hover{color:#fff;filter:brightness(1.05);transform:translateY(-1px)}
+.pcvbtn.busy{cursor:default;padding-right:10px}
+@media (max-width:640px){.pcv{position:static;margin:4px 0 12px}main:has(>.pcv)>h1{padding-right:0}}
+`;
 
 // One job's letter and CV on the dashboard's list of jobs sent: Download, Email and Regenerate when one is kept, a
 // spinner while one is being made or emailed, Generate otherwise. Then the job emailed to the profile: Send, a

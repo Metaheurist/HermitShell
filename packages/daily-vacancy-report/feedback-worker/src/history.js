@@ -36,7 +36,7 @@ const PATHS = {
 const KINDS = {
   details: ["edit", "brand"], job: ["edit", "brand"], report_time: ["clock", "brand"], send: ["send", "violet"],
   report: ["send", "violet"], pause: ["pause", "amber"], resume: ["play", "green"], assign: ["person", "teal"],
-  cv: ["doc", "blue"], cv_read: ["doc", "blue"], cover_letter: ["doc", "brand"], tailored_cv: ["doc", "brand"],
+  cv: ["doc", "blue"], cv_read: ["doc", "blue"], cover_letter: ["doc", "brand"], tailored_cv: ["doc", "brand"], profile_cv: ["doc", "green"],
   send_job: ["mail", "brand"], skill: ["star", "amber"], answer: ["reply", "slate"], cancel: ["cross", "slate"],
 };
 

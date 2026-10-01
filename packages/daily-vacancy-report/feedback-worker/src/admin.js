@@ -33,8 +33,8 @@ import { needsSeal, sealInfo, sealItem } from "./seal.js";
 import { PALETTE_ICON, THEME_URL, readTheme, themePage, themeRequest } from "./theme.js";
 import { SEARCH_STYLE, matchesProfile, noMatch, recruiterHits, recruiterRow, searchBar, searchQuery } from "./search.js";
 import {
-  DOC_URL, REQUEST_KINDS, SKILL_URL, addedSkills, docIndex, emailedIndex, letterStyle, markEmailed, pdfResponse, pendingDocs, readDoc,
-  requestDoc, requestSkill, storeDoc, styleLabel, validJobKey,
+  CV_URL, DOC_URL, REQUEST_KINDS, SKILL_URL, addedSkills, docIndex, emailedIndex, letterStyle, markEmailed, pdfResponse, pendingDocs, profileCvBusy,
+  profileCvInfo, readDoc, readProfileCv, requestDoc, requestProfileCv, requestSkill, storeDoc, storeProfileCv, styleLabel, validJobKey,
 } from "./docs.js";
 import { LINK_STYLE, MAX_STATS_BYTES, SENT_RANGES, SENT_URL, STATS_URL, sentPage, splitStats, statsLink, statsPage, validStats } from "./stats.js";
 import { TASKS_STYLE, TASKS_URL, cancelTask, requests, taskRows, tasksButton, tasksModal, tasksPage } from "./tasks.js";
@@ -67,6 +67,9 @@ const DONE = {
   badcurrent: "Your current password was wrong, so nothing changed.",
   pwlocked: "Too many wrong current passwords. Try again in 15 minutes.",
   mainpass: "The main admin's password is the ADMIN_PASSWORD secret; change it with wrangler.",
+  cvmaking: "HermitShell is making their CV from the one uploaded. The CV button downloads it once it is ready, usually within a few minutes.",
+  cvnone: "Upload a CV first: their CV is made from it.",
+  cvgone: "Their CV is no longer kept. Generate makes a new one.",
   ...SETTINGS_DONE,
   ...DEMO_DONE,
   badpass: USERS_DONE.badpass,
@@ -427,6 +430,7 @@ async function tasksAction(request, env, s) {
 
 // A cancelled task as the recruit's history tells it.
 function cancelNote(t) {
+  if (t.kind === "profile_cv") return "Cancelled their CV";
   const what = { cover_letter: "cover letter", tailored_cv: "tailored CV", send_job: "job email" }[t.kind];
   if (what) return `Cancelled the ${what}: ${t.title || "a job"}`;
   if (t.kind === "report") return "Stopped the job report";
@@ -492,6 +496,34 @@ async function docDownload(request, env, s) {
   const doc = await readDoc(env, u, kind, h);
   if (doc) return pdfResponse(doc);
   return redirect(`${SENT_URL}?u=${u}&r=7${/^[0-9a-f]{32}$/.test(h) ? `&open=${h.slice(0, 16)}` : ""}&done=docgone${/^[0-9a-f]{32}$/.test(h) ? `#job-${h.slice(0, 16)}` : ""}`);
+}
+
+// The profile page's Generate: their own CV, from the one they uploaded (admins, and a recruiter for their own pool).
+async function profileCvRequest(request, env, s) {
+  const form = await limitedForm(request, 4096);
+  if (!form || !safeEqual(String(form.get("csrf") || ""), s.csrf)) {
+    return page("Expired form", "<p>Reload the admin page and try again.</p>", { status: 403 });
+  }
+  const u = String(form.get("u") || "");
+  if (!PROFILE_RE.test(u)) return page("Unknown recruit", "<p>Reload the admin page and try again.</p>", { status: 400 });
+  const [current, held] = await Promise.all([status(env), requests(env)]);
+  const p = visible(s, current, u);
+  if (!p || p.owner) return page(...NOT_FOUND);
+  if (p.has_cv === false) return redirect(`/admin/profile?u=${u}&done=cvnone`);
+  if (!profileCvBusy(current, held, u)) {
+    await requestProfileCv(env, u);
+    await record(env, u, "profile_cv", "Asked for their CV", { by: displayName(s.me, current) });
+  }
+  return redirect(`/admin/profile?u=${u}&done=cvmaking`);
+}
+
+async function profileCvDownload(request, env, s) {
+  const u = new URL(request.url).searchParams.get("u") || "";
+  if (!PROFILE_RE.test(u)) return text("Not found", 404);
+  const p = visible(s, await status(env), u);
+  if (!p || p.owner) return text("Not found", 404);
+  const doc = await readProfileCv(env, u);
+  return doc ? pdfResponse(doc) : redirect(`/admin/profile?u=${u}&done=cvgone`);
 }
 
 async function action(request, env, s) {
@@ -722,12 +754,14 @@ async function signedInRoute(request, env, s, path) {
   const url = new URL(request.url);
   const u = url.searchParams.get("u") || "";
   if (path === "/admin/profile" && request.method === "GET") {
-    const [current, queue] = await Promise.all([status(env), queued(env)]);
+    const [current, queue, held, info] = await Promise.all([status(env), queued(env), requests(env), profileCvInfo(env, u)]);
     if (!allowed(s, current, u)) return page(...NOT_FOUND);
     const done = url.searchParams.get("done");
     return profilePage(current, u, s.csrf,
-      { done: DONE[done] || "", queue, saving: ["saved", "cvqueued", "sending"].includes(done) });
+      { done: DONE[done] || "", queue, saving: ["saved", "cvqueued", "sending"].includes(done), cv: { info, busy: profileCvBusy(current, held, u) } });
   }
+  if (path === CV_URL && request.method === "GET") return profileCvDownload(request, env, s);
+  if (path === CV_URL && request.method === "POST") return profileCvRequest(request, env, s);
   if (path === HISTORY_URL && request.method === "GET") {
     if (!PROFILE_RE.test(u)) return text("Not found", 404);
     const current = await status(env);
@@ -821,6 +855,8 @@ export async function handleApi(request, env) {
   }
   // A cover letter or tailored CV HermitShell has made, kept encrypted for download (docs.js).
   if (url.pathname === "/api/doc" && request.method === "POST") return storeDoc(request, env);
+  // A recruit's own CV, made from the one they uploaded, kept until the next replaces it (docs.js).
+  if (url.pathname === "/api/cv" && request.method === "POST") return storeProfileCv(request, env);
   // A job emailed to its profile from the list of jobs sent (job_mail.py), for its "Emailed" mark there.
   if (url.pathname === "/api/emailed" && request.method === "POST") return markEmailed(request, env);
   if (url.pathname === "/api/invite" && request.method === "POST") {

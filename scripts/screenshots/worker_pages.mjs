@@ -314,6 +314,15 @@ await save("admin-delete-modal", await withOpenModal("/admin", "del-jordan-patel
 await save("admin-global-key-modal", await withOpenModal("/admin/settings", "gkey-scrapfly"));
 await save("admin-profile", await framed(await admin("/admin/profile?u=avery-lane"), admin));
 await save("admin-profile-scanning", await framed(await admin("/admin/profile?u=sam-lee"), admin));
+// The profile page's own CV: Generate pressed (being made), then the one made and kept.
+await admin("/admin/cvpdf", { method: "POST", form: { csrf, u: "avery-lane" } });
+await save("admin-profile-cv-making", new Response((await (await framed(await admin("/admin/profile?u=avery-lane&done=cvmaking"), admin)).text())
+  .replace(/<meta http-equiv="refresh"[^>]*>/, "")));
+const making = (await env.FEEDBACK.get("tasks:requests", "json")).find((r) => r.a === "profile_cv");
+await admin("/admin/tasks", { method: "POST", form: { csrf, task: making.id } });
+await worker.fetch(new Request(`${BASE}/api/cv?${new URLSearchParams({ u: "avery-lane", name: "CV - Avery Lane.pdf" })}`, { method: "POST",
+  headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/pdf" }, body: "%PDF-1.4\n%%EOF" }), env, {});
+await save("admin-profile-cv", await framed(await admin("/admin/profile?u=avery-lane"), admin));
 await save("admin-settings", await admin("/admin/settings"));
 // Firecrawl's card pressed open: its main and backup keys with what is left of each.
 await save("admin-settings-key-usage", new Response((await (await admin("/admin/settings")).text())
