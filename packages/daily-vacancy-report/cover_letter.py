@@ -26,6 +26,10 @@ questions they are likely to ask, answers in STAR form built only from the job's
 them. It is checked as letters are (figures, placeholders, stock phrases), rewritten once if it fails, and sent with
 a "check before use" line if it still does. It is emailed and kept for download as letters are.
 
+With DOC_WORD_COPIES=1 (Global settings, Features) each letter, tailored CV and prep pack also gets a Word copy
+(letter_docx.py), saved beside the PDF and attached to the same email. A Worker that has them (protocol 5) gets the
+PDF and the Word copy in one upload, kept as one value, so it costs no extra KV writes.
+
     python3 cover_letter.py                         # fetch requests from the Worker and send them
     python3 cover_letter.py --job KEY [--note ...]  # write a letter for a tracked job now
     python3 cover_letter.py --job KEY --length short --tone warm   # choose its length and tone
@@ -64,6 +68,7 @@ from hermes_common import (EMAIL_HEAD, STATE_DIR, connect_model, env, env_int, l
 from job_tracker import REQUEST_ACTIONS, Tracker, secure_base, skills_text, sync_feedback
 from job_extras import compact_profile
 import writing_checks
+from letter_docx import DOCX_MIME, cv_docx, letter_docx, prep_docx
 from letter_pdf import cv_pdf, letter_pdf, prep_pdf
 from writing_checks import letter_problems
 
@@ -79,6 +84,7 @@ SEND_JOB = "send_job"
 INTERVIEW_PREP = "interview_prep"
 PROFILE_CV = "profile_cv"
 PROFILE_CV_FILE = STATE_DIR / "cv.pdf"
+BUNDLE_MAGIC = b"HSD1"
 LOCK_FILE = STATE_DIR / "cover_letter.lock"
 # The request being written right now, so the dashboard can show it and stop it (profiles.cancel_task).
 WRITING_FILE = STATE_DIR / profiles.WRITING_NAME
@@ -400,12 +406,37 @@ def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40] or "job"
 
 
-def build_pdf(job: dict, name: str, paragraphs: list[str], when: datetime) -> bytes:
+def _letter_parts(job: dict, name: str, paragraphs: list[str], when: datetime) -> tuple[tuple, dict]:
     recipient = [line for line in ("Hiring Manager", employer(job), job.get("location", "")) if line]
-    return letter_pdf(name, env("COVER_LETTER_CONTACT", "") or "", f"{when.day} {when:%B %Y}", recipient,
-                      f"Application for {job_title(job)}", "Dear Hiring Manager,",
-                      paragraphs, env("COVER_LETTER_SIGN_OFF", "Kind regards,") or "Kind regards,",
-                      title=f"Cover letter: {job_title(job)}" + (f" - {name}" if name else ""))
+    return ((name, env("COVER_LETTER_CONTACT", "") or "", f"{when.day} {when:%B %Y}", recipient,
+             f"Application for {job_title(job)}", "Dear Hiring Manager,",
+             paragraphs, env("COVER_LETTER_SIGN_OFF", "Kind regards,") or "Kind regards,"),
+            {"title": f"Cover letter: {job_title(job)}" + (f" - {name}" if name else "")})
+
+
+def build_pdf(job: dict, name: str, paragraphs: list[str], when: datetime) -> bytes:
+    args, kwargs = _letter_parts(job, name, paragraphs, when)
+    return letter_pdf(*args, **kwargs)
+
+
+def build_docx(job: dict, name: str, paragraphs: list[str], when: datetime) -> bytes:
+    args, kwargs = _letter_parts(job, name, paragraphs, when)
+    return letter_docx(*args, **kwargs)
+
+
+def word_copies() -> bool:
+    """Whether each letter, tailored CV and prep pack gets a Word copy beside its PDF (DOC_WORD_COPIES)."""
+    return hc.env_bool("DOC_WORD_COPIES", False)
+
+
+def word_name(filename: str) -> str:
+    return re.sub(r"\.pdf$", "", filename, flags=re.IGNORECASE) + ".docx"
+
+
+def word_copy(path: Path) -> bytes | None:
+    """The Word copy saved beside a PDF, when Word copies are on and it is there."""
+    docx = path.with_suffix(".docx")
+    return hc.read_private(docx) if word_copies() and docx.is_file() else None
 
 
 # --------------------------------------------------------------------------- email
@@ -429,7 +460,7 @@ EMAIL_TEXT = {
 
 
 def email_bodies(job: dict, paragraphs: list[str], filename: str, note: str,
-                 kind: str = "cover_letter") -> tuple[str, str, str]:
+                 kind: str = "cover_letter", word: str = "") -> tuple[str, str, str]:
     title, company = job_title(job), employer(job)
     eyebrow, intro, preview_label, footer = EMAIL_TEXT[kind]
     subject = f"{KIND_LABELS[kind]}: {title}" + (f" at {company}" if company else "")
@@ -445,6 +476,7 @@ def email_bodies(job: dict, paragraphs: list[str], filename: str, note: str,
                       for p in paragraphs)
     note_block = (f'<div style="font-size:13px;color:{C_MUTED};margin-top:8px">Your note: {esc(note)}</div>'
                   if note else "")
+    word_block = f" A Word copy to edit, <b>{esc(word)}</b>, is attached too." if word else ""
     view = (f'<a href="{esc(job["url"])}" style="display:inline-block;background:{C_ACCENT};color:#ffffff;'
             f'border-radius:10px;padding:10px 18px;font-size:14px;font-weight:600;text-decoration:none">'
             f'{white_label("View job")}</a>') if job.get("url") else ""
@@ -461,7 +493,7 @@ def email_bodies(job: dict, paragraphs: list[str], filename: str, note: str,
 <tr><td style="padding-top:18px">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:{C_CARD};border:1px solid #e2e8f0;border-radius:16px">
 <tr><td class="m-pad" style="padding:22px 24px">
-  <div style="font-size:14px;color:#334155;line-height:1.5">{intro.format(file=esc(filename))}</div>{note_block}
+  <div style="font-size:14px;color:#334155;line-height:1.5">{intro.format(file=esc(filename))}{word_block}</div>{note_block}
   <table cellpadding="0" cellspacing="0" style="margin:16px 0">{table}</table>
   {view}
 </td></tr></table>
@@ -473,7 +505,8 @@ def email_bodies(job: dict, paragraphs: list[str], filename: str, note: str,
 <div style="font-size:11px;color:{C_MUTED};line-height:18px;padding:14px 6px;text-align:center">
   {footer}</div>
 </td></tr></table></td></tr></table></body></html>"""
-    text = "\n".join([f"{subject}", "", f"Attached: {filename}", *(f"{k}: {v}" for k, v in rows),
+    text = "\n".join([f"{subject}", "", f"Attached: {filename}" + (f" and {word}" if word else ""),
+                      *(f"{k}: {v}" for k, v in rows),
                       f"Job: {job.get('url', '')}", "", *[f"{p}\n" for p in paragraphs]])
     return subject, body, text
 
@@ -484,20 +517,27 @@ def file_name(text: str) -> str:
     return re.sub(r'[\\/:*?"<>|]+', "", text)[:120] + ".pdf"
 
 
-def save_doc(folder: Path, job: dict, pdf: bytes, filename: str, preview: list[str]) -> Path:
-    """The PDF, and beside it the name and preview its email uses, so it can be sent again without the model."""
+def save_doc(folder: Path, job: dict, pdf: bytes, filename: str, preview: list[str], docx: bytes | None = None) -> Path:
+    """The PDF, its Word copy if there is one, and beside them the name and preview its email uses, so it can be
+    sent again without the model."""
     when = datetime.now(ZoneInfo(env("HERMES_TIMEZONE", "UTC") or "UTC"))
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{when:%Y-%m-%d}-{slug(employer(job))}-{slug(job_title(job))}.pdf"
     hc.write_private(path, pdf)
+    if docx:
+        hc.write_private(path.with_suffix(".docx"), docx)
+    else:
+        path.with_suffix(".docx").unlink(missing_ok=True)
     hc.write_private(path.with_suffix(".json"), json.dumps({"filename": filename, "preview": preview}).encode())
     return path
 
 
-def email_doc(kind: str, job: dict, pdf: bytes, filename: str, preview: list[str], note: str) -> None:
-    subject, body, text = email_bodies(job, preview, filename, note, kind=kind)
+def email_doc(kind: str, job: dict, pdf: bytes, filename: str, preview: list[str], note: str,
+              docx: bytes | None = None) -> None:
+    word = word_name(filename) if docx else ""
+    subject, body, text = email_bodies(job, preview, filename, note, kind=kind, word=word)
     hc.send_email(subject, body, text, env("COVER_LETTER_FROM_NAME", "HermitShell cover letters") or "HermitShell",
-                  attachments=[(filename, pdf, "application/pdf")])
+                  attachments=[(filename, pdf, "application/pdf"), *([(word, docx, DOCX_MIME)] if docx else [])])
 
 
 def make_letter(tracker: Tracker, key: str, note: str, model_info: tuple[str, str, int | None],
@@ -515,10 +555,11 @@ def make_letter(tracker: Tracker, key: str, note: str, model_info: tuple[str, st
     paragraphs = write_letter(*model_info, job, profile, listing, note, length=length, tone=tone, found=found)
     when = datetime.now(ZoneInfo(env("HERMES_TIMEZONE", "UTC") or "UTC"))
     pdf = build_pdf(job, name, paragraphs, when)
+    docx = build_docx(job, name, paragraphs, when) if word_copies() else None
     filename = file_name(f"Cover letter - {name or 'Candidate'} - {job_title(job)}")
-    path = save_doc(LETTER_DIR, job, pdf, filename, paragraphs)
+    path = save_doc(LETTER_DIR, job, pdf, filename, paragraphs, docx)
     if send and not dry_run:
-        email_doc("cover_letter", job, pdf, filename, paragraphs, note)
+        email_doc("cover_letter", job, pdf, filename, paragraphs, note, docx)
     return path
 
 
@@ -534,12 +575,13 @@ def make_cv(tracker: Tracker, key: str, note: str, model_info: tuple[str, str, i
     found = evidence.for_job(model_info, key, job, profile, listing) if profile else []
     cv = tailored_cv.tailored_cv(master, job, listing, note, model_info, found=found)
     pdf = cv_pdf(cv, title=f"CV - {name} - {job_title(job)}")
+    docx = cv_docx(cv, title=f"CV - {name} - {job_title(job)}") if word_copies() else None
     filename = file_name(f"CV - {name} - {job_title(job)}")
     preview = [p for p in (cv["headline"], cv["summary"], "Skills: " + ", ".join(cv["skills"]),
                            *tailored_cv.report_lines(cv.get("match")), *tailored_cv.source_lines(cv)) if p]
-    path = save_doc(CV_DIR, job, pdf, filename, preview)
+    path = save_doc(CV_DIR, job, pdf, filename, preview, docx)
     if send and not dry_run:
-        email_doc("tailored_cv", job, pdf, filename, preview, note)
+        email_doc("tailored_cv", job, pdf, filename, preview, note, docx)
     return path
 
 
@@ -558,13 +600,14 @@ def make_prep(tracker: Tracker, key: str, note: str, model_info: tuple[str, str,
     warning = PREP_CHECK if problems else ""
     if problems:
         log(f"Interview prep sent with a check line: {'; '.join(problems)[:240]}")
-    pdf = prep_pdf(name, job_title(job), employer(job), prep, warning,
-                   title=f"Interview prep: {job_title(job)}" + (f" - {name}" if name else ""))
+    title = f"Interview prep: {job_title(job)}" + (f" - {name}" if name else "")
+    pdf = prep_pdf(name, job_title(job), employer(job), prep, warning, title=title)
+    docx = prep_docx(name, job_title(job), employer(job), prep, warning, title=title) if word_copies() else None
     filename = file_name(f"Interview prep - {name or 'Candidate'} - {job_title(job)}")
     preview = [*([warning] if warning else []), *(q["question"] for q in prep["questions"])]
-    path = save_doc(PREP_DIR, job, pdf, filename, preview)
+    path = save_doc(PREP_DIR, job, pdf, filename, preview, docx)
     if send and not dry_run:
-        email_doc(INTERVIEW_PREP, job, pdf, filename, preview, note)
+        email_doc(INTERVIEW_PREP, job, pdf, filename, preview, note, docx)
     return path
 
 
@@ -620,17 +663,26 @@ def doc_info(path: Path, kind: str, job: dict) -> tuple[str, list[str]]:
     return str(info.get("filename") or file_name(f"{KIND_LABELS[kind]} - {job_title(job)}")), preview
 
 
+def doc_bundle(pdf: bytes, docx: bytes) -> bytes:
+    """A PDF and its Word copy as one upload: BUNDLE_MAGIC, the PDF's length (4 bytes, big-endian), the PDF, the
+    Word copy. The Worker keeps it as one sealed value."""
+    return BUNDLE_MAGIC + len(pdf).to_bytes(4, "big") + pdf + docx
+
+
 def upload_doc(kind: str, key: str, path: Path, filename: str, days: int | None = None) -> str:
-    """Send a finished PDF to the Worker to keep for download for `days` (default keep_days()); returns a problem
-    to log, or ""."""
+    """Send a finished PDF, with its Word copy when there is one and the Worker takes it, to the Worker to keep for
+    download for `days` (default keep_days()); returns a problem to log, or ""."""
     base, token = secure_base(env("JOB_FEEDBACK_URL", "") or ""), env("JOB_FEEDBACK_API_TOKEN", "")
     if not (keep_days() and base and token):
         return ""
     days = min(days or keep_days(), keep_days())
     params = {"u": env("JOB_PROFILE_ID", "") or profiles.OWNER, "j": key, "k": kind, "days": str(days), "name": filename}
     try:
-        worker_link.Link(base, token).request("POST", "/api/doc", params=params, data=hc.read_private(path),
-                                              content_type="application/pdf")
+        pdf = hc.read_private(path)
+        docx = word_copy(path) if worker_link.word_ready() else None
+        worker_link.Link(base, token).request("POST", "/api/doc", params=params,
+                                              data=doc_bundle(pdf, docx) if docx else pdf,
+                                              content_type="application/octet-stream" if docx else "application/pdf")
     except (requests.RequestException, OSError, RuntimeError) as exc:
         return f"could not keep {path.name} on the Worker for download: {worker_link.reason(exc)}"
     return ""
@@ -670,7 +722,7 @@ def send_again(tracker: Tracker, kind: str, key: str, path: Path, note: str, sen
         raise LookupError(f"job {key} is not in the tracker")
     if send and not dry_run:
         filename, preview = doc_info(path, kind, job)
-        email_doc(kind, job, hc.read_private(path), filename, preview, note)
+        email_doc(kind, job, hc.read_private(path), filename, preview, note, word_copy(path))
 
 
 def process_pending(tracker: Tracker, model_info_factory, dry_run: bool = False) -> list[str]:

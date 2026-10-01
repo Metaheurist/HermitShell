@@ -22,7 +22,7 @@ def test_every_listed_switch_is_a_dashboard_key():
 
 def test_only_switches_whose_feature_exists_are_listed():
     assert {name: SWITCHES[name] for name in profiles.FEATURES} == profiles.FEATURES
-    assert set(profiles.FEATURES) == {"alerts", "prep_auto"}
+    assert set(profiles.FEATURES) == {"alerts", "prep_auto", "word_copies"}
 
 
 @pytest.fixture

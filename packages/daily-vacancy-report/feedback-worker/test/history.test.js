@@ -3,7 +3,7 @@ import worker, { sign } from "../src/index.js";
 import { jobHash } from "../src/docs.js";
 import { MAX_MONTH, historyKey, listed, record } from "../src/history.js";
 import { today } from "../src/lib.js";
-import { BASE, keysWith, testEnv } from "./helpers.js";
+import { BASE, WORD_PARTS, bundle, keysWith, testEnv, zipOf } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
 const API = { Authorization: "Bearer api-token" };
@@ -195,6 +195,18 @@ describe("a recruit's history", () => {
     await keep(env, "sam-lee", "nijobs:123", "cover_letter");
     await keep(env, "sam-lee", "nijobs:123", "tailored_cv");
     expect(downloads(await admin.text("/admin/history?u=sam-lee"))).toEqual([`/admin/doc?u=sam-lee&k=cover_letter&h=${await jobHash("nijobs:123")}`]);
+  });
+
+  it("offers the Word copy beside Download when HermitShell kept one", async () => {
+    const { env, admin } = await setup();
+    await answer(env, "cover_letter", "BI Developer at Contoso", "sam-lee");
+    const q = new URLSearchParams({ u: "sam-lee", j: "nijobs:123", k: "cover_letter", days: "7", name: "Cover letter - Sam Lee" });
+    await worker.fetch(new Request(`${BASE}/api/doc?${q}`, { method: "POST", headers: API,
+      body: bundle(new TextEncoder().encode("%PDF-1.4\n%%EOF"), zipOf(WORD_PARTS)) }), env);
+    const path = `/admin/doc?u=sam-lee&k=cover_letter&h=${await jobHash("nijobs:123")}`;
+    const body = await admin.text("/admin/history?u=sam-lee");
+    expect(downloads(body)).toEqual([path, `${path}&f=word`]);
+    expect(body).toContain('aria-label="Download the cover letter as a Word file">Word</a>');
   });
 
   it("has no Download button for an entry recorded without its job, or a job with nothing kept", async () => {

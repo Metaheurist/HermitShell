@@ -171,9 +171,9 @@ describe("setup checklist", () => {
   it("warns when HermitShell and the Worker speak different protocols, with the fix for whichever is older", async () => {
     const older = (await (await setup({ ...STATUS, protocol: undefined })).get("/admin")).body;
     expect(older).toContain("HermitShell and this Worker don&rsquo;t match:");
-    expect(older).toContain("HermitShell (protocol 1) is older than this Worker (protocol 4)");
-    const newer = (await (await setup({ ...STATUS, protocol: 5 })).get("/admin/settings")).body;
-    expect(newer).toContain("This Worker (protocol 4) is older than HermitShell (protocol 5). Redeploy it");
+    expect(older).toContain("HermitShell (protocol 1) is older than this Worker (protocol 5)");
+    const newer = (await (await setup({ ...STATUS, protocol: 6 })).get("/admin/settings")).body;
+    expect(newer).toContain("This Worker (protocol 5) is older than HermitShell (protocol 6). Redeploy it");
     expect((await (await setup()).get("/admin")).body).not.toContain("don&rsquo;t match");
     expect((await (await setup(null)).get("/admin")).body).not.toContain("don&rsquo;t match");
   });

@@ -646,6 +646,11 @@ it to the profile:
 
 <img src="images/worker/admin-sent-letter-options.png" alt="The cover letter's Options open, with Length, Tone and a note" width="460">
 
+With Word copies on, **Download** opens a menu of **PDF** and **Word** (the same document as a `.docx` to
+edit); without a Word copy it downloads the PDF straight away:
+
+<img src="images/worker/admin-sent-download.png" alt="A kept cover letter's Download open, offering the PDF or the Word copy" width="460">
+
 *The cover letter's **Options** open.*
 
 <img src="images/worker/admin-sent-applied.png" alt="The jobs sent in 30 days that were applied for" width="460">

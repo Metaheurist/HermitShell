@@ -141,7 +141,7 @@ const WAITING_SECTIONS = { email: "email", test_email: "email", api_keys: "keys"
 export const FEATURES = [
   ["alerts", "Admin alerts by email", "Emails you once when credits run low, a provider stops answering, a backup fails or the disk fills up, and again when it clears.", true],
   ["prep_auto", "Interview prep packs on Interview", "Makes an interview prep pack as soon as a job reaches Interview. The button on the job always works.", false],
-  ["word_copies", "Word copies of letters and CVs", "Saves and emails a Word file beside each PDF cover letter and tailored CV.", false],
+  ["word_copies", "Word copies of letters and CVs", "Saves and emails a Word file beside each PDF cover letter, tailored CV and interview prep pack, and offers it on Download.", false],
   ["self_service", "Recruits' own page (/me)", "Lets recruits sign in with a link sent to their email and see their jobs, documents and search.", false],
 ];
 

@@ -8,6 +8,17 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Word copies of letters, CVs and prep packs.** With `DOC_WORD_COPIES=1` (or the **Word copies of letters
+  and CVs** switch under Features, off by default) each cover letter, tailored CV and interview prep pack also
+  gets a `.docx`, written by the new standard-library `letter_docx.py` in the PDF's layout, saved beside the
+  PDF and attached to the same email. Text is XML-escaped with forbidden characters removed, part names are
+  fixed and there are no fields, macros or external links; the tests read every copy back with the CV reader.
+  The PDF and Word copy go to the Worker as one upload, kept as one sealed value (still two KV writes per
+  document); the Worker checks the Word part's zip directory without unpacking it and offers **PDF** and
+  **Word** under Download on the jobs sent, a **Word** button in the history and a **Word** link on the email
+  button's page. Uploads may be 4 MB (the PDF still at most 2 MB). The Worker protocol goes to 5, and
+  HermitShell sends Word copies only to a Worker that speaks it.
+
 - **The desk, Also suits, and salaries by job title.** A new **Desk** tab (`/admin/desk`) shows the jobs
   sent, applied, interviews, offers and placed for 7 days to 12 months, as totals and as a card per
   recruiter with each recruit's line, plus (admins only) the fees from placements per currency and the

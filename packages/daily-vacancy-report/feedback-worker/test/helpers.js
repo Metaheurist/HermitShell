@@ -135,3 +135,5 @@ export function keysWith(env, prefix) {
 export function valuesWith(env, prefix) {
   return keysWith(env, prefix).map((k) => JSON.parse(env.FEEDBACK.store.get(k)));
 }
+
+export { WORD_PARTS, bundle, zipOf } from "./zip.js";

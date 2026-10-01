@@ -35,7 +35,7 @@ import { needsSeal, sealInfo, sealItem, sealText } from "./seal.js";
 import { PALETTE_ICON, THEME_URL, readTheme, themePage, themeRequest } from "./theme.js";
 import { SEARCH_STYLE, matchesProfile, noMatch, recruiterHits, recruiterRow, searchBar, searchQuery } from "./search.js";
 import {
-  CV_URL, DOC_NAMES, DOC_URL, REQUEST_KINDS, SKILL_URL, addedSkills, docIndex, emailedIndex, letterStyle, markEmailed, pdfResponse, pendingDocs, profileCvBusy,
+  CV_URL, DOC_NAMES, DOC_URL, REQUEST_KINDS, SKILL_URL, addedSkills, docIndex, emailedIndex, letterStyle, markEmailed, docResponse, pendingDocs, profileCvBusy,
   profileCvInfo, readDoc, readProfileCv, requestDoc, requestProfileCv, requestSkill, storeDoc, storeProfileCv, styleLabel, validJobKey,
 } from "./docs.js";
 import {
@@ -601,7 +601,7 @@ async function docDownload(request, env, s) {
   if (!PROFILE_RE.test(u)) return text("Not found", 404);
   if (!s.me.admin && !visible(s, await status(env), u)) return text("Not found", 404);
   const doc = await readDoc(env, u, kind, h);
-  if (doc) return pdfResponse(doc);
+  if (doc) return docResponse(doc, url.searchParams.get("f") || "pdf");
   return redirect(`${SENT_URL}?u=${u}&r=7${/^[0-9a-f]{32}$/.test(h) ? `&open=${h.slice(0, 16)}` : ""}&done=docgone${/^[0-9a-f]{32}$/.test(h) ? `#job-${h.slice(0, 16)}` : ""}`);
 }
 
@@ -646,7 +646,7 @@ async function profileCvDownload(request, env, s) {
   const p = visible(s, await status(env), u);
   if (!p || p.owner) return text("Not found", 404);
   const doc = await readProfileCv(env, u);
-  return doc ? pdfResponse(doc) : redirect(`/admin/profile?u=${u}&done=cvgone`);
+  return doc ? docResponse(doc) : redirect(`/admin/profile?u=${u}&done=cvgone`);
 }
 
 async function action(request, env, s) {

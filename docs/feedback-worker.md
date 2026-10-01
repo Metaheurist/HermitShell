@@ -258,7 +258,8 @@ Cover letter button ──> Worker (confirm) ──> KV ──> cover_letter.py 
    the requirements the CV shows, or being off the length asked for get one rewrite.
 4. The letter is laid out as an A4 PDF with real, selectable text (`letter_pdf.py`, no extra
    packages), saved in `state/cover_letters/`, and emailed to you with the job details, a
-   preview and a View job button.
+   preview and a View job button. With `DOC_WORD_COPIES=1` a Word copy (`letter_docx.py`) is saved
+   beside it and attached too.
 
 <img src="images/emails/cover-letter.png" alt="Cover letter email" width="360"> <img src="images/emails/cover-letter-pdf.png" alt="Cover letter PDF" width="300">
 
@@ -1067,7 +1068,10 @@ letter**, a **Tailored CV** and, once the recruit has answered **I applied** or 
   meanwhile, and the page refreshes itself every 15 seconds until it is ready) and is **not**
   emailed; it waits here for download.
 - **Download** appears once one has been made for that job in the last `COVER_LETTER_KEEP_DAYS`
-  days (7 by default), from here or from an email button.
+  days (7 by default), from here or from an email button. With **Word copies of letters and CVs** on
+  (Global settings, Features, or `DOC_WORD_COPIES=1`), it opens a menu of **PDF** and **Word**: the same
+  document as a `.docx` to edit, which is also attached to its email. The history's Download has a
+  **Word** button beside it, and the email button's page a **Word** link.
 - **Email to Sam** (the recruit's first name) sits beside **Download** and has HermitShell
   email the one kept to that recruit, as an email button would: the same PDF, with no model used
   (a new one is written only if the file has gone from your server). The tile says
@@ -1084,6 +1088,18 @@ letter**, a **Tailored CV** and, once the recruit has answered **I applied** or 
   and the task list doesn't keep it. **Email to Sam** sends the kept one, so it takes no note.
 
 <img src="images/worker/admin-sent-letter-options.png" alt="The cover letter's Options open on an opened job, with Length, Tone and a note" width="460">
+
+**Word copies** are written on your server by `letter_docx.py` with the standard library only, laid out as
+the PDF is. Every piece of text is XML-escaped with the characters XML can't hold removed, and the file has
+fixed part names and no fields, macros or links to anything outside it. HermitShell sends the PDF and its
+Word copy to the Worker in one upload, kept as one encrypted value, so a document still costs two KV writes.
+The Worker checks the Word part by its zip directory alone (it must name `word/document.xml` and no macros)
+and never unpacks it, and serves it as an attachment with the Word type, `nosniff` and a sandboxing CSP. The
+upload is at most 4 MB, with the PDF at most 2 MB as before. HermitShell only sends Word copies once the
+Worker reports protocol 5; an older Worker keeps getting the PDF alone. Switch the feature on after opening
+one copy in Word or LibreOffice.
+
+<img src="images/worker/admin-sent-download.png" alt="A kept cover letter's Download open, offering the PDF or the Word copy" width="460">
 
 An **interview prep pack** is a PDF in four parts: facts about the employer, taken only from the advert
 (HermitShell looks nothing up on the web); the eight questions they are most likely to ask, each with why;

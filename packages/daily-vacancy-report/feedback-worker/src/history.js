@@ -148,8 +148,10 @@ function keptFor(e, docs) {
 
 function download(pid, e, kept, tz) {
   const what = e.k === "cover_letter" ? "cover letter" : "tailored CV";
-  return `<a class="hdl" href="${DOC_URL}?u=${esc(pid)}&amp;k=${e.k}&amp;h=${e.h}" download title="Kept until ${esc(when(kept.exp, tz).slice(0, 10))}"
-aria-label="Download the ${what}"><svg ${ICON}>${PATHS.download}</svg>Download</a>`;
+  const href = `${DOC_URL}?u=${esc(pid)}&amp;k=${e.k}&amp;h=${e.h}`;
+  return `<a class="hdl" href="${href}" download title="Kept until ${esc(when(kept.exp, tz).slice(0, 10))}"
+aria-label="Download the ${what}"><svg ${ICON}>${PATHS.download}</svg>Download</a>${kept.w ? `<a class="hdl" href="${href}&amp;f=word" download
+aria-label="Download the ${what} as a Word file">Word</a>` : ""}`;
 }
 
 function entryRow(pid, e, tz, docs) {

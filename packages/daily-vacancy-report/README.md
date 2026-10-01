@@ -88,6 +88,7 @@ definitely ruled out; ratings that fail are retried on the next runs, up to 4 at
 | `job_tracker.py` | `state/job_tracker.db` (jobs, feedback, reminders, runs, cover letter requests) and the feedback Worker sync |
 | `cover_letter.py` | Cover letter requests: writes each letter with the model and emails it as a PDF; entry point for the 5-minute job |
 | `letter_pdf.py` | Dependency-free A4 PDF writer for the letters |
+| `letter_docx.py` | Dependency-free Word (`.docx`) copies of the letters, CVs and prep packs (`DOC_WORD_COPIES`) |
 | `profiles.py` | Recruits: sign-ups from the Worker become profiles built from the CV, unsubscribes, admin changes, each profile's report job, Send jobs now; entry point for the 5-minute job |
 | `profile_report.py` | One recruit's daily report: the script of its `vacancy-report-<id>` job |
 | `key_usage.py` | The credits left on each web search and AI model key (OpenRouter, BazaarLink, Featherless, Hugging Face), from each provider's account endpoint, for the dashboard's Global settings (`python3 key_usage.py` prints them) |

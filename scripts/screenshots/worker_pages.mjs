@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { PROTOCOL } from "../../packages/daily-vacancy-report/feedback-worker/src/apiauth.js";
 import worker from "../../packages/daily-vacancy-report/feedback-worker/src/index.js";
 import { sealingKeys } from "../../packages/daily-vacancy-report/feedback-worker/test/helpers.js";
+import { WORD_PARTS, bundle, zipOf } from "../../packages/daily-vacancy-report/feedback-worker/test/zip.js";
 import { LINK_DAYS, STYLE_URL, sign, stylesheet, today } from "../../packages/daily-vacancy-report/feedback-worker/src/lib.js";
 import { jobHash } from "../../packages/daily-vacancy-report/feedback-worker/src/docs.js";
 import { record } from "../../packages/daily-vacancy-report/feedback-worker/src/history.js";
@@ -370,13 +371,14 @@ await save("admin-stats-empty", await admin("/admin/stats?u=jordan-patel"));
 await save("admin-sent", await admin("/admin/sent?u=avery-lane&r=7"));
 await save("admin-sent-applied", await admin("/admin/sent?u=avery-lane&r=30&a=applied"));
 
-// A cover letter already made for the newest job (kept for download) and its CV asked for from the
-// dashboard (being made), shown on its opened card and on the email button's page.
+// A cover letter already made for the newest job (kept for download, with its Word copy) and its CV asked for
+// from the dashboard (being made), shown on its opened card and on the email button's page.
 const FIRST = "https://jobs.example.com/ad/1000";
 const FIRST_TITLE = "Senior Data Engineer (Python, Airflow) at Northwind Traders";
 await worker.fetch(new Request(`${BASE}/api/doc?${new URLSearchParams({ u: "avery-lane", j: FIRST, k: "cover_letter", days: "7",
   name: "Cover letter - Avery Lane - Senior Data Engineer.pdf" })}`, { method: "POST",
-  headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/pdf" }, body: "%PDF-1.4\n%%EOF" }), env, {});
+  headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/octet-stream" },
+  body: bundle(new TextEncoder().encode("%PDF-1.4\n%%EOF"), zipOf(WORD_PARTS)) }), env, {});
 await admin("/admin/doc", { method: "POST", form: { csrf, u: "avery-lane", j: FIRST, k: "tailored_cv", n: "Senior Data Engineer (Python, Airflow)", back: "r=7" } });
 // Terraform just added from its missing-skill chip, not yet counted by HermitShell.
 await admin("/admin/skill", { method: "POST", form: { csrf, u: "avery-lane", j: FIRST, s: "Terraform", back: "r=7" } });
@@ -385,6 +387,8 @@ const opened = (await (await admin(`/admin/sent?u=avery-lane&r=7&open=${firstId}
 await save("admin-sent-open", new Response(opened));
 // The kept letter's Options pressed open: the length and tone a new one is written in, and a note.
 await save("admin-sent-letter-options", new Response(opened.replace('<details class="dopts">', '<details class="dopts" open>')));
+// Its Download pressed open: the PDF or the Word copy.
+await save("admin-sent-download", new Response(opened.replace('<details class="dopts dlm">', '<details class="dopts dlm" open>')));
 await save("confirm-cover-letter-ready", await call(`/f?${new URLSearchParams(await link("cover_letter", FIRST_TITLE, { job: FIRST, profile: "avery-lane" }))}`));
 
 // A fresh install: HermitShell has connected, nothing else is set yet.

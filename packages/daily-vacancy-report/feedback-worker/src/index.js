@@ -15,7 +15,7 @@
 import { handleAdmin, handleApi } from "./admin.js";
 import { verifyApi, withProtocol } from "./apiauth.js";
 import { ENHANCE_PATH, enhanceScript } from "./enhance.js";
-import { DOC_KINDS, DOC_STYLE, OWNER_ID, docFor, jobHash, letterFields, letterStyle, pdfResponse, readDoc, styleLabel } from "./docs.js";
+import { DOC_KINDS, DOC_STYLE, OWNER_ID, docFor, jobHash, letterFields, letterStyle, docResponse, readDoc, styleLabel } from "./docs.js";
 import { listed, record } from "./history.js";
 import { handleJoin, queueItem } from "./join.js";
 import {
@@ -136,7 +136,7 @@ function readyPage(p, hidden, kept) {
   return page(ACTIONS[p.a], `<style>${DOC_STYLE}.doc{margin:14px 0 4px}</style><p>${esc(p.n || "This job")}</p>
 <div class="doc ready"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 13l2 2 3-3.5"/></svg>
 <span><b>Your ${what} is ready</b><small>made ${esc(ago(kept.at))}, kept until ${esc(new Date(kept.exp).toISOString().slice(0, 10))}</small></span>
-<a class="dl" href="/f/doc?${query}" download>Download PDF</a></div>
+<a class="dl" href="/f/doc?${query}" download>Download PDF</a>${kept.w ? `<a class="dl" href="/f/doc?${query}&amp;f=word" download>Word</a>` : ""}</div>
 <form method="post" action="/f">${hidden}<input type="hidden" name="fresh" value="1">
 <label for="r">Or have a new one written (optional guidance)</label>
 <textarea id="r" name="r" maxlength="${MAX_REASON}" placeholder="${esc(PLACEHOLDERS[p.a])}"></textarea>
@@ -242,7 +242,7 @@ async function route(request, env, ctx) {
     const problem = await checkLink(env, p);
     if (problem) return problem;
     const doc = DOC_KINDS[p.a] ? await readDoc(env, (await answerProfile(env, p)) || OWNER_ID, p.a, await jobHash(p.j)) : null;
-    return doc ? pdfResponse(doc) : page("No longer kept", "<p>This document is no longer kept for download. Use the button in the email again to have a new one written.</p>", { status: 404 });
+    return doc ? docResponse(doc, p.f || "pdf") : page("No longer kept", "<p>This document is no longer kept for download. Use the button in the email again to have a new one written.</p>", { status: 404 });
   }
 
   if (url.pathname === "/f") {

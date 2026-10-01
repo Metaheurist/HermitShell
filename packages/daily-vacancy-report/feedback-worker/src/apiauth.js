@@ -13,10 +13,11 @@ import { POLL_PATH, hubNonce } from "./hub.js";
 import { authorised, limitedBytes, safeEqual, hex } from "./lib.js";
 
 // 3: the Pipeline (interview, offer and placed answers, the stats' board, POST /admin/stage).
-export const PROTOCOL = 4;
+// 4: the desk (POST /api/desk) and "others" on the jobs sent. 5: Word copies in POST /api/doc.
+export const PROTOCOL = 5;
 export const SIGN_WINDOW_MS = 5 * 60 * 1000;
-// The largest signed body: a kept cover letter or CV (docs.js) with room to spare.
-export const MAX_SIGNED_BYTES = 2.5 * 1024 * 1024;
+// The largest signed body: a kept document and its Word copy (docs.js MAX_DOC_BYTES) with room to spare.
+export const MAX_SIGNED_BYTES = 4.5 * 1024 * 1024;
 export const LATCH_KEY = "api:signed";
 const CONTEXT = "hermitshell api v1";
 const encoder = new TextEncoder();

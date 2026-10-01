@@ -23,6 +23,10 @@
 // download). HermitShell lays out every role from the CV they uploaded and sends it to POST /api/cv; it is encrypted
 // the same way and kept with no expiry, one per recruit, until the next one replaces it or they unsubscribe or are
 // deleted (purgeProfileEvents).
+//
+// With Word copies on (DOC_WORD_COPIES), HermitShell sends the PDF and its .docx as one body ("HSD1", the PDF's
+// length as 4 bytes, the PDF, the Word file), kept as one sealed value, so a document still costs two KV writes. The
+// Word part is checked by its zip directory only (it must name word/document.xml and no macros); it is never unpacked.
 
 import {
   CONTROL_RE, EVENT_TTL_SECONDS, MAX_REASON, SECURITY_HEADERS, ago, cleanReason, cleanSkill, docIndexKey, docKey, emailedKey, esc, eventFlag, eventPrefix, json,
@@ -50,8 +54,12 @@ export const EMAILED_DAYS = 90;
 // The main admin's id, as HermitShell reports it. Links in their own reports from before they were staff only carry
 // no profile id; with no recruit to send them to (index.js answerProfile) they are filed under this id.
 export const OWNER_ID = "owner";
-export const MAX_DOC_BYTES = 2 * 1024 * 1024;
+export const MAX_DOC_BYTES = 4 * 1024 * 1024;
+export const MAX_PDF_BYTES = 2 * 1024 * 1024;
 export const MAX_DOC_DAYS = 30;
+export const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const BUNDLE = [0x48, 0x53, 0x44, 0x31];
+const MAX_ZIP_PARTS = 64;
 const MAX_INDEX = 300;
 const MAX_ADDED = 100;
 const MAX_JOB_KEY = 300;
@@ -104,9 +112,45 @@ export async function jobHash(j) {
 }
 
 function cleanName(name, kind) {
-  const base = String(name || "").replace(/[\u0000-\u001f\u007f\\/:*?"<>|]+/g, "").replace(/\s+/g, " ").trim().replace(/\.pdf$/i, "")
+  const base = String(name || "").replace(/[\u0000-\u001f\u007f\\/:*?"<>|]+/g, "").replace(/\s+/g, " ").trim().replace(/\.(pdf|docx)$/i, "")
     .slice(0, 116).trim();
   return `${base || DOC_KINDS[kind] || "CV"}.pdf`;
+}
+
+export function wordName(name) {
+  return `${String(name).replace(/\.pdf$/i, "")}.docx`;
+}
+
+// A stored or uploaded document: { pdf, word } (word null for a PDF alone), or null when a bundle's lengths are wrong.
+export function splitDoc(body) {
+  if (!(body.length >= 8 && BUNDLE.every((b, i) => body[i] === b))) return { pdf: body, word: null };
+  const size = new DataView(body.buffer, body.byteOffset, body.byteLength).getUint32(4);
+  if (size < 8 || 8 + size >= body.length) return null;
+  return { pdf: body.subarray(8, 8 + size), word: body.subarray(8 + size) };
+}
+
+// Whether bytes look like a Word file HermitShell made: a zip whose central directory, read without unpacking
+// anything, names word/document.xml, at most MAX_ZIP_PARTS parts, and no macros or odd paths.
+export function isDocx(bytes) {
+  if (bytes.length < 30 || bytes[0] !== 0x50 || bytes[1] !== 0x4b || bytes[2] !== 0x03 || bytes[3] !== 0x04) return false;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let end = -1;
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 65535); i--) {
+    if (view.getUint32(i, true) === 0x06054b50) { end = i; break; }
+  }
+  if (end < 0) return false;
+  const count = view.getUint16(end + 10, true);
+  const start = view.getUint32(end + 16, true);
+  if (count < 1 || count > MAX_ZIP_PARTS || start >= end) return false;
+  const names = [];
+  for (let at = start, n = 0; n < count; n++) {
+    if (at + 46 > end || view.getUint32(at, true) !== 0x02014b50) return false;
+    const size = view.getUint16(at + 28, true);
+    if (at + 46 + size > end) return false;
+    names.push(new TextDecoder().decode(bytes.subarray(at + 46, at + 46 + size)));
+    at += 46 + size + view.getUint16(at + 30, true) + view.getUint16(at + 32, true);
+  }
+  return names.includes("word/document.xml") && !names.some((n) => /vbaproject|\.bin$|^\/|\\|\.\./i.test(n));
 }
 
 // What a profile has kept, dropping entries that have expired or do not look right.
@@ -117,7 +161,8 @@ export async function docIndex(env, profile, now = Date.now()) {
     typeof d.name === "string");
 }
 
-// POST /api/doc?u=<id>&j=<job key>&k=<kind>&days=<n>&name=<file name>, the PDF as the body (HermitShell's API token).
+// POST /api/doc?u=<id>&j=<job key>&k=<kind>&days=<n>&name=<file name>, the PDF, or the PDF and its Word copy as one
+// bundle, as the body (HermitShell's API token).
 export async function storeDoc(request, env) {
   const url = new URL(request.url);
   const q = (k) => url.searchParams.get(k) || "";
@@ -128,13 +173,15 @@ export async function storeDoc(request, env) {
   if (!env.JOB_FEEDBACK_SECRET) return json({ error: "not configured" }, 503);
   const body = await limitedBytes(request, MAX_DOC_BYTES);
   if (!body) return json({ error: "too large" }, 413);
-  if (!isPdf(body)) return json({ error: "not a PDF" }, 400);
+  const parts = splitDoc(body);
+  if (!parts || parts.pdf.length > MAX_PDF_BYTES || !isPdf(parts.pdf)) return json({ error: "not a PDF" }, 400);
+  if (parts.word && !isDocx(parts.word)) return json({ error: "not a Word file" }, 400);
   const h = await jobHash(j);
   const key = docKey(u, kind, h);
   const at = Date.now();
   await env.FEEDBACK.put(key, await seal(env, key, body), { expirationTtl: days * 86400 });
   const index = (await docIndex(env, u, at)).filter((d) => !(d.k === kind && d.h === h));
-  index.push({ k: kind, h, name: cleanName(q("name"), kind), at, exp: at + days * 86400000 });
+  index.push({ k: kind, h, name: cleanName(q("name"), kind), at, exp: at + days * 86400000, ...(parts.word ? { w: 1 } : {}) });
   await env.FEEDBACK.put(docIndexKey(u), JSON.stringify(index.slice(-MAX_INDEX)), { expirationTtl: MAX_DOC_DAYS * 86400 });
   return json({ saved: true });
 }
@@ -143,12 +190,13 @@ function isPdf(body) {
   return body.length >= 8 && new TextDecoder().decode(body.subarray(0, 5)) === "%PDF-";
 }
 
-// A kept document, decrypted: { bytes, name, at }, or null when there is none (or it does not open).
+// A kept document, decrypted: { bytes (the PDF), word (its Word copy or null), name, at }, or null when there is none
+// (or it does not open).
 export async function readDoc(env, profile, kind, h) {
   if (!DOC_KINDS[kind] || !HASH_RE.test(h || "") || !env.JOB_FEEDBACK_SECRET) return null;
   const entry = (await docIndex(env, profile)).find((d) => d.k === kind && d.h === h);
-  const bytes = entry ? await open(env, docKey(profile, kind, h)) : null;
-  return bytes ? { bytes, name: entry.name, at: entry.at } : null;
+  const parts = entry ? splitDoc((await open(env, docKey(profile, kind, h))) || new Uint8Array()) : null;
+  return parts?.pdf.length ? { bytes: parts.pdf, word: parts.word, name: entry.name, at: entry.at } : null;
 }
 
 // POST /api/cv?u=<id>&name=<file name>, the PDF as the body (HermitShell's API token): the recruit's own CV,
@@ -158,7 +206,7 @@ export async function storeProfileCv(request, env) {
   const u = url.searchParams.get("u") || "";
   if (!PROFILE_RE.test(u)) return json({ error: "bad profile" }, 400);
   if (!env.JOB_FEEDBACK_SECRET) return json({ error: "not configured" }, 503);
-  const body = await limitedBytes(request, MAX_DOC_BYTES);
+  const body = await limitedBytes(request, MAX_PDF_BYTES);
   if (!body) return json({ error: "too large" }, 413);
   if (!isPdf(body)) return json({ error: "not a PDF" }, 400);
   await env.FEEDBACK.put(profileCvKey(u), await seal(env, profileCvKey(u), body));
@@ -223,12 +271,15 @@ export async function docFor(env, profile, kind, j) {
   return (await docIndex(env, profile)).find((d) => d.k === kind && d.h === h) || null;
 }
 
-export function pdfResponse(doc) {
-  const ascii = doc.name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\;]/g, "");
-  return new Response(doc.bytes, {
+// The kept document as a download: its Word copy when `format` is "word" and it has one, otherwise the PDF.
+export function docResponse(doc, format = "pdf") {
+  const word = format === "word" && doc.word?.length ? doc.word : null;
+  const name = word ? wordName(doc.name) : doc.name;
+  const ascii = name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\;]/g, "");
+  return new Response(word || doc.bytes, {
     headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(doc.name)}`,
+      "Content-Type": word ? DOCX_MIME : "application/pdf",
+      "Content-Disposition": `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`,
       "Content-Security-Policy": "default-src 'none'; sandbox",
       ...SECURITY_HEADERS,
       "Cache-Control": "private, no-store",
@@ -364,13 +415,20 @@ export function docActions(j, h, ctx) {
     }
     if (kept) {
       return `<div class="doc ready">${docIcon(kind)}<span><b>${label}</b><small title="Kept for download until ${esc(new Date(kept.exp).toISOString().slice(0, 10))}">made ${esc(ago(kept.at))}</small></span>
-<div class="dacts"><a class="dl" href="${DOC_URL}?u=${esc(ctx.profile)}&amp;k=${kind}&amp;h=${h}" download>Download</a>
+<div class="dacts">${downloadMenu(`${DOC_URL}?u=${esc(ctx.profile)}&amp;k=${kind}&amp;h=${h}`, kept, DOC_NAMES[kind])}
 <form method="post" action="${DOC_URL}">${hidden(kind, false, true)}<button class="small quiet" title="Email this ${DOC_NAMES[kind]} to ${to}">Email to ${to}</button></form>
 <form method="post" action="${DOC_URL}">${hidden(kind, true)}${docMenu(kind)}<button class="small quiet" title="Write a new one">Regenerate</button></form></div></div>`;
     }
     return `<form class="doc" method="post" action="${DOC_URL}">${docIcon(kind)}<span><b>${label}</b><small>${kind === PREP ? "questions and answers" : "for this job"}</small></span>${hidden(kind, false)}
 ${docMenu(kind)}<button class="small">Generate</button></form>`;
   }).join("") + emailAction(j, h, ctx, hidden);
+}
+
+// Download for a kept document: a link to the PDF, or, when it has a Word copy, a menu of PDF and Word.
+export function downloadMenu(href, kept, what) {
+  if (!kept.w) return `<a class="dl" href="${href}" download>Download</a>`;
+  return `<details class="dopts dlm"><summary class="dl" aria-label="Download the ${esc(what)}">Download</summary><div class="lopts">
+<a href="${href}" download>PDF</a><a href="${href}&amp;f=word" download>Word</a></div></details>`;
 }
 
 function emailAction(j, h, ctx, hidden) {
@@ -397,9 +455,13 @@ flex:1 1 250px;min-width:0;transition:border-color .15s,box-shadow .15s}
 .doc form{margin:0}.doc button{margin:0;white-space:nowrap}
 .doc.ready>svg{background:var(--ok-bg);color:#047857}
 div.doc.ready{flex-wrap:wrap}.dacts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-left:auto}
-.doc a.dl{display:inline-flex;align-items:center;padding:7px 13px;border-radius:10px;font-size:13px;font-weight:650;color:#fff;text-decoration:none;
+.doc .dl{display:inline-flex;align-items:center;padding:7px 13px;border-radius:10px;font-size:13px;font-weight:650;color:#fff;text-decoration:none;
 background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 8px 18px -10px rgba(5,150,105,.8);transition:transform .15s var(--ease),filter .15s}
-.doc a.dl:hover{transform:translateY(-1px);filter:brightness(1.05);color:#fff}
+.doc .dl:hover,.dlm[open]>summary.dl{transform:translateY(-1px);filter:brightness(1.05);color:#fff;background:linear-gradient(135deg,#10b981,#059669)}
+.dlm>summary.dl::after{content:"";width:6px;height:6px;margin:0 0 3px 8px;border:solid currentColor;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.dacts .dlm[open]>.lopts{width:150px;gap:2px;padding:6px}
+.dlm .lopts a{display:block;padding:7px 10px;border-radius:8px;font-size:13px;font-weight:650;color:var(--ink);text-decoration:none}
+.dlm .lopts a:hover{background:var(--soft);color:var(--brand-ink)}
 .doc.busy{background:linear-gradient(90deg,#fff,#f5f3ff,#fff) 0 0/200% 100%;animation:sweep 2.4s linear infinite}
 .dspin{flex:none;width:22px;height:22px;border-radius:50%;background:conic-gradient(from 0deg,rgba(139,92,246,0),#8b5cf6 250deg,#6366f1 350deg,rgba(99,102,241,0));
 -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2.5px));

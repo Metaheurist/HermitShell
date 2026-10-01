@@ -13,6 +13,7 @@ PACKAGE = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(PACKAGE), str(PACKAGE.parents[1] / "common")]
 
 import cover_letter  # noqa: E402
+import cv_text  # noqa: E402
 import letter_pdf  # noqa: E402
 import writing_checks  # noqa: E402
 from job_tracker import Tracker  # noqa: E402
@@ -593,3 +594,94 @@ def test_a_profile_cv_needs_a_cv_and_says_so(kept, tmp_path, monkeypatch):
     assert lines[0].startswith("CV will retry for the profile: FileNotFoundError: no CV found")
     assert uploads == [] and not cover_letter.PROFILE_CV_FILE.exists()
 
+
+
+# --------------------------------------------------------------------------- Word copies
+
+@pytest.fixture
+def word(kept, monkeypatch):
+    """Word copies switched on, and a Worker that takes them."""
+    monkeypatch.setenv("DOC_WORD_COPIES", "1")
+    monkeypatch.setattr(cover_letter.worker_link, "word_ready", lambda: True)
+    return kept
+
+
+def test_word_copies_are_saved_beside_the_pdf_and_emailed_with_it(word):
+    tracker, sent, uploads, written = word
+    tracker.add_event("e1", "k1", "cover_letter", flags="fresh")
+    cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    (subject, [(pdf_name, pdf, pdf_mime), (doc_name, docx, doc_mime)]), = sent
+    assert pdf_name == "Cover letter - Sam Taylor - AI Engineer.pdf" and pdf.startswith(b"%PDF") and pdf_mime == "application/pdf"
+    assert doc_name == "Cover letter - Sam Taylor - AI Engineer.docx" and doc_mime == cover_letter.DOCX_MIME
+    assert "Dear Hiring Manager," in cv_text.docx_text(docx)
+    assert len(list(cover_letter.LETTER_DIR.glob("*.docx"))) == 1
+
+
+def test_the_upload_is_one_bundle_of_the_pdf_and_its_word_copy(word):
+    tracker, sent, uploads, written = word
+    tracker.add_event("e1", "k1", "cover_letter", flags="quiet,fresh")
+    cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    (url, params, data, headers), = [u for u in uploads if u[0].endswith("/api/doc")]
+    assert headers["Content-Type"] == "application/octet-stream" and data[:4] == cover_letter.BUNDLE_MAGIC
+    size = int.from_bytes(data[4:8], "big")
+    assert data[8:8 + size].startswith(b"%PDF") and data[8 + size:].startswith(b"PK\x03\x04")
+    assert params["name"].endswith(".pdf")
+
+
+def test_an_older_worker_gets_the_pdf_alone(word, monkeypatch):
+    tracker, sent, uploads, written = word
+    monkeypatch.setattr(cover_letter.worker_link, "word_ready", lambda: False)
+    tracker.add_event("e1", "k1", "cover_letter", flags="quiet,fresh")
+    cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    (url, params, data, headers), = [u for u in uploads if u[0].endswith("/api/doc")]
+    assert data.startswith(b"%PDF") and headers["Content-Type"] == "application/pdf"
+
+
+def test_with_word_copies_off_there_is_no_word_file(kept):
+    tracker, sent, uploads, written = kept
+    tracker.add_event("e1", "k1", "cover_letter", flags="fresh")
+    cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    (subject, attachments), = sent
+    assert [a[0][-4:] for a in attachments] == [".pdf"] and not list(cover_letter.LETTER_DIR.glob("*.docx"))
+
+
+def test_a_letter_sent_again_carries_its_word_copy_and_a_new_one_without_drops_it(word, monkeypatch):
+    tracker, sent, uploads, written = word
+    tracker.add_event("e1", "k1", "cover_letter", flags="fresh")
+    cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    sent.clear()
+    tracker.add_event("e2", "k1", "cover_letter", at=time.time() + 1)
+    cover_letter.process_pending(tracker, lambda: pytest.fail("no model needed"))
+    assert [a[0][-5:] for a in sent[0][1]] == ["r.pdf", ".docx"]
+    monkeypatch.setenv("DOC_WORD_COPIES", "0")
+    tracker.add_event("e3", "k1", "cover_letter", flags="fresh", at=time.time() + 2)
+    cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    assert not list(cover_letter.LETTER_DIR.glob("*.docx"))
+
+
+def test_word_copies_of_tailored_cvs_and_prep_packs(word, tmp_path, monkeypatch):
+    tracker, sent, uploads, written = word
+    monkeypatch.setattr(cover_letter, "PREP_DIR", tmp_path / "prep")
+    cv = {"name": "Sam Taylor", "headline": "AI Engineer", "summary": "Builds retrieval systems.", "skills": ["Python"],
+          "experience": [], "projects": [], "education": [], "certifications": []}
+    monkeypatch.setattr(cover_letter.tailored_cv, "master_cv", lambda *a, **k: dict(cv))
+    monkeypatch.setattr(cover_letter.tailored_cv, "tailored_cv", lambda master, *a, **k: master)
+    monkeypatch.setattr(cover_letter, "write_prep", lambda *a, **k: (
+        {"company": ["Acme builds search"], "questions": [{"question": "Why Acme?", "why": ""}], "answers": [], "ask": []}, []))
+    tracker.add_event("e1", "k1", "tailored_cv", flags="fresh")
+    tracker.add_event("e2", "k1", "interview_prep", flags="fresh")
+    cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    docs = {s[0].split(":")[0]: s[1][1] for s in sent}
+    assert "Builds retrieval systems." in cv_text.docx_text(docs["Tailored CV"][1])
+    assert "Why Acme?" in cv_text.docx_text(docs["Interview prep"][1])
+
+
+def test_the_bundle_is_the_magic_the_pdf_length_the_pdf_and_the_word_copy():
+    data = cover_letter.doc_bundle(b"%PDF-1.4 x", b"PK\x03\x04y")
+    assert data == b"HSD1" + (10).to_bytes(4, "big") + b"%PDF-1.4 x" + b"PK\x03\x04y"
+    assert cover_letter.word_name("CV - Sam.pdf") == "CV - Sam.docx" and cover_letter.word_name("x") == "x.docx"
+
+
+def test_the_email_says_a_word_copy_is_attached():
+    subject, body, text = cover_letter.email_bodies(JOB, PARAGRAPHS, "Letter.pdf", "", word="Letter.docx")
+    assert "A Word copy to edit, <b>Letter.docx</b>, is attached too." in body and "Attached: Letter.pdf and Letter.docx" in text

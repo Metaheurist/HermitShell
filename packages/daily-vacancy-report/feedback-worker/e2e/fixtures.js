@@ -68,15 +68,22 @@ export async function sealing() {
 export async function signedHeaders(method, path, body = "") {
   const stamp = Date.now();
   const nonce = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
-  const mac = await signature(LINK_SECRET, method, path, stamp, nonce, body ? new TextEncoder().encode(body) : null);
+  const bytes = typeof body === "string" ? (body ? new TextEncoder().encode(body) : null) : body;
+  const type = typeof body === "string" ? "application/json" : "application/octet-stream";
+  const mac = await signature(LINK_SECRET, method, path, stamp, nonce, bytes);
   return { Authorization: `Bearer ${API_TOKEN}`, "X-HermitShell-Protocol": String(PROTOCOL), "X-HermitShell-Time": String(stamp),
-    "X-HermitShell-Nonce": nonce, "X-HermitShell-Signature": `v1=${mac}`, ...(body ? { "Content-Type": "application/json" } : {}) };
+    "X-HermitShell-Nonce": nonce, "X-HermitShell-Signature": `v1=${mac}`, ...(bytes ? { "Content-Type": type } : {}) };
 }
 
 // A call to HermitShell's API, signed as HermitShell signs it.
 export async function hermitShellApi(request, method, path, data) {
   const body = data === undefined ? "" : JSON.stringify(data);
   return request.fetch(path, { method, headers: await signedHeaders(method, path, body), ...(body ? { data: body } : {}) });
+}
+
+// A document upload (POST /api/doc and the like), its bytes signed as HermitShell signs them.
+export async function hermitShellUpload(request, path, bytes) {
+  return request.fetch(path, { method: "POST", headers: await signedHeaders("POST", path, bytes), data: Buffer.from(bytes) });
 }
 
 export async function reportStatus(request, status = hermitShellStatus()) {

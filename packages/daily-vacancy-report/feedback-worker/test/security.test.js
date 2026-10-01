@@ -684,7 +684,10 @@ describe("letters and CVs kept for download", () => {
     expect((await upload(env, {}, PDF, {})).status).toBe(401);
     expect((await upload(env, {}, PDF, { Authorization: "Bearer wrong" })).status).toBe(401);
     expect((await upload(env, {}, new TextEncoder().encode("<html><script>alert(1)</script>"))).status).toBe(400);
-    expect((await upload(env, {}, new Uint8Array(2 * 1024 * 1024 + 1).fill(37))).status).toBe(413);
+    expect((await upload(env, {}, new Uint8Array(4 * 1024 * 1024 + 1).fill(37))).status).toBe(413);
+    const bigPdf = new Uint8Array(2 * 1024 * 1024 + 1).fill(37);
+    bigPdf.set(PDF);
+    expect((await upload(env, {}, bigPdf)).status).toBe(400);
     for (const params of [{ u: "../owner" }, { u: "" }, { k: "applied" }, { j: "" }, { j: "x".repeat(301) }, { j: "a\nb" }, { days: "0" }, { days: "31" }, { days: "7.5" }]) {
       expect((await upload(env, params)).status).toBe(400);
     }
