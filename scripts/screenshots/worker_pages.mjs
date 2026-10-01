@@ -222,7 +222,7 @@ function fakeStats(daysBack, scale, seed) {
     const pick = (p) => (rand() < p ? 1 + (rand() < p / 3 ? 1 : 0) : 0);
     days[iso] = [Math.round(rated * (7 + rand() * 5)), rated, sent, Math.round(sent * (6.3 + rand() * 1.6)), sent,
       Math.round(sent * rand() * 0.45), 1, pick(0.4), pick(0.25), pick(0.3), pick(0.16), pick(0.06), pick(0.05),
-      pick(0.1), pick(0.05), pick(0.06)];
+      pick(0.1), pick(0.05), pick(0.06), i % 9 === 4 ? 1 : 0, i % 23 === 11 ? 1 : 0, i % 41 === 20 ? 1 : 0];
   }
   const range = (n) => ({
     employers: [["Northwind Traders", 9], ["Contoso", 7], ["Fabrikam", 6], ["Adventure Works", 4], ["Tailspin Toys", 3]].map(([e, c]) => [e, Math.ceil(c * n / 30)]),
@@ -250,9 +250,15 @@ function fakeStats(daysBack, scale, seed) {
     day: new Date(end - [0, 0, 0, 1, 1, 2, 4, 5, 8][i] * day).toISOString().slice(0, 10),
     url: i % 4 === 3 ? "" : `https://jobs.example.com/ad/${1000 + i}`, key: `https://jobs.example.com/ad/${1000 + i}`,
     more: MORE[i] || { type: "Permanent", confidence: 70, matched: ["Python", "SQL"], gaps: ["Kubernetes"] } }));
+  const iso = (ago) => new Date(end - ago * day).toISOString().slice(0, 10);
+  const board = [...sent.filter((j) => j.answer && j.answer !== "not_for_me").map((j) => ({ key: j.key, title: j.title, employer: j.employer,
+    stage: j.answer, day: j.day })),
+  ...[["Senior Data Analyst", "Litware", "interview", 6], ["Data Engineer", "Proseware", "offer", 11], ["Analytics Lead", "Contoso", "interview", 13],
+    ["BI Engineer", "Fabrikam", "placed", 24], ["Data Engineer (Spark)", "Northwind Traders", "rejected", 17]]
+    .map(([title, employer, stage, ago], i) => ({ key: `https://jobs.example.com/ad/${900 + i}`, title, employer, stage, day: iso(ago) }))];
   return { v: 1, today: new Date(end).toISOString().slice(0, 10), since: new Date(end - (daysBack - 1) * day).toISOString().slice(0, 10), days,
     ranges: { 7: range(7), 30: range(30), 90: range(90), 365: range(365) },
-    pipeline: { interested: 9, good_match: 4, not_for_me: 12, applied: 6, heard_back: 3, rejected: 2 }, sent };
+    pipeline: { interested: 9, good_match: 4, not_for_me: 12, applied: 6, heard_back: 3, rejected: 2, interview: 2, offer: 1, placed: 1 }, sent, board };
 }
 // Avery Lane already counts Snowflake as on the CV (added from an earlier email).
 for (const [u, stats] of [["avery-lane", { ...fakeStats(75, 1, 7), skills: ["Snowflake"] }], ["sam-lee", fakeStats(12, 0.6, 11)]]) {
@@ -439,7 +445,9 @@ for (const [ago, kind, text, by, via, job] of [
   [day, "report", "Job report ran", "", "hermitshell"],
 ]) await record(env, "sam-lee", kind, text, { by, via, at: now - ago, h: job ? await jobHash(job) : "" });
 await casey("/admin/action", { method: "POST", form: { csrf: caseyCsrf, action: "send_now", u: "sam-lee" } });
-await save("admin-history", await casey("/admin/history?u=sam-lee"));
+await save("admin-history", await casey(`/admin/history?u=sam-lee&m=${new Date(now - 5 * day).toISOString().slice(0, 7)}`));
+// Avery Lane's Pipeline, as an admin sees it.
+await save("admin-pipeline", await admin("/admin/pipeline?u=avery-lane"));
 
 // Theme and branding: the page as it opens, then the dashboard under another name in the Ocean palette, then back.
 await save("admin-theme", await admin("/admin/theme"));

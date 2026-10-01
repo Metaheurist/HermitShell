@@ -156,7 +156,8 @@ test.describe("on a phone", () => {
     await page.goto("/admin/settings");
     await page.getByRole("switch", { name: "Demo mode" }).press("Enter");
     await expect(page).toHaveURL(/done=demo_on#demo$/);
-    for (const path of ["/admin", "/admin/profile?u=jamie-walsh", "/admin/stats?u=avery-lane", "/admin/sent?u=avery-lane&r=30", "/admin/history?u=sam-lee"]) {
+    for (const path of ["/admin", "/admin/profile?u=jamie-walsh", "/admin/stats?u=avery-lane", "/admin/sent?u=avery-lane&r=30", "/admin/history?u=sam-lee",
+      "/admin/pipeline?u=avery-lane"]) {
       await page.goto(path);
       expect(await sidewaysOverflow(page), path).toBeLessThanOrEqual(1);
       const box = await page.locator(".demoribbon").boundingBox();

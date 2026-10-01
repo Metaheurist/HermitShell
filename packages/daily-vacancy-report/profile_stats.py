@@ -31,10 +31,17 @@ from job_extras import parse_salary
 VERSION = 1
 STATS_DAYS = 400
 RANGES = (7, 30, 90, 365)
+# New counts go at the end: a day's row is read by position, so an older, shorter row reads 0 for them.
 FIELDS = ("scanned", "rated", "sent", "fit_sum", "fit_n", "strong", "runs", "interested", "good_match", "not_for_me",
-          "applied", "heard_back", "rejected", "cover_letter", "tailored_cv", "add_skill")
+          "applied", "heard_back", "rejected", "cover_letter", "tailored_cv", "add_skill", "interview", "offer",
+          "placed")
 EVENTS = FIELDS[FIELDS.index("interested"):]
-STATUSES = ("interested", "good_match", "not_for_me", "applied", "heard_back", "rejected")
+STATUSES = ("interested", "good_match", "not_for_me", "applied", "heard_back", "rejected", "interview", "offer",
+            "placed")
+# The Pipeline board: jobs answered in the last BOARD_DAYS days with any status but Not for me, newest first.
+BOARD_DAYS = 365
+BOARD_MAX = 200
+BOARD_STATUSES = tuple(s for s in STATUSES if s != "not_for_me")
 STRONG_FIT = 8
 TOP = 5
 BEST = 3
@@ -172,11 +179,34 @@ def _more(r: sqlite3.Row, private: tuple[str, ...] = ()) -> dict:
     return {k: v for k, v in more.items() if v not in ("", None, [])}
 
 
+def _board(con: sqlite3.Connection, since: float, tz: ZoneInfo) -> list[dict]:
+    """Each job's latest status since `since` (not Not for me), with its title and employer only: no notes, no fees."""
+    marks = ",".join("?" * len(STATUSES))
+    rows = con.execute(
+        f"""SELECT e.key, e.action, e.at, j.title, j.employer, j.company FROM events e JOIN jobs j ON j.key = e.key
+            WHERE e.at >= ? AND e.action IN ({marks})
+              AND e.at = (SELECT max(at) FROM events WHERE key = e.key AND action IN ({marks}))
+            ORDER BY e.at DESC""", (since, *STATUSES, *STATUSES)).fetchall()
+    out, seen = [], set()
+    for r in rows:
+        key = r["key"] or ""
+        if r["action"] not in BOARD_STATUSES or not key or key in seen or len(key) > MAX_KEY or _CONTROL.search(key):
+            continue
+        seen.add(key)
+        out.append({"key": key, "title": _clean(r["title"], MAX_TITLE),
+                    "employer": _clean(r["employer"] or r["company"], MAX_NAME), "stage": r["action"],
+                    "day": datetime.fromtimestamp(r["at"], tz).date().isoformat()})
+        if len(out) >= BOARD_MAX:
+            break
+    return out
+
+
 def collect(db: Path, tz: ZoneInfo, now: float | None = None, private: tuple[str, ...] = (), currency: str = "",
-            rates: dict[str, float] | None = None) -> dict:
+            rates: dict[str, float] | None = None, board: bool = False) -> dict:
     """A profile's stats; a missing tracker gives empty stats. Only reads the database. `private` words (the
     profile's name and email) are removed from the job details. Salaries are in `currency` at `rates` (those
-    that can't be converted are left out of the median); empty `currency` takes them as they are."""
+    that can't be converted are left out of the median); empty `currency` takes them as they are. `board` adds
+    the Pipeline board (a Worker older than worker_link.PIPELINE_PROTOCOL has nowhere to show it)."""
     now = now or time.time()
     today = datetime.fromtimestamp(now, tz).date()
     first = today - timedelta(days=STATS_DAYS - 1)
@@ -208,6 +238,8 @@ def collect(db: Path, tz: ZoneInfo, now: float | None = None, private: tuple[str
             pool = [r[0] for r in con.execute("SELECT skill FROM skills ORDER BY at, skill LIMIT ?", (MAX_POOL,))]
         except sqlite3.OperationalError:
             pool = []
+        if board:
+            stats["board"] = _board(con, now - BOARD_DAYS * 86400, tz)
     finally:
         con.close()
 
@@ -267,10 +299,12 @@ def body_size(stats: dict) -> int:
 
 
 def fit(stats: dict, limit: int = MAX_BYTES) -> dict:
-    """`stats` with the oldest jobs sent dropped, a tenth at a time, until the upload fits the Worker's limit:
-    every field is capped, but 150 jobs at their caps (or in a script JSON escapes) can still pass it."""
-    while stats.get("sent") and body_size(stats) > limit:
-        stats["sent"] = stats["sent"][:-max(1, len(stats["sent"]) // 10)]
+    """`stats` with the oldest jobs sent (and on the board) dropped, a tenth of the longer list at a time, until
+    the upload fits the Worker's limit: every field is capped, but 150 jobs at their caps (or in a script JSON
+    escapes) can still pass it."""
+    while (stats.get("sent") or stats.get("board")) and body_size(stats) > limit:
+        name = "sent" if len(stats.get("sent") or []) >= len(stats.get("board") or []) else "board"
+        stats[name] = stats[name][:-max(1, len(stats[name]) // 10)]
     return stats
 
 

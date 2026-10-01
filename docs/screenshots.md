@@ -88,7 +88,8 @@ up even when a label takes two lines. Clients that ignore styles get the same la
 <img src="images/emails/daily-report-empty.png" alt="Report with no new matches and a follow-up section" width="640">
 
 Sent when only follow-ups are due, or on every run with `JOB_SCANNER_EMAIL_WHEN_EMPTY=1`. The
-**Heard back** and **Rejected** buttons update the application in your tracker.
+**Heard back**, **Got an interview** and **Rejected** buttons update the application in your tracker;
+an interview stops its reminders.
 
 ## Weekly roll-up
 
@@ -100,7 +101,7 @@ The header shows jobs rated, jobs emailed, average fit and applications this wee
 
 - **Best of the week**: the five highest-scoring jobs emailed to you.
 - **Applications**: everything you marked **I applied**, how long ago, and its status (Waiting,
-  Heard back, Rejected), plus a count of your button presses this week.
+  Heard back, Interview, Offer, Placed, Rejected), plus a count of your button presses this week.
 - **Skills that keep coming up as gaps**: the most common missing skills, with how many
   listings asked for each.
 - **Who is hiring**: the employers with the most roles this week.
@@ -452,7 +453,7 @@ Applied…) are never listed and can't be cancelled here.
 Keys are shown only as `fc-...1234`. Keys typed here are encrypted for your server before they are
 stored, and removed from the Worker after 2 days if HermitShell hasn't collected them.
 
-<img src="images/worker/admin-settings-mismatch.png" alt="Global settings with a warning that the Worker (protocol 2) is older than HermitShell (protocol 3) and the command that redeploys it" width="620">
+<img src="images/worker/admin-settings-mismatch.png" alt="Global settings with a warning that the Worker (protocol 3) is older than HermitShell (protocol 4) and the command that redeploys it" width="620">
 
 When HermitShell and the Worker are different versions, the dashboard and Global settings say which is
 older and how to update it ([why](feedback-worker.md#how-it-stays-safe)).
@@ -552,6 +553,16 @@ emailed has a green **Download** button while the document is still kept (7 days
 at the top switch months; the oldest ends with the day they joined. It is kept until they unsubscribe or are deleted
 ([more](feedback-worker.md#history)).
 
+### A recruit's pipeline
+
+<img src="images/worker/admin-pipeline.png" alt="A recruit's Pipeline tab: columns for Interested, Applied, Interview, Offer, Placed and Rejected, each job a card with a Move to menu and, for an admin, a start date and fee" width="620">
+
+`/admin/pipeline?u=<id>`, the **Pipeline** tab: each job they answered, in the column of its latest
+answer (email buttons and moves made here). **Move** puts a job in another column; the card moves after
+HermitShell's next check-in. Admins can add a start date and fee to an offer or placement; the fee is
+sealed for HermitShell and never shown on the board or to recruiters
+([more](feedback-worker.md#pipeline)).
+
 ### A recruit's stats
 
 `/admin/stats?u=<id>`: one profile's numbers at a glance. Hover a bar or ring segment for its figures.
@@ -561,13 +572,13 @@ at the top switch months; the oldest ends with the day they joined. It is kept u
 | Part | What it shows |
 | --- | --- |
 | **7 days** / **30 days** / **90 days** / **12 months** | The period every tile, chip and chart covers (except **Where applications stand**) |
-| Tiles | Scanned, Rated, Sent, Avg match (out of 10), Liked, Applied, Heard back, Letters & CVs; a line of the period and the change against the period before (green up, red down) |
+| Tiles | Scanned, Rated, Sent, Avg match (out of 10), Liked, Applied, Interviews, Letters & CVs; a line of the period and the change against the period before (green up, red down) |
 | Chips | Strong matches (8+), scans, the best day, week or month, median salary of the jobs sent (in the profile's currency), "not for me" presses |
 | Activity | Jobs rated (light) and sent (dark) per day, week or month; green dots for applications |
-| Funnel | Scanned, rated, sent, liked, applied, heard back, and the share kept at each step |
+| Funnel | Scanned, rated, sent, liked, applied, interview, placed, and the share kept at each step |
 | Answers | The buttons pressed in the period, as a ring |
 | Match scores | How many jobs rated scored each mark from 0 to 10 |
-| Where applications stand | Each job's latest answer, over all time: waiting, heard back, rejected, interested; the reply rate |
+| Where applications stand | Each job's latest answer, over all time: waiting, heard back, interview, offer, placed, rejected; the reply rate |
 | Top employers / Top sources | Where the jobs sent came from, and their hybrid, remote and on-site split |
 | Best matches sent | The three highest scores of the period |
 

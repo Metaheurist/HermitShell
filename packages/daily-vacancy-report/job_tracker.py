@@ -26,6 +26,9 @@ ACTIONS = {
     "not_for_me": "Not for me",
     "applied": "I applied",
     "heard_back": "Heard back",
+    "interview": "Got an interview",
+    "offer": "Offer",
+    "placed": "Placed",
     "rejected": "Rejected",
     "good_match": "Good match",
     "cover_letter": "Generate cover letter",
@@ -35,14 +38,21 @@ ACTIONS = {
     "profile_cv": "CV",
 }
 CARD_ACTIONS = ("applied", "good_match", "not_for_me", "interested", "cover_letter", "tailored_cv")
-FOLLOWUP_ACTIONS = ("heard_back", "rejected")
+FOLLOWUP_ACTIONS = ("heard_back", "interview", "rejected")
+# Where an application went after it was sent: set on the dashboard's Pipeline (and interview and offer from
+# email buttons). A Worker older than worker_link.PIPELINE_PROTOCOL has no buttons for them.
+STAGES = ("interview", "offer", "placed")
+# Stages that may carry placement details (events.meta): start date, fee and its currency.
+META_STAGES = ("offer", "placed")
+MAX_FEE = 1_000_000
+META_DAYS = 2 * 365
 # Requests that cover_letter.py carries out: a letter or CV turned into a PDF, the job emailed to the profile
 # (send_job, only asked for from the dashboard's list of jobs sent), or the profile's own CV, not for any job
 # (profile_cv, the profile page's Generate; its key is PROFILE_CV_KEY).
 REQUEST_ACTIONS = ("cover_letter", "tailored_cv", "send_job", "profile_cv")
 PROFILE_CV_KEY = "profile:cv"
 # Actions that describe where an application stands; the others (e.g. cover_letter) are requests.
-STATUS_ACTIONS = ("interested", "not_for_me", "applied", "heard_back", "rejected", "good_match")
+STATUS_ACTIONS = ("interested", "not_for_me", "applied", "heard_back", "rejected", "good_match") + STAGES
 _STATUS_SQL = ", ".join(f"'{a}'" for a in STATUS_ACTIONS)
 LETTER_ATTEMPTS = 3
 FOLLOWUP_DAYS = (7, 14)
@@ -102,6 +112,11 @@ def card_links(base_url: str, secret: str, key: str, title: str,
     return {a: action_link(base_url, secret, key, a, title, profile) for a in actions}
 
 
+def followup_actions() -> tuple[str, ...]:
+    """The follow-up buttons the Worker understands: Got an interview only once it has the Pipeline."""
+    return FOLLOWUP_ACTIONS if worker_link.pipeline_ready() else tuple(a for a in FOLLOWUP_ACTIONS if a not in STAGES)
+
+
 def skill_link(base_url: str, secret: str, key: str, title: str, skills: list[str], profile: str = "") -> str:
     """Signed link to the Worker page that adds a job's missing skills to your pool (append &p=<skill> to tick one)."""
     skills = [s for s in dict.fromkeys(clean_skill(s) for s in skills) if s][:MAX_SKILLS]
@@ -159,6 +174,35 @@ def clean_flags(flags) -> str:
     return ",".join(f for f in REQUEST_FLAGS if f in given)
 
 
+def clean_meta(meta, now: float | None = None) -> dict:
+    """Placement details that pass: start (an ISO date within META_DAYS of now), fee (0 to MAX_FEE) and currency
+    (one money.py knows); anything else is dropped."""
+    import money
+    if not isinstance(meta, dict):
+        return {}
+    out = {}
+    start = meta.get("start")
+    if isinstance(start, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", start):
+        try:
+            when = time.mktime(time.strptime(start, "%Y-%m-%d"))
+        except ValueError:
+            when = None
+        if when is not None and abs(when - (now or time.time())) <= META_DAYS * DAY:
+            out["start"] = start
+    fee = meta.get("fee")
+    if isinstance(fee, str):
+        try:
+            fee = float(fee)
+        except ValueError:
+            fee = None
+    if isinstance(fee, (int, float)) and not isinstance(fee, bool) and 0 <= fee <= MAX_FEE:
+        out["fee"] = round(float(fee), 2)
+    currency = money.currency_code(meta.get("currency"))
+    if currency and "fee" in out:
+        out["currency"] = currency
+    return out
+
+
 class Tracker:
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -172,9 +216,18 @@ class Tracker:
         if "details" not in {r["name"] for r in self.db.execute("PRAGMA table_info(jobs)")}:
             self.db.execute("ALTER TABLE jobs ADD COLUMN details TEXT")
             self.db.commit()
-        if "flags" not in {r["name"] for r in self.db.execute("PRAGMA table_info(events)")}:
+        columns = {r["name"] for r in self.db.execute("PRAGMA table_info(events)")}
+        if "flags" not in columns:
             self.db.execute("ALTER TABLE events ADD COLUMN flags TEXT DEFAULT ''")
             self.db.commit()
+        if "meta" not in columns:
+            # No default and no constraint, so SQLite only edits the schema, whatever the table's size.
+            try:
+                self.db.execute("ALTER TABLE events ADD COLUMN meta TEXT")
+                self.db.commit()
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise
 
     def close(self) -> None:
         self.db.commit()
@@ -225,9 +278,11 @@ class Tracker:
     # ------------------------------------------------------------------ events
 
     def add_event(self, event_id: str, key: str, action: str, reason: str = "", at: float | None = None,
-                  skills: list[str] | None = None, flags: str = "") -> bool:
+                  skills: list[str] | None = None, flags: str = "", meta: dict | None = None) -> bool:
         if action not in ACTIONS or not key:
             return False
+        details = clean_meta(meta) if action in META_STAGES else {}
+        packed = json.dumps(details, sort_keys=True) if details else None
         if action == "add_skill":
             skills = [s for s in dict.fromkeys(clean_skill(s) for s in skills or []) if s][:MAX_SKILLS]
             if not skills:
@@ -237,10 +292,11 @@ class Tracker:
         # The Worker's event ids repeat when the same answer is given again: a status answer then becomes the
         # latest one again, while a repeated letter/CV request or skill list is ignored.
         cur = self.db.execute(
-            "INSERT INTO events (id, key, action, reason, at, flags) VALUES (?, ?, ?, ?, ?, ?) "
-            f"ON CONFLICT(id) DO UPDATE SET at = excluded.at WHERE excluded.action IN ({_STATUS_SQL}) "
-            "AND excluded.at > events.at",
-            (event_id, key, action, (reason or "")[:300], at, clean_flags(flags) if action in REQUEST_ACTIONS else ""))
+            "INSERT INTO events (id, key, action, reason, at, flags, meta) VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET at = excluded.at, meta = coalesce(excluded.meta, events.meta) "
+            f"WHERE excluded.action IN ({_STATUS_SQL}) AND excluded.at > events.at",
+            (event_id, key, action, (reason or "")[:300], at, clean_flags(flags) if action in REQUEST_ACTIONS else "",
+             packed))
         if cur.rowcount == 1 and action == "add_skill":
             self.db.executemany("INSERT OR IGNORE INTO skills (skill, key, at) VALUES (?, ?, ?)",
                                 [(s, key, at) for s in skills])
@@ -262,6 +318,16 @@ class Tracker:
         row = self.db.execute(f"SELECT action FROM events WHERE key = ? AND action IN ({_STATUS_SQL}) "
                               "ORDER BY at DESC LIMIT 1", (key,)).fetchone()
         return row["action"] if row else None
+
+    def placement(self, key: str) -> dict:
+        """The newest offer or placement details for a job: {start, fee, currency}, or {}."""
+        row = self.db.execute("SELECT meta FROM events WHERE key = ? AND action IN ('offer', 'placed') "
+                              "AND meta IS NOT NULL ORDER BY at DESC LIMIT 1", (key,)).fetchone()
+        try:
+            meta = json.loads(row["meta"]) if row else {}
+        except ValueError:
+            return {}
+        return meta if isinstance(meta, dict) else {}
 
     def examples(self, per_kind: int = 3) -> tuple[list[dict], list[dict]]:
         """Recent liked (good match, interested, applied) and 'not for me' jobs with the reason given."""
@@ -418,6 +484,24 @@ class Tracker:
 
 # --------------------------------------------------------------------------- feedback sync
 
+def opened_meta(meta) -> dict | None:
+    """An event's placement details with the fee opened: the Worker seals it for this server (worker_seal.py, field
+    "fee"). A fee that can't be opened is dropped; the rest is kept."""
+    if not isinstance(meta, dict):
+        return None
+    out = dict(meta)
+    fee = out.get("fee")
+    if isinstance(fee, str) and fee.startswith("sealed:"):
+        import worker_seal
+        try:
+            out["fee"] = worker_seal.open_text(fee, worker_seal.field_aad("fee"))
+        except worker_seal.SealError:
+            out.pop("fee")
+    elif fee is not None:
+        out.pop("fee")
+    return out
+
+
 def sync_feedback(tracker: Tracker, base_url: str, api_token: str, ack: bool = True,
                   timeout: int = 20, profile: str = "", full: bool = False) -> tuple[int, str | None]:
     """Fetch confirmed answers (for one profile; "" is the owner) from the feedback Worker, store them, then
@@ -458,7 +542,7 @@ def sync_feedback(tracker: Tracker, base_url: str, api_token: str, ack: bool = T
             flags += [v for v, allowed in ((ev.get("len"), LETTER_LENGTHS), (ev.get("tone"), LETTER_TONES))
                       if isinstance(v, str) and v in allowed]
         saved += tracker.add_event(event_id, str(ev.get("j") or ""), str(ev.get("a") or ""),
-                                   str(ev.get("r") or ""), at, skills, ",".join(flags))
+                                   str(ev.get("r") or ""), at, skills, ",".join(flags), opened_meta(ev.get("meta")))
         ids.append(event_id)
     if ack and ids:
         try:

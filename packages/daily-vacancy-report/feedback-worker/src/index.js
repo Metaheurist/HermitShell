@@ -35,6 +35,8 @@ export const ACTIONS = {
   not_for_me: "Not for me",
   applied: "I applied",
   heard_back: "Heard back",
+  interview: "Got an interview",
+  offer: "Offer",
   rejected: "Rejected",
   good_match: "Good match",
   cover_letter: "Generate cover letter",
@@ -45,6 +47,8 @@ export const ACTIONS = {
 const PLACEHOLDERS = {
   not_for_me: "Why not? For example: too senior, needs travel, wrong tech stack",
   rejected: "Anything they said (optional)",
+  interview: "When and with whom? For example: video call with the hiring manager on Tuesday",
+  offer: "Anything worth remembering about the offer (optional)",
   good_match: "What makes it a good match? For example: right stack, great location",
   cover_letter: "Anything to emphasise? For example: mention my Azure work, keep it under a page",
   tailored_cv: "Anything to lead with? For example: put my Power BI work first",
@@ -170,7 +174,7 @@ async function checkLink(env, p) {
 }
 
 const ANSWERED = { interested: "Interested", not_for_me: "Not for me", applied: "Applied", heard_back: "Heard back",
-  rejected: "Rejected", good_match: "Good match" };
+  interview: "Got an interview", offer: "Offer", placed: "Placed", rejected: "Rejected", good_match: "Good match" };
 
 // The history line for an answer from an email button: its kind and text.
 function historyEntry(p, event, fresh) {

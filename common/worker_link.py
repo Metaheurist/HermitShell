@@ -24,7 +24,9 @@ import requests
 
 import hermes_common as hc
 
-PROTOCOL = 2
+PROTOCOL = 3
+# The Worker version that has the Pipeline (interview, offer and placed, and the stats' board).
+PIPELINE_PROTOCOL = 3
 SIGN_CONTEXT = b"hermitshell api v1"
 RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 ATTEMPTS = 3
@@ -76,6 +78,11 @@ def worker_protocol() -> dict:
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) and type(data.get("protocol")) is int else {}
+
+
+def pipeline_ready() -> bool:
+    """Whether the Worker has the Pipeline, so interview buttons and the board can be sent to it."""
+    return worker_protocol().get("protocol", 0) >= PIPELINE_PROTOCOL
 
 
 def _remember_protocol(value: int) -> None:

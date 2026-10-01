@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { PROTOCOL } from "../src/apiauth.js";
 import { API_TOKEN, signIn, signedHeaders } from "./fixtures.js";
 
 test("the session cookie is HttpOnly, Secure and SameSite=Strict", async ({ page, context }) => {
@@ -58,7 +59,7 @@ test("HermitShell's API refuses a copied, altered or replayed request, even with
   const headers = await signedHeaders("GET", "/api/queue/flag");
   const first = await request.get("/api/queue/flag", { headers });
   expect(first.status()).toBe(200);
-  expect(first.headers()["x-hermitshell-protocol"]).toBe("2");
+  expect(first.headers()["x-hermitshell-protocol"]).toBe(String(PROTOCOL));
   const replayed = await request.get("/api/queue/flag", { headers });
   expect(replayed.status()).toBe(401);
   expect(await replayed.json()).toEqual({ error: "replayed" });

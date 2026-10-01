@@ -8,6 +8,7 @@ import { DOC_KINDS, DOC_URL, docIndex } from "./docs.js";
 import { BACK_TO_RECRUITS, esc, historyPrefix, page, when, PROFILE_RE } from "./lib.js";
 
 export const HISTORY_URL = "/admin/history";
+export const PIPELINE_URL = "/admin/pipeline";
 export const MAX_MONTH = 1000;
 const MAX_TEXT = 200;
 const MAX_BY = 80;
@@ -32,6 +33,7 @@ const PATHS = {
   cross: '<circle cx="12" cy="12" r="8"/><path d="m9 9 6 6M15 9l-6 6"/>',
   download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/>',
   note: '<path d="M5 4h14v11l-5 5H5z"/><path d="M14 20v-5h5M8.5 9h7M8.5 12.5h4"/>',
+  stage: '<rect x="3.5" y="4" width="4.5" height="16" rx="1.5"/><rect x="9.75" y="4" width="4.5" height="10" rx="1.5"/><rect x="16" y="4" width="4.5" height="6" rx="1.5"/>',
 };
 // Each kind of event: its icon and colour.
 const KINDS = {
@@ -39,7 +41,7 @@ const KINDS = {
   report: ["send", "violet"], pause: ["pause", "amber"], resume: ["play", "green"], assign: ["person", "teal"],
   cv: ["doc", "blue"], cv_read: ["doc", "blue"], cover_letter: ["doc", "brand"], tailored_cv: ["doc", "brand"], profile_cv: ["doc", "green"],
   send_job: ["mail", "brand"], skill: ["star", "amber"], answer: ["reply", "slate"], cancel: ["cross", "slate"],
-  note: ["note", "teal"],
+  note: ["note", "teal"], stage: ["stage", "green"],
 };
 
 function clean(value, max) {
@@ -133,7 +135,8 @@ function dayName(date) {
 
 // Manage and History for one recruit, in place of the dashboard's tabs.
 export function profileTabs(pid, active) {
-  const tabs = [["manage", `/admin/profile?u=${esc(pid)}`, "Manage"], ["history", `${HISTORY_URL}?u=${esc(pid)}`, "History"]];
+  const tabs = [["manage", `/admin/profile?u=${esc(pid)}`, "Manage"], ["pipeline", `${PIPELINE_URL}?u=${esc(pid)}`, "Pipeline"],
+    ["history", `${HISTORY_URL}?u=${esc(pid)}`, "History"]];
   return `<nav class="tabs" aria-label="Recruit pages">${tabs.map(([id, href, label]) =>
     `<a href="${href}"${id === active ? ' class="on" aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
 }

@@ -8,6 +8,18 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Interview, offer and placed, and a Pipeline tab.** Applications now go on past **Heard back**: the
+  follow-up email has a **Got an interview** button (which stops that job's reminders), and the tracker,
+  weekly roll-up and stats know Interview, Offer and Placed (Interviews replaces Heard back in the tiles and
+  the funnel, which ends with Placed). A recruit's new **Pipeline** tab (`/admin/pipeline?u=<id>`) shows
+  each answered job in the column of its latest answer, from the board HermitShell already sends with the
+  jobs sent (no extra KV writes, up to 200 cards over a year), and **Move** puts it in another column through
+  the usual event queue (`POST /admin/stage`, CSRF-checked, the recruit's own recruiter or an admin). Admins
+  can add a start date and fee to an offer or placement; the fee is sealed for HermitShell with the
+  Worker's sealing key, kept in the tracker's new `events.meta` column and never shown on the board, in
+  stats or to recruiters. The Worker protocol goes to 3, and HermitShell only sends the board to a Worker
+  that speaks it; `doctor.py` warns until the Worker is redeployed.
+
 - **Backups in the server panel, and Back up now.** The admin's server panel shows the last backup, its size
   and how many are kept, or why the last one failed (beside the last good one), with a reminder to keep
   `HERMES_DATA_KEY` away from the server, or a warning when backups aren't encrypted. **Back up now** queues

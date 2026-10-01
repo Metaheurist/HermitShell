@@ -71,7 +71,7 @@ describe("a recruit's history", () => {
     await admin.act({ action: "assign", u: "jordan-patel", recruiter: "casey" });
     await casey.act({ action: "send_now", u: "sam-lee" });
     const body = await admin.text("/admin/history?u=sam-lee");
-    expect(body).toContain('<nav class="tabs" aria-label="Recruit pages"><a href="/admin/profile?u=sam-lee">Manage</a><a href="/admin/history?u=sam-lee" class="on" aria-current="page">History</a></nav>');
+    expect(body).toContain('<nav class="tabs" aria-label="Recruit pages"><a href="/admin/profile?u=sam-lee">Manage</a><a href="/admin/pipeline?u=sam-lee">Pipeline</a><a href="/admin/history?u=sam-lee" class="on" aria-current="page">History</a></nav>');
     expect(body).not.toContain("Global settings");
     expect(body).not.toContain("Users and roles");
     expect(body).toContain("<b>Asked for jobs now</b>");

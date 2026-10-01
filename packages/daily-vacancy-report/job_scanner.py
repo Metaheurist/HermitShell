@@ -58,7 +58,7 @@ from job_extras import (below_min_salary, closing_date, combined_level, days_lef
                         parse_salary, prescreened_out, rating_failed, rating_profile, repost_key, second_look,
                         second_opinion, settle_second, trim_listing,
                         triage_titles)
-from job_tracker import (ACTIONS, FOLLOWUP_ACTIONS, Tracker, card_links, prompt_examples, skill_link, skills_text,
+from job_tracker import (ACTIONS, Tracker, card_links, followup_actions, prompt_examples, skill_link, skills_text,
                          sync_feedback, unsubscribe_link)
 from job_weekly import (ICON_DIR, card_action_bar, build_weekly, closing_pill, followup_section, followup_text,
                         mini_buttons, rating_buttons, source_banner, unsubscribe_footer, weekly_when)
@@ -1507,7 +1507,7 @@ def run(args: argparse.Namespace) -> int:
 
     followups = tracker.followups(now)
     followups_html = followup_section(
-        followups, lambda item: card_links(fb_url, fb_secret, item["key"], item["title"], FOLLOWUP_ACTIONS, profile_id))
+        followups, lambda item: card_links(fb_url, fb_secret, item["key"], item["title"], followup_actions(), profile_id))
     problems = source_problems(health, fb_error)
 
     progress("Writing the email", len(queue), len(queue))

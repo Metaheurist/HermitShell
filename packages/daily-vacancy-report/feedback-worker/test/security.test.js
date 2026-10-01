@@ -908,6 +908,20 @@ describe("jobs emailed from the list of jobs sent", () => {
     expect(body).toContain('<button title="Add dbt to the skills on the CV">');
   });
 
+  it("escapes the Pipeline's titles, employers and job keys", async () => {
+    const env = testEnv(ADMIN);
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "sam-lee", name: "Sam Lee" }] }));
+    const card = { key: `https://jobs.example.com/"><img src=x onerror=alert(1)>`, title: HOSTILE.slice(0, 200), employer: HOSTILE.slice(0, 120),
+      stage: "interview", day: new Date().toISOString().slice(0, 10) };
+    const saved = await worker.fetch(new Request(`${BASE}/api/stats`, { method: "POST", headers: API,
+      body: JSON.stringify({ u: "sam-lee", stats: { days: {}, board: [card] } }) }), env);
+    expect(saved.status).toBe(200);
+    const body = await (await get("/admin/pipeline?u=sam-lee", env, { Cookie: await signIn(env, "203.0.113.41") })).text();
+    expect(body).not.toContain("<script>");
+    expect(body).not.toContain("<img");
+    expect(body).toContain("&lt;img src=x onerror=alert(1)&gt;");
+  });
+
   it("escapes the profile's name on the tile and never shows its email address", async () => {
     const env = testEnv(ADMIN);
     await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "sam-lee", name: `${HOSTILE} Lee`, email: "sam@example.com" }] }));
@@ -1134,7 +1148,7 @@ describe("the admin is staff, not a recruit", () => {
     expect(board).not.toContain("u=owner");
     expect(board).toContain("/admin/profile?u=sam-lee");
     for (const path of ["/admin/profile?u=owner", "/admin/stats?u=owner", "/admin/sent?u=owner&r=7", "/admin/history?u=owner",
-      "/admin/status?u=owner"]) {
+      "/admin/status?u=owner", "/admin/pipeline?u=owner"]) {
       expect((await get(path, env, { Cookie: cookie })).status, path).toBe(404);
     }
   });
@@ -1151,6 +1165,7 @@ describe("the admin is staff, not a recruit", () => {
     }
     await post("/admin/doc", { u: "owner", j: "https://jobs.example.com/1", k: "cover_letter", n: "Analyst" });
     await post("/admin/skill", { u: "owner", j: "https://jobs.example.com/1", s: "SQL" });
+    await post("/admin/stage", { u: "owner", j: "https://jobs.example.com/1", a: "interview" });
     expect(valuesWith(env, "queue:")).toEqual([]);
     expect([...env.FEEDBACK.store.keys()].filter((k) => k.startsWith("event:") || k.startsWith("skilladd:"))).toEqual([]);
   });

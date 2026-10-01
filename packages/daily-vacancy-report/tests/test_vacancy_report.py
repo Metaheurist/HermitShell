@@ -400,6 +400,96 @@ def test_sync_feedback_reports_errors(tracker, monkeypatch):
     assert sync_feedback(tracker, "", "") == (0, None)
 
 
+def test_an_interview_stops_the_reminders_and_is_the_latest_status(tracker):
+    now = time.time()
+    tracker.upsert_job("k1", {"title": "AI Engineer", "company": "Northwind", "url": "https://x/1"}, emailed=True)
+    tracker.add_event("e1", "k1", "applied", at=now - 8 * 86400)
+    assert [d["key"] for d in tracker.followups(now)] == ["k1"]
+    assert tracker.add_event("e2", "k1", "interview", at=now - 86400)
+    assert tracker.followups(now) == [] and tracker.latest_action("k1") == "interview"
+    assert tracker.week(now - 7 * 86400)["applications"][0]["status"] == "interview"
+
+
+def test_placement_details_are_cleaned_and_kept_only_for_offers_and_placements(tracker):
+    now = time.time()
+    soon = time.strftime("%Y-%m-%d", time.localtime(now + 30 * 86400))
+    clean = job_tracker.clean_meta
+    assert clean({"start": soon, "fee": "1200.555", "currency": "gbp"}, now) == \
+        {"start": soon, "fee": 1200.56, "currency": "GBP"}
+    assert clean({"start": "2001-01-01", "fee": -1, "currency": "GBP"}, now) == {}
+    assert clean({"start": "31/12/2026", "fee": True, "currency": "XYZ"}, now) == {}
+    assert clean({"fee": job_tracker.MAX_FEE + 1}, now) == {} and clean({"currency": "EUR"}, now) == {}
+    assert clean({"start": "2026-02-30"}, now) == {} and clean("fee=5", now) == {} and clean(None, now) == {}
+    assert clean({"fee": "lots", "start": soon}, now) == {"start": soon}
+
+    tracker.add_event("e1", "k1", "interview", at=100, meta={"start": soon, "fee": 5})
+    assert tracker.placement("k1") == {}
+    tracker.add_event("e2", "k1", "offer", at=200, meta={"start": soon, "fee": 900, "currency": "EUR"})
+    assert tracker.placement("k1") == {"start": soon, "fee": 900.0, "currency": "EUR"}
+    tracker.add_event("e3", "k1", "placed", at=300)
+    assert tracker.placement("k1")["fee"] == 900.0
+    tracker.add_event("e3", "k1", "placed", at=400, meta={"fee": 1000, "currency": "GBP"})
+    assert tracker.placement("k1") == {"fee": 1000.0, "currency": "GBP"}
+    assert tracker.placement("k2") == {}
+
+
+def test_an_older_tracker_gains_the_meta_column(tmp_path):
+    import sqlite3
+    path = tmp_path / "tracker.db"
+    Tracker(path).close()
+    con = sqlite3.connect(path)
+    con.execute("ALTER TABLE events DROP COLUMN meta")
+    con.execute("INSERT INTO events (id, key, action, reason, at) VALUES ('e1', 'k1', 'applied', '', 1)")
+    con.commit()
+    con.close()
+    t = Tracker(path)
+    try:
+        assert t.latest_action("k1") == "applied" and t.placement("k1") == {}
+        assert t.add_event("e2", "k1", "placed", at=2, meta={"fee": 10, "currency": "GBP"})
+        assert t.placement("k1") == {"fee": 10.0, "currency": "GBP"}
+    finally:
+        t.close()
+    Tracker(path).close()
+
+
+def test_sync_feedback_opens_a_sealed_fee_and_drops_a_plain_one(tracker, tmp_path, monkeypatch):
+    import base64
+
+    import hermes_common as hc
+    import worker_seal
+    monkeypatch.setattr(hc, "STATE_DIR", tmp_path / "state")
+    monkeypatch.setattr(worker_seal, "KEY_BITS", 2048)
+    worker_seal._public.clear()
+    blob = worker_seal.seal(b"2500", worker_seal.field_aad("fee"), worker_seal.public_key()["spki"])
+    sealed = worker_seal.PREFIX + base64.urlsafe_b64encode(blob).decode().rstrip("=")
+    wrong = worker_seal.seal(b"2500", worker_seal.field_aad("password"), worker_seal.public_key()["spki"])
+    events = [{"id": "event:1:a", "j": "k1", "a": "placed", "r": "", "at": 1_000,
+               "meta": {"fee": sealed, "currency": "GBP"}},
+              {"id": "event:1:b", "j": "k2", "a": "offer", "r": "", "at": 2_000, "meta": {"fee": "2500", "currency": "GBP"}},
+              {"id": "event:1:c", "j": "k3", "a": "offer", "r": "", "at": 3_000,
+               "meta": {"fee": worker_seal.PREFIX + base64.urlsafe_b64encode(wrong).decode().rstrip("="),
+                        "currency": "GBP"}},
+              {"id": "event:1:d", "j": "k4", "a": "offer", "r": "", "at": 4_000, "meta": "fee=1"}]
+    monkeypatch.setattr(job_tracker.requests, "get", lambda *a, **k: FakeResponse({"events": events}))
+    assert sync_feedback(tracker, "https://fb.example.workers.dev", "tok", ack=False) == (4, None)
+    assert tracker.placement("k1") == {"fee": 2500.0, "currency": "GBP"}
+    assert tracker.placement("k2") == {} and tracker.placement("k3") == {} and tracker.placement("k4") == {}
+    assert tracker.latest_action("k2") == "offer"
+
+
+def test_the_interview_button_waits_for_a_worker_with_the_pipeline(monkeypatch):
+    monkeypatch.setattr(job_tracker.worker_link, "pipeline_ready", lambda: False)
+    assert job_tracker.followup_actions() == ("heard_back", "rejected")
+    monkeypatch.setattr(job_tracker.worker_link, "pipeline_ready", lambda: True)
+    assert job_tracker.followup_actions() == ("heard_back", "interview", "rejected")
+    import job_weekly
+    item = {"key": "k1", "title": "AI Engineer", "employer": "Northwind", "url": "https://x/1", "days": 8}
+    html = job_weekly.followup_section([item], lambda i: card_links("https://fb.example.workers.dev", "s", i["key"],
+                                                                    i["title"], job_tracker.followup_actions()))
+    assert [a for a in ("Heard back", "Got an interview", "Rejected") if a in html] == ["Heard back", "Got an interview", "Rejected"]
+    assert "a=interview" in html and job_weekly.STATUS_LABELS["placed"] == "Placed"
+
+
 # --------------------------------------------------------------------------- report rendering
 
 def report_job(key: str = "k1", title: str = "AI Engineer", fit: int = 8) -> dict:

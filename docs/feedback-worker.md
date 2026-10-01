@@ -869,6 +869,42 @@ recruits' history. Nothing expires while the recruit is subscribed: their histor
 the rest of their data when they unsubscribe or are deleted from the dashboard. Yours is kept. A
 failed history write never stops the action itself.
 
+#### Pipeline
+
+The **Pipeline** tab on a recruit's page (`/admin/pipeline?u=<id>`, also linked from their Stats and
+Jobs sent pages) shows where each application stands, in six columns: **Interested** (with Good
+match), **Applied** (with Heard back), **Interview**, **Offer**, **Placed** and **Rejected**. Jobs
+marked Not for me are left off. Each card has the job's title, employer and the day it reached that
+stage, and a **Move to** menu.
+
+<img src="images/worker/admin-pipeline.png" alt="A recruit's Pipeline: columns for Interested, Applied, Interview, Offer, Placed and Rejected, each card with a Move to menu" width="720">
+
+- **Moving a job** (`POST /admin/stage`, CSRF-checked) stores the move as the matching email answer
+  would be, so HermitShell collects it at its next sync, within about 5 minutes. The board shows it
+  after HermitShell's next stats upload; the page says so. The same move for the same job in the same
+  minute is one event, so a double click does nothing extra. Each move is written in the
+  [history](#history), for example **Moved to Interview: Data Engineer at Northwind**.
+- **Start date and fee** (admins only) go with an **Offer** or **Placed** move. The start date must
+  be within two years, the fee a number from 0 to 1,000,000 with at most two decimals, and the
+  currency one of the profile currencies. The fee is sealed for HermitShell before it is stored, the
+  same way as API keys, so KV only holds ciphertext until HermitShell collects it. Recruiters don't get
+  the fields, and a recruiter's form that sends a fee is refused with 403. Without HermitShell's sealing
+  key yet, the fee is not saved and the page says why.
+- **Email buttons**: follow-up emails gain **Got an interview** beside Heard back and Rejected, and
+  **Offer** is a valid email answer too. **Placed** is only set here.
+- **Reminders** follow the stage: once a job reaches Interview, or any later answer, the "did you hear
+  back" reminders stop.
+
+The board comes from the recruit's tracker: `profile_stats.py` lists each job's latest answer from the
+last 365 days, up to 200 jobs, with its title and employer only, never notes or fees. It travels with the
+jobs sent and is kept in the same KV value (`sent:<id>`, now `{jobs, board}`; one written by an older
+Worker as a bare list still reads), so it costs no extra KV writes. A move costs one event write and one
+history write. HermitShell only sends the board, and the Interview button, once the Worker reports
+protocol 3 or later (`X-HermitShell-Protocol`), so updating one side before the other is safe.
+Recruiters see and move only their own pool's jobs. Fees stay in the tracker on your server (plain
+SQLite, readable only by its user, like salaries and answers); neither the board nor the stats bring
+them back to the Worker.
+
 #### Tasks
 
 The **Tasks** button next to the search (admins only) shows a loading circle while something is running
@@ -919,17 +955,18 @@ opens the [jobs sent](#jobs-sent).
 <img src="images/worker/admin-stats.png" alt="A recruit's stats page: KPI tiles, activity chart, funnel, answers, match scores, applications and top lists" width="720">
 
 - **Tiles**: postings scanned, jobs rated, jobs sent, average match of the jobs sent (out of 10),
-  liked (Interested or Good match), applied, heard back, and cover letters plus tailored CVs asked
+  liked (Interested or Good match), applied, interviews, and cover letters plus tailored CVs asked
   for. Each has a line of the period and, when there is data for the period before, the change
   against it (not for 12 months, since older data is pruned after a year).
 - **Chips**: strong matches (8 and over), scans, the best day, week or month, the median salary of the
   jobs sent, and "not for me" presses.
 - **Activity**: jobs rated and sent per day (per week for 90 days, per month for 12 months), with a
   green dot where applications were made. Hover a bar for its numbers.
-- **Funnel** from scanned to heard back, with the share kept at each step; **Answers**, a ring of
-  the buttons pressed; **Match scores**, how the jobs rated scored from 0 to 10.
+- **Funnel** from scanned through applied to interview and placed, with the share kept at each step;
+  **Answers**, a ring of the buttons pressed and the Pipeline moves; **Match scores**, how the jobs
+  rated scored from 0 to 10.
 - **Where applications stand**: every job's latest answer, whatever the period: waiting (applied),
-  heard back, rejected and interested, with the reply rate.
+  heard back, interview, offer, placed and rejected, with the reply rate (any answer after applying).
 - **Top employers**, **Top sources** (with the split between hybrid, remote and on-site) and the
   **best matches sent**, each with a ring of its score.
 
@@ -947,7 +984,8 @@ Worker (`POST /api/stats`, kept in KV as `stats:<id>`) when it has changed, at m
 minutes per recruit, and straight after each report. Notes typed on the buttons' pages and the
 listing text are never sent. For the [jobs sent](#jobs-sent) list, each job sent in the last 90 days
 also carries its title, employer, place, work mode, salary, score, source, advert link, last answer
-and the details its email card showed (kept apart as `sent:<id>` so the stats page stays quick).
+and the details its email card showed (kept apart as `sent:<id>` so the stats page stays quick,
+together with the [Pipeline](#pipeline) board).
 Email addresses, phone numbers and the recruit's name and email are removed from that text first.
 A deleted recruit's stats are removed with them. The page is drawn on the Worker as plain SVG and CSS,
 without JavaScript, and its icons and charts animate in unless your system asks for reduced motion.

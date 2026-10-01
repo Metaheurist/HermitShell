@@ -1425,6 +1425,20 @@ def test_stats_go_to_the_worker_when_they_change_and_go_with_the_profile(home, m
     assert pid not in json.loads((profiles.PROFILES_DIR / ".stats.json").read_text())
 
 
+def test_the_board_goes_only_to_a_worker_with_the_pipeline(home, monkeypatch):
+    from job_tracker import Tracker
+    profiles.sync(FakeApi([signup()]))
+    pid = "sam-lee-456789"
+    _rate_a_job(pid, profiles.time.time())
+    with Tracker(profiles.tracker_file(pid)) as tracker:
+        tracker.add_event("e1", f"job-{int(profiles.time.time())}", "applied", at=profiles.time.time())
+    for ready, has_board in ((False, False), (True, True)):
+        monkeypatch.setattr(profiles.worker_link, "pipeline_ready", lambda ready=ready: ready)
+        api = FakeApi()
+        profiles.push_stats(api, now_for=pid)
+        assert ("board" in api.pushed[0][1]) is has_board
+
+
 def test_a_finished_report_sends_its_stats_at_once(home, monkeypatch):
     api = FakeApi()
     monkeypatch.setattr(profiles, "api_from_env", lambda: api)

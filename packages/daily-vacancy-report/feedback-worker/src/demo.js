@@ -16,6 +16,7 @@
 import { PROTOCOL } from "./apiauth.js";
 import { DOC_KINDS, PROFILE_CV, jobHash, markEmailed, storeDoc, storeProfileCv } from "./docs.js";
 import { historyKey } from "./history.js";
+import { STAGE_LABELS } from "./pipeline.js";
 import { esc, limitedForm, newId, page, redirect, rememberWeek, safeEqual, when } from "./lib.js";
 import { SEAL_ALG } from "./seal.js";
 import { SETTINGS_URL } from "./settings.js";
@@ -211,7 +212,7 @@ function keptChange(value) {
   }
 }
 
-const emptyPatch = () => ({ profiles: {}, skills: {}, cancelled: [] });
+const emptyPatch = () => ({ profiles: {}, skills: {}, stages: {}, cancelled: [] });
 const isObject = (v) => v && typeof v === "object" && !Array.isArray(v);
 
 async function loadState(env) {
@@ -222,7 +223,7 @@ async function loadState(env) {
   }
   const patch = isObject(got?.patch) ? got.patch : {};
   return { keys, dirty: false, patch: { profiles: isObject(patch.profiles) ? patch.profiles : {}, skills: isObject(patch.skills) ? patch.skills : {},
-    cancelled: Array.isArray(patch.cancelled) ? patch.cancelled.filter((t) => typeof t === "string") : [] } };
+    stages: isObject(patch.stages) ? patch.stages : {}, cancelled: Array.isArray(patch.cancelled) ? patch.cancelled.filter((t) => typeof t === "string") : [] } };
 }
 
 function toBase64(buffer) {
@@ -269,6 +270,13 @@ async function pretendWork(env, state, now) {
   for (const { name } of (await kv.list({ prefix: "event:" })).keys) {
     if (!dashId(name)) continue;
     const event = await kv.get(name, "json");
+    if (Object.hasOwn(STAGE_LABELS, event?.a) && now - Number(event.at) >= WORK_MS.change) {
+      const moves = isObject(state.patch.stages[event.u]) ? state.patch.stages[event.u] : {};
+      state.patch.stages[event.u] = Object.fromEntries(Object.entries({ ...moves, [event.j]: event.a }).slice(-50));
+      state.dirty = true;
+      await kv.delete(name);
+      continue;
+    }
     if (event?.a !== "add_skill" || now - Number(event.at) < WORK_MS.skill) continue;
     const list = Array.isArray(state.patch.skills[event.u]) ? state.patch.skills[event.u] : [];
     state.patch.skills[event.u] = [...new Set([...list, ...(event.skills || [])])].slice(-50);
@@ -334,6 +342,14 @@ function applyPatch(kv, patch, now) {
     parsed.skills = [...new Set([...(Array.isArray(parsed.skills) ? parsed.skills : []), ...added.filter((s) => typeof s === "string")])];
     kv.store.set(`stats:${u}`, JSON.stringify(parsed));
   }
+  const today = zonedToday(TZ, now);
+  for (const [u, moves] of Object.entries(patch.stages)) {
+    const sent = kv.store.get(`sent:${u}`);
+    const parsed = sent ? JSON.parse(sent) : null;
+    if (!isObject(moves) || !Array.isArray(parsed?.board)) continue;
+    parsed.board = parsed.board.map((c) => (moves[c.key] && moves[c.key] !== c.stage ? { ...c, stage: moves[c.key], day: today } : c));
+    kv.store.set(`sent:${u}`, JSON.stringify(parsed));
+  }
 }
 
 // The made-up PDF the pretend HermitShell "writes" for a letter or tailored CV asked for in demo mode.
@@ -392,10 +408,13 @@ const SOURCES = ["nijobs.com", "uk.indeed.com", "web search", "reed.co.uk", "cv-
 const MODES = ["Hybrid", "Remote", "On-site"];
 const LEVELS = ["Senior ", "", "", "Lead ", "", "Graduate ", "", "", "Senior "];
 const FITS = [9, 9, 8, 8, 7, 8, 6, 7, 7];
-const ANSWERS = ["applied", "heard_back", "interested", "", "good_match", "", "not_for_me", "", "rejected"];
+const ANSWERS = ["applied", "heard_back", "interested", "interview", "good_match", "", "not_for_me", "offer", "rejected"];
 const DAYS_AGO = [0, 0, 1, 1, 2, 3, 5, 6, 9];
 const ANSWER_LABELS = { applied: "I applied", heard_back: "Heard back", interested: "Interested", good_match: "Good match", not_for_me: "Not for me",
-  rejected: "Rejected" };
+  rejected: "Rejected", interview: "Got an interview", offer: "Offer" };
+// Older applications already on the board: [title, employer, stage, days ago].
+const EARLIER = [["Analyst", "Litware", "placed", 34], ["Consultant", "Proseware", "interview", 12], ["Team Lead", "Fabrikam", "applied", 15],
+  ["Specialist", "Northwind", "rejected", 21]];
 
 function random(seedValue) {
   let x = seedValue;
@@ -438,7 +457,7 @@ function statsFor(p, end, n) {
   for (let i = p.age - 1; i >= 0; i--) {
     const at = end - i * DAY;
     if (i < pausedFor(p)) {
-      days[isoDay(at)] = new Array(16).fill(0);
+      days[isoDay(at)] = new Array(19).fill(0);
       continue;
     }
     const weekend = [0, 6].includes(new Date(at).getUTCDay());
@@ -447,9 +466,14 @@ function statsFor(p, end, n) {
     const sent = Math.round(rated * (0.35 + rand() * 0.25));
     const pick = (chance) => (rand() < chance ? 1 + (rand() < chance / 3 ? 1 : 0) : 0);
     days[isoDay(at)] = [Math.round(rated * (7 + rand() * 5)), rated, sent, Math.round(sent * (6.3 + rand() * 1.6)), sent,
-      Math.round(sent * rand() * 0.45), 1, pick(0.4), pick(0.25), pick(0.3), pick(0.16), pick(0.06), pick(0.05), pick(0.1), pick(0.05), pick(0.06)];
+      Math.round(sent * rand() * 0.45), 1, pick(0.4), pick(0.25), pick(0.3), pick(0.16), pick(0.06), pick(0.05), pick(0.1), pick(0.05), pick(0.06),
+      pick(0.04), pick(0.015), pick(0.008)];
   }
   const sent = jobsFor(p, end);
+  const board = [...sent.filter((j) => j.answer && j.answer !== "not_for_me").map((j) => ({ key: j.key, title: j.title, employer: j.employer,
+    stage: j.answer, day: j.day })), ...EARLIER.filter((_, i) => i < Math.ceil(p.scale * 4)).map(([title, employer, stage, ago], i) => ({
+    key: `https://jobs.example.com/demo/${p.id}/${900 + i}`, title: `${title}, ${p.titles[0]}`.slice(0, 90), employer, stage,
+    day: isoDay(end - (ago + pausedFor(p)) * DAY) }))];
   const scaled = (pairs, k) => pairs.map(([name, c]) => [name, Math.ceil(c * k * p.scale)]);
   const range = (k) => ({
     employers: scaled(p.employers.map((e, i) => [e, 9 - i * 2]), k / 30),
@@ -459,10 +483,10 @@ function statsFor(p, end, n) {
     salary: p.salary,
     best: sent.slice(0, 3).map((j) => ({ title: j.title, employer: j.employer, fit: j.fit, day: j.day })),
   });
-  const pipeline = Object.fromEntries(Object.entries({ interested: 9, good_match: 4, not_for_me: 12, applied: 6, heard_back: 3, rejected: 2 })
-    .map(([k, v]) => [k, Math.max(1, Math.round(v * p.scale))]));
+  const pipeline = Object.fromEntries(Object.entries({ interested: 9, good_match: 4, not_for_me: 12, applied: 6, heard_back: 3, rejected: 2,
+    interview: 2, offer: 1, placed: 1 }).map(([k, v]) => [k, Math.max(1, Math.round(v * p.scale))]));
   return { v: 1, today: isoDay(end), since: isoDay(end - (p.age - 1) * DAY), days,
-    ranges: { 7: range(7), 30: range(30), 90: range(90), 365: range(365) }, pipeline, sent,
+    ranges: { 7: range(7), 30: range(30), 90: range(90), 365: range(365) }, pipeline, sent, board,
     ...(p.added ? { skills: p.added } : {}), updated: Date.now() };
 }
 

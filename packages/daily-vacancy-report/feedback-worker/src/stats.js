@@ -5,7 +5,7 @@
 
 import { currencyCode, currencySymbol, moneyIcon } from "./currency.js";
 import { DOC_STYLE, SKILL_URL, docActions, jobHash, validJobKey } from "./docs.js";
-import { HISTORY_URL } from "./history.js";
+import { HISTORY_URL, PIPELINE_URL } from "./history.js";
 import { BACK_TO_RECRUITS, EXTERNAL_ICON, ago, cleanSkill, esc, page, reloadTo, MONTHS_SHORT as MONTHS } from "./lib.js";
 
 export const STATS_URL = "/admin/stats";
@@ -14,9 +14,13 @@ export const SENT_URL = "/admin/sent";
 // dashboard, which reads every profile's stats, stays quick.
 export const MAX_STATS_BYTES = 600 * 1024;
 const MAX_SENT = 200;
-// Same order as FIELDS in profile_stats.py.
+// Same order as FIELDS in profile_stats.py. A day's row is read by position, so an older, shorter row reads 0 for
+// the counts added since.
 export const FIELDS = ["scanned", "rated", "sent", "fit_sum", "fit_n", "strong", "runs", "interested", "good_match",
-  "not_for_me", "applied", "heard_back", "rejected", "cover_letter", "tailored_cv", "add_skill"];
+  "not_for_me", "applied", "heard_back", "rejected", "cover_letter", "tailored_cv", "add_skill", "interview", "offer", "placed"];
+// The Pipeline board (profile_stats.BOARD_STATUSES and BOARD_MAX): each job's latest stage, title and employer.
+export const BOARD_STAGES = ["interested", "good_match", "applied", "heard_back", "interview", "offer", "placed", "rejected"];
+export const MAX_BOARD = 200;
 export const RANGES = { 7: "7 days", 30: "30 days", 90: "90 days", 365: "12 months" };
 export const DEFAULT_RANGE = 30;
 const DAY_MS = 86400000;
@@ -39,13 +43,29 @@ export function validStats(s) {
     (s.skills == null || (Array.isArray(s.skills) && s.skills.length <= MAX_POOL && s.skills.every((k) => typeof k === "string" && k.length <= 60))) &&
     (s.sent == null || (Array.isArray(s.sent) && s.sent.length <= MAX_SENT &&
       s.sent.every((j) => j && typeof j === "object" && !Array.isArray(j) &&
-        (j.more == null || (typeof j.more === "object" && !Array.isArray(j.more))))));
+        (j.more == null || (typeof j.more === "object" && !Array.isArray(j.more)))))) &&
+    (s.board == null || (Array.isArray(s.board) && s.board.length <= MAX_BOARD && s.board.every(validCard)));
 }
 
-// What is stored: the stats without the jobs' details, and the jobs sent with them.
+const shortText = (v, n) => v == null || (typeof v === "string" && v.length <= n);
+
+function validCard(c) {
+  return Boolean(c) && typeof c === "object" && !Array.isArray(c) && validJobKey(c.key) && BOARD_STAGES.includes(c.stage) &&
+    DATE_RE.test(c.day || "") && shortText(c.title, 200) && shortText(c.employer, 120);
+}
+
+// What is stored: the stats without the jobs' details or the board, and "sent:<id>" with both: { jobs, board }.
 export function splitStats(stats) {
+  const { board, ...rest } = stats;
   const sent = Array.isArray(stats.sent) ? stats.sent : [];
-  return { stats: { ...stats, sent: sent.map(({ more, ...job }) => job) }, sent };
+  return { stats: { ...rest, sent: sent.map(({ more, ...job }) => job) }, sent: { jobs: sent, board: Array.isArray(board) ? board : null } };
+}
+
+// "sent:<id>" as stored: { jobs, board }, or the jobs alone from before the board. null for what isn't there.
+export function sentParts(value) {
+  if (Array.isArray(value)) return { jobs: value, board: null };
+  const ok = value && typeof value === "object";
+  return { jobs: ok && Array.isArray(value.jobs) ? value.jobs : null, board: ok && Array.isArray(value.board) ? value.board : null };
 }
 
 // ------------------------------------------------------------------------- numbers
@@ -184,7 +204,7 @@ const TILES = [
   ["fit", "Avg match", "star", "amber", "Average score of the jobs sent, out of 10"],
   ["liked", "Liked", "heart", "rose", "Interested or Good match presses"],
   ["applied", "Applied", "plane", "green", "I applied presses"],
-  ["heard_back", "Heard back", "chat", "sky", "Heard back presses"],
+  ["interview", "Interviews", "chat", "sky", "Jobs moved to Interview, from an email button or the Pipeline"],
   ["letters", "Letters & CVs", "doc", "orange", "Cover letters and tailored CVs asked for"],
 ];
 
@@ -247,7 +267,8 @@ ${grid}${bars}${empty}</svg>`;
 
 function funnel(now) {
   const steps = [["Scanned", now.scanned, "indigo"], ["Rated", now.rated, "violet"], ["Sent", now.sent, "blue"],
-    ["Liked", now.liked, "rose"], ["Applied", now.applied, "green"], ["Heard back", now.heard_back, "sky"]];
+    ["Liked", now.liked, "rose"], ["Applied", now.applied, "green"], ["Interview", now.interview, "sky"],
+    ["Placed", now.placed, "amber"]];
   const max = Math.max(1, ...steps.map((s) => s[1]));
   return `<div class="funnel">${steps.map(([label, value, color], i) => {
     const width = value ? Math.max(6, Math.sqrt(value / max) * 100) : 0;
@@ -258,8 +279,9 @@ function funnel(now) {
 }
 
 // The same colours as the tiles and bubbles for the same answers: rose for liked, green applied, sky heard back.
-const ANSWERS = [["interested", "Interested", "#e11d48"], ["good_match", "Good match", "#d97706"], ["applied", "Applied", "#059669"],
-  ["heard_back", "Heard back", "#0284c7"], ["rejected", "Rejected", "#64748b"], ["not_for_me", "Not for me", "#ea580c"]];
+export const ANSWERS = [["interested", "Interested", "#e11d48"], ["good_match", "Good match", "#d97706"], ["applied", "Applied", "#059669"],
+  ["heard_back", "Heard back", "#0284c7"], ["interview", "Interview", "#7c3aed"], ["offer", "Offer", "#db2777"],
+  ["placed", "Placed", "#4f46e5"], ["rejected", "Rejected", "#64748b"], ["not_for_me", "Not for me", "#ea580c"]];
 
 function donut(now) {
   const parts = ANSWERS.map(([k, label, color]) => [label, now[k], color]).filter((p) => p[1]);
@@ -294,9 +316,10 @@ function histogram(fit) {
 
 function pipeline(p) {
   const items = [["applied", "Waiting", "plane", "green"], ["heard_back", "Heard back", "chat", "sky"],
-    ["rejected", "Rejected", "target", "slate"], ["interested", "Interested", "heart", "rose"]];
-  const applications = num(p?.applied) + num(p?.heard_back) + num(p?.rejected);
-  const replies = num(p?.heard_back) + num(p?.rejected);
+    ["interview", "Interview", "chat", "violet"], ["offer", "Offer", "star", "rose"], ["placed", "Placed", "star", "amber"],
+    ["rejected", "Rejected", "target", "slate"]];
+  const replies = ["heard_back", "interview", "offer", "placed", "rejected"].reduce((s, k) => s + num(p?.[k]), 0);
+  const applications = num(p?.applied) + replies;
   const rate = applications ? Math.round((replies / applications) * 100) : 0;
   return `<div class="pipe"><div class="rate">${ring(replies, applications, { size: 96, tone: "sky", label: applications ? `${rate}%` : "–" })}
 <span class="muted">reply rate</span></div><div class="bubbles">${items.map(([k, label, ico, color]) =>
@@ -485,7 +508,7 @@ export async function sentPage(status, stats, pid, opts = {}) {
   const range = SENT_RANGES[opts.range] ? Number(opts.range) : DEFAULT_RANGE;
   const answer = opts.answer === "none" || ANSWER_LABELS[opts.answer] ? opts.answer : "";
   const heading = `Jobs sent to ${p.name || "this recruit"}`;
-  const links = `<a class="small" href="${STATS_URL}?u=${esc(pid)}">Stats</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage recruit</a> &middot; <a class="small" href="${HISTORY_URL}?u=${esc(pid)}">History</a>`;
+  const links = `<a class="small" href="${STATS_URL}?u=${esc(pid)}">Stats</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage recruit</a> &middot; <a class="small" href="${PIPELINE_URL}?u=${esc(pid)}">Pipeline</a> &middot; <a class="small" href="${HISTORY_URL}?u=${esc(pid)}">History</a>`;
   const today = zonedToday(status.timezone);
   const first = dayList(today, range)[0];
   const inRange = sentJobs(Array.isArray(opts.sent) ? { sent: opts.sent } : stats).filter((j) => j.day >= first);
@@ -525,7 +548,7 @@ export function statsPage(status, stats, pid, rangeParam) {
   if (!p) return page("Recruit not found", '<p>HermitShell has not reported this recruit. <a href="/admin">Back to recruits</a></p>', { status: 404 });
   const range = RANGES[rangeParam] ? Number(rangeParam) : DEFAULT_RANGE;
   const heading = `${p.name || "Recruit"}: stats`;
-  const manage = `<a class="small" href="${SENT_URL}?u=${esc(pid)}&amp;r=${range === 365 ? 90 : range}">Jobs sent</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage recruit</a> &middot; <a class="small" href="${HISTORY_URL}?u=${esc(pid)}">History</a>`;
+  const manage = `<a class="small" href="${SENT_URL}?u=${esc(pid)}&amp;r=${range === 365 ? 90 : range}">Jobs sent</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage recruit</a> &middot; <a class="small" href="${PIPELINE_URL}?u=${esc(pid)}">Pipeline</a> &middot; <a class="small" href="${HISTORY_URL}?u=${esc(pid)}">History</a>`;
   if (!stats) {
     return page(heading, `<style>${STYLE}</style>${rangeTabs(pid, range)}
 <div class="nostats">${icon("radar", "hero")}<p><b>No stats yet.</b> HermitShell sends them within a few minutes of its next check-in, and after every report.</p>${manage}</div>`, back);

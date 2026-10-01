@@ -1349,7 +1349,8 @@ def push_stats(api: Api, now_for: str = "") -> None:
         if currency and fx is None:
             fx = money.rates(STATE_DIR, env("JOB_FX_URL", money.FX_URL))
         try:
-            data = profile_stats.collect(tracker_file(pid), tz, now, private, currency, fx or {})
+            data = profile_stats.collect(tracker_file(pid), tz, now, private, currency, fx or {},
+                                         board=worker_link.pipeline_ready())
         except (sqlite3.Error, OSError, ValueError) as exc:
             log(f"Could not read the stats of {pid}: {exc.__class__.__name__}")
             continue

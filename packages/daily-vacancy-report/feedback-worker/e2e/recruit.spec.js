@@ -4,11 +4,11 @@ import { signIn } from "./fixtures.js";
 
 test.describe.configure({ mode: "serial" });
 
-test("a recruit's page has Manage and History tabs, not the dashboard's", async ({ page }) => {
+test("a recruit's page has Manage, Pipeline and History tabs, not the dashboard's", async ({ page }) => {
   await signIn(page);
   await page.locator("table.recruits tr", { hasText: "Sam Lee" }).getByRole("link", { name: "Manage" }).click();
   await expect(page.getByRole("heading", { name: "Sam Lee" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Recruit pages" }).getByRole("link")).toHaveText(["Manage", "History"]);
+  await expect(page.getByRole("navigation", { name: "Recruit pages" }).getByRole("link")).toHaveText(["Manage", "Pipeline", "History"]);
   await expect(page.getByRole("link", { name: "Global settings" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Users and roles" })).toHaveCount(0);
   await page.getByRole("link", { name: "Back to recruits" }).click();

@@ -207,6 +207,7 @@ def render_emails(out: Path) -> dict[str, str]:
     import job_mail
     import tailored_cv
     import job_scanner as js
+    import job_tracker
     import job_weekly
     import profiles
     from letter_pdf import cv_pdf
@@ -217,7 +218,7 @@ def render_emails(out: Path) -> dict[str, str]:
     top, maybe = all_jobs[:3], all_jobs[3:]
     follow = followups()
     follow_html = js.followup_section(
-        follow, lambda i: js.card_links(FEEDBACK_URL, SECRET, i["key"], i["title"], js.FOLLOWUP_ACTIONS))
+        follow, lambda i: js.card_links(FEEDBACK_URL, SECRET, i["key"], i["title"], job_tracker.FOLLOWUP_ACTIONS))
     unsub = js.unsubscribe_link(FEEDBACK_URL, SECRET, "you")
     pages["daily-report"] = js.build_html(top, maybe, stats(unsubscribe=unsub), SUMMARY, [], follow_html)
     pages["daily-report-card"] = email_page(js.job_card(top[0], 1))
@@ -405,7 +406,7 @@ def main() -> int:
                     1900 if html.stem in ("admin-signed-in", "admin-server-panel") else
                     # Recruits and Users grow with the window and stack their rows below 900px.
                     1280 if html.stem.startswith(("admin-dashboard", "admin-tasks", "admin-user", "admin-recruiter",
-                                                  "admin-delete", "admin-password", "admin-theme")) else
+                                                  "admin-delete", "admin-password", "admin-theme", "admin-pipeline")) else
                     1000 if html.stem.startswith(("admin-profile", "admin-settings", "admin-stats", "admin-sent",
                                                   "admin-global-key", "admin-history", "admin-model-key")) else
                     760 if html.stem == "privacy" else 600,

@@ -55,6 +55,20 @@ def test_text_json_escapes_still_fits():
     assert stats["sent"]
 
 
+def worst_card(i: int, letter: str = "a") -> dict:
+    s = (letter * ps.MAX_KEY)
+    return {"key": f"{i:03d}" + s[:ps.MAX_KEY - 3], "title": s[:ps.MAX_TITLE], "employer": s[:ps.MAX_NAME],
+            "stage": "interview", "day": "2026-01-05"}
+
+
+def test_a_full_board_is_trimmed_alongside_the_jobs_sent():
+    stats = worst_stats("\u4e2d")
+    stats["board"] = [worst_card(i, "\u4e2d") for i in range(ps.BOARD_MAX)]
+    stats = ps.fit(stats)
+    assert ps.body_size(stats) <= ps.MAX_BYTES
+    assert stats["sent"] and stats["board"] and stats["board"][0]["key"].startswith("000")
+
+
 def test_ordinary_stats_are_left_alone():
     stats = worst_stats()
     stats["sent"] = stats["sent"][:20]

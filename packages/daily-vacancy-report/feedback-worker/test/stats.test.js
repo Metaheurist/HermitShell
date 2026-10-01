@@ -336,9 +336,10 @@ describe("jobs sent page", () => {
     const { stats, sent } = splitStats(detailed());
     expect(stats.sent[0].more).toBeUndefined();
     expect(stats.sent[0].key).toBe("https://jobs.example.com/1");
-    expect(sent[0].more.reasoning).toBe(MORE.reasoning);
+    expect(sent.jobs[0].more.reasoning).toBe(MORE.reasoning);
+    expect(sent.board).toBeNull();
     expect(await sentOf(stats, "sam-lee", { range: "7" })).not.toContain("Strong SQL");
-    expect(await sentOf(stats, "sam-lee", { range: "7", sent })).toContain("Strong SQL");
+    expect(await sentOf(stats, "sam-lee", { range: "7", sent: sent.jobs })).toContain("Strong SQL");
   });
 });
 

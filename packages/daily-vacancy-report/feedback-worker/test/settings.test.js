@@ -171,9 +171,9 @@ describe("setup checklist", () => {
   it("warns when HermitShell and the Worker speak different protocols, with the fix for whichever is older", async () => {
     const older = (await (await setup({ ...STATUS, protocol: undefined })).get("/admin")).body;
     expect(older).toContain("HermitShell and this Worker don&rsquo;t match:");
-    expect(older).toContain("HermitShell (protocol 1) is older than this Worker (protocol 2)");
-    const newer = (await (await setup({ ...STATUS, protocol: 3 })).get("/admin/settings")).body;
-    expect(newer).toContain("This Worker (protocol 2) is older than HermitShell (protocol 3). Redeploy it");
+    expect(older).toContain("HermitShell (protocol 1) is older than this Worker (protocol 3)");
+    const newer = (await (await setup({ ...STATUS, protocol: 4 })).get("/admin/settings")).body;
+    expect(newer).toContain("This Worker (protocol 3) is older than HermitShell (protocol 4). Redeploy it");
     expect((await (await setup()).get("/admin")).body).not.toContain("don&rsquo;t match");
     expect((await (await setup(null)).get("/admin")).body).not.toContain("don&rsquo;t match");
   });
@@ -330,7 +330,7 @@ describe("pages that update themselves", () => {
     const { body } = await get("/admin/profile?u=sam-lee");
     expect(body).not.toContain("Global settings");
     expect(body).not.toContain("Users and roles");
-    expect(body).toContain('<nav class="tabs" aria-label="Recruit pages"><a href="/admin/profile?u=sam-lee" class="on" aria-current="page">Manage</a><a href="/admin/history?u=sam-lee">History</a></nav>');
+    expect(body).toContain('<nav class="tabs" aria-label="Recruit pages"><a href="/admin/profile?u=sam-lee" class="on" aria-current="page">Manage</a><a href="/admin/pipeline?u=sam-lee">Pipeline</a><a href="/admin/history?u=sam-lee">History</a></nav>');
     expect(body).toContain("Back to recruits</a>");
   });
 });

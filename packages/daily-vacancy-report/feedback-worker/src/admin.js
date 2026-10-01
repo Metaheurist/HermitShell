@@ -12,7 +12,8 @@
 // reach the HermitShell server: HermitShell connects out to /api/live and reads /api/queue with its API token.
 
 import { DEMO_DONE, DEMO_URL, demoEnv, demoMode, demoRibbon, demoSection, demoToggle, saveDemo } from "./demo.js";
-import { HISTORY_URL, historyPage, listed, moveOwnerHistory, record, recordReported } from "./history.js";
+import { HISTORY_URL, PIPELINE_URL, historyPage, listed, moveOwnerHistory, record, recordReported } from "./history.js";
+import { META_STAGES, STAGE_LABELS, STAGE_URL, pipelineBack, pipelinePage, requestStage, stageMeta } from "./pipeline.js";
 import { hasCheckedIn } from "./apiauth.js";
 import { POLL_PATH, hubConnect, hubLimit, hubLimitClear, hubPresence, hubSeen } from "./hub.js";
 import { enhance, enhancedCsp } from "./enhance.js";
@@ -29,14 +30,16 @@ import {
 import { CONFIRM_STYLE, binButton, deleteModal } from "./confirm.js";
 import { MODAL_STYLE } from "./keys.js";
 import { SERVER_STYLE, serverBox } from "./models.js";
-import { needsSeal, sealInfo, sealItem } from "./seal.js";
+import { needsSeal, sealInfo, sealItem, sealText } from "./seal.js";
 import { PALETTE_ICON, THEME_URL, readTheme, themePage, themeRequest } from "./theme.js";
 import { SEARCH_STYLE, matchesProfile, noMatch, recruiterHits, recruiterRow, searchBar, searchQuery } from "./search.js";
 import {
   CV_URL, DOC_URL, REQUEST_KINDS, SKILL_URL, addedSkills, docIndex, emailedIndex, letterStyle, markEmailed, pdfResponse, pendingDocs, profileCvBusy,
   profileCvInfo, readDoc, readProfileCv, requestDoc, requestProfileCv, requestSkill, storeDoc, storeProfileCv, styleLabel, validJobKey,
 } from "./docs.js";
-import { LINK_STYLE, MAX_STATS_BYTES, SENT_RANGES, SENT_URL, STATS_URL, sentPage, splitStats, statsLink, statsPage, validStats } from "./stats.js";
+import {
+  LINK_STYLE, MAX_STATS_BYTES, SENT_RANGES, SENT_URL, STATS_URL, sentPage, sentParts, splitStats, statsLink, statsPage, validStats,
+} from "./stats.js";
 import { TASKS_STYLE, TASKS_URL, cancelTask, requests, taskRows, tasksButton, tasksModal, tasksPage } from "./tasks.js";
 import {
   NOTES_DONE, NOTES_STYLE, NOTES_URL, changeNotes, indexTags, notesSection, readNotes, tagFilter, tagIndex, tagPills, tagQuery,
@@ -562,6 +565,33 @@ async function skillRequest(request, env, s) {
   return redirect(sentBack(u, form.get("back"), h.slice(0, 16), "skill"));
 }
 
+// A job moved on the Pipeline (admins, and a recruiter for their own pool). Only admins may give a fee.
+async function stageRequest(request, env, s) {
+  const form = await limitedForm(request, 8192);
+  if (!form || !safeEqual(String(form.get("csrf") || ""), s.csrf)) {
+    return page("Expired form", "<p>Reload the admin page and try again.</p>", { status: 403 });
+  }
+  const [u, j, stage] = ["u", "j", "a"].map((k) => String(form.get(k) || ""));
+  if (!PROFILE_RE.test(u)) return page("Unknown recruit", "<p>Reload the admin page and try again.</p>", { status: 400 });
+  const current = await status(env);
+  if (!allowed(s, current, u)) return page(...NOT_FOUND);
+  if (!s.me.admin && ["fee", "currency"].some((k) => String(form.get(k) || "").trim())) {
+    return page("Admins only", "<p>Only an admin can set a fee. <a href=\"/admin\">Back to recruits</a></p>", { status: 403 });
+  }
+  const meta = META_STAGES.includes(stage) && s.me.admin ? stageMeta(form) : {};
+  if (!validJobKey(j) || !Object.hasOwn(STAGE_LABELS, stage) || !meta) return redirect(pipelineBack(u, "stagebad"));
+  if (meta.fee != null) {
+    const info = sealInfo(current);
+    if (!info) return redirect(pipelineBack(u, "feeseal"));
+    meta.fee = await sealText(info, String(meta.fee), "fee");
+  }
+  const h = await requestStage(env, { profile: u, j, stage, meta });
+  const card = sentParts(await env.FEEDBACK.get(`sent:${u}`, "json")).board?.find((c) => c?.key === j);
+  const job = [card?.title, card?.employer].filter((v) => typeof v === "string" && v).join(" at ") || "a job";
+  await record(env, u, "stage", `Moved to ${STAGE_LABELS[stage]}: ${job}`, { by: displayName(s.me, current), h });
+  return redirect(pipelineBack(u, "stage", h.slice(0, 16)));
+}
+
 async function docDownload(request, env, s) {
   const url = new URL(request.url);
   const [u, kind, h] = ["u", "k", "h"].map((k) => url.searchParams.get(k) || "");
@@ -915,11 +945,19 @@ async function signedInRoute(request, env, s, path) {
       env.FEEDBACK.get(`sent:${u}`, "json"), docIndex(env, u), emailedIndex(env, u), requests(env), addedSkills(env, u)]);
     const q = (k) => url.searchParams.get(k) || "";
     return sentPage(current, stats, u, { range: q("r"), answer: q("a"), open: q("open"), done: q("done"), csrf: s.csrf,
-      sent: Array.isArray(sent) ? sent : null, docs, emailed, pending: pendingDocs(current, held, u), added, here: url });
+      sent: sentParts(sent).jobs, docs, emailed, pending: pendingDocs(current, held, u), added, here: url });
   }
   if (path === DOC_URL && request.method === "GET") return docDownload(request, env, s);
   if (path === DOC_URL && request.method === "POST") return docRequest(request, env, s);
   if (path === SKILL_URL && request.method === "POST") return skillRequest(request, env, s);
+  if (path === STAGE_URL && request.method === "POST") return stageRequest(request, env, s);
+  if (path === PIPELINE_URL && request.method === "GET") {
+    if (!PROFILE_RE.test(u)) return text("Not found", 404);
+    const current = await status(env);
+    if (!allowed(s, current, u)) return page(...NOT_FOUND);
+    const { board } = sentParts(await env.FEEDBACK.get(`sent:${u}`, "json"));
+    return pipelinePage(current, board, u, { csrf: s.csrf, admin: s.me.admin, done: url.searchParams.get("done") || "" });
+  }
   if (path === STATUS_URL && request.method === "GET") {
     if (!PROFILE_RE.test(u)) return text("Not found", 404);
     const [current, queue] = await Promise.all([status(env), queued(env)]);

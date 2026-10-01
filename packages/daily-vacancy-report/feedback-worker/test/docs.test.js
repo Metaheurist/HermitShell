@@ -82,7 +82,7 @@ describe("letters and CVs from HermitShell", () => {
     expect(body).toMatch(/Cover letter<\/b><small[^>]*>made just now<\/small>[\s\S]*?>Download<\/a>[\s\S]*?>Regenerate</);
     expect(body).toMatch(/Tailored CV<\/b><small>for this job<\/small>[\s\S]*?>Generate</);
     expect(JSON.parse(env.FEEDBACK.store.get("stats:sam-lee")).sent[0].more).toBeUndefined();
-    expect(JSON.parse(env.FEEDBACK.store.get("sent:sam-lee"))[0].more.reasoning).toBe("Good overlap.");
+    expect(JSON.parse(env.FEEDBACK.store.get("sent:sam-lee")).jobs[0].more.reasoning).toBe("Good overlap.");
   });
 
   it("send you back to the job when one is no longer kept", async () => {

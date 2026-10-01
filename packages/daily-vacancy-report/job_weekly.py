@@ -22,6 +22,7 @@ BUTTON_STYLES = {
     "applied": ("#ffffff", "#4f46e5", "#4f46e5"),
     "not_for_me": ("#475569", "#f8fafc", "#cbd5e1"),
     "heard_back": ("#047857", "#ecfdf5", "#a7f3d0"),
+    "interview": ("#ffffff", "#4f46e5", "#4f46e5"),
     "rejected": ("#475569", "#f8fafc", "#cbd5e1"),
 }
 # Job card buttons in display order: (label, Lucide icon, colour, background, border, round).
@@ -145,7 +146,7 @@ def closing_pill(days: int | None) -> str:
 
 
 def followup_section(items: list[dict], links_for) -> str:
-    """`links_for(item)` returns the heard back / rejected links for one application."""
+    """`links_for(item)` returns the heard back / got an interview / rejected links for one application."""
     if not items:
         return ""
     rows = []
@@ -231,7 +232,8 @@ def weekly_summary(data: dict) -> dict:
 
 
 STATUS_LABELS = {"applied": "Waiting", "heard_back": "Heard back", "rejected": "Rejected",
-                 "interested": "Interested", "not_for_me": "Not for me"}
+                 "interested": "Interested", "not_for_me": "Not for me", "interview": "Interview", "offer": "Offer",
+                 "placed": "Placed"}
 
 
 def unsubscribe_footer(link: str, paused_only: bool = False) -> str:

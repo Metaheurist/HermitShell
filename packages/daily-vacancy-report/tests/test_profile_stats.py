@@ -212,3 +212,33 @@ def test_the_jobs_sent_show_the_salary_their_email_showed(tmp_path):
         t.upsert_job("b", {**job("B", 7), "salary": "£45,000"}, True, NOW - 60)
     sent = profile_stats.collect(tmp_path / "job_tracker.db", LONDON, NOW)["sent"]
     assert [j["salary"] for j in sent] == ["£55,700 - £64,300 a year", "£45,000"]
+
+
+def test_the_board_lists_each_jobs_latest_stage_without_notes_or_fees(tmp_path):
+    with tracker(tmp_path) as t:
+        t.upsert_job("a", job("Data Engineer", 9, employer="Northwind"), True, NOW - 3 * DAY)
+        t.upsert_job("b", job("Analyst", 7, company="Contoso"), True, NOW - 3 * DAY)
+        t.upsert_job("c", job("Sales Lead", 4, employer="Fabrikam"), True, NOW - 3 * DAY)
+        t.upsert_job("d", job("Old role", 6, employer="Litware"), True, NOW - 400 * DAY)
+        t.add_event("e1", "a", "applied", "", NOW - 2 * DAY)
+        t.add_event("e2", "a", "interview", "", NOW - DAY)
+        t.add_event("e3", "a", "offer", "ring me on 07700 900123", NOW, meta={"fee": 4200, "currency": "GBP"})
+        t.add_event("e4", "a", "cover_letter", "", NOW + 60)
+        t.add_event("e5", "b", "interested", "", NOW - DAY)
+        t.add_event("e6", "c", "applied", "", NOW - 2 * DAY)
+        t.add_event("e7", "c", "not_for_me", "", NOW - DAY)
+        t.add_event("e8", "d", "placed", "", NOW - 380 * DAY)
+    db = tmp_path / "job_tracker.db"
+    assert "board" not in profile_stats.collect(db, LONDON, NOW)
+    stats = profile_stats.collect(db, LONDON, NOW, board=True)
+    assert stats["board"] == [
+        {"key": "a", "title": "Data Engineer", "employer": "Northwind", "stage": "offer", "day": "2026-09-29"},
+        {"key": "b", "title": "Analyst", "employer": "Contoso", "stage": "interested", "day": "2026-09-28"}]
+    text = json.dumps(stats["board"])
+    assert "4200" not in text and "07700" not in text
+    assert col(stats, "2026-09-28", "interview") == 1 and col(stats, "2026-09-29", "offer") == 1
+    assert stats["pipeline"]["offer"] == 1 and stats["pipeline"]["interview"] == 0
+
+
+def test_new_counts_only_ever_go_at_the_end_of_a_days_row():
+    assert profile_stats.FIELDS[:16][-1] == "add_skill" and profile_stats.FIELDS[16:] == ("interview", "offer", "placed")
