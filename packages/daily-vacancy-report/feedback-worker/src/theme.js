@@ -8,7 +8,8 @@
 // shadows) is repainted as a page is sent, each colour moved to the chosen palette with its lightness mapped around
 // the palette colour's own, so tints stay pale and shadows dark. Only CSS is repainted (<style>, style="" and SVG
 // colour attributes, and /app.css), never text. The theme page writes its swatches as "rgb(r g b)" and its colour
-// fields in capitals, which the repaint doesn't match, so they show the colours themselves.
+// fields in capitals, which the repaint doesn't match, so they show the colours themselves; the search and AI
+// providers' logos are written the same way so they keep their own brand colours under any theme.
 //
 // A logo is a PNG, JPEG, GIF or WebP picture up to MAX_LOGO_BYTES, checked by its first bytes. SVG is refused, as it
 // can carry script. It is served from /brand/logo with a sandbox CSP, and pages show it only as an <img>.

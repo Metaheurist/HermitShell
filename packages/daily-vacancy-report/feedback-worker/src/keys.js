@@ -178,9 +178,9 @@ transition:border-color .15s,box-shadow .15s,transform .15s var(--ease)}
 .keyinfo{flex:1;min-width:0}.keyinfo b{font-size:15px}.keyinfo .small{font-size:12.5px;margin-top:3px}
 .crlogo{flex:none;width:40px;height:40px;border-radius:13px;display:grid;place-items:center;color:#fff}
 .crlogo svg{width:21px;height:21px}
-.cr-firecrawl .crlogo{background:linear-gradient(135deg,#fb923c,#ef4444);box-shadow:0 6px 14px -8px rgba(239,68,68,.9)}
-.cr-tavily .crlogo{background:linear-gradient(135deg,#38bdf8,#6366f1);box-shadow:0 6px 14px -8px rgba(99,102,241,.9)}
-.cr-scrapfly .crlogo{background:linear-gradient(135deg,#34d399,#0ea5e9);box-shadow:0 6px 14px -8px rgba(14,165,233,.9)}
+.cr-firecrawl .crlogo{background:linear-gradient(135deg,#FB923C,#EF4444);box-shadow:0 6px 14px -8px rgb(239 68 68/.9)}
+.cr-tavily .crlogo{background:linear-gradient(135deg,#38BDF8,#6366F1);box-shadow:0 6px 14px -8px rgb(99 102 241/.9)}
+.cr-scrapfly .crlogo{background:linear-gradient(135deg,#34D399,#0EA5E9);box-shadow:0 6px 14px -8px rgb(14 165 233/.9)}
 .crtag{font-size:11px;font-weight:650;color:#047857;background:var(--ok-bg);border-radius:99px;padding:1px 8px}
 .crtag.env{color:var(--brand-ink);background:var(--soft)}
 code.keyhint{display:block;margin-top:2px;font:12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted);
@@ -192,8 +192,8 @@ letter-spacing:.02em}
 .crchoice span{display:flex;align-items:center;gap:9px;padding:12px;border:1.5px solid var(--line);border-radius:14px;
 transition:border-color .15s,background .15s,box-shadow .15s}
 .three .crchoice span{flex-direction:column;gap:6px;padding:12px 6px;text-align:center;font-size:14px}
-.crchoice svg{width:20px;height:20px}.cr-firecrawl.crchoice svg{color:#ef4444}.cr-tavily.crchoice svg{color:#6366f1}
-.cr-scrapfly.crchoice svg{color:#0ea5e9}
+.crchoice svg{width:20px;height:20px}.cr-firecrawl.crchoice svg{color:#EF4444}.cr-tavily.crchoice svg{color:#6366F1}
+.cr-scrapfly.crchoice svg{color:#0EA5E9}
 .crchoice:hover span{border-color:#c9cfe0}
 .crchoice input:checked+span{border-color:var(--brand);background:var(--soft);box-shadow:0 0 0 3px rgba(99,102,241,.14)}
 .crchoice input:focus-visible+span{outline:3px solid rgba(99,102,241,.35);outline-offset:2px}

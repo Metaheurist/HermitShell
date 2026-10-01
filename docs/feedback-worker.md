@@ -581,7 +581,8 @@ top left returns to the dashboard.
 - **Palette.** HermitShell's indigo and violet, Ocean, Forest, Royal, Berry, Sunset, Ember and
   Graphite, or **Custom** with two colour pickers. Custom colours too light for white button text are
   darkened a little. The whole family of brand colours (buttons, links, focus rings, the background's
-  glow, charts and the favicon) moves to the palette; status colours such as green, amber and red stay.
+  glow, charts and the favicon) moves to the palette; status colours such as green, amber and red stay, and
+  the search and AI providers' logos keep their own brand colours.
 - **Look.** Background (aurora, still or plain), corners (rounded, soft or sharp), font (system,
   rounded, serif or mono), spacing (comfortable or compact) and motion (full, or calm, which stops the
   background drifting and cards sliding in).

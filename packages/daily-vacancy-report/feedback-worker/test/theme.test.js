@@ -5,6 +5,8 @@ import {
   CHOICES, DEFAULT_THEME, LOGO_KEY, MAX_LOGO_BYTES, PALETTES, THEME_KEY, cleanTheme, colours, isDefault, logoType, paintHtml, painter, themeCss,
   themeVersion,
 } from "../src/theme.js";
+import { KEY_STYLE } from "../src/keys.js";
+import { MODEL_STYLE } from "../src/models.js";
 import { BASE, testEnv } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
@@ -66,6 +68,16 @@ describe("the theme's colours", () => {
     expect(out).toContain('<input value="#6366f1">');
     expect(out).not.toContain("color:#6366f1");
     expect(out).not.toContain('stop-color="#8b5cf6"');
+  });
+
+  it("leave the search and AI providers' logos in their own brand colours under every palette", () => {
+    const rules = `${KEY_STYLE}\n${MODEL_STYLE}`.split("\n").filter((line) => /\.cr-[a-z]+[ .]/.test(line));
+    expect(rules.length).toBeGreaterThanOrEqual(10);
+    for (const palette of [...Object.keys(PALETTES), "custom"]) {
+      const paint = painter(cleanTheme({ palette, c1: "#0f766e", c2: "#be185d" }));
+      if (!paint) continue;
+      for (const rule of rules) expect(paint(rule), `${palette}: ${rule}`).toBe(rule);
+    }
   });
 
   it("darken custom colours too light for white button text", () => {
@@ -153,6 +165,10 @@ describe("the theme page", () => {
     const icon = await (await worker.fetch(new Request(`${BASE}/favicon.svg?t=${version}`), env)).text();
     expect(icon).toContain(PALETTES.ocean[1]);
     expect(icon).not.toContain("#6366f1");
+
+    const settings = await admin.text("/admin/settings");
+    expect(settings).toContain(".cr-tavily .crlogo{background:linear-gradient(135deg,#38BDF8,#6366F1)");
+    expect(settings).toContain(".cr-featherless .crlogo{background:linear-gradient(135deg,#A78BFA,#7C3AED)");
   });
 
   it("keeps a custom palette's colours, and refuses anything that isn't a colour", async () => {

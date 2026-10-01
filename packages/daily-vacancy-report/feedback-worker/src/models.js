@@ -165,13 +165,13 @@ export function modelModals(csrf) {
 }
 
 export const MODEL_STYLE = `
-.cr-openrouter .crlogo{background:linear-gradient(135deg,#64748b,#1e293b);box-shadow:0 6px 14px -8px rgba(30,41,59,.9)}
-.cr-bazaarlink .crlogo{background:linear-gradient(135deg,#fbbf24,#ea580c);box-shadow:0 6px 14px -8px rgba(234,88,12,.9)}
-.cr-featherless .crlogo{background:linear-gradient(135deg,#a78bfa,#7c3aed);box-shadow:0 6px 14px -8px rgba(124,58,237,.9)}
-.cr-huggingface .crlogo{color:#78350f;background:linear-gradient(135deg,#fde68a,#fbbf24);box-shadow:0 6px 14px -8px rgba(245,158,11,.9)}
-.cr-ollama .crlogo{background:linear-gradient(135deg,#94a3b8,#475569);box-shadow:0 6px 14px -8px rgba(71,85,105,.9)}
-.cr-openrouter.crchoice svg{color:#334155}.cr-bazaarlink.crchoice svg{color:#ea580c}.cr-featherless.crchoice svg{color:#7c3aed}
-.cr-huggingface.crchoice svg{color:#d97706}
+.cr-openrouter .crlogo{background:linear-gradient(135deg,#64748B,#1E293B);box-shadow:0 6px 14px -8px rgb(30 41 59/.9)}
+.cr-bazaarlink .crlogo{background:linear-gradient(135deg,#FBBF24,#EA580C);box-shadow:0 6px 14px -8px rgb(234 88 12/.9)}
+.cr-featherless .crlogo{background:linear-gradient(135deg,#A78BFA,#7C3AED);box-shadow:0 6px 14px -8px rgb(124 58 237/.9)}
+.cr-huggingface .crlogo{color:#78350F;background:linear-gradient(135deg,#FDE68A,#FBBF24);box-shadow:0 6px 14px -8px rgb(245 158 11/.9)}
+.cr-ollama .crlogo{background:linear-gradient(135deg,#94A3B8,#475569);box-shadow:0 6px 14px -8px rgb(71 85 105/.9)}
+.cr-openrouter.crchoice svg{color:#334155}.cr-bazaarlink.crchoice svg{color:#EA580C}.cr-featherless.crchoice svg{color:#7C3AED}
+.cr-huggingface.crchoice svg{color:#D97706}
 code.mname{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink);background:#f1f3f9;border-radius:6px;padding:1px 5px}
 .mrest{color:#b45309;font-weight:650}
 .morder{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:6px 0 4px}.morder .crchoices{flex:1;min-width:260px;margin:0}

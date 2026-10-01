@@ -868,6 +868,11 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Provider logos keep their own colours under a theme.** On Global settings, the Tavily and Featherless
+  logos (and Tavily's and Featherless's choice icons) were repainted with the theme's palette, as their indigo
+  and violet fell in the brand colour family. Every search and AI provider's logo now keeps its brand colours
+  under any palette.
+
 - **Tailored CVs say when they are missing roles, and no longer strand an entry on a page of its own.** A
   profile with no uploaded CV (such as the admin's own job search moved to a recruit) made its tailored CV
   from the short job search profile, which left out roles it doesn't mention, without saying so. The CV's
