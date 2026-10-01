@@ -723,8 +723,10 @@ button; **Send jobs now** and the CV's **Upload CV** have their own.
 
 - **Details**: name, the email address their reports go to, phone and home town (shown on cover
   letters).
-- **Job search**: up to 8 job titles, region or city (web searches use it), country (picked from a
-  list), the towns that count as local, whether fully remote jobs elsewhere count, seniority,
+- **Job search**: up to 8 job titles, region or city (web searches use it, with the country as a
+  filter), country (picked from a list by name; a two-letter code set by hand in `.env` that isn't in
+  the list shows as its own option and is kept when the form is saved), the towns that count as local
+  (comma separated), whether fully remote jobs elsewhere count, seniority,
   minimum salary (empty means no minimum; `45000`, `45k` and `£45,000` all work), the salary
   currency (a list: salaries in other currencies are converted to it, or As advertised),
   employment types, work location and whether to hide agency adverts that don't name the

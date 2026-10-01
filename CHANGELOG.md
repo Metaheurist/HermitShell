@@ -868,6 +868,11 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A hand-set country is kept on the profile page.** A `JOB_SEARCH_COUNTRY` set in `.env` to two letters
+  that aren't in the country list showed as "Any country". It now shows as its own selected option (for
+  example "ZZ (not in the list)"), and saving other fields leaves it alone. A form still can't queue a new
+  code that isn't in the list; it becomes "Any country".
+
 - **Calmer score rings on hover.** On the stats page, hovering a row with a score of 8 or more made its ring's
   glow pulse for as long as the pointer stayed. It now fades to a soft, steady glow instead; the two glows as
   the page opens are unchanged.
