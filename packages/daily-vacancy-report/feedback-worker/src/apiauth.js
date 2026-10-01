@@ -14,7 +14,8 @@ import { authorised, limitedBytes, safeEqual, hex } from "./lib.js";
 
 // 3: the Pipeline (interview, offer and placed answers, the stats' board, POST /admin/stage).
 // 4: the desk (POST /api/desk) and "others" on the jobs sent. 5: Word copies in POST /api/doc.
-export const PROTOCOL = 5;
+// 6: recruits' own page (/me), whose sign-in links are "login_link" queue items with a sealed token.
+export const PROTOCOL = 6;
 export const SIGN_WINDOW_MS = 5 * 60 * 1000;
 // The largest signed body: a kept document and its Word copy (docs.js MAX_DOC_BYTES) with room to spare.
 export const MAX_SIGNED_BYTES = 4.5 * 1024 * 1024;

@@ -97,7 +97,20 @@ export function tagFilter(tag, shown) {
   return tag ? `<div class="tagfilter"><span class="muted">${shown} tagged</span>${tagPills([tag], false)}<a class="small" href="/admin">Show everyone</a></div>` : "";
 }
 
-// The profile page's Notes box. Only admins and the note's writer see a Delete button.
+// A recruit's notes and tags as a plain text download, for an admin answering a subject access request: notes and
+// opinions about a person are their personal data, though the recruit never sees them on their own page.
+export const NOTES_EXPORT_URL = "/admin/notes/export";
+
+export function notesExport(data, name, tz, now = Date.now()) {
+  const lines = [`Notes and tags about ${name}, exported ${when(now, tz)}.`,
+    "Before sending this on, remove other people's details (for example who wrote each note) where they shouldn't be shared.", "",
+    `Tags: ${data.tags.join(", ") || "none"}`, ""];
+  for (const n of data.notes) lines.push(`${when(n.at, tz)}, ${n.by || "Someone"}:`, n.text, "");
+  if (!data.notes.length) lines.push("No notes.");
+  return `${lines.join("\n").trimEnd()}\n`;
+}
+
+// The profile page's Notes box. Only admins and the note's writer see a Delete button; only admins see Export.
 export function notesSection(data, u, csrf, me, tz) {
   const fields = (extra) => `<input type="hidden" name="csrf" value="${esc(csrf)}"><input type="hidden" name="u" value="${esc(u)}">${extra}`;
   const items = [...data.notes].reverse().map((n) => {
@@ -113,7 +126,8 @@ export function notesSection(data, u, csrf, me, tz) {
 <form method="post" action="${NOTES_URL}">${fields('<input type="hidden" name="op" value="add">')}
 <label for="note">Add a note</label><textarea id="note" name="note" maxlength="${MAX_NOTE}" placeholder="Spoke on the phone: open to contract roles"></textarea>
 <button class="small">Add note</button></form>
-${items ? `<ul class="notelist">${items}</ul>` : '<p class="muted">No notes yet.</p>'}`;
+${items ? `<ul class="notelist">${items}</ul>` : '<p class="muted">No notes yet.</p>'}${me.admin ? `
+<p><a class="small" href="${NOTES_EXPORT_URL}?u=${esc(encodeURIComponent(u))}" download>Export these notes</a> <span class="muted">for a subject access request: a text file of the notes and tags.</span></p>` : ""}`;
 }
 
 function noteId() {

@@ -1745,6 +1745,83 @@ def test_a_cancel_only_takes_a_well_formed_task_of_its_own_profile(home, task):
     assert profiles.sync(api)[0].startswith("admin: rejected (invalid task")
 
 
+TOKEN = "T" * 43
+
+
+def login_link(u="sam-lee-456789", token=TOKEN, n=7):
+    return {"id": f"queue:{n}:l{n}", "type": "login_link", "u": u, "token": token}
+
+
+@pytest.fixture
+def logged(monkeypatch):
+    lines = []
+    monkeypatch.setattr(profiles, "log", lines.append)
+    return lines
+
+
+def test_a_sign_in_link_goes_to_the_recruits_own_address_once_in_five_minutes(home, monkeypatch, logged):
+    tmp, sent = home
+    profiles.sync(FakeApi([signup()]))
+    sent.clear()
+    monkeypatch.setenv("HERMES_SELF_SERVICE", "1")
+    api = FakeApi([login_link()])
+    assert profiles.sync(api) == ["login_link: done (sam-lee-456789)"]
+    [mail] = sent
+    assert mail["to"] == "sam@example.com" and mail["subject"].endswith("your sign-in link")
+    assert f"https://fb.example.workers.dev/me/login?t={TOKEN}" in mail["text"]
+    assert f'href="https://fb.example.workers.dev/me/login?t={TOKEN}"' in mail["html"]
+    assert "within 15 minutes" in mail["text"]
+    profiles.sync(FakeApi([login_link(n=8)]))
+    assert len(sent) == 1 and any("less than 5 minutes ago" in line for line in logged)
+    assert all("sam@example.com" not in line and TOKEN not in line for line in logged)
+
+
+@pytest.mark.parametrize("item, env, why", [
+    (login_link(), {"HERMES_SELF_SERVICE": "0"}, "switched off"),
+    (login_link(token="short"), {}, "not a valid sign-in token"),
+    (login_link(token=TOKEN + "<"), {}, "not a valid sign-in token"),
+    (login_link(u="owner"), {}, "not an active recruit"),
+    (login_link(u="../owner"), {}, "not an active recruit"),
+    (login_link(u="drew-harper"), {}, "not an active recruit"),
+    (login_link(), {"JOB_FEEDBACK_URL": "http://fb.example.workers.dev"}, "must start with https://"),
+    (login_link(), {"JOB_FEEDBACK_URL": ""}, "must start with https://"),
+])
+def test_a_sign_in_link_is_dropped_not_retried_when_it_cannot_go(home, monkeypatch, logged, item, env, why):
+    tmp, sent = home
+    profiles.sync(FakeApi([signup()]))
+    sent.clear()
+    monkeypatch.setenv("HERMES_SELF_SERVICE", "1")
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    api = FakeApi([item])
+    profiles.sync(api)
+    assert sent == [] and api.acked == [item["id"]]
+    assert any(why in line for line in logged)
+
+
+def test_a_paused_recruit_gets_no_sign_in_link(home, monkeypatch, logged):
+    tmp, sent = home
+    profiles.sync(FakeApi([signup()]))
+    profiles.set_status("sam-lee-456789", "paused")
+    sent.clear()
+    monkeypatch.setenv("HERMES_SELF_SERVICE", "1")
+    profiles.sync(FakeApi([login_link()]))
+    assert sent == [] and any("not an active recruit" in line for line in logged)
+
+
+def test_a_recruits_own_change_only_touches_their_search_and_only_while_the_page_is_on(home, monkeypatch):
+    profiles.sync(FakeApi([signup()]))
+    pid = "sam-lee-456789"
+    own = admin("profile", pid, job={"titles": ["Data Engineer"]}, self=1)
+    assert profiles.sync(FakeApi([own]))[0].startswith("admin: rejected (recruits' own page is switched off")
+    monkeypatch.setenv("HERMES_SELF_SERVICE", "1")
+    with_details = admin("profile", pid, 3, details={"email": "drew@example.com"}, job={"titles": ["X"]}, self=1)
+    assert profiles.sync(FakeApi([with_details]))[0].startswith("admin: rejected (a recruit's own page can only")
+    assert profiles.load(pid)["email"] == "sam@example.com"
+    assert profiles.sync(FakeApi([admin("profile", pid, 4, job={"titles": ["Data Engineer"]}, self=1)])) == [f"admin: done ({pid})"]
+    assert profiles.load(pid)["titles"] == ["Data Engineer"]
+
+
 def test_run_child_notes_the_scan_process_in_the_marker(home):
     marker = home[0] / "marker.json"
     profiles.write_json(marker, {"pid": 1, "at": 2})

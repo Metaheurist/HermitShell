@@ -295,6 +295,30 @@ deleted ([data protection](configuration.md#data-protection)).
 
 <img src="images/worker/privacy.png" alt="How your data is handled" width="520">
 
+### A recruit's own page
+
+`/me`, off until the **Recruits' own page (/me)** switch is on (`HERMES_SELF_SERVICE=1`). A recruit asks for a
+sign-in link with the address their reports go to (every address gets the same answer), and opening the emailed
+link shows a **Sign in** button that works once, within 15 minutes
+([more](feedback-worker.md#recruits-own-page)).
+
+<table><tr><th>Asking for a link</th><th>The link opened</th></tr>
+<tr><td><img src="images/worker/me-ask.png" alt="The sign-in page: the email address reports go to and Email me a sign-in link" width="320"></td>
+<td><img src="images/worker/me-sign-in.png" alt="The emailed link opened: a Sign in button" width="320"></td></tr></table>
+
+| Tab | What it shows |
+| --- | --- |
+| **My jobs** | The jobs in their recent reports, newest first, with the fit score, employer, place, mode, salary, day, their last answer and the advert's link |
+| **My job search** | Their profile page's job search and daily report boxes and **Save changes** (their name, email address, phone and town aren't on it, and a save carrying them is refused), then **Unsubscribe** with a tick box |
+| **My documents** | Their own CV with **Download** and **Make my CV** / **Make it again**, and the letters, tailored CVs and prep packs kept for them with **Download** (PDF or Word) |
+| **Sign out**, **Sign out everywhere** | Ends this session, or every session within about a minute |
+
+<img src="images/worker/me-jobs.png" alt="My jobs: each job sent with its fit score, details and answer" width="620">
+
+<table><tr><th>My job search</th><th>My documents</th></tr>
+<tr><td><img src="images/worker/me-search.png" alt="My job search: the job search and daily report boxes, then Unsubscribe" width="380"></td>
+<td><img src="images/worker/me-docs.png" alt="My documents: their CV and a kept cover letter" width="380"></td></tr></table>
+
 ## Admin page
 
 `/admin` on the feedback Worker, off until `ADMIN_PASSWORD` is set
@@ -517,6 +541,7 @@ older and how to update it ([why](feedback-worker.md#how-it-stays-safe)).
 | **Send jobs now** | Runs the report now instead of at the daily time ([more](feedback-worker.md#send-jobs-now)) |
 | Notes: **Tags** + **Save tags** | Up to 8 tags, separated by commas, shown as pills on the recruits list ([more](feedback-worker.md#notes-and-tags)) |
 | Notes: **Add a note** + **Add note** | A note for you and the other recruiters, newest first with who wrote it and when; **Delete** for its writer and admins |
+| Notes: **Export these notes** | Admins only: a text file of the recruit's notes and tags, for a subject access request |
 | CV + **Upload CV** | A new CV file or pasted text; HermitShell rebuilds the profile and skills from it and emails a summary |
 
 <img src="images/worker/admin-profile-notes.png" alt="The Notes box on a recruit's page: tags, a note being added and two earlier notes" width="620">

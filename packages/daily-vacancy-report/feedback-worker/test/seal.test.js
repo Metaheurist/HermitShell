@@ -47,7 +47,8 @@ describe("sealing for HermitShell", () => {
   });
 
   it("knows which items carry a secret", () => {
-    expect(SEALED_FIELDS).toEqual(["password", "key", "firecrawl", "tavily", "scrapfly", "cv_text"]);
+    expect(SEALED_FIELDS).toEqual(["password", "key", "firecrawl", "tavily", "scrapfly", "cv_text", "token"]);
+    expect(needsSeal({ type: "login_link", u: "alex-morgan", token: "t" })).toBe(true);
     expect(needsSeal({ action: "email", password: "x" })).toBe(true);
     expect(needsSeal({ action: "api_keys", firecrawl: ["fc-1"] })).toBe(true);
     expect(needsSeal({ action: "email", password: "" })).toBe(false);

@@ -1017,6 +1017,42 @@ console.log(JSON.stringify({ out, file: Buffer.from(file).toString("base64") }))
     assert ws.open_item(sealed) == item, "a value sealed just before a rotation still opens"
 
 
+@pytest.mark.skipif(not NODE, reason="needs node for the Worker's seal.js")
+def test_a_sign_in_token_is_sealed_under_its_own_name(sealing_keys):
+    ws = sealing_keys
+    script = """
+import { sealItem } from "./seal.js";
+let input = ""; for await (const chunk of process.stdin) input += chunk;
+const { spki, item } = JSON.parse(input);
+console.log(JSON.stringify(await sealItem({ spki }, item)));
+"""
+    item = {"type": "login_link", "u": "alex-morgan", "token": "T" * 43}
+    sealed = _node(script, {"spki": ws.public_key()["spki"], "item": item})
+    assert sealed["sealed"] == ["token"] and "T" * 43 not in json.dumps(sealed)
+    assert ws.open_item(sealed) == item
+    moved = {"type": "admin", "action": "email", "password": sealed["token"], "sealed": ["password"]}
+    with pytest.raises(ws.SealError):
+        ws.open_item(moved)
+
+
+def test_a_sign_in_link_is_built_from_this_servers_worker_address_only(monkeypatch):
+    sent = []
+    monkeypatch.setenv("HERMES_SELF_SERVICE", "1")
+    monkeypatch.setenv("JOB_FEEDBACK_URL", "https://fb.example.workers.dev/")
+    monkeypatch.setattr(profiles, "load", lambda pid: {"id": pid, "name": HOSTILE, "email": "alex@example.com", "status": "active"})
+    monkeypatch.setattr(profiles, "profile_dir", lambda pid: Path(os.devnull).parent / "hs-none" / pid)
+    monkeypatch.setattr(profiles.Path, "touch", lambda self: None)
+    monkeypatch.setattr(profiles, "send", lambda to, subject, html_body, text: sent.append((to, html_body, text)))
+    monkeypatch.setattr(profiles, "log", lambda line: None)
+    profiles.send_login_link({"type": "login_link", "u": "alex-morgan", "token": "T" * 43, "url": "https://evil.example",
+                              "email": "drew@example.com"})
+    [(to, html_body, text)] = sent
+    assert to == "alex@example.com"
+    assert "evil.example" not in html_body + text and "drew@" not in html_body + text
+    assert "https://fb.example.workers.dev/me/login?t=" + "T" * 43 in text
+    assert "<script>" not in html_body
+
+
 @pytest.mark.skipif(not NODE, reason="needs node for the Worker's apiauth.js")
 def test_the_worker_and_hermitshell_sign_identically():
     import secrets as pysecrets

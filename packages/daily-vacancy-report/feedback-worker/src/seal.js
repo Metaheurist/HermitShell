@@ -10,7 +10,7 @@
 export const SEAL_ALG = "RSA-OAEP-256+A256GCM";
 export const SEAL_PREFIX = "sealed:";
 // Queue item fields that hold a secret or a CV (the same list as FIELDS in worker_seal.py).
-export const SEALED_FIELDS = ["password", "key", "firecrawl", "tavily", "scrapfly", "cv_text"];
+export const SEALED_FIELDS = ["password", "key", "firecrawl", "tavily", "scrapfly", "cv_text", "token"];
 const MAGIC = [0x48, 0x53, 0x31];
 const SPKI_RE = /^[A-Za-z0-9+/]{300,1400}={0,2}$/;
 const encoder = new TextEncoder();

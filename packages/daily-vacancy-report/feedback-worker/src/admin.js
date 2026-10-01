@@ -43,7 +43,7 @@ import {
 } from "./stats.js";
 import { TASKS_STYLE, TASKS_URL, cancelTask, requests, taskRows, tasksButton, tasksModal, tasksPage } from "./tasks.js";
 import {
-  NOTES_DONE, NOTES_STYLE, NOTES_URL, changeNotes, indexTags, notesSection, readNotes, tagFilter, tagIndex, tagPills, tagQuery,
+  NOTES_DONE, NOTES_EXPORT_URL, NOTES_STYLE, NOTES_URL, changeNotes, notesExport, indexTags, notesSection, readNotes, tagFilter, tagIndex, tagPills, tagQuery,
 } from "./notes.js";
 import {
   ADMIN_ID, KEY_ICON, PASSWORD_URL, ROLES, USERS_DONE, USERS_STYLE, USER_RE, accounts, canSee, changeOwnPassword, checkUser, displayName, initials,
@@ -930,6 +930,14 @@ async function signedInRoute(request, env, s, path) {
         notes: notesSection(notes, u, s.csrf, s.me, current.timezone) });
   }
   if (path === NOTES_URL && request.method === "POST") return notesRequest(request, env, s);
+  if (path === NOTES_EXPORT_URL && request.method === "GET") {
+    if (!s.me.admin) return page(...ADMINS_ONLY);
+    const current = await status(env);
+    const p = PROFILE_RE.test(u) ? (current.profiles || []).find((x) => x.id === u && !x.owner) : null;
+    if (!p) return page(...NOT_FOUND);
+    return text(notesExport(await readNotes(env, u), p.name || u, current.timezone), 200, {
+      "Content-Disposition": `attachment; filename="notes-${u}.txt"`, "Cache-Control": "private, no-store" });
+  }
   if (path === CV_URL && request.method === "GET") return profileCvDownload(request, env, s);
   if (path === CV_URL && request.method === "POST") return profileCvRequest(request, env, s);
   if (path === HISTORY_URL && request.method === "GET") {

@@ -403,7 +403,7 @@ const ANSWER_LABELS = Object.fromEntries(ANSWERS.map(([k, label, color]) => [k, 
 const LINK_RE = /^https?:\/\/[^\s"'<>]+$/i;
 const cut = (v, n) => String(v ?? "").slice(0, n);
 
-function sentJobs(stats) {
+export function sentJobs(stats) {
   return (Array.isArray(stats?.sent) ? stats.sent : []).filter((j) => j && typeof j === "object" && j.title && DATE_RE.test(j.day || ""))
     .slice(0, MAX_SENT);
 }

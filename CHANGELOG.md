@@ -8,6 +8,23 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Recruits' own page (`/me`).** With `HERMES_SELF_SERVICE=1` (or the **Recruits' own page (/me)** switch
+  under Features, off by default; Worker and HermitShell protocol 6) an active recruit can ask for a sign-in
+  link at `/me` and see **My jobs**, **My job search** (their job search and report time, saved as their own
+  change), **My documents** (letters, tailored CVs, prep packs, Word copies and their own CV with Make my CV),
+  sign out (here or everywhere) and unsubscribe. Link requests are counted in the hub per address range (an
+  IPv6 /64 as one), per hashed address and in total before anything touches KV, every address gets the same
+  answer and the matching runs after it; without the hub nothing is sent. The token is 32 random bytes whose
+  SHA-256 the hub keeps for 15 minutes and spends in one SQLite statement, so it works once even when two
+  presses race; GET only shows a Sign in button. It reaches HermitShell sealed in a new `login_link` queue
+  item, and `profiles.py` emails the link it builds from `JOB_FEEDBACK_URL` to the recruit's own address, one
+  every 5 minutes at most, logging refusals without the address. The `__Host-hv_me` session is signed under its
+  own label with a per-recruit epoch; it never opens `/admin`, an admin's session never opens `/me`, and a
+  save carrying any field beyond the job search and report time is refused whole (HermitShell refuses a
+  recruit's own change to their details too). Notes, tags, fees and other recruits are never shown. Admins
+  get **Export these notes** on a recruit's page for subject access requests, and `PRIVACY.md` and `/privacy`
+  gain a section on the page. Tests cover cookie swaps, forged ids, expired, replayed and raced tokens, the
+  hub missing, uniform answers, the admin's and paused recruits' addresses and refused hidden fields.
 - **Distance from home.** A recruit's job search can keep jobs within a set distance of their Home town, as
   the crow flies: **Within N km of home town** on their profile page (`JOB_MAX_DISTANCE_KM`, a whole number
   up to 500, off by default). The new `geo.py` downloads the country's places from GeoNames (CC BY 4.0;

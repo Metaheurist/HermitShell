@@ -96,6 +96,30 @@ describe("notes", () => {
     expect(env.FEEDBACK.store.has(notesKey("sam-lee"))).toBe(false);
   });
 
+  it("exports a recruit's notes and tags as a text file for an admin only", async () => {
+    const { env, admin, casey } = await setup();
+    await admin.send({ op: "add", u: "sam-lee", note: "Open to <b>contract</b> roles" });
+    await admin.send({ op: "tags", u: "sam-lee", tags: "shortlist" });
+    expect(await admin.text("/admin/profile?u=sam-lee")).toContain('href="/admin/notes/export?u=sam-lee" download>Export these notes');
+    expect(await casey.text("/admin/profile?u=sam-lee")).not.toContain("Export these notes");
+    const cookie = await signIn(env, "admin", ADMIN.ADMIN_PASSWORD, "203.0.113.12");
+    const res = await worker.fetch(new Request(`${BASE}/admin/notes/export?u=sam-lee`, { headers: { Cookie: cookie } }), env);
+    expect(res.headers.get("Content-Type")).toContain("text/plain");
+    expect(res.headers.get("Content-Disposition")).toBe('attachment; filename="notes-sam-lee.txt"');
+    expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+    const body = await res.text();
+    expect(body).toContain("Notes and tags about Sam Lee");
+    expect(body).toContain("Tags: shortlist");
+    expect(body).toContain("Open to <b>contract</b> roles");
+    const caseyCookie = await signIn(env, "casey", CASEY_PASSWORD, "203.0.113.13");
+    const refused = await worker.fetch(new Request(`${BASE}/admin/notes/export?u=sam-lee`, { headers: { Cookie: caseyCookie } }), env);
+    expect(await refused.text()).not.toContain("contract");
+    for (const u of ["owner", "nobody", "../x"]) {
+      const other = await worker.fetch(new Request(`${BASE}/admin/notes/export?u=${u}`, { headers: { Cookie: cookie } }), env);
+      expect(other.status).toBe(404);
+    }
+  });
+
   it("does not open a sealed value copied onto another recruit's key", async () => {
     const { env, admin } = await setup();
     await admin.send({ op: "add", u: "sam-lee", note: "Only for Sam" });

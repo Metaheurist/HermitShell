@@ -530,7 +530,7 @@ export async function recentStats(env, ids) {
 
 // An extra profile that unsubscribes or is deleted: its answers not yet collected by HermitShell, its stats, its
 // list of jobs sent, the skills added from it, the letters and CVs kept for download, their own CV, their notes and
-// tags and their history are dropped.
+// tags, their history and the epoch signing their own page's sessions (me.js) are dropped.
 export async function purgeProfileEvents(env, profile) {
   if (!profile) return;
   const docs = await env.FEEDBACK.get(docIndexKey(profile), "json");
@@ -539,7 +539,7 @@ export async function purgeProfileEvents(env, profile) {
   await Promise.all([env.FEEDBACK.delete(docIndexKey(profile)), env.FEEDBACK.delete(emailedKey(profile)), env.FEEDBACK.delete(skillAddKey(profile)),
     env.FEEDBACK.delete(profileCvKey(profile)), env.FEEDBACK.delete(profileCvInfoKey(profile)),
     env.FEEDBACK.delete(`sent:${profile}`), env.FEEDBACK.delete(`stats:${profile}`), rememberWeek(env, profile, null),
-    env.FEEDBACK.delete(notesKey(profile)), dropTags(env, profile)]);
+    env.FEEDBACK.delete(notesKey(profile)), dropTags(env, profile), env.FEEDBACK.delete(`meepoch:${profile}`)]);
   await Promise.all([deletePrefix(env, eventPrefix(profile)), deletePrefix(env, historyPrefix(profile))]);
   await env.FEEDBACK.delete(eventFlag(profile));
 }

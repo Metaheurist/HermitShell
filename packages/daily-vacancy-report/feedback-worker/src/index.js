@@ -10,7 +10,7 @@
 // missing skills (signed, parameter s); the ones you tick, plus any you type, join your skills pool.
 // Links for extra profiles carry the profile id (signed, parameter u); "unsubscribe" removes one.
 // Every link also carries its issue day (signed, parameter d) and stops working after LINK_DAYS.
-// Invite sign-ups (/join) and the admin gateway (/admin) are in join.js and admin.js.
+// Invite sign-ups (/join), the admin gateway (/admin) and recruits' own page (/me) are in join.js, admin.js and me.js.
 
 import { handleAdmin, handleApi } from "./admin.js";
 import { verifyApi, withProtocol } from "./apiauth.js";
@@ -22,6 +22,7 @@ import {
   CONTROL_RE, EVENT_TTL_SECONDS, LINK_DAYS, MAX_REASON, MAX_SKILL, ago, authorised, cleanReason, cleanSkill, deleteAndUnflag, esc, eventFlag, eventPrefix, json, limitedForm,
   limitedJson, listFlagged, page, purgeProfileEvents, safeEqual, setFlag, sha256Hex, sign, STYLE_PATH, text, today, PROFILE_RE,
 } from "./lib.js";
+import { ME_URL, handleMe } from "./me.js";
 import { memoKV } from "./memo.js";
 import { privacyPage } from "./privacy.js";
 import { forgetRequests, rememberRequest } from "./tasks.js";
@@ -268,6 +269,7 @@ async function route(request, env, ctx) {
   if (url.pathname === LOGO_PATH && request.method === "GET") return logoResponse(url, env);
   if (url.pathname === "/privacy") return privacyPage();
   if (url.pathname === "/join") return handleJoin(request, env);
+  if (url.pathname === ME_URL || url.pathname.startsWith(`${ME_URL}/`)) return handleMe(request, env, ctx);
   if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return handleAdmin(request, env, ctx);
   if (url.pathname === "/") return text("HermitShell feedback endpoint.");
   return text("Not found", 404);

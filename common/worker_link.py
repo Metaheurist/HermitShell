@@ -24,7 +24,8 @@ import requests
 
 import hermes_common as hc
 
-PROTOCOL = 5
+PROTOCOL = 6
+# 6: recruits' own page (/me); its sign-in links come as "login_link" queue items with a sealed token.
 # The Worker version that has the Pipeline (interview, offer and placed, and the stats' board).
 PIPELINE_PROTOCOL = 3
 # The Worker version that has the desk (POST /api/desk and /admin/desk).

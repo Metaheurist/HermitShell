@@ -1177,6 +1177,41 @@ tells you (without their address). The unsubscribe link in a report you received
 search moved to a recruit only pauses that recruit (the others keep running) until you resume it from
 `/admin` or with `profiles.py --resume <id>`.
 
+### Recruits' own page
+
+With the **Recruits' own page (/me)** switch under Features on Global settings (`HERMES_SELF_SERVICE=1`, off by
+default; it needs Worker and HermitShell protocol 6), each active recruit can sign in at `/me` with a link
+emailed to the address their reports go to. While it is off, every `/me` address is a 404.
+
+- **Asking for a link:** `/me` asks for the email address. Requests are counted in the hub (5 a minute per
+  address range, an IPv6 /64 counting as one; 3 an hour per address, kept as a hash; 50 an hour in total)
+  before anything is written to KV, so refused requests cost nothing from the 1,000 writes a day. Every
+  address gets the same answer, and the matching happens after it is sent. Only an active recruit's address
+  gets a link: never the main admin, a paused recruit or a stranger. Without the hub (or with its allowance
+  used up) the page says links are unavailable and nothing is made: a token is never kept in KV, where a
+  deleted key can still be read elsewhere for a minute or more.
+- **The link:** 32 random bytes. The hub keeps only its SHA-256, for 15 minutes; the token reaches HermitShell
+  sealed in a `login_link` queue item, and `profiles.py` emails `<JOB_FEEDBACK_URL>/me/login?t=…`, built
+  from its own setting, never from the request, to the address on the recruit's profile, at most one every 5
+  minutes per recruit. Opening it only shows a **Sign in** button (mail scanners open links); pressing it
+  spends the token in one SQLite statement, so it works once even when two presses race.
+- **The session:** a `__Host-hv_me` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`, 7 days), signed under
+  its own label with the recruit's epoch. **Sign out everywhere** moves the epoch on, which every other
+  session notices within about a minute. Pausing or deleting the recruit ends it. A recruit's session never
+  opens `/admin`, and an admin's never opens `/me`: separate cookies, signing labels and form tokens.
+- **The pages:** **My jobs** (the jobs sent in their recent reports with fit, answer and link), **My job
+  search** (the job search and daily report boxes of their profile page; a save carrying any other field,
+  such as their name or email address, is refused whole, and HermitShell refuses a recruit's own change that
+  touches their details or arrives while the switch is off), **My documents** (letters, tailored CVs and prep
+  packs kept for them, with Word copies when kept, and their own CV with **Make my CV**), **Sign out** and
+  **Unsubscribe** (with a tick box). Their changes show in the [history](#history) as made on their own page.
+  Notes, tags, fees and other recruits are never shown.
+
+Notes about a recruit are their personal data on a subject access request even though `/me` never shows them:
+admins have **Export these notes** under Notes on a recruit's page, a text file of the notes and tags.
+
+<img src="images/worker/me-jobs.png" alt="A recruit's own page: My jobs" width="560">
+
 ### Privacy notice
 
 The Worker serves `/privacy`: what is kept about the people you invite, where, for how long, how

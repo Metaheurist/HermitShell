@@ -38,7 +38,7 @@ KEEP_OLD_DAYS = 30
 MAX_SEALED = 8 * 1024 * 1024
 # Queue item fields the Worker may seal (SEALED_FIELDS in seal.js); each is opened with its own name as associated
 # data, and only when the item lists it in "sealed".
-FIELDS = ("password", "key", "firecrawl", "tavily", "scrapfly", "cv_text")
+FIELDS = ("password", "key", "firecrawl", "tavily", "scrapfly", "cv_text", "token")
 _OAEP = padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None) if padding else None
 MISSING = "the cryptography package is missing (python3 doctor.py --fix)"
 

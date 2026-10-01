@@ -90,7 +90,13 @@ SMTP_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM"
 # Global settings, Features: the dashboard's name for each switch, its .env key and its default.
 # A switch is listed only once its feature exists, so the dashboard never offers one that does nothing.
 FEATURES: dict[str, tuple[str, bool]] = {"alerts": ("HERMES_ALERTS", True), "prep_auto": ("INTERVIEW_PREP_AUTO", False),
-                                         "word_copies": ("DOC_WORD_COPIES", False)}
+                                         "word_copies": ("DOC_WORD_COPIES", False),
+                                         "self_service": ("HERMES_SELF_SERVICE", False)}
+# Recruits' own page (/me): the sign-in token's shape (32 random bytes, base64url) and how long it and the gap
+# between two links for the same recruit last.
+LOGIN_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
+LOGIN_LINK_MINUTES = 15
+LOGIN_LINK_GAP = 300
 API_KEYS = {"firecrawl": "FIRECRAWL_API_KEY", "firecrawl_backup": "FIRECRAWL_BACKUP_KEYS",
             "tavily": "TAVILY_API_KEY", "scrapfly": "SCRAPFLY_API_KEY"}
 ID_RE = re.compile(r"^[a-z0-9-]{1,40}$")
@@ -938,6 +944,46 @@ def unsubscribe(pid: str, reason: str = "") -> None:
                               + ([f"Their feedback: {reason}"] if reason else [])))
 
 
+def send_login_link(item: dict) -> None:
+    """Emails an active recruit the sign-in link to their own page (/me) that the Worker asked for. The link is built
+    from JOB_FEEDBACK_URL, not from anything in the item, and goes only to the address on their profile; one every
+    LOGIN_LINK_GAP seconds per recruit. Anything refused is logged (without the address) and dropped, not retried."""
+    pid, token = str(item.get("u") or ""), str(item.get("token") or "")
+    base = (env("JOB_FEEDBACK_URL", "") or "").rstrip("/")
+    profile = load(pid) if ID_RE.match(pid) and pid != OWNER else None
+    problem = ("recruits' own page is switched off" if not features()["self_service"]
+               else "not a valid sign-in token" if not LOGIN_TOKEN_RE.match(token)
+               else "JOB_FEEDBACK_URL must start with https://" if not base.startswith("https://")
+               else "not an active recruit" if not profile or profile.get("owner") or profile.get("status") != "active"
+               else "no valid email address" if not EMAIL_RE.fullmatch(profile.get("email") or "") else "")
+    if problem:
+        log(f"Sign-in link not sent: {problem}")
+        return
+    marker = profile_dir(pid) / ".login_link"
+    try:
+        if time.time() - marker.stat().st_mtime < LOGIN_LINK_GAP:
+            log(f"Sign-in link for {pid} not sent: one went less than {LOGIN_LINK_GAP // 60} minutes ago")
+            return
+    except OSError:
+        pass
+    marker.touch()
+    link = f"{base}/me/login?t={token}"
+    first = _text(profile.get("name"), 80).split(" ")[0] or "there"
+    header = email_header(FROM_NAME, _today(), "Your sign-in link", "Opens your own page: your jobs, documents and search",
+                          [("Once", "Works"), (f"{LOGIN_LINK_MINUTES} min", "Expires in")])
+    body = (f'<p style="margin:0 0 12px;font-size:14px;line-height:21px;color:#334155">Hi {html.escape(first)}, here is '
+            "the link you asked for. Open it and press Sign in.</p>"
+            f'<p style="margin:0 0 12px"><a href="{html.escape(link)}" style="display:inline-block;background:#4f46e5;'
+            'color:#ffffff;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:600;text-decoration:none">'
+            "Sign in to your page</a></p>"
+            f'<p style="margin:0;font-size:13px;line-height:20px;color:#64748b">It works once, within {LOGIN_LINK_MINUTES} '
+            "minutes. Didn't ask for it? Ignore this email: nobody can sign in without it.</p>")
+    text = (f"Hi {first}, here is the link you asked for. Open it and press Sign in:\n\n{link}\n\n"
+            f"It works once, within {LOGIN_LINK_MINUTES} minutes. Didn't ask for it? Ignore this email.")
+    send(profile["email"], f"{FROM_NAME}: your sign-in link", _email(header, [body]), text)
+    log(f"Sign-in link sent to {pid}")
+
+
 def _text(value, limit: int) -> str:
     return " ".join(str(value or "").split())[:limit]
 
@@ -1050,8 +1096,14 @@ def current_details(profile: dict) -> dict:
 
 def apply_profile_settings(profile: dict, item: dict) -> None:
     """The dashboard sends only the fields someone changed, so each is laid over the current values; changes made
-    meanwhile (by another admin, a CV rebuild or an email button) are kept."""
+    meanwhile (by another admin, a CV rebuild or an email button) are kept. A change a recruit made on their own page
+    ("self") may only touch their job search and report time, and only while that page is switched on."""
     details = item.get("details") if isinstance(item.get("details"), dict) else None
+    if item.get("self"):
+        if not features()["self_service"]:
+            raise ProfileError("recruits' own page is switched off")
+        if details or profile.get("status") != "active":
+            raise ProfileError("a recruit's own page can only change an active recruit's job search and report time")
     if details:
         merged = {**current_details(profile), **details}
         new = {"name": _text(merged.get("name"), 80) or profile.get("name", ""),
@@ -1181,6 +1233,8 @@ def handle(item: dict, api: Api) -> None:
         unsubscribe(str(item.get("u") or "") or OWNER, str(item.get("reason") or "")[:300])
     elif kind == "admin":
         admin_action(item, api)
+    elif kind == "login_link":
+        send_login_link(item)
     else:
         raise ProfileError(f"unknown queue item type {kind!r}")
 

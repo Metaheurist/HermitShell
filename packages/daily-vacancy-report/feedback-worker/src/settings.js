@@ -370,6 +370,21 @@ export function profileChange(p, queue, form) {
   };
 }
 
+// What a recruit may send from their own page (/me): their job search and report time, never their details.
+export const OWN_FIELDS = new Set(["csrf", "base", ...JOB_FIELDS, ...REPORT_FIELDS]);
+
+// profileChange for a recruit's own page: anything else in the form refuses the whole save ({ refused }), and the
+// details always stay as they are, whatever the form's base says.
+export function ownSearchChange(p, queue, form) {
+  if ([...form.keys()].some((k) => !OWN_FIELDS.has(k))) return { refused: true };
+  const latest = latestValues(p, queue);
+  const safe = new FormData();
+  for (const [k, v] of form.entries()) safe.append(k, v);
+  for (const k of DETAIL_FIELDS) safe.set(k, latest[k]);
+  const change = profileChange(p, queue, safe);
+  return change.item ? { ...change, item: { ...change.item, self: 1 } } : change;
+}
+
 function shown(key, value) {
   if (key === "min_salary" && value === "0") return "no minimum";
   if (key === "max_km") return value === "0" ? "no limit" : `within ${value} km`;
@@ -430,25 +445,7 @@ ${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
 <div><label for="d_email">Email for reports</label><input id="d_email" name="email" type="email" value="${esc(v.email)}" required maxlength="120" autocomplete="off"></div>
 <div><label for="d_phone">Phone</label><input id="d_phone" name="phone" value="${esc(v.phone)}" maxlength="40" autocomplete="off">${hint("Optional. Shown on cover letters.")}</div>
 <div><label for="d_loc">Home town</label><input id="d_loc" name="location" value="${esc(v.location)}" maxlength="80" autocomplete="off">${hint("Shown on cover letters.")}</div></div>
-
-<h2 id="job">Job search</h2>
-<label for="titles">Job titles</label><textarea id="titles" name="titles" maxlength="600" placeholder="Data Engineer&#10;Analytics Engineer">${esc(v.titles.join("\n"))}</textarea>${hint(`One per line, up to ${MAX_TITLES}.`)}
-<div class="grid2"><div><label for="region">Region or city</label><input id="region" name="region" value="${esc(v.region)}" maxlength="80" placeholder="Greater Manchester">${hint("Where to look. Web searches use this.")}</div>
-<div><label for="country">Country</label>${countrySelect(v.country)}${hint("Searches favour jobs in this country.")}</div></div>
-<label for="places">Towns</label><input id="places" name="places" value="${esc(v.places.join(", "))}" maxlength="1200" placeholder="Salford, Stockport, Trafford">${hint("Towns in the region whose jobs count as local, separated by commas.")}
-<label for="max_km">Within N km of home town (as the crow flies)</label><input id="max_km" name="max_km" type="number" min="0" max="${MAX_DISTANCE_KM}" step="1" value="${esc(v.max_km === "0" ? "" : v.max_km)}" placeholder="No limit" inputmode="numeric">${hint(`Up to ${MAX_DISTANCE_KM} km from the Home town above. Where a job's town is known, its distance decides instead of the region and towns; remote and hybrid jobs, and towns that aren't found, still go by the region.`)}<span class="hint">Place data from <a href="https://www.geonames.org/" rel="noopener noreferrer">GeoNames</a>, CC BY 4.0.</span>
-<label class="check"><input type="checkbox" name="remote_anywhere" value="1"${checked(v.remote_anywhere)}> <span>Include fully remote jobs based anywhere</span></label>
-<div class="grid2"><div><label for="level">Seniority</label>${select("level", LEVELS, v.level)}</div>
-<div><label for="min_salary">Minimum salary</label><input id="min_salary" name="min_salary" value="${esc(v.min_salary === "0" ? "" : v.min_salary)}" maxlength="12" placeholder="No minimum" inputmode="decimal">${hint("For example 45000 or 45k. Jobs that don't show a salary are always included.")}</div>
-<div><label for="currency">Currency</label>${currencySelect(v.currency)}${hint("Salaries in other currencies are converted to this one at the day's exchange rate, and the minimum is in it. As advertised leaves them as they are.")}</div></div>
-<label>Employment types</label>${boxes("types", EMPLOYMENT_TYPES, v.types)}
-<label>Work location</label>${boxes("modes", WORK_MODES, v.modes)}
-<label class="check"><input type="checkbox" name="hide_agency" value="1"${checked(v.hide_agency)}> <span>Hide agency adverts that don't name the employer</span></label>
-
-<h2 id="report">Daily report</h2>
-<div class="grid2"><div><label for="report_time">Time</label><input id="report_time" name="report_time" type="time" value="${esc(v.report_time)}">${hint(reportHint(p, status))}</div>
-<div><label for="report_days">Days</label><select id="report_days" name="report_days">${REPORT_DAYS.map(([d, label]) =>
-    `<option value="${d}"${d === v.report_days ? " selected" : ""}>${label}</option>`).join("")}</select></div></div>
+${searchFields(v, reportHint(p, status))}
 <button>Save changes</button></form>
 ${sendSection(p, csrf, status.timezone)}
 ${notes}
@@ -460,6 +457,28 @@ ${notes}
 <label for="roles">Roles you're after</label><input id="roles" name="roles" maxlength="300">${hint("Optional. Helps suggest job titles from the CV.")}
 <button>Upload CV</button></form>`, { wide: true, status: code, before: BACK_TO_RECRUITS, headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` },
     refresh: cv?.busy ? 15 : 0, refreshTo: cv?.busy ? `/admin/profile?u=${pid}` : "" });
+}
+
+// The job search and daily report boxes, on a recruit's page and on their own (/me).
+export function searchFields(v, timeHint) {
+  return `<h2 id="job">Job search</h2>
+<label for="titles">Job titles</label><textarea id="titles" name="titles" maxlength="600" placeholder="Data Engineer&#10;Analytics Engineer">${esc(v.titles.join("\n"))}</textarea>${hint(`One per line, up to ${MAX_TITLES}.`)}
+<div class="grid2"><div><label for="region">Region or city</label><input id="region" name="region" value="${esc(v.region)}" maxlength="80" placeholder="Greater Manchester">${hint("Where to look. Web searches use this.")}</div>
+<div><label for="country">Country</label>${countrySelect(v.country)}${hint("Searches favour jobs in this country.")}</div></div>
+<label for="places">Towns</label><input id="places" name="places" value="${esc(v.places.join(", "))}" maxlength="1200" placeholder="Salford, Stockport, Trafford">${hint("Towns in the region whose jobs count as local, separated by commas.")}
+<label for="max_km">Within N km of home town (as the crow flies)</label><input id="max_km" name="max_km" type="number" min="0" max="${MAX_DISTANCE_KM}" step="1" value="${esc(v.max_km === "0" ? "" : v.max_km)}" placeholder="No limit" inputmode="numeric">${hint(`Up to ${MAX_DISTANCE_KM} km from the Home town in the details. Where a job's town is known, its distance decides instead of the region and towns; remote and hybrid jobs, and towns that aren't found, still go by the region.`)}<span class="hint">Place data from <a href="https://www.geonames.org/" rel="noopener noreferrer">GeoNames</a>, CC BY 4.0.</span>
+<label class="check"><input type="checkbox" name="remote_anywhere" value="1"${checked(v.remote_anywhere)}> <span>Include fully remote jobs based anywhere</span></label>
+<div class="grid2"><div><label for="level">Seniority</label>${select("level", LEVELS, v.level)}</div>
+<div><label for="min_salary">Minimum salary</label><input id="min_salary" name="min_salary" value="${esc(v.min_salary === "0" ? "" : v.min_salary)}" maxlength="12" placeholder="No minimum" inputmode="decimal">${hint("For example 45000 or 45k. Jobs that don't show a salary are always included.")}</div>
+<div><label for="currency">Currency</label>${currencySelect(v.currency)}${hint("Salaries in other currencies are converted to this one at the day's exchange rate, and the minimum is in it. As advertised leaves them as they are.")}</div></div>
+<label>Employment types</label>${boxes("types", EMPLOYMENT_TYPES, v.types)}
+<label>Work location</label>${boxes("modes", WORK_MODES, v.modes)}
+<label class="check"><input type="checkbox" name="hide_agency" value="1"${checked(v.hide_agency)}> <span>Hide agency adverts that don't name the employer</span></label>
+
+<h2 id="report">Daily report</h2>
+<div class="grid2"><div><label for="report_time">Time</label><input id="report_time" name="report_time" type="time" value="${esc(v.report_time)}">${hint(timeHint)}</div>
+<div><label for="report_days">Days</label><select id="report_days" name="report_days">${REPORT_DAYS.map(([d, label]) =>
+    `<option value="${d}"${d === v.report_days ? " selected" : ""}>${label}</option>`).join("")}</select></div></div>`;
 }
 
 const WAIT_FAST = 12; // checks 5 seconds apart, then

@@ -52,6 +52,16 @@ is kept for 90 days (with a scrambled form of the job's link, not the link itsel
 send job titles and a location to web search services, never
 your CV or contact details. Emails go through the operator's email provider.
 
+## Your own page
+
+If the operator turns it on, you can sign in to your own page on the same Cloudflare Workers site with a link
+emailed to the address your reports go to. It shows the jobs sent to you, the letters and CVs kept for you, and
+your job search and report time, which you can change there; never your recruiter's notes, tags or fees, or anyone
+else. A sign-in link works once, within 15 minutes, and only a scrambled form of it is kept until then. Signing in
+keeps you signed in on that browser for 7 days unless you sign out. Asking for a link is counted by network address
+and by a scrambled form of the address you typed, kept for at most an hour, so the page can't be used to flood an
+inbox.
+
 ## How long
 
 Everything is kept while you are subscribed, except that by default jobs, answers, letters and CVs
@@ -68,10 +78,10 @@ when the operator has turned encryption on, your CV, profile, letters and CVs ar
 
 ## Deleting your data
 
-The unsubscribe link at the end of every report deletes your profile, CV, jobs, answers, letters
+The unsubscribe link at the end of every report (or Unsubscribe on your own page) deletes your profile, CV, jobs, answers, letters
 and tailored CVs from the server, drops anything still waiting on Cloudflare and your history and the
 notes about you there,
 removes your name and
 email address from the logs and emails you a confirmation. Copies in the encrypted backups
-disappear as those backups are rotated out. For a copy of your data or a correction, reply to any
-report.
+disappear as those backups are rotated out. For a copy of your data (including the notes kept about you,
+which your own page doesn't show) or a correction, reply to any report.

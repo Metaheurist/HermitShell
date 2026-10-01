@@ -15,7 +15,7 @@ const MAX_BY = 80;
 const MAX_MONTHS_SHOWN = 24;
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 const HASH_RE = /^[0-9a-f]{32}$/;
-const VIA = { dashboard: "", email: "from an email button", hermitshell: "HermitShell" };
+const VIA = { dashboard: "", email: "from an email button", hermitshell: "HermitShell", self: "on their own page" };
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const ICON = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';

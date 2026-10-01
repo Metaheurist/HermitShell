@@ -6,9 +6,10 @@ import { join } from "node:path";
 
 import { PROTOCOL } from "../../packages/daily-vacancy-report/feedback-worker/src/apiauth.js";
 import worker from "../../packages/daily-vacancy-report/feedback-worker/src/index.js";
-import { sealingKeys } from "../../packages/daily-vacancy-report/feedback-worker/test/helpers.js";
+import { hubTokenPut } from "../../packages/daily-vacancy-report/feedback-worker/src/hub.js";
+import { memoryHub, sealingKeys } from "../../packages/daily-vacancy-report/feedback-worker/test/helpers.js";
 import { WORD_PARTS, bundle, zipOf } from "../../packages/daily-vacancy-report/feedback-worker/test/zip.js";
-import { LINK_DAYS, STYLE_URL, sign, stylesheet, today } from "../../packages/daily-vacancy-report/feedback-worker/src/lib.js";
+import { LINK_DAYS, STYLE_URL, sha256Hex, sign, stylesheet, today } from "../../packages/daily-vacancy-report/feedback-worker/src/lib.js";
 import { jobHash } from "../../packages/daily-vacancy-report/feedback-worker/src/docs.js";
 import { record } from "../../packages/daily-vacancy-report/feedback-worker/src/history.js";
 import { zonedToday } from "../../packages/daily-vacancy-report/feedback-worker/src/stats.js";
@@ -500,6 +501,26 @@ await save("admin-sent-demo", await ribbonAtFoot(new Response((await (await admi
   .replace(/<meta http-equiv="refresh"[^>]*>/, ""))));
 Date.now = realNow;
 await admin("/admin/demo", { method: "POST", form: { csrf, on: "0" } });
+
+// A recruit's own page (/me), switched on: asking for a link, the link's Sign in button, then Avery Lane's jobs,
+// job search and documents. The one-time token lives in the hub, so this part runs on a real in-memory one.
+env.HUB = memoryHub({ sql: "sqlite" });
+await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` },
+  json: { ...STATUS, features: { ...STATUS.features, self_service: true } } });
+await save("me-ask", await call("/me"));
+const meToken = "D".repeat(43);
+await hubTokenPut(env, await sha256Hex(meToken), "avery-lane", 15 * 60000);
+const meLogin = await call(`/me/login?t=${meToken}`);
+const mePre = meLogin.headers.getSetCookie().find((c) => c.startsWith("__Host-hv_mepre=")).split(";")[0];
+const meLoginPage = await meLogin.text();
+await save("me-sign-in", new Response(meLoginPage));
+const meSigned = await call("/me/login", { method: "POST", form: { csrf: meLoginPage.match(/name="csrf" value="([^"]+)"/)[1], t: meToken },
+  headers: { Cookie: mePre } });
+const meCookie = meSigned.headers.getSetCookie().find((c) => c.startsWith("__Host-hv_me=")).split(";")[0];
+const me = (path) => call(path, { headers: { Cookie: meCookie } });
+await save("me-jobs", await me("/me"));
+await save("me-search", await me("/me/search"));
+await save("me-docs", await me("/me/docs"));
 
 env = freshEnv();
 await save("admin-dashboard-empty", await call("/admin").then(async () => {
