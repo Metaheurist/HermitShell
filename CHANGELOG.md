@@ -868,6 +868,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Calmer score rings on hover.** On the stats page, hovering a row with a score of 8 or more made its ring's
+  glow pulse for as long as the pointer stayed. It now fades to a soft, steady glow instead; the two glows as
+  the page opens are unchanged.
+
 - **Provider logos keep their own colours under a theme.** On Global settings, the Tavily and Featherless
   logos (and Tavily's and Featherless's choice icons) were repainted with the theme's palette, as their indigo
   and violet fell in the brand colour family. Every search and AI provider's logo now keeps its brand colours

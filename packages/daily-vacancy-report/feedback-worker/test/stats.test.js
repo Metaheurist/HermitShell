@@ -167,6 +167,8 @@ describe("stats page", () => {
     expect(body).toMatch(/class="bar score k-green"/);
     expect(body).not.toMatch(/class="bar score" fill=/);
     expect(body).toContain("@keyframes halo");
+    expect(body).toContain(".ring.hot{animation:halo 2.6s ease-in-out 1.5s 2;");
+    expect(body).not.toMatch(/\.ring[^{]*\{[^}]*infinite/);
     expect(styled(body)).toContain("prefers-reduced-motion");
   });
 

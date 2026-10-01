@@ -618,7 +618,8 @@ transform-origin:left;animation:growx .9s var(--ease) both}
 filter:drop-shadow(0 1px 1.5px color-mix(in srgb,var(--c) 45%,transparent))}
 .ring .val{font-size:11px;font-weight:800;fill:var(--c);animation:fade .5s ease both .7s}
 .ring .sub{font-size:4.4px;font-weight:700;fill:var(--muted);letter-spacing:.02em}
-.ring.hot{animation:halo 2.6s ease-in-out 1.5s 2}li:hover .ring.hot,summary:hover .ring.hot{animation-iteration-count:infinite}
+.ring.hot{animation:halo 2.6s ease-in-out 1.5s 2;transition:filter .25s ease}
+li:hover .ring.hot,summary:hover .ring.hot{filter:drop-shadow(0 0 3px color-mix(in srgb,var(--c) 35%,transparent))}
 li:hover .ring .arc,summary:hover .ring .arc{animation:arc2 .9s var(--ease) both}
 @keyframes halo{50%{filter:drop-shadow(0 0 5px color-mix(in srgb,var(--c) 60%,transparent))}}
 @keyframes arc2{from{stroke-dasharray:0 100}}
