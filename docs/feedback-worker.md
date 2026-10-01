@@ -957,8 +957,10 @@ Worker, and they open with `rel="noopener noreferrer"`.
 Every control is described in [screenshots.md](screenshots.md#recruits).
 
 Sign-in: five wrong passwords lock that address (an IPv6 /64 counts as one address) out for 15
-minutes, and 30 wrong passwords from anywhere lock sign-in for everyone for 15 minutes. If KV
-can't be read, sign-in is refused rather than allowed. Sessions last 12 hours in a `__Host-`
+minutes, and 30 wrong passwords from anywhere lock sign-in for everyone for 15 minutes. The
+failures are counted in the link's Durable Object (`Hub`), so wrong passwords don't use up KV's
+1,000 writes a day; a Worker without the `HUB` binding counts them in KV. If the count can't be
+read or recorded, sign-in is refused rather than allowed. Sessions last 12 hours in a `__Host-`
 HttpOnly, SameSite=Strict cookie and every form carries a CSRF token. **Sign out** ends every
 session, and so does changing `ADMIN_PASSWORD`.
 

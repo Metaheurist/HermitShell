@@ -49,6 +49,8 @@ MAX_ABOUT = 400
 MAX_SKILLS = 12
 MAX_GAPS = 6
 MAX_POOL = 200
+# The Worker refuses a stats upload over MAX_STATS_BYTES (stats.js); a little is kept back for the envelope.
+MAX_BYTES = 600 * 1024 - 1024
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]+")
 _URL = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 _EMAIL = re.compile(r"[^\s@<>()\[\],;:\"']+@[^\s@<>()\[\],;:\"']+\.[a-z]{2,}", re.IGNORECASE)
@@ -256,6 +258,19 @@ def collect(db: Path, tz: ZoneInfo, now: float | None = None, private: tuple[str
     stats["sent"] = _sent_list(sent, answers, today - timedelta(days=SENT_DAYS - 1), private)
     stats["skills"] = [k for k in dict.fromkeys(redact(_clean(k, MAX_NAME), private) for k in pool if isinstance(k, str))
                        if k and k != REMOVED]
+    return fit(stats)
+
+
+def body_size(stats: dict) -> int:
+    """Bytes of the upload as worker_link sends it (compact, non-ASCII escaped), with the longest profile id."""
+    return len(json.dumps({"u": "x" * 40, "stats": stats}, separators=(",", ":")))
+
+
+def fit(stats: dict, limit: int = MAX_BYTES) -> dict:
+    """`stats` with the oldest jobs sent dropped, a tenth at a time, until the upload fits the Worker's limit:
+    every field is capped, but 150 jobs at their caps (or in a script JSON escapes) can still pass it."""
+    while stats.get("sent") and body_size(stats) > limit:
+        stats["sent"] = stats["sent"][:-max(1, len(stats["sent"]) // 10)]
     return stats
 
 

@@ -87,6 +87,9 @@ OWNER_STATE_FILES = ("job_scanner_seen.json", "job_scanner_retry.json", "job_sca
 OWNER_STATE_DIRS = ("cover_letters", "tailored_cvs")
 STAFF = "the admin is staff, not a recruit, and has no job search of their own"
 SMTP_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM")
+# Global settings, Features: the dashboard's name for each switch, its .env key and its default.
+# A switch is listed only once its feature exists, so the dashboard never offers one that does nothing.
+FEATURES: dict[str, tuple[str, bool]] = {}
 API_KEYS = {"firecrawl": "FIRECRAWL_API_KEY", "firecrawl_backup": "FIRECRAWL_BACKUP_KEYS",
             "tavily": "TAVILY_API_KEY", "scrapfly": "SCRAPFLY_API_KEY"}
 ID_RE = re.compile(r"^[a-z0-9-]{1,40}$")
@@ -989,6 +992,22 @@ def apply_email(item: dict) -> None:
     log(f"Email server set from the dashboard: {user} via {host}:{port}")
 
 
+def features() -> dict[str, bool]:
+    return {name: hc.env_bool(key, default) for name, (key, default) in FEATURES.items()}
+
+
+def apply_features(item: dict) -> None:
+    """The Features switches under Global settings; anything that is not one of them is ignored."""
+    updates = {key: "1" if item[name] else "0" for name, (key, _) in FEATURES.items() if type(item.get(name)) is bool}
+    ignored = sorted(k for k in item if k not in FEATURES and k not in ("type", "action", "id", "at"))
+    if ignored:
+        log(f"Features: ignored {', '.join(_text(k, 40) for k in ignored[:10])}")
+    if not updates:
+        raise ProfileError("no valid feature switches")
+    update_dashboard_env(updates)
+    log(f"Features set from the dashboard: {', '.join(f'{k}={v}' for k, v in sorted(updates.items()))}")
+
+
 def send_test_email(to: str = "") -> dict:
     to = to if EMAIL_RE.fullmatch(to or "") else ((load(OWNER) or {}).get("email") or env("ALERT_EMAIL") or "")
     result: dict = {"at": time.time(), "to": to}
@@ -1072,6 +1091,8 @@ def admin_action(item: dict, api=None) -> None:
         return apply_model_keys(item)
     if action == "email":
         return apply_email(item)
+    if action == "features":
+        return apply_features(item)
     if action == "test_email":
         send_test_email(str(item.get("to") or ""))
         return None
@@ -1195,7 +1216,7 @@ def status_payload() -> dict:
     problems = [{"at": _ms(p["at"]), "what": p.get("what", ""), "error": p.get("error", "")} for p in recent_problems()]
     return {"profiles": profiles, "email": email, "keys": keys, "problems": problems, "timezone": timezone_name(),
             "scheduler": jobs is not None, "tasks": tasks(), "models": models_info(every), "llm": llm_info(),
-            "usage": llm_usage.summary(),
+            "usage": llm_usage.summary(), "features": features(),
             "server": server_info(), "protocol": worker_link.PROTOCOL,
             "worker_protocol": worker_link.worker_protocol().get("protocol"), "seal": worker_seal.public_key()}
 

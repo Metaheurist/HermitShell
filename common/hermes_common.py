@@ -105,9 +105,13 @@ _ENV_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
 _DASHBOARD_PREFIXES = ("ALERT_", "BAZAARLINK_", "COVER_LETTER_", "FEATHERLESS_", "FIRECRAWL_", "HUGGINGFACE_", "JOB_",
                        "LLM_", "OPENROUTER_", "SCRAPFLY_", "SMTP_", "TAVILY_")
 _DASHBOARD_DENIED = re.compile(r"^JOB_FEEDBACK_|_(FILE|DIR|PATH)$|^JOB_PROFILE_ID$|^JOB_FX_")
+# The on/off switches under Global settings, Features: named one by one, as their prefixes cover more than this.
+DASHBOARD_SWITCHES = frozenset({"HERMES_ALERTS", "INTERVIEW_PREP_AUTO", "DOC_WORD_COPIES", "HERMES_SELF_SERVICE"})
 
 
 def dashboard_key_allowed(key: str) -> bool:
+    if key in DASHBOARD_SWITCHES:
+        return True
     return bool(_ENV_KEY_RE.match(key)) and key.startswith(_DASHBOARD_PREFIXES) and not _DASHBOARD_DENIED.search(key)
 
 

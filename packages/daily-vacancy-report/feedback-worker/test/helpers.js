@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { PROTOCOL } from "../src/apiauth.js";
 import { Hub } from "../src/hub.js";
 import { STYLE_URL, stylesheet } from "../src/lib.js";
@@ -59,13 +60,28 @@ function memorySql() {
   };
 }
 
-// The HUB binding: the real Hub class on an in-memory Durable Object state, with SQLite storage when asked.
+// A Durable Object's SQLite storage on a real in-memory SQLite database (node:sqlite), for the hub's rate
+// limits and one-time tokens: exec returns a cursor with toArray(), as the runtime's does.
+export function realSql() {
+  const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite");
+  const db = new DatabaseSync(":memory:");
+  return {
+    db,
+    exec(query, ...args) {
+      const rows = db.prepare(query).all(...args);
+      return { toArray: () => rows };
+    },
+  };
+}
+
+// The HUB binding: the real Hub class on an in-memory Durable Object state, with SQLite storage when asked
+// (sql: true for the nonce table's stand-in, "sqlite" for a real database).
 export function memoryHub({ sql = false } = {}) {
   const storage = new Map();
   const sockets = [];
   const state = {
     storage: { async get(key) { return storage.get(key); }, async put(key, value) { storage.set(key, value); },
-      ...(sql ? { sql: memorySql() } : {}) },
+      ...(sql === "sqlite" ? { sql: realSql() } : sql ? { sql: memorySql() } : {}) },
     sockets,
     acceptWebSocket(ws) { sockets.push(ws); },
     getWebSockets() { return sockets.filter((ws) => ws.readyState !== 3); },

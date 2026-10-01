@@ -132,8 +132,45 @@ function pendingEmail(email, queue) {
     : { ...e, host: i.host || e.host, port: i.port || e.port, user: i.user || e.user, from: i.from ?? e.from }, email);
 }
 
-const WAITING_LABELS = { email: "the email server", test_email: "the test email", api_keys: "the web search keys", model_keys: "the AI model settings" };
-const WAITING_SECTIONS = { email: "email", test_email: "email", api_keys: "keys", model_keys: "models" };
+const WAITING_LABELS = { email: "the email server", test_email: "the test email", api_keys: "the web search keys", model_keys: "the AI model settings",
+  features: "the features" };
+const WAITING_SECTIONS = { email: "email", test_email: "email", api_keys: "keys", model_keys: "models", features: "features" };
+
+// Global settings, Features: switch name (profiles.py FEATURES), label, explanation and default.
+export const FEATURES = [
+  ["alerts", "Admin alerts by email", "Emails you once when credits run low, a provider stops answering, a backup fails or the disk fills up, and again when it clears.", true],
+  ["prep_auto", "Interview prep packs on Interview", "Makes an interview prep pack as soon as a job reaches Interview. The button on the job always works.", false],
+  ["word_copies", "Word copies of letters and CVs", "Saves and emails a Word file beside each PDF cover letter and tailored CV.", false],
+  ["self_service", "Recruits' own page (/me)", "Lets recruits sign in with a link sent to their email and see their jobs, documents and search.", false],
+];
+
+export function featureOn(status, name) {
+  const value = status?.features?.[name];
+  return typeof value === "boolean" ? value : Boolean(FEATURES.find(([n]) => n === name)?.[3]);
+}
+
+// The switches HermitShell reports (an older one knows fewer), as they will be once it applies a saved change.
+function pendingFeatures(status, queue) {
+  const known = FEATURES.filter(([n]) => typeof status?.features?.[n] === "boolean");
+  const now = Object.fromEntries(known.map(([n]) => [n, status.features[n]]));
+  for (const i of byId(queue.filter((x) => x.type === "admin" && x.action === "features"))) {
+    for (const [n] of known) if (typeof i[n] === "boolean") now[n] = i[n];
+  }
+  return now;
+}
+
+const FEATURE_STYLE = `.featurelist{display:grid;gap:8px;margin:6px 0 14px}
+.featurelist .check{padding:10px 13px;border:1px solid var(--line);border-radius:10px;background:var(--field)}
+.featurelist .check:has(input:checked){background:var(--soft)}.featurelist .check .muted{color:var(--muted)}`;
+
+function featuresSection(on, csrf) {
+  if (!Object.keys(on).length) return "";
+  return `<h2 id="features">Features</h2>
+<p class="muted">Parts of HermitShell you can switch on or off. HermitShell applies a change within seconds while it is connected.</p>
+<form method="post" action="/admin/action">${hidden({ csrf, action: "features" })}<div class="featurelist">
+${FEATURES.filter(([n]) => Object.hasOwn(on, n)).map(([n, label, help]) => `<input type="hidden" name="shown" value="${n}"><label class="check"><input type="checkbox" name="${n}" value="1"${checked(on[n])}> <span><b>${esc(label)}</b><br><span class="muted">${esc(help)}</span></span></label>`).join("\n")}
+</div><button>Save features</button></form>`;
+}
 
 // Global settings changes still waiting for HermitShell.
 export function settingsWaiting(queue) {
@@ -162,7 +199,7 @@ export function settingsPage(status, csrf, { done = "", queue = [], demo = "", h
   const refresh = waitRefresh(waiting);
   const refreshTo = refresh && here ? reloadTo(here, WAITING_SECTIONS[waiting.at(-1).action]) : "";
   const what = [...new Set(waiting.map((i) => WAITING_LABELS[i.action]))].join(", ");
-  return page("Global settings", `<style>${MODAL_STYLE}${KEY_STYLE}${MODEL_STYLE}</style>${nav("settings")}
+  return page("Global settings", `<style>${MODAL_STYLE}${KEY_STYLE}${MODEL_STYLE}${FEATURE_STYLE}</style>${nav("settings")}
 ${done ? note(done) : ""}${versionNote(status)}${waiting.length ? waitBar(what, refresh) : ""}
 <p class="muted">These apply to the whole of HermitShell and every recruit. Where each person's reports go, their job search
 and CV are on their own page under <a href="/admin">Recruits</a>.</p>
@@ -170,6 +207,7 @@ ${emailSection({ ...status, email: pendingEmail(status.email || {}, queue) }, cs
 ${keysSection(status, csrf, savingKeys(waiting))}
 ${modelsSection(status, csrf, savingModels(waiting))}
 ${usageSection(status)}
+${featuresSection(pendingFeatures(status, queue), csrf)}
 ${demo}`, { wide: true, before: keyModals(csrf) + modelModals(csrf), refresh, refreshTo });
 }
 
@@ -491,6 +529,13 @@ export function settingsItem(act, form) {
       ttl: password ? SECRET_TTL_SECONDS : undefined };
   }
   if (act === "email_clear") return { item: { type: "admin", action: "email", clear: true } };
+  if (act === "features") {
+    // Only the switches the form showed: each is on the form with its checkbox and a hidden "shown" field.
+    const shown = new Set(form.getAll("shown").map(String));
+    if (!FEATURES.some(([n]) => shown.has(n))) return { error: "nochange" };
+    return { item: { type: "admin", action: "features",
+      ...Object.fromEntries(FEATURES.filter(([n]) => shown.has(n)).map(([n]) => [n, form.get(n) === "1"])) } };
+  }
   if (act === "test_email") {
     const to = field(form, "to", 120);
     if (to && !EMAIL_RE.test(to)) return { error: "bademail" };

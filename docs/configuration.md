@@ -349,8 +349,9 @@ This is how it is carried out:
   plain so you can edit them, as does the tracker database. The uploaded CV file is deleted once its
   text is read.
 - **The key.** The wizard generates it (or run `python3 maintenance.py --new-key`) and writes it to
-  `.env`. Keep a copy in a password manager: without it the encrypted files and backups can't be
-  read. Don't change it once set; `maintenance.py --decrypt FILE` opens a single file.
+  `.env`. Keep a copy away from the server, in a password manager: without it the encrypted files and
+  backups can't be read, and the backups can't help because the `.env` inside them is encrypted with
+  the same key. `doctor.py` reminds you of this. Don't change it once set; `maintenance.py --decrypt FILE` opens a single file.
 - **Permissions.** The scripts create files readable by HermitShell's account only (`0600`, whatever
   the umask), and maintenance resets everything under `state/`, the profiles folder and the backups
   to `0600`/`0700`.

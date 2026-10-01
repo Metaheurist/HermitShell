@@ -4,9 +4,16 @@
 // The WebSocket is hibernatable and HermitShell's "ping" is answered by the runtime without waking the object,
 // so an idle link costs nothing on the free plan. Without the binding (or when the free daily Durable Object
 // allowance runs out) everything still works: HermitShell falls back to polling /api/queue/flag.
-// It also remembers the nonces of signed API requests (apiauth.js) for ten minutes, so none is accepted twice.
+// It also remembers the nonces of signed API requests (apiauth.js) for ten minutes, so none is accepted twice,
+// counts attempts for rate limits (a counted attempt is a row here rather than one of KV's 1,000 daily writes),
+// and holds one-time sign-in tokens, spent by a single statement so each works once even when two requests race.
 
 const NAME = "hub";
+const LIMIT_KEY_RE = /^[a-z]{1,12}:[0-9A-Za-z:._-]{1,80}$/;
+const TOKEN_RE = /^[0-9a-f]{64}$/;
+const PROFILE_ID_RE = /^[a-z0-9-]{1,40}$/;
+const MAX_WINDOW_MS = 24 * 3600 * 1000;
+const MAX_TOKEN_MS = 60 * 60 * 1000;
 // HermitShell pings every 30 seconds; a link with no ping for this long is treated as dropped.
 export const LIVE_MS = 90 * 1000;
 // Polled by profiles.py when it has no live link.
@@ -40,6 +47,28 @@ export async function hubNonce(env, nonce, seen = false) {
 
 export function hubBump(env, flag) {
   return call(env, "/bump", { method: "POST", body: JSON.stringify({ flag }) });
+}
+
+// Attempts at `key` within the last `windowMs`: { ok, n }, where ok says another attempt is allowed (or, with
+// `hit`, that this counted one was within `max`). null when there is no hub to ask, so callers keep a fallback.
+export function hubLimit(env, key, max, windowMs, hit = false) {
+  return call(env, "/limit", { method: "POST", body: JSON.stringify({ key, max, window: windowMs, hit }) });
+}
+
+export function hubLimitClear(env, key) {
+  return call(env, "/limit", { method: "POST", body: JSON.stringify({ key, clear: true }) });
+}
+
+// A one-time token, stored as the SHA-256 hex of the secret the user holds: put { h, u, ms } or spend { h }.
+// Spending returns the profile it was for once, then ""; null when there is no hub.
+export async function hubTokenPut(env, h, u, ms) {
+  const got = await call(env, "/token", { method: "POST", body: JSON.stringify({ op: "put", h, u, ms }) });
+  return got ? got.ok === true : null;
+}
+
+export async function hubTokenSpend(env, h) {
+  const got = await call(env, "/token", { method: "POST", body: JSON.stringify({ op: "spend", h }) });
+  return got ? String(got.u || "") : null;
 }
 
 // HermitShell polled instead of holding the link: still counts as a check-in.
@@ -91,6 +120,45 @@ export class Hub {
     }
   }
 
+  // null without SQLite storage, so the Worker falls back to what it did before (KV locks, or refusing).
+  limit({ key, max, window: windowMs, hit, clear }) {
+    const sql = this.state.storage.sql;
+    if (!sql || typeof key !== "string" || !LIMIT_KEY_RE.test(key)) return null;
+    sql.exec("CREATE TABLE IF NOT EXISTS limits (k TEXT NOT NULL, exp INTEGER NOT NULL)");
+    sql.exec("CREATE INDEX IF NOT EXISTS limits_k ON limits (k)");
+    if (clear === true) {
+      sql.exec("DELETE FROM limits WHERE k = ?", key);
+      return { ok: true, n: 0 };
+    }
+    if (!Number.isInteger(max) || max < 1 || !Number.isInteger(windowMs) || windowMs < 1000 || windowMs > MAX_WINDOW_MS) return null;
+    const now = Date.now();
+    sql.exec("DELETE FROM limits WHERE exp < ?", now);
+    if (hit === true) sql.exec("INSERT INTO limits (k, exp) VALUES (?, ?)", key, now + windowMs);
+    const n = Number(sql.exec("SELECT COUNT(*) AS n FROM limits WHERE k = ?", key).toArray()[0]?.n) || 0;
+    return { ok: hit === true ? n <= max : n < max, n };
+  }
+
+  token({ op, h, u, ms }) {
+    const sql = this.state.storage.sql;
+    if (!sql || typeof h !== "string" || !TOKEN_RE.test(h)) return null;
+    sql.exec("CREATE TABLE IF NOT EXISTS tokens (h TEXT PRIMARY KEY, u TEXT NOT NULL, exp INTEGER NOT NULL)");
+    const now = Date.now();
+    sql.exec("DELETE FROM tokens WHERE exp < ?", now);
+    if (op === "put") {
+      if (typeof u !== "string" || !PROFILE_ID_RE.test(u) || !Number.isInteger(ms) || ms < 1000 || ms > MAX_TOKEN_MS) return null;
+      try {
+        sql.exec("INSERT INTO tokens (h, u, exp) VALUES (?, ?, ?)", h, u, now + ms);
+      } catch {
+        return { ok: false };
+      }
+      return { ok: true };
+    }
+    if (op === "spend") {
+      return { u: String(sql.exec("DELETE FROM tokens WHERE h = ? AND exp >= ? RETURNING u", h, now).toArray()[0]?.u || "") };
+    }
+    return null;
+  }
+
   async presence() {
     return { live: this.open().length > 0, seen: (await this.state.storage.get("seen")) || 0 };
   }
@@ -130,6 +198,11 @@ export class Hub {
       const fresh = this.nonce(String(body?.nonce || ""));
       if (fresh && body?.seen === true) await this.state.storage.put("seen", Date.now());
       return Response.json({ fresh });
+    }
+    if ((path === "/limit" || path === "/token") && request.method === "POST") {
+      const body = await request.json().catch(() => null);
+      const got = body && typeof body === "object" ? (path === "/limit" ? this.limit(body) : this.token(body)) : null;
+      return got ? Response.json(got) : Response.json({ error: "unavailable" }, { status: 503 });
     }
     return new Response("Not found", { status: 404 });
   }

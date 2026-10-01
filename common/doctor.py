@@ -349,7 +349,10 @@ def check_settings(report: Report, fix: bool) -> None:
     if hc.env(hc.DATA_KEY_ENV):
         try:
             hc.unseal(hc.seal(b"check"))
-            report.add("settings", "ok", "data key set: CVs, profiles, letters and backups are encrypted")
+            # Each backup holds .env and is sealed with this key, so a backup is no use without a copy kept elsewhere.
+            report.add("settings", "ok", "data key set: CVs, profiles, letters and backups are encrypted",
+                       f"keep a copy of {hc.DATA_KEY_ENV} away from this server (a password manager): "
+                       "without it no backup can be opened")
         except hc.DataKeyError as exc:
             report.add("settings", "fail", str(exc))
     elif sealed_files_exist(hc):

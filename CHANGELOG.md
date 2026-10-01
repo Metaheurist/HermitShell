@@ -737,6 +737,16 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Sign-in failures no longer use KV writes.** Wrong passwords are counted in the link's Durable Object
+  (`Hub`) with the same limits (five per address, 30 overall, 15 minutes), leaving KV's 1,000 writes a day
+  for recruits. A Worker without the `HUB` binding counts them in KV, and sign-in is refused if neither can
+  record the count. The Hub also keeps one-time tokens, spent at most once.
+- **Stats always fit.** The recruits' stats HermitShell uploads are trimmed, oldest sent jobs first, to stay
+  under the Worker's 600 KB limit instead of being refused.
+- **Key reminder.** `doctor.py` reminds you to keep a copy of `HERMES_DATA_KEY` away from the server, since
+  the backups are encrypted with it.
+- Global settings can show on/off **Features** switches; each appears once HermitShell has the feature and
+  reports it, and only the listed switches can be set.
 - The dashboard calls the server's own Ollama the **Server model** instead of **Local Ollama**, and the order
   choice **Server first** instead of **Local first** (`LLM_ORDER=local` is unchanged).
 - Shared code in one place: the Worker's profile id pattern, hex and cache hashes, hidden form fields and

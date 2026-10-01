@@ -14,7 +14,7 @@
 import { DEMO_DONE, DEMO_URL, demoEnv, demoMode, demoRibbon, demoSection, demoToggle, saveDemo } from "./demo.js";
 import { HISTORY_URL, historyPage, listed, moveOwnerHistory, record, recordReported } from "./history.js";
 import { hasCheckedIn } from "./apiauth.js";
-import { POLL_PATH, hubConnect, hubPresence, hubSeen } from "./hub.js";
+import { POLL_PATH, hubConnect, hubLimit, hubLimitClear, hubPresence, hubSeen } from "./hub.js";
 import { enhance, enhancedCsp } from "./enhance.js";
 import { createInvite, openInvites, queueItem } from "./join.js";
 import {
@@ -128,10 +128,15 @@ function loginPage(message = "", status = 200) {
 async function login(request, env) {
   const ip = (request.headers.get("CF-Connecting-IP") || "unknown").replace(/[^0-9a-fA-F:.]/g, "").slice(0, 45);
   // IPv6 users can change the last 64 bits at will, so count failures per /64.
-  const lockKey = `lock:${ip.includes(":") ? ip.split(":").slice(0, 4).join(":") : ip}`;
-  const [failures, globalFailures] = (await Promise.all([env.FEEDBACK.get(lockKey), env.FEEDBACK.get("lock:all")]))
-    .map((v) => Number(v) || 0);
-  if (failures >= MAX_FAILURES || globalFailures >= MAX_GLOBAL_FAILURES) {
+  const who = ip.includes(":") ? ip.split(":").slice(0, 4).join(":") : ip;
+  const lockKey = `lock:${who}`;
+  // Failures are counted in the hub, which costs no KV writes; without it, in KV.
+  const hubKeys = [[`login:${who || "unknown"}`, MAX_FAILURES], ["login:all", MAX_GLOBAL_FAILURES]];
+  const looked = await Promise.all(hubKeys.map(([k, max]) => hubLimit(env, k, max, LOCK_SECONDS * 1000)));
+  const viaHub = looked.every(Boolean);
+  const [failures, globalFailures] = viaHub ? [0, 0]
+    : (await Promise.all([env.FEEDBACK.get(lockKey), env.FEEDBACK.get("lock:all")])).map((v) => Number(v) || 0);
+  if (viaHub ? !looked.every((l) => l.ok) : failures >= MAX_FAILURES || globalFailures >= MAX_GLOBAL_FAILURES) {
     return loginPage("Too many attempts. Try again in 15 minutes.", 429);
   }
   const form = await limitedForm(request, 4096);
@@ -143,6 +148,11 @@ async function login(request, env) {
   // A failure count that cannot be recorded (for example the daily KV write limit) must not allow guessing,
   // and a right password must not show through as a different answer.
   if (!((userOk && passOk) || user)) {
+    if (viaHub) {
+      const hits = await Promise.all(hubKeys.map(([k, max]) => hubLimit(env, k, max, LOCK_SECONDS * 1000, true)));
+      if (!hits.every(Boolean)) return loginPage("Sign-in is unavailable right now. Try again later.", 503);
+      return loginPage("Wrong username or password.", 401);
+    }
     try {
       await Promise.all([
         env.FEEDBACK.put(lockKey, String(failures + 1), { expirationTtl: LOCK_SECONDS }),
@@ -153,10 +163,14 @@ async function login(request, env) {
     }
     return loginPage("Wrong username or password.", 401);
   }
-  try {
-    await env.FEEDBACK.delete(lockKey);
-  } catch {
-    return loginPage("Sign-in is unavailable right now. Try again later.", 503);
+  if (viaHub) {
+    if (!(await hubLimitClear(env, hubKeys[0][0]))) return loginPage("Sign-in is unavailable right now. Try again later.", 503);
+  } else {
+    try {
+      await env.FEEDBACK.delete(lockKey);
+    } catch {
+      return loginPage("Sign-in is unavailable right now. Try again later.", 503);
+    }
   }
   const id = user ? user.id : ADMIN_ID;
   const v = user ? user.v : await epoch(env);
@@ -574,7 +588,7 @@ async function action(request, env, s) {
   const setting = settingsItem(act, form);
   if (setting) {
     const back = `${SETTINGS_URL}?done=`;
-    const anchor = act.startsWith("api_key") ? "#keys" : act.startsWith("model_") ? "#models" : "#email";
+    const anchor = act.startsWith("api_key") ? "#keys" : act.startsWith("model_") ? "#models" : act === "features" ? "#features" : "#email";
     if (setting.error) return redirect(`${back}${setting.error}${anchor}`);
     let item = setting.item;
     if (needsSeal(item)) {

@@ -307,6 +307,8 @@ def test_fix_generates_the_data_key_once(home):
     doctor.check_settings(report, fix=True)
     assert env_file.read_text().count(hc.DATA_KEY_ENV) == 1
     assert report.items[0]["message"].startswith("data key set")
+    assert "away from this server" in report.items[0]["fix"]
+    assert hc.env(hc.DATA_KEY_ENV) not in json.dumps(report.items)
 
 
 def test_a_lost_key_is_never_replaced(home):
