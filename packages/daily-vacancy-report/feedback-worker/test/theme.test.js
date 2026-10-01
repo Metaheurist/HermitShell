@@ -110,6 +110,7 @@ describe("the theme page", () => {
     expect(dashboard.indexOf('class="srvbtn')).toBeLessThan(dashboard.indexOf('href="/admin/theme"'));
     const body = await admin.text("/admin/theme");
     expect(body).toContain("<h1>Theme and branding</h1>");
+    expect(body).toMatch(/<a class="back" href="\/admin"><svg[^>]*>.*?<\/svg>Back to recruits<\/a>/);
     for (const id of [...Object.keys(PALETTES), "custom"]) expect(body).toContain(`id="pal-${id}"`);
     expect(body).toContain('id="pal-hermitshell" checked');
     expect(body).toContain('enctype="multipart/form-data"');

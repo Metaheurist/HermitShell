@@ -31,4 +31,8 @@ test("the admin picks a palette and a name from the palette button, sees them on
   await expect(page.locator(".eyebrow")).not.toContainText("Northwind");
   await expect(page.locator("#pal-hermitshell")).toBeChecked();
   await expect(page.locator('link[rel="stylesheet"]')).not.toHaveAttribute("href", /[?&]t=/);
+
+  await page.getByRole("link", { name: "Back to recruits" }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page.getByRole("heading", { name: "Recruits" })).toBeVisible();
 });

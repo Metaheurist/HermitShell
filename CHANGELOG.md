@@ -13,7 +13,8 @@ using [Semantic Versioning](https://semver.org/).
   SVG refused) shown on every page and optionally as the tab icon, one of eight palettes or two custom
   colours, and the background, corners, font, spacing and motion, with a live preview. The Worker repaints
   its brand colours, stylesheet and favicon at render time, so HermitShell's look stays the default and
-  **Reset** goes back to it. Emails keep HermitShell's look.
+  **Reset** goes back to it. **Back to recruits** at the top left returns to the dashboard. Emails keep
+  HermitShell's look.
 
 - **Download from History.** A cover letter or tailored CV asked for or emailed, from the dashboard or an email
   button, has a **Download** button on the recruit's History tab while the document is still kept. The history

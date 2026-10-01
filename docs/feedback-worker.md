@@ -564,7 +564,8 @@ python3 profiles.py --assign sam-lee-456789 casey   # "" puts them in nobody's p
 `/admin/theme`, from the palette button at the top right (admins only). It sets how every page the
 Worker draws looks: the dashboard, sign-in, the sign-up form and the pages behind email buttons.
 **Save theme** applies it for everyone within about a minute; **Reset to HermitShell's look** goes back
-to the default, which is what a new Worker starts with and stores nothing.
+to the default, which is what a new Worker starts with and stores nothing. **Back to recruits** at the
+top left returns to the dashboard.
 
 <img src="images/worker/admin-theme.png" alt="Theme and branding: name, logo and logo options, eight palettes and a custom one, and the look options, with a live preview on the right" width="720">
 

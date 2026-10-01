@@ -13,7 +13,7 @@
 // A logo is a PNG, JPEG, GIF or WebP picture up to MAX_LOGO_BYTES, checked by its first bytes. SVG is refused, as it
 // can carry script. It is served from /brand/logo with a sandbox CSP, and pages show it only as an <img>.
 
-import { BRAND_MARK, STYLE_URL, SECURITY_HEADERS, esc, favicon, fnv, hex, limitedForm, note, page, redirect, safeEqual, stylesheet } from "./lib.js";
+import { BACK_TO_RECRUITS, BRAND_MARK, STYLE_URL, SECURITY_HEADERS, esc, favicon, fnv, hex, limitedForm, note, page, redirect, safeEqual, stylesheet } from "./lib.js";
 
 export const THEME_URL = "/admin/theme";
 export const LOGO_PATH = "/brand/logo";
@@ -434,5 +434,5 @@ ${segment("logoSize", t.logoSize)}</section>
 <div class="pvbtns"><span class="pvbtn">Save changes</span><span class="pvbtn q">Send jobs now</span></div>
 </div></div><p class="muted">A preview of the palette, corners, font and spacing. Save to see them on every page.</p></aside>
 </form>`;
-  return page("Theme and branding", body, { wide: "full" });
+  return page("Theme and branding", body, { wide: "full", before: BACK_TO_RECRUITS });
 }

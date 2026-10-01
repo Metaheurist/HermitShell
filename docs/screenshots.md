@@ -610,6 +610,7 @@ HermitShell's own look ([more](feedback-worker.md#theme-and-branding)).
 | **Background** / **Corners** / **Font** / **Spacing** / **Motion** | The look of every page |
 | **Preview** | Follows the choices as you make them |
 | **Save theme** / **Reset to HermitShell's look** | Apply for everyone, or go back to the default |
+| **Back to recruits** | Returns to the dashboard |
 
 <img src="images/worker/admin-theme-applied.png" alt="The Recruits page under the name Northwind Talent in the Ocean palette with soft corners" width="720">
 
