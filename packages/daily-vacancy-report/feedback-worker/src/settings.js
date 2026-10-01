@@ -3,7 +3,7 @@
 // in one form, Send jobs now, and the CV). Forms open prefilled from the last status HermitShell reported plus the changes still waiting for
 // it; saving only queues the change, which profiles.py validates again and applies, within seconds over the live link.
 
-import { COUNTRIES, countryCode } from "./countries.js";
+import { COUNTRIES, countryCode, savedCountry } from "./countries.js";
 import { CURRENCIES, currencyCode, currencySymbol } from "./currency.js";
 import { MAX_CV_BYTES, SECRET_TTL_SECONDS, cvKind, queueItem, storeCv } from "./join.js";
 import { PROTOCOL } from "./apiauth.js";
@@ -188,9 +188,11 @@ function currencySelect(current) {
     `<option value="${c}"${c === current ? " selected" : ""}>${esc(`${s} ${name} (${c})`)}</option>`).join("")}</select>`;
 }
 
+// A saved code that isn't in the list stays as its own option, so opening and saving the form keeps it.
 function countrySelect(current) {
-  const code = countryCode(current);
-  return `<select id="country" name="country"><option value="">Any country</option>${COUNTRIES.map(([c, name]) =>
+  const code = savedCountry(current);
+  const other = code && !countryCode(code) ? `<option value="${esc(code)}" selected>${esc(code.toUpperCase())} (not in the list)</option>` : "";
+  return `<select id="country" name="country"><option value="">Any country</option>${other}${COUNTRIES.map(([c, name]) =>
     `<option value="${c}"${c === code ? " selected" : ""}>${esc(name)}</option>`).join("")}</select>`;
 }
 
@@ -241,7 +243,7 @@ export function profileValues(src = {}) {
   return {
     name: tidy(src.name, 80), email: tidy(src.email, 120), phone: tidy(src.phone, 40), location: tidy(src.location, 80),
     titles: items(src.titles, MAX_TITLES, 60), region: tidy(src.region, 80), places: items(src.places, MAX_PLACES, 40),
-    country: countryCode(tidy(src.country, 2)), remote_anywhere: src.remote_anywhere === true,
+    country: savedCountry(tidy(src.country, 2)), remote_anywhere: src.remote_anywhere === true,
     level: LEVELS.includes(level) ? level : "any",
     types: EMPLOYMENT_TYPES.filter((t) => items(src.types, 10, 20).includes(t)),
     modes: WORK_MODES.filter((m) => items(src.modes, 5, 20).includes(m)),
@@ -300,6 +302,7 @@ function pick(values, keys) {
 export function profileChange(p, queue, form) {
   const latest = latestValues(p, queue);
   const mine = formValues(form);
+  if (!countryCode(mine.country) && mine.country !== latest.country) mine.country = "";
   const base = baseValues(form, latest);
   const changed = PROFILE_FIELDS.filter((k) => !same(mine[k], base[k]) && !same(mine[k], latest[k]));
   const conflicts = changed.filter((k) => !same(latest[k], base[k]));
@@ -324,7 +327,7 @@ function shown(key, value) {
   if (key === "min_salary" && value === "0") return "no minimum";
   if (key === "currency") return value ? `${currencySymbol(value)} (${value})` : "as advertised";
   if (key === "report_days") return REPORT_DAYS.find(([d]) => d === value)?.[1] || value;
-  if (key === "country") return COUNTRIES.find(([c]) => c === value)?.[1] || "any country";
+  if (key === "country") return COUNTRIES.find(([c]) => c === value)?.[1] || value.toUpperCase() || "any country";
   if (Array.isArray(value)) return value.join(", ") || "none";
   if (typeof value === "boolean") return value ? "yes" : "no";
   return value || "empty";

@@ -422,9 +422,13 @@ def test_rejected_dashboard_changes_are_reported_for_a_day(home, monkeypatch):
 def test_dashboard_job_search_uses_the_region_for_searches(home, monkeypatch):
     profiles.sync(FakeApi([signup()]))
     pid = "sam-lee-456789"
+    path = home[0] / "profiles" / pid / "settings.json"
+    hand_set = {**json.loads(path.read_text()), "JOB_SEARCH_LOCATION": "Lisburn",
+                "JOB_SCANNER_QUERIES": '("Data Engineer") "Lisburn" job'}
+    path.write_text(json.dumps(hand_set))
     job = {"titles": ["Data Engineer"], "region": "Belfast", "places": ["Holywood"], "country": "uk"}
     profiles.sync(FakeApi([{"id": "queue:2:a", "type": "admin", "action": "profile", "u": pid, "job": job}]))
-    saved = json.loads((home[0] / "profiles" / pid / "settings.json").read_text())
+    saved = json.loads(path.read_text())
     assert saved["JOB_SEARCH_LOCATION"] == "" and saved["JOB_SEARCH_COUNTRY"] == "gb"
     assert saved["JOB_SCANNER_QUERIES"] == '("Data Engineer") "Belfast" job'
     assert profiles.dashboard_env() == {}, "a recruit's search never changes the server's settings"

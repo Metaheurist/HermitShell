@@ -45,3 +45,9 @@ export function countryCode(value) {
   const known = code === "uk" ? "gb" : code;
   return CODES.has(known) ? known : "";
 }
+
+// A code from the list, or any other plain two letters as they are (one set by hand in .env), or "".
+export function savedCountry(value) {
+  const code = String(value || "").trim().toLowerCase();
+  return countryCode(code) || (/^[a-z]{2}$/.test(code) ? code : "");
+}

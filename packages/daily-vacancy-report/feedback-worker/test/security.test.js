@@ -124,6 +124,24 @@ describe("escaping", () => {
     expect(JSON.stringify(valuesWith(env, "queue:"))).not.toContain("<script>");
   });
 
+  it("keeps only plain letters from a saved country it doesn't know, and queues no unknown code a form makes up", async () => {
+    const env = testEnv(ADMIN);
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "sam-lee", name: "Sam Lee",
+      email: "sam@example.com", job: { country: '"><', titles: [], places: [] } }] }));
+    const cookie = await signIn(env, "203.0.113.8");
+    const body = await (await get("/admin/profile?u=sam-lee", env, { Cookie: cookie })).text();
+    const select = body.match(/<select id="country"[\s\S]*?<\/select>/)[0];
+    expect(select).not.toMatch(/selected|not in the list/);
+    expect(select.startsWith('<select id="country" name="country"><option value="">Any country</option><option value="af">')).toBe(true);
+    const csrf = body.match(/name="csrf" value="([0-9a-f]+)"/)[1];
+    for (const base of [JSON.stringify({ name: "Sam Lee", email: "sam@example.com", country: "qq" }), ""]) {
+      await worker.fetch(new Request(`${BASE}/admin/action`, { method: "POST", headers: { Cookie: cookie },
+        body: new URLSearchParams({ csrf, action: "profile", u: "sam-lee", base, name: "Sam Lee", email: "sam@example.com",
+          country: "qq", level: "any", types: "Permanent", modes: "Remote" }) }), env);
+    }
+    expect(valuesWith(env, "queue:").map((i) => i.job?.country).filter(Boolean)).toEqual([]);
+  });
+
   it("never trusts or echoes a tampered form base", async () => {
     const env = testEnv(ADMIN);
     await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: [{ id: "sam-lee", name: "Sam Lee",

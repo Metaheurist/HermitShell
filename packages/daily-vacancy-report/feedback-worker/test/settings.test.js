@@ -561,6 +561,19 @@ describe("profile page", () => {
     expect(valuesWith(env, "queue:")[0].job).not.toHaveProperty("search_location");
   });
 
+  it("keeps a saved code that isn't in the list selected, and saving other fields leaves it alone", async () => {
+    const zz = { ...STATUS, profiles: STATUS.profiles.map((p) => (p.id === "sam-lee" ? { ...p, job: { ...p.job, country: "ZZ" } } : p)) };
+    const { env, act, get } = await setup(zz);
+    const { body } = await get("/admin/profile?u=sam-lee");
+    const select = body.match(/<select id="country"[\s\S]*?<\/select>/)[0];
+    expect(select).toContain('<option value="">Any country</option><option value="zz" selected>ZZ (not in the list)</option>');
+    expect(select.match(/ selected/g)).toHaveLength(1);
+    expect((await save(get, act, "sam-lee", { region: "West Yorkshire" })).headers.get("Location")).toBe("/admin/profile?u=sam-lee&done=saved");
+    expect(valuesWith(env, "queue:").map((i) => i.job)).toEqual([{ region: "West Yorkshire" }]);
+    await save(get, act, "sam-lee", { country: "yy" });
+    expect(valuesWith(env, "queue:").map((i) => i.job.country)).toEqual([undefined, ""]);
+  });
+
   it("uses plain labels with hints, an empty salary box for no minimum, and a back button", async () => {
     const { env, act, get } = await setup();
     const { body } = await get("/admin/profile?u=sam-lee");
