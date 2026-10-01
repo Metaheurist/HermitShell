@@ -206,8 +206,6 @@ const STYLE = `
 --brand-ink:#4338ca;--soft:#eef0ff;--ok:#059669;--ok-bg:#ecfdf5;--ok-line:#a7f3d0;--todo:#b45309;--todo-bg:#fffbeb;
 --todo-line:#fde68a;--bad:#dc2626;--bad-bg:#fef2f2;--bad-line:#fecaca;--ease:cubic-bezier(.2,.8,.2,1);
 --ease-spring:cubic-bezier(.3,1.4,.5,1);--t-fast:.15s;--t-med:.25s;--t-enter:.45s}
-@view-transition{navigation:auto}
-::view-transition-group(root){animation-duration:var(--t-med)}
 [id]{scroll-margin-top:84px}
 *{box-sizing:border-box}
 html{background:#eef1f7}
@@ -219,8 +217,7 @@ body::before{top:-480px;left:-380px;background:radial-gradient(closest-side,rgba
 body::after{top:-420px;right:-400px;background:radial-gradient(closest-side,rgba(216,180,254,.5),rgba(216,180,254,0));
 animation-duration:32s;animation-direction:alternate-reverse}
 main{max-width:480px;margin:56px auto;background:rgba(255,255,255,.94);border:1px solid rgba(226,232,240,.9);border-radius:22px;padding:32px;
-box-shadow:0 1px 2px rgba(15,23,42,.04),0 18px 50px -18px rgba(30,27,75,.18);animation:rise .5s var(--ease) both}
-@supports (view-transition-name:none){main{animation:none}}
+box-shadow:0 1px 2px rgba(15,23,42,.04),0 18px 50px -18px rgba(30,27,75,.18)}
 body:has(.modal:target)::before,body:has(.modal:target)::after{animation-play-state:paused}
 main.wide{max-width:900px}
 main.full{max-width:min(1320px,calc(100vw - 48px))}
@@ -320,12 +317,12 @@ a.small{font-size:13px;font-weight:650;text-decoration:none}a.small:hover{text-d
 a.back{position:fixed;top:20px;left:20px;z-index:10;display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.92);
 color:var(--brand-ink);border:1px solid var(--line);border-radius:12px;
 padding:9px 15px;font-size:14px;font-weight:650;text-decoration:none;box-shadow:0 8px 24px -12px rgba(15,23,42,.25);
-transition:transform .18s var(--ease),box-shadow .18s,background .18s;animation:drop var(--t-enter) var(--ease) both;view-transition-name:back}
+transition:transform .18s var(--ease),box-shadow .18s,background .18s}
 a.back:hover{transform:translateX(-2px);background:#fff;box-shadow:0 12px 28px -12px rgba(15,23,42,.3)}
 a.back svg{flex:none;width:16px;height:16px;transition:transform .18s var(--ease)}a.back:hover svg{transform:translateX(-2px)}
 svg.ext{display:inline-block;width:13px;height:13px;margin-left:3px;vertical-align:-2px;flex:none}
 @media (max-width:1240px){a.back{top:10px;left:10px;padding:7px 12px;font-size:13px}}
-nav.tabs{view-transition-name:tabs;display:inline-flex;gap:2px;margin:10px 0 24px;padding:4px;background:#f0f2f8;border:1px solid var(--line);border-radius:14px}
+nav.tabs{display:inline-flex;gap:2px;margin:10px 0 24px;padding:4px;background:#f0f2f8;border:1px solid var(--line);border-radius:14px}
 nav.tabs a{padding:7px 16px;font-size:14px;font-weight:650;color:var(--muted);text-decoration:none;border-radius:10px;
 transition:color var(--t-fast),background .2s,box-shadow .2s}
 nav.tabs a:hover{color:var(--ink)}
@@ -358,8 +355,7 @@ body.still li.todo .tick::before{animation:ripple 2.2s ease-out var(--phase,0s) 
 @media (max-width:560px){main,main.full{max-width:none;margin:16px;padding:24px 20px;border-radius:18px}h1{font-size:23px}
 nav.tabs{max-width:100%;overflow-x:auto;box-sizing:border-box}nav.tabs a{flex:none;padding:7px 9px;font-size:13px;white-space:nowrap}}
 button.pressing{cursor:progress;opacity:.7}
-@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}
-::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 `;
 
 // Where the looping animations are now, from the clock: a page drawn a few seconds after the last one (a reload, the

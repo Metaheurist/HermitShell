@@ -49,6 +49,13 @@ describe("the dashboard script", () => {
     }
   });
 
+  it("swaps a waiting page's card at once, only when it changed, without replaying entrances", async () => {
+    const source = await (await worker.fetch(new Request(`${BASE}${ENHANCE_URL}`), testEnv())).text();
+    expect(source).not.toContain("startViewTransition");
+    expect(source).toContain("if (!next.isEqualNode(now))");
+    expect(source).toMatch(/getAnimations\(\{ subtree: true \}\)\) if \(a\.effect && a\.effect\.getTiming\(\)\.iterations !== Infinity\) a\.finish\(\)/);
+  });
+
   it("leaves the sign-in page without it", async () => {
     const res = await worker.fetch(new Request(`${BASE}/admin`), testEnv(ADMIN));
     expect(await res.text()).not.toContain("<script");

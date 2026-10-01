@@ -666,7 +666,7 @@ change it shows it with **Applied by HermitShell**. After 5 minutes it stops and
 offline, so an offline server doesn't use up KV's daily list operations. Where scripts run, the dashboard's
 script fetches the page in the background and swaps in the new card, keeping what you are typing, open
 windows and menus, focus and the scroll: it waits while a field has focus or has been typed in, while a
-window is open and while the tab is hidden. Without scripts a refresh tag reloads the page instead, keeping
+window is open and while the tab is hidden. The swap is immediate and skipped when nothing has changed. Without scripts a refresh tag reloads the page instead, keeping
 you at the keys, models or email section. Entrance animations are off while it waits, and looping ones
 (spinners, the status dots, the background) carry on from where they were rather than starting over.
 Passwords and keys typed into the page are deleted from KV after 2 days if HermitShell hasn't collected

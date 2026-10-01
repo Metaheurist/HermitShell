@@ -88,7 +88,7 @@ describe("the theme's colours", () => {
     expect(themeCss(DEFAULT_THEME)).toBe("");
     const css = themeCss(cleanTheme({ font: "serif", background: "plain", corners: "sharp", density: "compact", motion: "calm", logoSize: "large" }));
     for (const part of ["ui-serif", "body::before,body::after{display:none}", "main,.sheet{border-radius:6px}", "body{font-size:14px}",
-      "@view-transition{navigation:none}", "width:36px"]) expect(css).toContain(part);
+      ".progress span{animation:none!important}", "width:36px"]) expect(css).toContain(part);
     for (const [key, [, options]] of Object.entries(CHOICES)) expect(Object.keys(options)[0]).toBe(DEFAULT_THEME[key]);
   });
 
@@ -224,5 +224,24 @@ describe("the theme page", () => {
     expect((await admin.save({}, { bytes: big })).headers.get("Location")).toBe("/admin/theme?done=toobig");
     expect(env.FEEDBACK.store.has(LOGO_KEY)).toBe(false);
     expect(await admin.text("/admin/theme?done=toobig")).toContain("That logo is over 200 KB.");
+  });
+});
+
+describe("reading the theme", () => {
+  it("happens for pages only, and a KV failure shows HermitShell's look rather than an error", async () => {
+    const env = testEnv(ADMIN);
+    const get = env.FEEDBACK.get.bind(env.FEEDBACK);
+    const asked = [];
+    env.FEEDBACK.get = async (key, type) => {
+      asked.push(key);
+      if (key === THEME_KEY) throw new Error("KV unavailable");
+      return get(key, type);
+    };
+    await worker.fetch(new Request(`${BASE}/api/queue`, { headers: API }), env);
+    expect(asked).not.toContain(THEME_KEY);
+    const res = await worker.fetch(new Request(`${BASE}/admin`), env);
+    expect(res.status).toBe(200);
+    expect(asked).toContain(THEME_KEY);
+    expect(await res.text()).toContain(`<link rel="stylesheet" href="${STYLE_URL}">`);
   });
 });

@@ -25,7 +25,7 @@ import {
 import { memoKV } from "./memo.js";
 import { privacyPage } from "./privacy.js";
 import { forgetRequests, rememberRequest } from "./tasks.js";
-import { LOGO_PATH, logoResponse, themed, themedFavicon, themedStylesheet } from "./theme.js";
+import { DEFAULT_THEME, LOGO_PATH, logoResponse, readTheme, themed, themedFavicon, themedStylesheet } from "./theme.js";
 
 export { sign } from "./lib.js";
 export { Hub } from "./hub.js";
@@ -300,7 +300,9 @@ export default {
   async fetch(request, env, ctx) {
     try {
       const memo = env.FEEDBACK ? { ...env, FEEDBACK: memoKV(env.FEEDBACK) } : env;
-      return await themed(await route(request, memo, ctx), memo);
+      // HermitShell's API never draws a page, so only pages read the theme, alongside the page itself.
+      const theme = new URL(request.url).pathname.startsWith("/api/") ? null : readTheme(memo).catch(() => DEFAULT_THEME);
+      return await themed(await route(request, memo, ctx), memo, theme);
     } catch (err) {
       console.error(`${new URL(request.url).pathname}: ${err?.name || "Error"}: ${String(err?.message || "").slice(0, 200)}`);
       return page("Something went wrong", "<p>Please try again in a minute.</p>", { status: 500 });

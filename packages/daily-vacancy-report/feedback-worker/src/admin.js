@@ -629,8 +629,7 @@ const LOGOUT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 // placed against, hence the negative top. Full-width cards reach the corner sooner, so they get the compact box
 // up to 1860px, where the card stops growing and leaves room beside it.
 const ME_STYLE = `
-.me{position:fixed;top:20px;right:20px;z-index:10;display:flex;flex-direction:column;align-items:flex-end;gap:8px;animation:drop .45s var(--ease) both;view-transition-name:me}
-@supports (view-transition-name:none){.me{animation:none}}
+.me{position:fixed;top:20px;right:20px;z-index:10;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
 .mecard{display:flex;align-items:center;gap:10px;padding:6px 14px 6px 6px;background:rgba(255,255,255,.92);border:1px solid var(--line);
 border-radius:14px;box-shadow:0 8px 24px -12px rgba(15,23,42,.25)}
 .mecard .avatar{width:34px;height:34px;border-radius:11px;font-size:13px}

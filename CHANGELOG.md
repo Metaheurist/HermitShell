@@ -24,11 +24,12 @@ using [Semantic Versioning](https://semver.org/).
 - **Waiting pages update in place.** On the dashboard, a page waiting for HermitShell now fetches itself
   in the background and swaps in the new card instead of reloading, so what you are typing, an open
   window or menu, focus and the scroll are kept; it holds off while a field is in use or the tab is
-  hidden. This is the dashboard's one script, `/enhance.js`, loaded from the Worker only by signed-in
+  hidden. The swap is immediate, skipped when nothing has changed, and plays no entrance animation again.
+  This is the dashboard's one script, `/enhance.js`, loaded from the Worker only by signed-in
   pages (`script-src 'self'`, no inline script); without scripts the page reloads as before. It also
   stops a form being sent twice by a double click, showing the pressed button as busy.
-- **Smoother motion.** Pages cross-fade into each other where the browser supports view transitions,
-  with the account box, Back button and tabs held still. Spinners, status dots and the background carry
+- **Smoother motion.** Pages switch at once, with no cross-fade or slide-in to wait for, and the account
+  box, Back button and tabs stay where they are. Spinners, status dots and the background carry
   on across reloads instead of jumping back, the task list and save status don't slide in again on each
   update, and progress bars and pulsing dots move with transforms rather than widths and shadows. The
   stats icons and score-ring glows play a few times and then rest (hover to replay), long jobs-sent lists
@@ -854,6 +855,12 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The dashboard is quick again.** Each click waited for a quarter-second cross-fade between pages, during
+  which the page ignored clicks, and a page waiting for HermitShell cross-faded the whole window every few
+  seconds even when nothing had changed. Pages now switch as soon as they load (a tab took about 420 ms
+  from click to usable in local tests, now about 110 ms), waiting pages swap only what changed with no
+  dropped frames, and the theme is read alongside the page rather than after it. A theme that can't be
+  read shows HermitShell's look instead of an error.
 - **Demo history no longer runs ahead of the clock.** Near midnight the demo logged recruits' email answers
   for later that day, so on the first of a month its History showed a month with no reports. Demo answers
   are now always in the past.

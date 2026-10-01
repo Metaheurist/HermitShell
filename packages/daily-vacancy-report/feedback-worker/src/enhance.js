@@ -1,8 +1,9 @@
 // The dashboard's one script, served as a file (script-src 'self', nothing inline) to signed-in pages only. Every page
 // works without it: it only makes two things smoother where scripts run.
 // - A page waiting for HermitShell updates in place (its card is swapped for the fresh one) instead of reloading, and
-//   only while nothing is being typed and no window or menu is open, so input, focus and scroll are kept. Without
-//   scripts the <noscript> refresh reloads the page as before.
+//   only while nothing is being typed and no window or menu is open, so input, focus and scroll are kept. The swap is
+//   immediate, skipped when nothing changed, and plays no entrance animation again. Without scripts the <noscript>
+//   refresh reloads the page as before.
 // - A form sends once: pressing again, or double clicking, while its page loads does nothing.
 // - The theme page's preview follows the custom colours and the name as they change (the rest it follows by CSS).
 import { fnv } from "./lib.js";
@@ -63,8 +64,11 @@ const SOURCE = `(() => {
     const open = [...now.querySelectorAll("details")].map((d) => d.open);
     const fresh = next.querySelectorAll("details");
     if (fresh.length === open.length) fresh.forEach((d, i) => { d.open = open[i]; });
-    const swap = () => { now.replaceWith(next); document.title = doc.title; };
-    if (document.startViewTransition) document.startViewTransition(swap); else swap();
+    if (!next.isEqualNode(now)) {
+      now.replaceWith(next);
+      document.title = doc.title;
+      for (const a of next.getAnimations({ subtree: true })) if (a.effect && a.effect.getTiming().iterations !== Infinity) a.finish();
+    }
     const more = doc.querySelector('meta[name="hs-refresh"]');
     if (more) { ({ secs, url } = read(more)); later(secs); }
   }

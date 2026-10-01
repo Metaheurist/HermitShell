@@ -37,9 +37,10 @@ describe("page styles", () => {
     expect(phaseStyle(at)).toMatch(/--drift:-\d+\.\d{2}s/);
   });
 
-  it("cross-fade between pages and keep the loops in phase", async () => {
+  it("show the next page at once, with no cross-fade holding up clicks, and keep the loops in phase", async () => {
     const html = styled(await page("Recruits", "<p>x</p>").text());
-    expect(html).toContain("@view-transition{navigation:auto}");
+    expect(html).not.toContain("view-transition");
+    expect(html).not.toMatch(/main\{[^}]*animation:rise/);
     expect(html).toMatch(/:root\{--phase:-[\d.]+s;--drift:-[\d.]+s\}/);
     expect(html).toContain("@media (prefers-reduced-motion:reduce)");
   });

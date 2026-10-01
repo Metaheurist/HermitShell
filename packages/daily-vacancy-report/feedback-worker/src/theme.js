@@ -193,8 +193,7 @@ export function themeCss(t) {
       + "label{margin:12px 0 5px}button{padding:10px 18px}table.list td{padding:11px 10px}nav.tabs{margin:8px 0 18px}");
   }
   if (t.motion === "calm") {
-    css.push("main,.me,a.back,ul.steps li,.note,.warn,.progress span{animation:none!important}body::before,body::after{animation:none!important}"
-      + "@view-transition{navigation:none}");
+    css.push("ul.steps li,.note,.warn,.progress span{animation:none!important}body::before,body::after{animation:none!important}");
   }
   if (t.logo) css.push(".eyebrow img.mark{flex:none;width:24px;height:24px;border-radius:6px;object-fit:contain}");
   if (t.logoSize === "large") css.push(".eyebrow .mark,.eyebrow svg.mark{width:36px;height:36px;border-radius:10px}");
@@ -218,9 +217,9 @@ function faviconLink(t, version, paint) {
 }
 
 // A page with the theme applied; anything but HTML, and every page while the theme is HermitShell's own, as it is.
-export async function themed(res, env) {
+export async function themed(res, env, theme = null) {
   if (!(res.headers.get("Content-Type") || "").startsWith("text/html")) return res;
-  const t = await readTheme(env);
+  const t = await (theme || readTheme(env));
   if (isDefault(t)) return res;
   const version = themeVersion(t);
   const paint = painter(t);
