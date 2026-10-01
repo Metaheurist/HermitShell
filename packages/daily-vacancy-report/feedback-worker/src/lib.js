@@ -71,6 +71,13 @@ export const DAY_MS = 86400000;
 export const LINK_DAYS = 90;
 export const CONTROL_RE = /[\u0000-\u001f\u007f]/;
 export const MAX_SKILL = 60;
+// A note sent with an answer or a request (job_tracker.py keeps 300 characters too).
+export const MAX_REASON = 300;
+
+// The note as HermitShell gets it: control characters but line breaks made spaces, cut to MAX_REASON.
+export function cleanReason(text) {
+  return String(text ?? "").replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, " ").slice(0, MAX_REASON);
+}
 
 // A skill as HermitShell keeps it (job_tracker.clean_skill): letters, numbers and a few signs, one space apart.
 export function cleanSkill(text) {

@@ -18,7 +18,7 @@ import { POLL_PATH, hubConnect, hubLimit, hubLimitClear, hubPresence, hubSeen } 
 import { enhance, enhancedCsp } from "./enhance.js";
 import { createInvite, openInvites, queueItem } from "./join.js";
 import {
-  CSP, SECURITY_HEADERS, accessUser, ago, authorised, cleanSkill, deleteAndUnflag, esc, flaggedItems, hmacHex, json, limitedForm, limitedJson, listFlagged,
+  CSP, SECURITY_HEADERS, accessUser, ago, authorised, cleanReason, cleanSkill, deleteAndUnflag, esc, flaggedItems, hmacHex, json, limitedForm, limitedJson, listFlagged,
   purgeProfileEvents, recentStats, rememberWeek,
   APPLIED, note, page, redirect, safeEqual, savingTag, secretEqual, text, waitBar, waitRefresh, when, PROFILE_RE,
 } from "./lib.js";
@@ -531,9 +531,11 @@ async function docRequest(request, env, s) {
   const fresh = form.get("fresh") === "1";
   const send = !fresh && kind !== "send_job" && form.get("send") === "1";
   const style = kind === "cover_letter" && !send ? letterStyle(form) : {};
-  const h = await requestDoc(env, { profile: u, j, kind, title, fresh, send, style });
+  const note = kind !== "send_job" && !send ? cleanReason(form.get("r")).trim() : "";
+  const h = await requestDoc(env, { profile: u, j, kind, title, fresh, send, style, note });
   const doc = kind === "cover_letter" ? "cover letter" : "tailored CV";
-  const how = styleLabel(style) ? ` (${styleLabel(style)})` : "";
+  const label = [styleLabel(style), note ? "with a note" : ""].filter(Boolean).join(", ");
+  const how = label ? ` (${label})` : "";
   const asked = kind === "send_job" ? "Emailed the job" : send ? `Emailed the ${doc}` : `Asked for a ${fresh ? "new " : ""}${doc}${how}`;
   await record(env, u, kind, `${asked}: ${title || "a job"}`, { by: displayName(s.me, current), h });
   return redirect(sentBack(u, form.get("back"), h.slice(0, 16), kind === "send_job" ? "mail" : send ? "docmail" : "doc"));

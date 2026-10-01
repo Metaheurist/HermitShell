@@ -36,6 +36,23 @@ test("a tailored CV being made keeps its circle turning while the page waits, an
   expect(motion).toEqual({ turning: true, entrances: 0 });
 });
 
+test("a note rides on a tailored CV asked for from the dashboard, and the history only says there was one", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/admin/settings");
+  await page.getByRole("switch", { name: "Demo mode" }).click();
+  await expect(page).toHaveURL(/done=demo_on#demo$/);
+  await page.goto("/admin/sent?u=avery-lane&r=30");
+  await page.locator('form:has(input[name="k"][value="tailored_cv"]):has(button:text-is("Generate"))').first().evaluate((f) => {
+    f.querySelector("details.dopts").open = true;
+    f.querySelector('label.lopt.lnote textarea[name="r"]').value = "Lead with the Airflow migration";
+    f.requestSubmit();
+  });
+  await expect(page).toHaveURL(/done=doc/);
+  await page.goto("/admin/history?u=avery-lane");
+  await expect(page.getByText(/Asked for a tailored CV \(with a note\)/).first()).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("Airflow migration");
+});
+
 test("a recruit's own CV: Generate spins until it is made, then CV downloads it and stays beside Generate", async ({ page }) => {
   await signIn(page);
   await page.goto("/admin/settings");

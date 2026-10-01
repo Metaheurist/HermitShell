@@ -14,6 +14,7 @@
 //
 // A cover letter can be asked for in a length and tone ("len" and "tone" on the request, only from the lists below;
 // the defaults are not stored). HermitShell writes it that way and doesn't reuse a letter made in another style.
+// Either document can carry a note ("r", as on the email button's confirm page), which always gets a new one made.
 //
 // A skill the job's card showed as missing from the CV can be added from the list too: it is stored as the email's
 // "Add to my skills" answer, and "skilladd:<id>" remembers it until HermitShell's stats list it with the others.
@@ -24,7 +25,7 @@
 // deleted (purgeProfileEvents).
 
 import {
-  CONTROL_RE, EVENT_TTL_SECONDS, SECURITY_HEADERS, ago, cleanSkill, docIndexKey, docKey, emailedKey, esc, eventFlag, eventPrefix, json,
+  CONTROL_RE, EVENT_TTL_SECONDS, MAX_REASON, SECURITY_HEADERS, ago, cleanReason, cleanSkill, docIndexKey, docKey, emailedKey, esc, eventFlag, eventPrefix, json,
   limitedBytes, profileCvInfoKey, profileCvKey, setFlag, sha256Hex, skillAddKey, PROFILE_RE,
 } from "./lib.js";
 import { rememberRequest } from "./tasks.js";
@@ -79,11 +80,15 @@ export function letterFields() {
 <label for="tone">Tone</label><select id="tone" name="tone">${options(LETTER_TONES)}</select>`;
 }
 
-// The same choices in a small pop-over beside the dashboard's Generate and Regenerate (no script: a <details>).
-function letterMenu() {
-  return `<details class="dopts"><summary title="Choose the letter's length and tone">Options</summary><div class="lopts">
-<label class="lopt"><span>Length</span><select name="len">${options(LETTER_LENGTHS)}</select></label>
-<label class="lopt"><span>Tone</span><select name="tone">${options(LETTER_TONES)}</select></label></div></details>`;
+// A small pop-over beside the dashboard's Generate and Regenerate (no script: a <details>): the letter's length
+// and tone, and for either document a note for HermitShell, as the email button's confirm page asks.
+function docMenu(kind) {
+  const letter = kind === "cover_letter";
+  const style = letter ? `<label class="lopt"><span>Length</span><select name="len">${options(LETTER_LENGTHS)}</select></label>
+<label class="lopt"><span>Tone</span><select name="tone">${options(LETTER_TONES)}</select></label>` : "";
+  return `<details class="dopts"><summary title="${letter ? "Choose the letter's length and tone, or add a note" : "Add a note for the CV"}">Options</summary><div class="lopts">
+${style}<label class="lopt lnote"><span>Anything to stress? (optional)</span><textarea name="r" maxlength="${MAX_REASON}" rows="3"
+placeholder="${letter ? "For example: mention my Azure work" : "For example: lead with the reporting projects"}"></textarea></label></div></details>`;
 }
 
 export async function jobHash(j) {
@@ -223,16 +228,18 @@ export function pdfResponse(doc) {
   });
 }
 
-// A request from the dashboard, stored as the email button would store it. Asking again in the same minute is the
-// same request, so a double press makes one.
-export async function requestDoc(env, { profile: u, j, kind, title, fresh, send, style = {} }) {
+// A request from the dashboard, stored as the email button would store it, with the note (`r`) only when a letter
+// or CV is to be made. Asking again in the same minute, with the same note, is the same request, so a double press
+// makes one.
+export async function requestDoc(env, { profile: u, j, kind, title, fresh, send, style = {}, note = "" }) {
   const at = Date.now();
   const h = await jobHash(j);
   fresh = fresh && Boolean(DOC_KINDS[kind]);
   send = send && !fresh && Boolean(DOC_KINDS[kind]);
   const picked = kind === "cover_letter" && !send ? letterStyle(new Map(Object.entries(style || {}))) : {};
-  const event = { j, a: kind, r: "", at, via: "dashboard", ...(fresh ? { fresh: 1 } : {}), ...(send ? { send: 1 } : {}), ...picked, ...(u ? { u } : {}) };
-  const code = `${picked.len ? `l${picked.len[0]}` : ""}${picked.tone ? `t${picked.tone[0]}` : ""}`;
+  const r = DOC_KINDS[kind] && !send ? cleanReason(note).trim() : "";
+  const event = { j, a: kind, r, at, via: "dashboard", ...(fresh ? { fresh: 1 } : {}), ...(send ? { send: 1 } : {}), ...picked, ...(u ? { u } : {}) };
+  const code = `${picked.len ? `l${picked.len[0]}` : ""}${picked.tone ? `t${picked.tone[0]}` : ""}${r ? `r${(await sha256Hex(r)).slice(0, 8)}` : ""}`;
   event.id = `${eventPrefix(u)}dash-${h.slice(0, 20)}:${REQUEST_CODES[kind]}${fresh ? "n" : send ? "e" : "g"}${code}${Math.floor(at / 60000)}`;
   await Promise.all([
     env.FEEDBACK.put(event.id, JSON.stringify(event), { expirationTtl: EVENT_TTL_SECONDS }),
@@ -349,10 +356,10 @@ export function docActions(j, h, ctx) {
       return `<div class="doc ready">${docIcon(kind)}<span><b>${label}</b><small title="Kept for download until ${esc(new Date(kept.exp).toISOString().slice(0, 10))}">made ${esc(ago(kept.at))}</small></span>
 <div class="dacts"><a class="dl" href="${DOC_URL}?u=${esc(ctx.profile)}&amp;k=${kind}&amp;h=${h}" download>Download</a>
 <form method="post" action="${DOC_URL}">${hidden(kind, false, true)}<button class="small quiet" title="Email this ${kind === "cover_letter" ? "cover letter" : "tailored CV"} to ${to}">Email to ${to}</button></form>
-<form method="post" action="${DOC_URL}">${hidden(kind, true)}${kind === "cover_letter" ? letterMenu() : ""}<button class="small quiet" title="Write a new one">Regenerate</button></form></div></div>`;
+<form method="post" action="${DOC_URL}">${hidden(kind, true)}${docMenu(kind)}<button class="small quiet" title="Write a new one">Regenerate</button></form></div></div>`;
     }
     return `<form class="doc" method="post" action="${DOC_URL}">${docIcon(kind)}<span><b>${label}</b><small>for this job</small></span>${hidden(kind, false)}
-${kind === "cover_letter" ? letterMenu() : ""}<button class="small">Generate</button></form>`;
+${docMenu(kind)}<button class="small">Generate</button></form>`;
   }).join("") + emailAction(j, h, ctx, hidden);
 }
 
@@ -395,5 +402,6 @@ mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% -
 border-radius:12px;box-shadow:0 18px 40px -20px rgba(30,27,75,.45);animation:menuin .16s var(--ease)}
 .dacts .dopts[open]>.lopts{left:0;right:auto}
 .lopts{display:grid;gap:10px}.lopt{display:grid;gap:4px;margin:0;font-size:12px;color:var(--muted);font-weight:600}.lopt select{margin:0;font-size:13px;padding:7px 9px}
+.lopt textarea{margin:0;min-height:0;font-size:13px;padding:7px 9px;resize:vertical}
 @keyframes menuin{from{opacity:0;transform:translateY(-4px)}}
 `;

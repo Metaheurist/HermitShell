@@ -249,6 +249,14 @@ def test_fresh_requests_and_notes_write_a_new_letter(kept):
     assert not any("made earlier" in line for line in lines)
 
 
+def test_a_dashboard_request_with_a_note_writes_a_new_letter_kept_for_download(kept):
+    tracker, sent, uploads, written = kept
+    tracker.add_event("e1", "k1", "cover_letter", reason="mention Azure", flags="quiet")
+    lines = cover_letter.process_pending(tracker, lambda: ("h", "m", None))
+    assert written == ["mention Azure"] and sent == [] and len(uploads) == 1
+    assert not any("made earlier" in line for line in lines)
+
+
 def test_dashboard_requests_are_kept_for_download_and_not_emailed(kept):
     tracker, sent, uploads, written = kept
     tracker.add_event("e1", "k1", "cover_letter", flags="quiet,fresh")

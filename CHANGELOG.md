@@ -8,6 +8,12 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A note with dashboard letters and CVs.** **Options** beside **Generate** and **Regenerate** on the list
+  of jobs sent now asks "Anything to stress?" for the cover letter and the tailored CV (up to 300
+  characters, control characters stripped), as the email button's page does. A note always gets a new one
+  written, reaches the model only in its labelled note block, and is never written to the history ("with a
+  note") or the task list. The email path and the dashboard share one note cleaner.
+
 - **Several recruits at once.** A tick box on each row of the Recruits list brings up a bar with **Pause**,
   **Resume**, **Send jobs now** and, for admins, **Assign**, for up to 25 recruits. It works without
   scripts, checks each recruit as the single buttons do, skips the rest and says how many ("2 done, 1

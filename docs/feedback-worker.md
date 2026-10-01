@@ -983,11 +983,16 @@ and a **Tailored CV**:
   **Emailing to Sam…** until it has gone. The request carries `send: 1`, which HermitShell's tracker
   keeps as the `send` flag in place of the download-only `quiet`.
 - **Regenerate** writes a new one, replacing the one kept.
-- **Options**, beside **Generate** and **Regenerate** on the cover letter, opens the letter's
-  **Length** and **Tone**. The request carries them as `len` and `tone` (only the listed values; the
-  defaults aren't sent), and the history says, for example, "Asked for a cover letter (short, warm)".
+- **Options**, beside **Generate** and **Regenerate**, opens the cover letter's **Length** and **Tone**
+  and, for either document, **Anything to stress?**: an optional note of up to 300 characters, as the
+  email button's page asks. The request carries the length and tone as `len` and `tone` (only the listed
+  values; the defaults aren't sent) and the note as `r`, with control characters but line breaks made
+  spaces. A note always gets a new one written. HermitShell puts it in the model's prompt only in its own
+  labelled "candidate's note" block, to follow where it fits the CV, never among the instructions. The
+  history says, for example, "Asked for a cover letter (short, warm, with a note)", never the note itself,
+  and the task list doesn't keep it. **Email to Sam** sends the kept one, so it takes no note.
 
-<img src="images/worker/admin-sent-letter-options.png" alt="The cover letter's Options open on an opened job, with Length and Tone" width="460">
+<img src="images/worker/admin-sent-letter-options.png" alt="The cover letter's Options open on an opened job, with Length, Tone and a note" width="460">
 
 The third tile, **Email to Sam**, sends the job itself to that
 recruit's address: **Send** asks HermitShell, which emails it within 5 minutes as the card it had in

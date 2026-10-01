@@ -19,7 +19,7 @@ import { DOC_KINDS, DOC_STYLE, OWNER_ID, docFor, jobHash, letterFields, letterSt
 import { listed, record } from "./history.js";
 import { handleJoin, queueItem } from "./join.js";
 import {
-  CONTROL_RE, EVENT_TTL_SECONDS, LINK_DAYS, MAX_SKILL, ago, authorised, cleanSkill, deleteAndUnflag, esc, eventFlag, eventPrefix, json, limitedForm,
+  CONTROL_RE, EVENT_TTL_SECONDS, LINK_DAYS, MAX_REASON, MAX_SKILL, ago, authorised, cleanReason, cleanSkill, deleteAndUnflag, esc, eventFlag, eventPrefix, json, limitedForm,
   limitedJson, listFlagged, page, purgeProfileEvents, safeEqual, setFlag, sha256Hex, sign, STYLE_PATH, text, today, PROFILE_RE,
 } from "./lib.js";
 import { memoKV } from "./memo.js";
@@ -60,7 +60,6 @@ const FRESH_MESSAGES = {
   tailored_cv: "HermitShell is tailoring your CV to this job again. It arrives by email, as a PDF, within about 10 minutes.",
 };
 const MAX_TITLE = 120;
-const MAX_REASON = 300;
 const MAX_SKILLS = 12;
 const MAX_FORM_BYTES = 16 * 1024;
 const LINK_FIELDS = ["j", "a", "n", "s", "u", "d", "t"];
@@ -186,7 +185,7 @@ async function saveAnswer(form, env) {
   const p = Object.fromEntries([...LINK_FIELDS, "r", "o"].map((k) => [k, String(form.get(k) ?? "")]));
   const problem = await checkLink(env, p);
   if (problem) return problem;
-  p.r = p.r.replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, " ").slice(0, MAX_REASON);
+  p.r = cleanReason(p.r);
   if (p.a === "unsubscribe") {
     await queueItem(env, { type: "unsubscribe", u: p.u, reason: p.r });
     if (p.u) await purgeProfileEvents(env, p.u);

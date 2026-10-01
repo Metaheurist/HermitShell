@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import worker, { sign } from "../src/index.js";
 import { DOC_STYLE, jobHash } from "../src/docs.js";
 import { today } from "../src/lib.js";
+import { REQUESTS_KEY } from "../src/tasks.js";
 import { BASE, keysWith, testEnv, valuesWith } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
@@ -172,15 +173,56 @@ describe("asking for a letter or CV from the dashboard", () => {
   });
 });
 
+describe("a note with a letter or CV from the dashboard", () => {
+  it("is asked in both menus, up to 300 characters", async () => {
+    const { env, get } = await setup();
+    await sentWith(env);
+    const menus = (await (await get("/admin/sent?u=sam-lee&r=7")).text()).match(/<details class="dopts">[\s\S]*?<\/details>/g);
+    for (const menu of menus) {
+      expect(menu).toContain('<span>Anything to stress? (optional)</span><textarea name="r" maxlength="300"');
+    }
+  });
+
+  it("rides on the request cleaned and cut, is a new request when it differs, and the history says only that there was one", async () => {
+    const { env, ask } = await setup();
+    await ask({ k: "tailored_cv", r: `  Lead with\u0000 the <b>SQL</b> work\r\n${"x".repeat(400)}` });
+    await ask({ k: "tailored_cv", r: "Mention the Power BI training" });
+    await ask({ k: "tailored_cv", r: "Mention the Power BI training" });
+    const events = valuesWith(env, "event:sam-lee:").sort((a, b) => a.r.length - b.r.length);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({ a: "tailored_cv", r: "Mention the Power BI training" });
+    expect(events[0].id).toMatch(/:vgr[0-9a-f]{8}\d+$/);
+    expect(events[1].r.startsWith("Lead with  the <b>SQL</b> work \nx")).toBe(true);
+    expect(events[1].r).toHaveLength(300 - 2);
+    const history = valuesWith(env, "history:sam-lee:").flat().map((e) => e.t);
+    expect(history).toContain("Asked for a tailored CV (with a note): Data Engineer at Northwind");
+    expect(JSON.stringify(history)).not.toContain("Power BI");
+    expect(env.FEEDBACK.store.get(REQUESTS_KEY)).not.toContain("Power BI");
+  });
+
+  it("is kept with a letter's style, and dropped from a job email and the kept letter's Email button", async () => {
+    const { env, ask } = await setup();
+    await upload(env);
+    await ask({ fresh: "1", tone: "warm", r: "Mention my Azure work" });
+    await ask({ k: "send_job", r: "Not this" });
+    await ask({ send: "1", r: "Nor this" });
+    const events = valuesWith(env, "event:sam-lee:");
+    expect(events.map((e) => e.r).sort()).toEqual(["", "", "Mention my Azure work"]);
+    expect(valuesWith(env, "history:sam-lee:").flat().map((e) => e.t))
+      .toContain("Asked for a new cover letter (warm, with a note): Data Engineer at Northwind");
+  });
+});
+
 describe("a cover letter's length and tone", () => {
   it("are offered beside Generate and Regenerate for the letter only, in a pop-over that needs no script", async () => {
     const { env, get } = await setup();
     await sentWith(env);
     let body = await (await get("/admin/sent?u=sam-lee&r=7")).text();
     const menus = body.match(/<details class="dopts">[\s\S]*?<\/details>/g);
-    expect(menus).toHaveLength(1);
+    expect(menus).toHaveLength(2);
     expect(menus[0]).toContain('<select name="len"><option value="standard">Standard, about 300 words</option>');
     expect(menus[0]).toContain('<option value="formal">Formal</option>');
+    expect(menus[1]).not.toContain('name="len"');
     expect(body).toMatch(/<details class="dopts">[\s\S]*?<\/details><button class="small">Generate</);
     await upload(env);
     body = await (await get("/admin/sent?u=sam-lee&r=7")).text();
