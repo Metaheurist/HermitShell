@@ -857,6 +857,8 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Stats animations play once, when the page loads.** Hovering a job no longer redraws its fit-score ring, and
+  hovering a stat card no longer sets its icon looping again.
 - **Sign-in failures no longer use KV writes.** Wrong passwords are counted in the link's Durable Object
   (`Hub`) with the same limits (five per address, 30 overall, 15 minutes), leaving KV's 1,000 writes a day
   for recruits. A Worker without the `HUB` binding counts them in KV, and sign-in is refused if neither can

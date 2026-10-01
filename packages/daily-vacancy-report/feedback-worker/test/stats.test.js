@@ -203,6 +203,21 @@ function detailed() {
 
 const sentOf = async (stats, pid, opts) => (await sentPage(STATUS, stats, pid, opts)).text();
 
+describe("animations", () => {
+  // A rule under :hover that sets an animation (or how often it repeats) replays it on every hover.
+  const hoverAnimations = (html) => [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].flatMap(([, css]) =>
+    [...css.matchAll(/([^{}]*:hover[^{}]*)\{([^}]*)\}/g)].filter(([, , body]) => /animation(-name|-iteration-count)?\s*:/.test(body))
+      .map(([, selector]) => selector.trim()));
+
+  it("play once when a stats or jobs sent page loads, never again on hover", async () => {
+    const stats = await statsPage(STATUS, sample(), "riley-chen", "30").text();
+    const sent = await sentOf(sample(), "sam-lee", { range: "7" });
+    expect(sent).toContain('class="ring');
+    expect(hoverAnimations(stats)).toEqual([]);
+    expect(hoverAnimations(sent)).toEqual([]);
+  });
+});
+
 describe("jobs sent page", () => {
   it("lists the jobs sent in the range, newest day first, with their score, details, answer and advert link", async () => {
     const body = await sentOf(sample(), "sam-lee", { range: "7" });
