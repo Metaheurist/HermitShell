@@ -10,6 +10,7 @@ import pytest
 PACKAGE = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(PACKAGE), str(PACKAGE.parents[1] / "common")]
 
+import letter_pdf  # noqa: E402
 import tailored_cv  # noqa: E402
 
 SOURCE = """Alex Morgan
@@ -160,6 +161,43 @@ def test_the_tailored_cv_says_what_it_covers_and_what_the_cv_does_not_show(monke
     assert tailored_cv.report_lines(None) == []
     assert tailored_cv.report_lines({"covered": [], "missing": ["SQL"], "gaps": []}) == [
         "Covers 0 of the 1 requirements your CV shows (left out: SQL)"]
+
+
+def test_a_cv_made_from_the_job_search_profile_says_so_and_asks_for_the_full_cv(tmp_path, monkeypatch):
+    profile = tmp_path / "job_profile.md"
+    profile.write_text(SOURCE)
+    monkeypatch.setenv("COVER_LETTER_CV_FILE", str(tmp_path / "cv.txt"))
+    monkeypatch.setenv("JOB_PROFILE_FILE", str(profile))
+    text, path = tailored_cv.cv_source()
+    assert path == profile and tailored_cv.from_profile(path)
+    (tmp_path / "cv.txt").write_text(SOURCE)
+    text, path = tailored_cv.cv_source()
+    assert path == tmp_path / "cv.txt" and not tailored_cv.from_profile(path)
+    assert not tailored_cv.from_profile(None)
+
+    chat_returning(monkeypatch, {"headline": "", "summary": "", "skills": [], "experience": [], "projects": []})
+    made = tailored_cv.tailored_cv(master() | {"from_profile": True}, JOB, "", "", ("h", "m", 8192))
+    assert made["from_profile"] is True
+    assert tailored_cv.source_lines(made) == [tailored_cv.FROM_PROFILE_NOTE]
+    assert "Upload your full CV" in tailored_cv.FROM_PROFILE_NOTE
+    assert tailored_cv.source_lines(tailored_cv.tailored_cv(master(), JOB, "", "", ("h", "m", 8192))) == []
+
+
+def test_a_short_entry_fits_at_the_foot_of_a_page_but_a_title_never_sits_there_alone():
+    def near_the_foot():
+        w = letter_pdf._Writer()
+        w.new_page()
+        w.y = letter_pdf.MARGIN_BOTTOM + 20
+        return w
+
+    alone = near_the_foot()
+    alone.split_line("MSc Data Analytics", "", 10.5)
+    assert len(alone.pages) == 1
+    with_more = near_the_foot()
+    with_more.split_line("Data Engineer", "2021 - present", 10.5, keep=14 + letter_pdf._height("Built pipelines", 10, 14, 12))
+    assert len(with_more.pages) == 2 and not with_more.pages[0] and with_more.pages[1]
+    assert letter_pdf._height("", 10, 14) == 0
+    assert letter_pdf._height("word " * 400, 10, 14) == 28
 
 
 def test_without_a_map_there_is_no_match_report(monkeypatch):

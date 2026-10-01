@@ -179,6 +179,10 @@ Tones: professional (default), warm, direct and formal.
 ### Tailored CVs
 
 The CV is read into a structured copy once (`state/cv.json`, `tailored_cv.py`) and rebuilt when it changes.
+It is read from the uploaded CV (`cv.txt`, `COVER_LETTER_CV_FILE`). A profile without one, such as an
+admin's own job search moved to a recruit, falls back to its job search profile (`job_profile.md`), a short
+summary that may not mention every role; the email then says so and asks for the full CV, and uploading one
+rebuilds the copy from it.
 One request reads up to 14,000 characters; a longer CV is read in sections split between paragraphs (at
 most 4, up to 42,000 characters) and the parts merged, a role split across two sections kept once with all
 its bullets, instead of being cut off.
@@ -193,6 +197,9 @@ same cache) and the first 2,500 characters of the advert. The model picks and re
   650 words in all, always keeping each role's first bullet;
 - reports which requirements the CV shows are covered, which were left out, and what the advert asks for
   that the CV doesn't show, at the end of the email.
+
+In the PDF an entry's title moves to the next page only with the lines that follow it (a role's employer and
+first bullet, a qualification's college), so a one-line entry still fits at the foot of a page.
 
 ### Testing prompts and models
 

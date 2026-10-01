@@ -89,12 +89,22 @@ def _norm(text: str) -> str:
 
 # --------------------------------------------------------------------------- the structured master copy
 
+def _cv_path(name: str) -> Path | None:
+    return (Path(name) if Path(name).is_absolute() else PACKAGE_DIR / name) if name else None
+
+
 def cv_source() -> tuple[str, Path | None]:
     for name in (env("COVER_LETTER_CV_FILE"), env("JOB_PROFILE_FILE") or "job_profile.md"):
-        path = Path(name) if name and Path(name).is_absolute() else PACKAGE_DIR / (name or "")
-        if name and path.is_file():
+        path = _cv_path(name)
+        if path and path.is_file():
             return hc.read_private_text(path, errors="replace")[:MAX_CV_CHARS], path
     return "", None
+
+
+def from_profile(path: Path | None) -> bool:
+    """Whether the CV text is the job search profile because no CV file has been uploaded. The profile is a short
+    summary, often without every role, so a CV made from it says so."""
+    return bool(path) and path != _cv_path(env("COVER_LETTER_CV_FILE"))
 
 
 def clean_master(data: dict, source: str) -> dict:
@@ -210,6 +220,9 @@ def master_cv(model_info_factory, tracker: Tracker | None = None) -> dict:
     added = tracker.skills() if tracker else []
     master = {**master, "skills": list(dict.fromkeys([*master["skills"], *added]))}
     master["source_text"] = source
+    master["from_profile"] = from_profile(path)
+    if master["from_profile"]:
+        log("No CV file uploaded: the tailored CV is made from the job search profile, which may leave roles out")
     return master
 
 
@@ -277,6 +290,15 @@ def match_report(cv: dict, found: list[dict]) -> dict:
     return {"covered": covered, "missing": missing, "gaps": [i["need"] for i in found if not i["evidence"]]}
 
 
+FROM_PROFILE_NOTE = ("Made from your job search profile, as no CV file has been uploaded, so roles it doesn't "
+                     "mention are left out. Upload your full CV on the dashboard to include every role.")
+
+
+def source_lines(cv: dict) -> list[str]:
+    """A note for the email when the CV was made from the job search profile rather than an uploaded CV."""
+    return [FROM_PROFILE_NOTE] if cv.get("from_profile") else []
+
+
 def report_lines(report: dict | None) -> list[str]:
     """The match report as lines for the email."""
     if not report:
@@ -317,6 +339,7 @@ def tailor(master: dict, tailored: dict, job: dict, needs: list[str] = ()) -> di
         "skills": skills, "experience": experience, "projects": projects,
         "education": master["education"], "certifications": master["certifications"],
         "job": {"title": job.get("title", ""), "employer": job.get("employer") or job.get("company") or ""},
+        "from_profile": bool(master.get("from_profile")),
     }
 
 

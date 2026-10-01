@@ -855,6 +855,12 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Tailored CVs say when they are missing roles, and no longer strand an entry on a page of its own.** A
+  profile with no uploaded CV (such as the admin's own job search moved to a recruit) made its tailored CV
+  from the short job search profile, which left out roles it doesn't mention, without saying so. The CV's
+  email now says it was made from the profile and asks for the full CV on the dashboard. In the PDF, an
+  entry's title kept room for three lines even when it had one, so a last one-line qualification could end
+  up alone on a second page; titles now keep only the lines that follow them.
 - **The Tasks count clears when the work is done.** The number on the **Tasks** button was drawn with the
   dashboard and stayed (say at 1) after the task finished, even though the open Tasks window already said
   **Nothing waiting or running**, until the page was reloaded. The dashboard's script now updates the

@@ -110,9 +110,11 @@ class _Writer:
             self.text(MARGIN_X + 12, line, size)
         self.y -= 2
 
-    def split_line(self, left: str, right: str, size: float, left_font: str = "bold", leading: float = 15.0) -> None:
-        """Left-aligned text with right-aligned text (e.g. dates) on the same line."""
-        self.ensure(leading * 3)
+    def split_line(self, left: str, right: str, size: float, left_font: str = "bold", leading: float = 15.0,
+                   keep: float = 0.0) -> None:
+        """Left-aligned text with right-aligned text (e.g. dates) on the same line, moved to the next page with
+        the `keep` points of its entry that follow it when they don't fit under it."""
+        self.ensure(leading + keep)
         self.y -= leading
         right_w = text_width(right, size - 1) if right else 0
         room = PAGE_W - 2 * MARGIN_X - right_w - 12
@@ -158,6 +160,11 @@ def letter_pdf(name: str, contact: str, date_text: str, recipient: list[str], su
     return _assemble(w.pages, title or subject, name)
 
 
+def _height(text: str, size: float, leading: float, indent: float = 0.0, most: int = 2) -> float:
+    """The height of the first `most` lines of a wrapped paragraph or bullet."""
+    return min(most, len(wrap(text, size, PAGE_W - 2 * MARGIN_X - indent))) * leading if text else 0.0
+
+
 def cv_pdf(cv: dict, title: str = "") -> bytes:
     """A CV from the structure tailored_cv.py builds: name, headline, contact, summary, skills, experience,
     projects, education and certifications (sections without content are left out)."""
@@ -184,8 +191,10 @@ def cv_pdf(cv: dict, title: str = "") -> bytes:
     if cv.get("experience"):
         w.heading("Experience")
         for job in cv["experience"]:
-            w.split_line(job.get("title", ""), " - ".join(x for x in (job.get("start"), job.get("end")) if x), 10.5)
             place = "  \xb7  ".join(x for x in (job.get("employer"), job.get("location")) if x)
+            first = (job.get("bullets") or [""])[0]
+            w.split_line(job.get("title", ""), " - ".join(x for x in (job.get("start"), job.get("end")) if x), 10.5,
+                         keep=(14 if place else 0) + _height(first, 10.0, 14.0, indent=12))
             if place:
                 w.paragraph(place, size=9.5, leading=13, colour=MUTED, after=1)
             for item in job.get("bullets", []):
@@ -194,13 +203,14 @@ def cv_pdf(cv: dict, title: str = "") -> bytes:
     if cv.get("projects"):
         w.heading("Projects")
         for project in cv["projects"]:
-            w.split_line(project.get("name", ""), "", 10.5)
+            w.split_line(project.get("name", ""), "", 10.5, keep=_height(project.get("description", ""), 10, 14))
             if project.get("description"):
                 w.paragraph(project["description"], size=10, leading=14, after=4)
     if cv.get("education"):
         w.heading("Education")
         for edu in cv["education"]:
-            w.split_line(edu.get("qualification", ""), edu.get("dates", ""), 10.5)
+            w.split_line(edu.get("qualification", ""), edu.get("dates", ""), 10.5,
+                         keep=(14 if edu.get("institution") else 0) + _height(edu.get("details", ""), 10, 14))
             if edu.get("institution"):
                 w.paragraph(edu["institution"], size=9.5, leading=13, colour=MUTED, after=1)
             if edu.get("details"):
