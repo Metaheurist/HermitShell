@@ -560,7 +560,8 @@ at the top switch months; the oldest ends with the day they joined. It is kept u
 `/admin/pipeline?u=<id>`, the **Pipeline** tab: each job they answered, in the column of its latest
 answer (email buttons and moves made here). **Move** puts a job in another column; the card moves after
 HermitShell's next check-in. Admins can add a start date and fee to an offer or placement; the fee is
-sealed for HermitShell and never shown on the board or to recruiters
+sealed for HermitShell and never shown on the board or to recruiters. Cards at Interview and Offer have
+an **Interview prep** button, then a **Prep pack** download once HermitShell has made it
 ([more](feedback-worker.md#pipeline)).
 
 ### A recruit's stats

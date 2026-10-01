@@ -1,4 +1,4 @@
-// Cover letters and tailored CVs kept for download. When HermitShell has made one it sends the PDF to POST /api/doc
+// Cover letters, tailored CVs and interview prep packs kept for download. When HermitShell has made one it sends the PDF to POST /api/doc
 // (cover_letter.py), and it is kept for COVER_LETTER_KEEP_DAYS (7 by default, at most 30), encrypted with a key
 // derived from JOB_FEEDBACK_SECRET and bound to its KV key, so it only opens through this Worker and only as the
 // document it was stored as. It can be downloaded from the dashboard's list of jobs sent (signed in) or from the
@@ -36,9 +36,14 @@ export const SKILL_URL = "/admin/skill";
 export const CV_URL = "/admin/cvpdf";
 export const PROFILE_CV = "profile_cv";
 export const PROFILE_CV_JOB = "profile:cv";
-export const DOC_KINDS = { cover_letter: "Cover letter", tailored_cv: "Tailored CV" };
+export const DOC_KINDS = { cover_letter: "Cover letter", tailored_cv: "Tailored CV", interview_prep: "Interview prep" };
 export const REQUEST_KINDS = { ...DOC_KINDS, send_job: "Job email" };
-const REQUEST_CODES = { cover_letter: "c", tailored_cv: "v", send_job: "m" };
+const REQUEST_CODES = { cover_letter: "c", tailored_cv: "v", send_job: "m", interview_prep: "p" };
+// What each kept document is called in a sentence ("Email this tailored CV").
+export const DOC_NAMES = { cover_letter: "cover letter", tailored_cv: "tailored CV", interview_prep: "interview prep pack" };
+export const PREP = "interview_prep";
+// A prep pack is offered once they have applied: the answers from there on (job_tracker.STAGES and before).
+export const PREP_ANSWERS = ["applied", "heard_back", "interview", "offer", "placed"];
 export const LETTER_LENGTHS = { standard: "Standard, about 300 words", short: "Short, about 200 words", detailed: "Detailed, about 400 words" };
 export const LETTER_TONES = { professional: "Professional", warm: "Warm", direct: "Direct", formal: "Formal" };
 export const EMAILED_DAYS = 90;
@@ -86,9 +91,12 @@ function docMenu(kind) {
   const letter = kind === "cover_letter";
   const style = letter ? `<label class="lopt"><span>Length</span><select name="len">${options(LETTER_LENGTHS)}</select></label>
 <label class="lopt"><span>Tone</span><select name="tone">${options(LETTER_TONES)}</select></label>` : "";
-  return `<details class="dopts"><summary title="${letter ? "Choose the letter's length and tone, or add a note" : "Add a note for the CV"}">Options</summary><div class="lopts">
+  const [title, example] = letter ? ["Choose the letter's length and tone, or add a note", "For example: mention my Azure work"]
+    : kind === PREP ? ["Add a note for the prep pack", "For example: they said there is a technical test"]
+      : ["Add a note for the CV", "For example: lead with the reporting projects"];
+  return `<details class="dopts"><summary title="${title}">Options</summary><div class="lopts">
 ${style}<label class="lopt lnote"><span>Anything to stress? (optional)</span><textarea name="r" maxlength="${MAX_REASON}" rows="3"
-placeholder="${letter ? "For example: mention my Azure work" : "For example: lead with the reporting projects"}"></textarea></label></div></details>`;
+placeholder="${example}"></textarea></label></div></details>`;
 }
 
 export async function jobHash(j) {
@@ -296,9 +304,10 @@ const DOC_ICONS = {
   cover_letter: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h5"/>',
   tailored_cv: '<rect x="4" y="5" width="16" height="14" rx="2.5"/><circle cx="9" cy="11" r="2"/><path d="M6.5 16c.6-1.6 4.4-1.6 5 0M14 10h3.5M14 13.5h3.5"/>',
   send_job: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/>',
+  interview_prep: '<path d="M5 5h14v10H9l-4 4z"/><path d="M9 9h6M9 12h4"/>',
 };
 
-function docIcon(kind) {
+export function docIcon(kind) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${DOC_ICONS[kind]}</svg>`;
 }
 
@@ -336,10 +345,10 @@ a.pcvbtn.dl:hover{color:#fff;filter:brightness(1.05);transform:translateY(-1px)}
 `;
 
 // One job's letter and CV on the dashboard's list of jobs sent: Download, Email and Regenerate when one is kept, a
-// spinner while one is being made or emailed, Generate otherwise. Then the job emailed to the profile: Send, a
-// spinner while it goes, then when it went and Send again. `ctx` has the profile, the job's hash, the kept documents,
-// the jobs emailed, what is pending, who the email goes to (a first name), the CSRF token and where to come
-// back to.
+// spinner while one is being made or emailed, Generate otherwise; the interview prep pack the same way, once they have
+// applied (`ctx.answer`) or one is kept or on its way. Then the job emailed to the profile: Send, a spinner while it
+// goes, then when it went and Send again. `ctx` has the profile, the job's hash, the kept documents, the jobs emailed,
+// what is pending, who the email goes to (a first name), the CSRF token and where to come back to.
 export function docActions(j, h, ctx) {
   if (!validJobKey(j) || !HASH_RE.test(h || "")) return "";
   const to = esc(ctx.recipient || "the recruit");
@@ -349,16 +358,17 @@ export function docActions(j, h, ctx) {
   return Object.entries(DOC_KINDS).map(([kind, label]) => {
     const kept = ctx.docs.find((d) => d.k === kind && d.h === h);
     const busy = ctx.pending.get(`${kind}\n${j}`);
+    if (kind === PREP && !kept && !busy && !PREP_ANSWERS.includes(ctx.answer)) return "";
     if (busy) {
       return `<div class="doc busy">${docIcon(kind)}<span><b>${label}</b><small>${busy === "send" ? `Emailing to ${to}` : "Being made"}&hellip;</small></span><span class="dspin" aria-hidden="true"></span></div>`;
     }
     if (kept) {
       return `<div class="doc ready">${docIcon(kind)}<span><b>${label}</b><small title="Kept for download until ${esc(new Date(kept.exp).toISOString().slice(0, 10))}">made ${esc(ago(kept.at))}</small></span>
 <div class="dacts"><a class="dl" href="${DOC_URL}?u=${esc(ctx.profile)}&amp;k=${kind}&amp;h=${h}" download>Download</a>
-<form method="post" action="${DOC_URL}">${hidden(kind, false, true)}<button class="small quiet" title="Email this ${kind === "cover_letter" ? "cover letter" : "tailored CV"} to ${to}">Email to ${to}</button></form>
+<form method="post" action="${DOC_URL}">${hidden(kind, false, true)}<button class="small quiet" title="Email this ${DOC_NAMES[kind]} to ${to}">Email to ${to}</button></form>
 <form method="post" action="${DOC_URL}">${hidden(kind, true)}${docMenu(kind)}<button class="small quiet" title="Write a new one">Regenerate</button></form></div></div>`;
     }
-    return `<form class="doc" method="post" action="${DOC_URL}">${docIcon(kind)}<span><b>${label}</b><small>for this job</small></span>${hidden(kind, false)}
+    return `<form class="doc" method="post" action="${DOC_URL}">${docIcon(kind)}<span><b>${label}</b><small>${kind === PREP ? "questions and answers" : "for this job"}</small></span>${hidden(kind, false)}
 ${docMenu(kind)}<button class="small">Generate</button></form>`;
   }).join("") + emailAction(j, h, ctx, hidden);
 }

@@ -1000,7 +1000,7 @@ def _free_model_slot(fcntl, slots: int) -> tuple[int, int] | None:
 
 
 # Writing gets a little variety so letters don't all read alike; scoring and copying facts stay deterministic.
-TASK_TEMPERATURE = {"letter": 0.4, "cv_tailor": 0.2, "summary": 0.3}
+TASK_TEMPERATURE = {"letter": 0.4, "cv_tailor": 0.2, "summary": 0.3, "interview_prep": 0.3}
 
 
 def temperature(task: str) -> float:

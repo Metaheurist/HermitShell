@@ -14,7 +14,7 @@ export const TASKS_URL = "/admin/tasks";
 // costs a read rather than one of the free plan's 1,000 daily list operations. Two presses in the same instant can
 // lose one entry here; the request itself is still made, it just does not show until HermitShell reports it.
 export const REQUESTS_KEY = "tasks:requests";
-export const REQUEST_ACTIONS = ["cover_letter", "tailored_cv", "send_job", "profile_cv"];
+export const REQUEST_ACTIONS = ["cover_letter", "tailored_cv", "send_job", "profile_cv", "interview_prep"];
 const MAX_REQUESTS = 50;
 const QUEUE_ID = /^queue:\d{1,16}:[0-9a-f]{8,64}$/;
 const EVENT_ID = /^event:[a-z0-9_-]{1,40}:[A-Za-z0-9:_-]{1,120}$/;
@@ -56,7 +56,8 @@ const ADMIN_LABELS = {
   backup_now: "Back up now",
 };
 const KIND_LABELS = {
-  report: "Daily report", cover_letter: "Cover letter", tailored_cv: "Tailored CV", send_job: "Job email", profile_cv: "CV", signup: "Sign-up",
+  report: "Daily report", cover_letter: "Cover letter", tailored_cv: "Tailored CV", send_job: "Job email", profile_cv: "CV",
+  interview_prep: "Interview prep", signup: "Sign-up",
   unsubscribe: "Unsubscribe",
 };
 const TRIGGERS = { schedule: "scheduled", dashboard: "from the dashboard", email: "email button", signup: "sign-up form", link: "unsubscribe link" };
@@ -137,6 +138,7 @@ const ICONS = {
   tailored_cv: '<rect x="4" y="5" width="16" height="14" rx="2.5"/><circle cx="9" cy="11" r="2"/><path d="M6.5 16c.6-1.6 4.4-1.6 5 0M14 10h3.5M14 13.5h3.5"/>',
   send_job: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/>',
   profile_cv: '<rect x="4" y="5" width="16" height="14" rx="2.5"/><circle cx="9" cy="11" r="2"/><path d="M6.5 16c.6-1.6 4.4-1.6 5 0M14 10h3.5M14 13.5h3.5"/>',
+  interview_prep: '<path d="M5 5h14v10H9l-4 4z"/><path d="M9 9h6M9 12h4"/>',
   signup: '<circle cx="10" cy="8" r="3.5"/><path d="M3.5 20c.8-3.8 3.3-5.5 6.5-5.5s5.7 1.7 6.5 5.5M19 8v6M16 11h6"/>',
   unsubscribe: '<circle cx="10" cy="8" r="3.5"/><path d="M3.5 20c.8-3.8 3.3-5.5 6.5-5.5s5.7 1.7 6.5 5.5M16 11h6"/>',
   send: '<path d="M21 3 10 14M21 3l-7 18-4-7-7-4z"/>',
@@ -185,7 +187,8 @@ function detail(t) {
   if (t.state === "stopping") return "Stopping&hellip;";
   if (t.state === "running") {
     const stage = t.kind === "report" ? esc(t.stage || "Starting") : t.kind === "tailored_cv" ? "Tailoring the CV"
-      : t.kind === "profile_cv" ? "Laying out the CV" : t.kind === "send_job" ? "Sending the email" : "Writing the letter";
+      : t.kind === "profile_cv" ? "Laying out the CV" : t.kind === "send_job" ? "Sending the email"
+        : t.kind === "interview_prep" ? "Writing the prep pack" : "Writing the letter";
     const count = t.total ? ` &middot; ${t.done} of ${t.total}` : "";
     return `${stage}${count}${since ? ` &middot; started ${esc(since)}` : ""}`;
   }

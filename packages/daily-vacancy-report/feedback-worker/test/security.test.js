@@ -744,7 +744,7 @@ describe("letters and CVs kept for download", () => {
     const env = testEnv(ADMIN);
     await reportedStatus(env);
     const cookie = await signIn(env, "203.0.113.34");
-    for (const extra of [{}, { send: "1" }]) {
+    for (const extra of [{}, { send: "1" }, { k: "interview_prep", back: "pipeline" }]) {
       const fields = { u: "sam-lee", j: JOB, k: "cover_letter", n: "Data Engineer", ...extra };
       const anonymous = await worker.fetch(new Request(`${BASE}/admin/doc`, { method: "POST", body: new URLSearchParams({ csrf: "x", ...fields }) }), env);
       expect(await anonymous.text()).toContain("Admin sign-in");

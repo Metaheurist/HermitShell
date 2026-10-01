@@ -246,6 +246,6 @@ describe("model tokens used in Global settings", () => {
 
   it("only knows the tasks HermitShell counts", () => {
     expect(Object.keys(TOKEN_TASKS)).toEqual(["triage", "rating", "verify", "brief", "summary", "profile", "cv_read",
-      "evidence", "letter", "cv_tailor", "skills", "other"]);
+      "evidence", "letter", "cv_tailor", "interview_prep", "skills", "other"]);
   });
 });

@@ -84,12 +84,12 @@ IDENTITY_KEYS = frozenset({"ALERT_EMAIL", "JOB_CANDIDATE_NAME", "JOB_PROFILE_FIL
 # What the owner's own job search kept in the state folder, moved with it to its recruit profile.
 OWNER_STATE_FILES = ("job_scanner_seen.json", "job_scanner_retry.json", "job_scanner_last.json", "job_scanner_last.html",
                      "job_scanner_weekly.html", "cv.json", "cv_skills_merged.json")
-OWNER_STATE_DIRS = ("cover_letters", "tailored_cvs")
+OWNER_STATE_DIRS = ("cover_letters", "tailored_cvs", "interview_prep")
 STAFF = "the admin is staff, not a recruit, and has no job search of their own"
 SMTP_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM")
 # Global settings, Features: the dashboard's name for each switch, its .env key and its default.
 # A switch is listed only once its feature exists, so the dashboard never offers one that does nothing.
-FEATURES: dict[str, tuple[str, bool]] = {"alerts": ("HERMES_ALERTS", True)}
+FEATURES: dict[str, tuple[str, bool]] = {"alerts": ("HERMES_ALERTS", True), "prep_auto": ("INTERVIEW_PREP_AUTO", False)}
 API_KEYS = {"firecrawl": "FIRECRAWL_API_KEY", "firecrawl_backup": "FIRECRAWL_BACKUP_KEYS",
             "tavily": "TAVILY_API_KEY", "scrapfly": "SCRAPFLY_API_KEY"}
 ID_RE = re.compile(r"^[a-z0-9-]{1,40}$")

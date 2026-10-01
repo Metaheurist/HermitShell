@@ -687,7 +687,8 @@ them.
 ##### Features
 
 On/off switches for optional features, each shown once HermitShell has the feature and reports it:
-**Admin alerts by email** ([what they check](configuration.md#admin-alerts)). **Save features** queues
+**Admin alerts by email** ([what they check](configuration.md#admin-alerts)) and **Interview prep packs
+on Interview** (off at first; see [Pipeline](#pipeline)). **Save features** queues
 the change like the other settings; HermitShell writes only these switches to its settings and ignores
 anything else in the request.
 
@@ -894,6 +895,11 @@ stage, and a **Move to** menu.
   **Offer** is a valid email answer too. **Placed** is only set here.
 - **Reminders** follow the stage: once a job reaches Interview, or any later answer, the "did you hear
   back" reminders stop.
+- **Interview prep**: cards at **Interview** and **Offer** have an **Interview prep** button that asks
+  for the job's [prep pack](#jobs-sent), then show **Prep pack being made** and, once it is kept, a
+  green **Prep pack** download. With **Interview prep packs on Interview** switched on (Global settings,
+  Features, or `INTERVIEW_PREP_AUTO=1`), HermitShell makes one by itself when a job reaches Interview
+  in the last two days: one per job, ever, and none if one was already asked for.
 
 The board comes from the recruit's tracker: `profile_stats.py` lists each job's latest answer from the
 last 365 days, up to 200 jobs, with its title and employer only, never notes or fees. It travels with the
@@ -1010,8 +1016,9 @@ press one the recruit has and it is stored as the email's **Add to my skills** a
 their skills pool at HermitShell's next sync and counts as on the CV from then on (see
 [Adding missing skills](#adding-missing-skills)). It then shows as added (dashed, with a tick) until
 HermitShell's next stats update, at most 30 minutes later, lists it with a solid tick. Admins can do this for
-any recruit, a recruiter only for their own pool. Below that are three tiles. For both a **Cover letter**
-and a **Tailored CV**:
+any recruit, a recruiter only for their own pool. Below that are the document tiles. For a **Cover
+letter**, a **Tailored CV** and, once the recruit has answered **I applied** or anything after it, an
+**Interview prep** pack:
 
 - **Generate** asks HermitShell for one. It is made within 5 minutes (a loading circle shows
   meanwhile, and the page refreshes itself every 15 seconds until it is ready) and is **not**
@@ -1035,7 +1042,16 @@ and a **Tailored CV**:
 
 <img src="images/worker/admin-sent-letter-options.png" alt="The cover letter's Options open on an opened job, with Length, Tone and a note" width="460">
 
-The third tile, **Email to Sam**, sends the job itself to that
+An **interview prep pack** is a PDF in four parts: facts about the employer, taken only from the advert
+(HermitShell looks nothing up on the web); the eight questions they are most likely to ask, each with why;
+answers to some of them in situation, task, action and result form, built only from the job's evidence
+map of the CV (with no evidence map there are no answers, rather than made-up ones); and questions to ask
+them. HermitShell checks it as it checks letters (figures the CV and advert don't state, placeholders,
+stock phrases) and rewrites it once if it fails. If it still fails, it is sent with a "Check before use"
+line at the top rather than dropped. It is emailed to the recruit and kept for download like a letter,
+and it also counts under its own task in **Tokens used**.
+
+The last tile, **Email to Sam**, sends the job itself to that
 recruit's address: **Send** asks HermitShell, which emails it within 5 minutes as the card it had in
 the daily report, with its buttons (applied, cover letter, tailored CV and the rest) signed for that
 profile. No model is used. A loading circle shows while it goes, then **Emailed to Sam** with when,

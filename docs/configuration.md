@@ -304,7 +304,8 @@ when its best case is below the minimum.
 | `JOB_FEEDBACK_URL` | none | Your feedback Worker, e.g. `https://vacancy-feedback.<subdomain>.workers.dev`. Must start with `https://` (HermitShell never sends the token over plain http). Empty = no buttons |
 | `JOB_FEEDBACK_SECRET` | none | Signs the button links and every request HermitShell makes to the Worker; the Worker holds the same value |
 | `JOB_FEEDBACK_API_TOKEN` | none | Lets HermitShell fetch and clear answers from the Worker (signed requests only, once the Worker has seen one) |
-| `COVER_LETTER_KEEP_DAYS` | `7` | Days a finished cover letter or tailored CV is reused (a request with no note sends it again instead of writing a new one) and kept, encrypted, on the Worker for download from the email buttons and the dashboard's Jobs sent list. At most `30`; `0` = neither |
+| `INTERVIEW_PREP_AUTO` | `0` | `1` = make an interview prep pack by itself when a job reaches Interview (once per job, only for interviews in the last two days). Also the **Interview prep packs on Interview** switch under Features on Global settings. The **Interview prep** buttons on the dashboard work either way |
+| `COVER_LETTER_KEEP_DAYS` | `7` | Days a finished cover letter, tailored CV or interview prep pack is reused (a request with no note sends it again instead of writing a new one) and kept, encrypted, on the Worker for download from the email buttons and the dashboard's Jobs sent list. At most `30`; `0` = neither |
 | `CLOUDFLARE_ACCOUNT_ID` | none | Account the wizard and `scripts/cloudflare_worker.py` deploy the Worker to |
 | `CLOUDFLARE_API_TOKEN` | none | API token for that deployment (Workers Scripts Edit, Workers KV Storage Edit; Access: Apps and Policies Edit for Access). Not changeable from the dashboard |
 | `CLOUDFLARE_WORKER_NAME` | `vacancy-feedback` | Worker name, the first part of its `workers.dev` address |

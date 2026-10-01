@@ -223,6 +223,48 @@ def cv_pdf(cv: dict, title: str = "") -> bytes:
     return _assemble(w.pages, title or f"CV - {name}", name)
 
 
+def prep_pdf(name: str, role: str, employer: str, prep: dict, warning: str = "", title: str = "") -> bytes:
+    """An interview prep pack from the structure cover_letter.write_prep builds: about the employer (from the
+    advert), likely questions, STAR answers from the CV's evidence, and questions to ask."""
+    w = _Writer()
+    w.new_page()
+    w.y -= 22
+    w.text(MARGIN_X, "Interview prep", 22, "bold", ACCENT)
+    w.y -= 16
+    w.text(MARGIN_X, (wrap(" at ".join(x for x in (role, employer) if x), 11.5, PAGE_W - 2 * MARGIN_X) or [""])[0], 11.5)
+    if name:
+        w.y -= 15
+        w.text(MARGIN_X, name, 9.5, "regular", MUTED)
+    w.y -= 12
+    w.rule(w.y, 1.6)
+    if warning:
+        w.y -= 8
+        w.paragraph(warning, size=10, leading=14.5, font="bold", colour=ACCENT, after=2)
+    if prep.get("company"):
+        w.heading("About the employer (from the advert)")
+        for item in prep["company"]:
+            w.bullet(item)
+    if prep.get("questions"):
+        w.heading("Questions they may ask")
+        for n, q in enumerate(prep["questions"], 1):
+            w.paragraph(f"{n}. {q['question']}", size=10.5, leading=15, font="bold", after=1)
+            if q.get("why"):
+                w.paragraph(q["why"], size=9.5, leading=13.5, colour=MUTED, after=5, indent=12)
+    if prep.get("answers"):
+        w.heading("Answers from your CV (situation, task, action, result)")
+        for a in prep["answers"]:
+            w.split_line(a["question"], "", 10.5, keep=_height(a.get("situation", ""), 10, 14, indent=12))
+            for label in ("situation", "task", "action", "result"):
+                if a.get(label):
+                    w.paragraph(f"{label.capitalize()}: {a[label]}", size=10, leading=14, after=2, indent=12)
+            w.y -= 4
+    if prep.get("ask"):
+        w.heading("Questions to ask them")
+        for item in prep["ask"]:
+            w.bullet(item)
+    return _assemble(w.pages, title or f"Interview prep - {role}", name)
+
+
 def _assemble(pages: list[list[bytes]], title: str, author: str) -> bytes:
     objects: list[bytes] = []
 

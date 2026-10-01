@@ -36,6 +36,7 @@ ACTIONS = {
     "add_skill": "Add to my skills",
     "send_job": "Emailed from the dashboard",
     "profile_cv": "CV",
+    "interview_prep": "Interview prep",
 }
 CARD_ACTIONS = ("applied", "good_match", "not_for_me", "interested", "cover_letter", "tailored_cv")
 FOLLOWUP_ACTIONS = ("heard_back", "interview", "rejected")
@@ -48,9 +49,13 @@ MAX_FEE = 1_000_000
 META_DAYS = 2 * 365
 # Requests that cover_letter.py carries out: a letter or CV turned into a PDF, the job emailed to the profile
 # (send_job, only asked for from the dashboard's list of jobs sent), or the profile's own CV, not for any job
-# (profile_cv, the profile page's Generate; its key is PROFILE_CV_KEY).
-REQUEST_ACTIONS = ("cover_letter", "tailored_cv", "send_job", "profile_cv")
+# (profile_cv, the profile page's Generate; its key is PROFILE_CV_KEY), or an interview prep pack (interview_prep,
+# from the dashboard or queued here when a job reaches Interview, see queue_auto_prep).
+REQUEST_ACTIONS = ("cover_letter", "tailored_cv", "send_job", "profile_cv", "interview_prep")
 PROFILE_CV_KEY = "profile:cv"
+AUTO_PREP_PREFIX = "auto-prep-"
+# Only interviews this recent get an automatic pack, so switching it on doesn't make one for every past interview.
+AUTO_PREP_DAYS = 2
 # Actions that describe where an application stands; the others (e.g. cover_letter) are requests.
 STATUS_ACTIONS = ("interested", "not_for_me", "applied", "heard_back", "rejected", "good_match") + STAGES
 _STATUS_SQL = ", ".join(f"'{a}'" for a in STATUS_ACTIONS)
@@ -390,6 +395,22 @@ class Tracker:
                WHERE e.action IN ({marks}) AND coalesce(l.status, '') NOT IN ('sent', 'failed', 'cancelled')
                ORDER BY e.at""", REQUEST_ACTIONS).fetchall()
         return [dict(r) for r in rows if r["attempts"] < max_attempts]
+
+    def queue_auto_prep(self, profile: str = "", now: float | None = None) -> list[str]:
+        """An interview prep request for each job that reached Interview in the last AUTO_PREP_DAYS and has never
+        had one (asked for or automatic): its event id is fixed per job, so a job gets one automatic pack, ever. The
+        id is shaped like the Worker's, so the dashboard's task list shows it and can cancel it. Returns the job keys
+        queued."""
+        now = now or time.time()
+        prefix = f"event:{profile or '_'}:{AUTO_PREP_PREFIX}"
+        rows = self.db.execute(
+            f"""SELECT e.key, e.at FROM events e JOIN jobs j ON j.key = e.key
+               WHERE e.action = 'interview' AND e.at >= ?
+                 AND e.at = (SELECT max(at) FROM events WHERE key = e.key AND action IN ({_STATUS_SQL}))
+                 AND NOT EXISTS (SELECT 1 FROM events p WHERE p.key = e.key AND p.action = 'interview_prep')
+               ORDER BY e.at""", (now - AUTO_PREP_DAYS * DAY,)).fetchall()
+        return [r["key"] for r in rows if self.add_event(
+            f"{prefix}{hashlib.sha256(r['key'].encode()).hexdigest()[:24]}", r["key"], "interview_prep", at=now)]
 
     def cancel_letter(self, event_id: str) -> bool:
         """Cancelled from the dashboard: the request is never made. False when there is no such request."""

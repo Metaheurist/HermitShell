@@ -8,6 +8,19 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Interview prep packs.** A new `interview_prep` document: a PDF with facts about the employer from the
+  advert only, the eight questions they are most likely to ask (each with why), answers in situation, task,
+  action and result form built only from the job's CV evidence map (none when there is no map), and
+  questions to ask them. No web lookups. It goes through the letters' honesty checks (figures the sources
+  don't state, placeholders, stock phrases) with one rewrite, and is sent with a "Check before use" line if
+  it still fails. Ask for one from the opened job on **Jobs sent** (once the recruit has applied) or the
+  **Interview prep** button on Interview and Offer cards in the **Pipeline**, which then shows it being made
+  and a **Prep pack** download; `cover_letter.py --prep <key>` makes one by hand. With
+  `INTERVIEW_PREP_AUTO=1` (or the new **Interview prep packs on Interview** switch under Features, off by
+  default) HermitShell makes one by itself for a job that reached Interview in the last two days, once per
+  job and never after a manual one. Packs are kept in `state/interview_prep/` and on the Worker like letters,
+  deleted with the recruit, and counted under their own **Interview prep packs** task in Tokens used.
+
 - **Interview, offer and placed, and a Pipeline tab.** Applications now go on past **Heard back**: the
   follow-up email has a **Got an interview** button (which stops that job's reminders), and the tracker,
   weekly roll-up and stats know Interview, Offer and Placed (Interviews replaces Heard back in the tiles and

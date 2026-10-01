@@ -20,6 +20,11 @@ def test_every_listed_switch_is_a_dashboard_key():
     assert {key for key, _ in profiles.FEATURES.values()} <= hc.DASHBOARD_SWITCHES
 
 
+def test_only_switches_whose_feature_exists_are_listed():
+    assert {name: SWITCHES[name] for name in profiles.FEATURES} == profiles.FEATURES
+    assert set(profiles.FEATURES) == {"alerts", "prep_auto"}
+
+
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     monkeypatch.setattr(profiles, "FEATURES", SWITCHES)

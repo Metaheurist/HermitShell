@@ -20,10 +20,17 @@ The profile page's "Generate" asks for the profile's own CV, for no job: every r
 uploaded CV (tailored_cv.py), laid out as the tailored ones are, saved as state/cv.pdf and sent to the Worker, which
 keeps it for download until the next one replaces it or the profile is unsubscribed or deleted. It is not emailed.
 
+An interview prep pack ("Interview prep" on the dashboard, or queued here when a job reaches Interview and
+INTERVIEW_PREP_AUTO is on, once per job) is a PDF of facts about the employer taken only from the advert, the
+questions they are likely to ask, answers in STAR form built only from the job's evidence map, and questions to ask
+them. It is checked as letters are (figures, placeholders, stock phrases), rewritten once if it fails, and sent with
+a "check before use" line if it still does. It is emailed and kept for download as letters are.
+
     python3 cover_letter.py                         # fetch requests from the Worker and send them
     python3 cover_letter.py --job KEY [--note ...]  # write a letter for a tracked job now
     python3 cover_letter.py --job KEY --length short --tone warm   # choose its length and tone
     python3 cover_letter.py --job KEY --cv          # tailor the CV for it instead
+    python3 cover_letter.py --job KEY --prep        # make its interview prep pack instead
     python3 cover_letter.py --job KEY --dry-run     # save the PDF under state/, no email
 
 Prints nothing when there is nothing to do, so the cron job stays silent.
@@ -56,7 +63,8 @@ from hermes_common import (EMAIL_HEAD, STATE_DIR, connect_model, env, env_int, l
                            white_label)
 from job_tracker import REQUEST_ACTIONS, Tracker, secure_base, skills_text, sync_feedback
 from job_extras import compact_profile
-from letter_pdf import cv_pdf, letter_pdf
+import writing_checks
+from letter_pdf import cv_pdf, letter_pdf, prep_pdf
 from writing_checks import letter_problems
 
 hc.LOG_TAG = "cover_letter"
@@ -64,8 +72,11 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 TRACKER_FILE = STATE_DIR / "job_tracker.db"
 LETTER_DIR = STATE_DIR / "cover_letters"
 CV_DIR = STATE_DIR / "tailored_cvs"
-KIND_LABELS = {"cover_letter": "Cover letter", "tailored_cv": "Tailored CV", "send_job": "Job email", "profile_cv": "CV"}
+PREP_DIR = STATE_DIR / "interview_prep"
+KIND_LABELS = {"cover_letter": "Cover letter", "tailored_cv": "Tailored CV", "send_job": "Job email", "profile_cv": "CV",
+               "interview_prep": "Interview prep"}
 SEND_JOB = "send_job"
+INTERVIEW_PREP = "interview_prep"
 PROFILE_CV = "profile_cv"
 PROFILE_CV_FILE = STATE_DIR / "cv.pdf"
 LOCK_FILE = STATE_DIR / "cover_letter.lock"
@@ -118,6 +129,29 @@ SYSTEM_PROMPT = (
     "appear in the candidate's CV: never invent employers, job titles, dates, numbers, qualifications, "
     "certifications or achievements, and never claim a skill the CV does not show. Output JSON only."
 )
+
+PREP_QUESTIONS = 8
+STAR = ("situation", "task", "action", "result")
+PREP_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "company": {"type": "array", "items": {"type": "string"}, "maxItems": 5},
+        "questions": {"type": "array", "minItems": PREP_QUESTIONS, "maxItems": PREP_QUESTIONS, "items": {
+            "type": "object", "properties": {"question": {"type": "string"}, "why": {"type": "string"}},
+            "required": ["question", "why"]}},
+        "answers": {"type": "array", "maxItems": 4, "items": {
+            "type": "object", "properties": {k: {"type": "string"} for k in ("question", *STAR)},
+            "required": ["question", *STAR]}},
+        "ask": {"type": "array", "items": {"type": "string"}, "minItems": 3, "maxItems": 6},
+    },
+    "required": ["company", "questions", "answers", "ask"],
+}
+PREP_SYSTEM = (
+    "You help a job candidate prepare for an interview, in UK English. You only use the facts you are given: facts "
+    "about the employer only from the advert, and answers only from the evidence quoted from the candidate's CV. "
+    "Never invent employers, job titles, dates, numbers, results or achievements. Output JSON only."
+)
+PREP_CHECK = "Check before use: HermitShell could not confirm every line against your CV and the advert."
 
 
 # --------------------------------------------------------------------------- inputs
@@ -272,6 +306,96 @@ def write_letter(host: str, model: str, num_ctx: int | None, job: dict, profile:
     raise ValueError("; ".join(hard))
 
 
+def prep_prompt(job: dict, listing: str, found: list[dict], note: str = "") -> str:
+    about = job.get("about") or job.get("company_profile") or '(none: return "company" as [])'
+    shown = evidence.as_text(found) if found else '(none: return "answers" as [])'
+    return (
+        f"JOB:\n{job_facts(job)}\n\nABOUT THE EMPLOYER, FROM THE ADVERT:\n{about}\n\n"
+        f"EVIDENCE FROM THE CANDIDATE'S CV (the job's main requirements and where the CV shows them):\n{shown}\n\n"
+        f"LISTING TEXT:\n{listing[:LISTING_WITH_MAP] or '(not available: rely on the job details above)'}\n\n"
+        + (f"CANDIDATE'S NOTE (follow it if it is consistent with the evidence):\n{note}\n\n" if note else "")
+        + "Write an interview prep pack:\n"
+          "- company: up to 5 short facts about the employer, only from the advert text above;\n"
+          f"- questions: the {PREP_QUESTIONS} questions this interviewer is most likely to ask, each with one "
+          "sentence on why they would ask it;\n"
+          "- answers: up to 4 of those questions answered in first person in STAR form (situation, task, action, "
+          "result), each built only from the evidence above; where the evidence states no result, say what the work "
+          "delivered without numbers;\n"
+          "- ask: 3 to 6 questions the candidate could ask the employer about the role and team.\n"
+          "Rules: no placeholders or brackets; no figures the evidence or advert does not state; no em dashes; avoid "
+          "cliches such as 'passionate' or 'team player'.\n"
+          'Return {"company": [...], "questions": [{"question": "...", "why": "..."}], "answers": [{"question": '
+          '"...", "situation": "...", "task": "...", "action": "...", "result": "..."}], "ask": [...]}.'
+    )
+
+
+def _line(value, most: int) -> str:
+    return " ".join(str(value or "").split())[:most]
+
+
+def clean_prep(data) -> dict:
+    """The pack the model returned, trimmed to the schema's shape and sizes; anything else is dropped."""
+    data = data if isinstance(data, dict) else {}
+
+    def items(name: str, most: int, size: int) -> list[str]:
+        got = data.get(name)
+        return [t for t in (_line(x, size) for x in (got if isinstance(got, list) else [])) if t][:most]
+
+    def rows(name: str, fields: tuple[str, ...], most: int) -> list[dict]:
+        got = data.get(name)
+        return [{f: _line(r.get(f), 400) for f in fields} for r in (got if isinstance(got, list) else [])
+                if isinstance(r, dict) and _line(r.get("question"), 400)][:most]
+
+    return {"company": items("company", 5, 300), "questions": rows("questions", ("question", "why"), PREP_QUESTIONS),
+            "answers": rows("answers", ("question", *STAR), 4), "ask": items("ask", 6, 200)}
+
+
+def prep_lines(prep: dict) -> list[str]:
+    return [*prep["company"], *(v for q in prep["questions"] for v in q.values()),
+            *(v for a in prep["answers"] for v in a.values()), *prep["ask"]]
+
+
+def prep_problems(prep: dict, source: str) -> list[str]:
+    """What is wrong with a pack, each as an instruction a rewrite can follow; [] when it passes. `source` is
+    everything it may take facts from: the job's details, the advert, the evidence and the candidate's note."""
+    text = "\n".join(prep_lines(prep))
+    problems = []
+    if len(prep["questions"]) < PREP_QUESTIONS:
+        problems.append(f"write {PREP_QUESTIONS} likely questions (it has {len(prep['questions'])})")
+    if not writing_checks.honest(text, source):
+        if found := writing_checks.placeholders(text):
+            problems.append(f"remove the placeholders {', '.join(found[:4])}")
+        if found := writing_checks.invented_figures(text, source):
+            problems.append(f"remove figures the CV and advert do not state: {', '.join(found[:5])}")
+    if found := writing_checks.cliches(text):
+        problems.append(f"replace the stock phrases {', '.join(repr(c) for c in found[:4])} with specifics")
+    return problems
+
+
+def write_prep(host: str, model: str, num_ctx: int | None, job: dict, listing: str, found: list[dict],
+               note: str = "") -> tuple[dict, list[str]]:
+    """The pack, and what still fails the checks after one rewrite ([] when it passes). With no evidence map it has
+    no answers, so none can be made up."""
+    source = "\n".join((job_facts(job), listing, evidence.as_text(found) if found else "", note))
+    prompt = prep_prompt(job, listing, found, note)
+    for attempt in (1, 2):
+        prep = clean_prep(json.loads(ollama_chat(host, model, PREP_SYSTEM, prompt, num_ctx, fmt=PREP_SCHEMA,
+                                                 num_predict=2400, task=INTERVIEW_PREP)))
+        if not found:
+            prep["answers"] = []
+        problems = prep_problems(prep, source)
+        if not problems:
+            return prep, []
+        if attempt == 1:
+            log(f"Rewriting the interview prep: {'; '.join(problems)[:240]}")
+            prompt = (f"{prep_prompt(job, listing, found, note)}\n\nYOUR DRAFT:\n{json.dumps(prep, ensure_ascii=False)}\n\n"
+                      "Revise the draft to fix these problems, keeping what is already right:\n"
+                      + "\n".join(f"- {p}" for p in problems))
+    if not prep["questions"]:
+        raise ValueError("the model wrote no interview questions")
+    return prep, problems
+
+
 def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40] or "job"
 
@@ -298,6 +422,9 @@ EMAIL_TEXT = {
                     "employers and dates are copied from your CV; read it through before you send it.",
                     "Profile and skills",
                     "Only reorders and rephrases your own CV. Check it before sending."),
+    "interview_prep": ("Interview prep ready", "Your prep pack for this interview is attached as <b>{file}</b>: likely "
+                       "questions, answers drawn from your CV, and questions to ask them.", "Likely questions",
+                       "Built only from your CV and the advert, with no web lookups. Check it before the interview."),
 }
 
 
@@ -416,6 +543,31 @@ def make_cv(tracker: Tracker, key: str, note: str, model_info: tuple[str, str, i
     return path
 
 
+def make_prep(tracker: Tracker, key: str, note: str, model_info: tuple[str, str, int | None],
+              dry_run: bool, send: bool = True, flags=()) -> Path:
+    job = tracker.job(key)
+    if not job:
+        raise LookupError(f"job {key} is not in the tracker")
+    profile = profile_text(tracker)
+    if not profile:
+        raise FileNotFoundError("no CV profile found (JOB_PROFILE_FILE / job_profile.md)")
+    name = candidate_name(profile)
+    listing = listing_text(job)
+    found = evidence.for_job(model_info, key, job, profile, listing)
+    prep, problems = write_prep(*model_info, job, listing, found, note)
+    warning = PREP_CHECK if problems else ""
+    if problems:
+        log(f"Interview prep sent with a check line: {'; '.join(problems)[:240]}")
+    pdf = prep_pdf(name, job_title(job), employer(job), prep, warning,
+                   title=f"Interview prep: {job_title(job)}" + (f" - {name}" if name else ""))
+    filename = file_name(f"Interview prep - {name or 'Candidate'} - {job_title(job)}")
+    preview = [*([warning] if warning else []), *(q["question"] for q in prep["questions"])]
+    path = save_doc(PREP_DIR, job, pdf, filename, preview)
+    if send and not dry_run:
+        email_doc(INTERVIEW_PREP, job, pdf, filename, preview, note)
+    return path
+
+
 def profile_cv_name(tracker: Tracker) -> str:
     return file_name(f"CV - {candidate_name(profile_text(tracker)) or 'Candidate'}")
 
@@ -430,7 +582,7 @@ def make_profile_cv(tracker: Tracker, key: str, note: str, model_info: tuple[str
     return PROFILE_CV_FILE
 
 
-MAKERS = {"cover_letter": make_letter, "tailored_cv": make_cv, PROFILE_CV: make_profile_cv}
+MAKERS = {"cover_letter": make_letter, "tailored_cv": make_cv, PROFILE_CV: make_profile_cv, INTERVIEW_PREP: make_prep}
 
 
 # --------------------------------------------------------------------------- made before, kept for download
@@ -441,7 +593,7 @@ def keep_days() -> int:
 
 
 def doc_dir(kind: str) -> Path:
-    return LETTER_DIR if kind == "cover_letter" else CV_DIR
+    return {"cover_letter": LETTER_DIR, INTERVIEW_PREP: PREP_DIR}.get(kind, CV_DIR)
 
 
 def recent_doc(tracker: Tracker, kind: str, key: str, now: float | None = None) -> tuple[Path, float] | None:
@@ -597,6 +749,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--job", help="tracker key of a job to write a letter for now")
     parser.add_argument("--note", default="", help="extra guidance for the letter (with --job)")
     parser.add_argument("--cv", action="store_true", help="tailor the CV instead of writing a letter (with --job)")
+    parser.add_argument("--prep", action="store_true", help="make an interview prep pack instead (with --job)")
     parser.add_argument("--length", choices=list(LENGTHS), default="standard", help="letter length (with --job)")
     parser.add_argument("--tone", choices=list(TONES), default="professional", help="letter tone (with --job)")
     parser.add_argument("--dry-run", action="store_true", help="save the PDF but send no email")
@@ -614,7 +767,7 @@ def main(argv: list[str] | None = None) -> int:
     tracker = Tracker(TRACKER_FILE)
     try:
         if args.job:
-            kind = "tailored_cv" if args.cv else "cover_letter"
+            kind = "tailored_cv" if args.cv else INTERVIEW_PREP if args.prep else "cover_letter"
             path = MAKERS[kind](tracker, args.job, args.note, model_info(), args.dry_run, flags={args.length, args.tone})
             print(f"{KIND_LABELS[kind]} {'saved' if args.dry_run else 'sent'}: {path}")
             return 0
@@ -629,6 +782,9 @@ def main(argv: list[str] | None = None) -> int:
                 log(error)
             elif full and not args.dry_run:
                 FULL_SYNC_FILE.touch()
+            if (not args.dry_run and hc.env_bool("INTERVIEW_PREP_AUTO", False)
+                    and (queued := tracker.queue_auto_prep(env("JOB_PROFILE_ID", "") or ""))):
+                log(f"Queued {len(queued)} interview prep pack(s) for jobs that reached Interview")
             lines = process_pending(tracker, model_info, args.dry_run)
         if lines:
             print("\n".join(lines))

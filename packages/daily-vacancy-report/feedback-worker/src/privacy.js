@@ -23,8 +23,9 @@ what was done for you (changes to your profile, the requests and buttons you or 
 and the reports that ran), never your notes, until you unsubscribe or are deleted. Your recruiter and the admins can
 keep their own notes and short tags about you there (for example how a call went), encrypted, until you unsubscribe or
 are deleted. Only the operator's admins
-and your recruiter (the person who invited you, unless the operator moves you to another) can sign in to that page. Cover letters and
-tailored CVs made for you are also kept there, encrypted, for 7 days so they can be downloaded again, and a CV made from
+and your recruiter (the person who invited you, unless the operator moves you to another) can sign in to that page. Cover letters,
+tailored CVs and interview prep packs made for you are also kept there, encrypted, for 7 days so they can be downloaded
+again (a prep pack is built only from your CV and the job's advert, with nothing looked up about you or the employer), and a CV made from
 the one you uploaded is kept there, encrypted, until a new one replaces it or you unsubscribe. When the
 operator emails you a job from that list, the time it was sent is kept for 90 days (with a scrambled form of the job's
 link, not the link itself). Job searches send

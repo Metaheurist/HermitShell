@@ -481,7 +481,7 @@ async function sentRow(j, i, ctx) {
   const badge = label ? `<span class="answer" style="--a:${answerColor}">${esc(label)}</span>` : "";
   const source = j.source ? `<span class="source">${esc(cut(j.source, 60))}</span>` : "";
   const title = [cut(j.title, 90), cut(j.employer, 60)].filter(Boolean).join(" at ");
-  const docs = key ? docActions(key, h, { ...ctx, title: title.slice(0, 120) }) : "";
+  const docs = key ? docActions(key, h, { ...ctx, title: title.slice(0, 120), answer: j.answer }) : "";
   return `<li id="job-${id}" style="animation-delay:${Math.min(i, 12) * 35}ms"><details${ctx.open === id ? " open" : ""}><summary>${
     fit === null ? '<span class="nofit">&ndash;</span>' : ring(fit, 10, { size: 46, tone, label: String(fit), hot: fit >= 8 })}
 <div class="job"><b>${esc(cut(j.title, 90))}</b><span class="muted">${meta}</span></div><div class="tags">${badge}${source}</div><span class="chev" aria-hidden="true"></span></summary>

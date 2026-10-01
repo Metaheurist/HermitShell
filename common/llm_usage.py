@@ -29,7 +29,7 @@ TASKS = {
     "triage": "Title screening", "rating": "Job ratings", "verify": "Second opinions", "brief": "Rating briefs",
     "summary": "Report summaries", "profile": "Profiles from CVs", "cv_read": "Reading CVs",
     "evidence": "Evidence maps", "letter": "Cover letters", "cv_tailor": "Tailored CVs",
-    "skills": "Skills added to CVs", "other": "Other",
+    "interview_prep": "Interview prep packs", "skills": "Skills added to CVs", "other": "Other",
 }
 FILE = "llm_usage.json"
 KEEP_DAYS = 31

@@ -34,7 +34,7 @@ import { needsSeal, sealInfo, sealItem, sealText } from "./seal.js";
 import { PALETTE_ICON, THEME_URL, readTheme, themePage, themeRequest } from "./theme.js";
 import { SEARCH_STYLE, matchesProfile, noMatch, recruiterHits, recruiterRow, searchBar, searchQuery } from "./search.js";
 import {
-  CV_URL, DOC_URL, REQUEST_KINDS, SKILL_URL, addedSkills, docIndex, emailedIndex, letterStyle, markEmailed, pdfResponse, pendingDocs, profileCvBusy,
+  CV_URL, DOC_NAMES, DOC_URL, REQUEST_KINDS, SKILL_URL, addedSkills, docIndex, emailedIndex, letterStyle, markEmailed, pdfResponse, pendingDocs, profileCvBusy,
   profileCvInfo, readDoc, readProfileCv, requestDoc, requestProfileCv, requestSkill, storeDoc, storeProfileCv, styleLabel, validJobKey,
 } from "./docs.js";
 import {
@@ -506,7 +506,7 @@ async function tasksAction(request, env, s) {
 // A cancelled task as the recruit's history tells it.
 function cancelNote(t) {
   if (t.kind === "profile_cv") return "Cancelled their CV";
-  const what = { cover_letter: "cover letter", tailored_cv: "tailored CV", send_job: "job email" }[t.kind];
+  const what = { ...DOC_NAMES, send_job: "job email" }[t.kind];
   if (what) return `Cancelled the ${what}: ${t.title || "a job"}`;
   if (t.kind === "report") return "Stopped the job report";
   if (t.kind === "unsubscribe") return "Cancelled the unsubscribe";
@@ -528,23 +528,25 @@ async function docRequest(request, env, s) {
   }
   const [u, j, kind, title] = ["u", "j", "k", "n"].map((k) => String(form.get(k) || ""));
   if (!PROFILE_RE.test(u)) return page("Unknown recruit", "<p>Reload the admin page and try again.</p>", { status: 400 });
+  const fromBoard = form.get("back") === "pipeline";
+  const back = (open, done) => fromBoard ? pipelineBack(u, done, open) : sentBack(u, form.get("back"), open, done);
   const current = await status(env);
   const p = visible(s, current, u);
   if (!p && !s.me.admin) return page(...NOT_FOUND);
   if (!p || !validJobKey(j) || !REQUEST_KINDS[kind] || title.length > 200 || /[\u0000-\u001f\u007f]/.test(title)) {
-    return redirect(sentBack(u, form.get("back"), "", "docbad"));
+    return redirect(back("", "docbad"));
   }
   const fresh = form.get("fresh") === "1";
   const send = !fresh && kind !== "send_job" && form.get("send") === "1";
   const style = kind === "cover_letter" && !send ? letterStyle(form) : {};
   const note = kind !== "send_job" && !send ? cleanReason(form.get("r")).trim() : "";
   const h = await requestDoc(env, { profile: u, j, kind, title, fresh, send, style, note });
-  const doc = kind === "cover_letter" ? "cover letter" : "tailored CV";
+  const doc = DOC_NAMES[kind] || "document";
   const label = [styleLabel(style), note ? "with a note" : ""].filter(Boolean).join(", ");
   const how = label ? ` (${label})` : "";
-  const asked = kind === "send_job" ? "Emailed the job" : send ? `Emailed the ${doc}` : `Asked for a ${fresh ? "new " : ""}${doc}${how}`;
+  const asked = kind === "send_job" ? "Emailed the job" : send ? `Emailed the ${doc}` : `Asked for ${fresh ? "a new" : /^[aeiou]/.test(doc) ? "an" : "a"} ${doc}${how}`;
   await record(env, u, kind, `${asked}: ${title || "a job"}`, { by: displayName(s.me, current), h });
-  return redirect(sentBack(u, form.get("back"), h.slice(0, 16), kind === "send_job" ? "mail" : send ? "docmail" : "doc"));
+  return redirect(back(h.slice(0, 16), kind === "send_job" ? "mail" : send ? "docmail" : "doc"));
 }
 
 // A skill missing from the CV, added from the list of jobs sent (admins, and a recruiter for their own pool).
@@ -955,8 +957,9 @@ async function signedInRoute(request, env, s, path) {
     if (!PROFILE_RE.test(u)) return text("Not found", 404);
     const current = await status(env);
     if (!allowed(s, current, u)) return page(...NOT_FOUND);
-    const { board } = sentParts(await env.FEEDBACK.get(`sent:${u}`, "json"));
-    return pipelinePage(current, board, u, { csrf: s.csrf, admin: s.me.admin, done: url.searchParams.get("done") || "" });
+    const [sent, docs, held] = await Promise.all([env.FEEDBACK.get(`sent:${u}`, "json"), docIndex(env, u), requests(env)]);
+    return pipelinePage(current, sentParts(sent).board, u, { csrf: s.csrf, admin: s.me.admin, done: url.searchParams.get("done") || "",
+      docs, pending: pendingDocs(current, held, u) });
   }
   if (path === STATUS_URL && request.method === "GET") {
     if (!PROFILE_RE.test(u)) return text("Not found", 404);

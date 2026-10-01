@@ -49,7 +49,7 @@ HOME_ITEMS = (".env", "cron")
 SKIP_DIRS = {"__pycache__", ".ruff_cache", ".pytest_cache", "model-queue", "output", "locks", "tests",
              "node_modules"}
 SKIP_SUFFIXES = (".lock", ".tmp", "-wal", "-shm", "-journal", ".pyc")
-LETTER_DIRS = ("cover_letters", "tailored_cvs")
+LETTER_DIRS = ("cover_letters", "tailored_cvs", "interview_prep")
 STATE_PRIVATE = ("cv.json", "cv_skills_merged.json")
 BACKUP_FILE = "backup.json"
 LOCK_FILE = "maintenance.lock"

@@ -39,6 +39,22 @@ test("the Pipeline shows where each application stands, and a move waits for Her
   await hermitShellApi(request, "POST", "/ack", { ids: moved.map((e) => e.id) });
 });
 
+test("an interview card asks HermitShell for a prep pack and shows it is being made", async ({ page, request }) => {
+  await sendBoard(request);
+  await signIn(page);
+  await page.goto("/admin/pipeline?u=sam-lee");
+  const card = page.getByRole("region", { name: "Interview" }).locator(".pcard", { hasText: "Analytics Engineer" });
+  await card.getByRole("button", { name: "Interview prep" }).click();
+  await expect(page).toHaveURL(/done=doc#card-[0-9a-f]{16}$/);
+  await expect(page.getByRole("status").first()).toContainText("HermitShell is making the prep pack");
+  await expect(page.getByRole("region", { name: "Interview" })).toContainText("Prep pack being made");
+
+  const events = (await (await hermitShellApi(request, "GET", "/events?u=sam-lee")).json()).events;
+  const asked = events.filter((e) => e.j === "job-e2e-pipeline-2" && e.a === "interview_prep" && e.via === "dashboard");
+  expect(asked).toHaveLength(1);
+  await hermitShellApi(request, "POST", "/ack", { ids: asked.map((e) => e.id) });
+});
+
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
