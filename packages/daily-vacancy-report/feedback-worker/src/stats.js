@@ -680,9 +680,7 @@ filter:drop-shadow(0 1px 1.5px color-mix(in srgb,var(--c) 45%,transparent))}
 .ring .sub{font-size:4.4px;font-weight:700;fill:var(--muted);letter-spacing:.02em}
 .ring.hot{animation:halo 2.6s ease-in-out 1.5s 2;transition:filter .25s ease}
 li:hover .ring.hot,summary:hover .ring.hot{filter:drop-shadow(0 0 3px color-mix(in srgb,var(--c) 35%,transparent))}
-li:hover .ring .arc,summary:hover .ring .arc{animation:arc2 .9s var(--ease) both}
 @keyframes halo{50%{filter:drop-shadow(0 0 5px color-mix(in srgb,var(--c) 60%,transparent))}}
-@keyframes arc2{from{stroke-dasharray:0 100}}
 .pipe{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center}
 .rate{display:grid;justify-items:center;gap:2px}
 .bubbles{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -714,7 +712,6 @@ animation:rise .45s var(--ease) both;transition:transform .2s var(--ease),box-sh
 svg .grow{transform-box:fill-box;transform-origin:50% 100%;animation:grow 1.6s var(--ease) infinite alternate}
 svg .g2{animation-delay:.25s}svg .g3{animation-delay:.5s}
 .ico *,.hero *,svg .grow{animation-iteration-count:4!important}
-:hover>.ico *,.nostats:hover .hero *{animation-iteration-count:infinite!important}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes ping{0%{transform:scale(.7);opacity:1}100%{transform:scale(1.7);opacity:.2}}
 @keyframes heart{0%,100%{transform:scale(1)}14%{transform:scale(1.16)}28%{transform:scale(1)}42%{transform:scale(1.08)}}
