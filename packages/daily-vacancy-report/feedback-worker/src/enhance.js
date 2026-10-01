@@ -5,7 +5,9 @@
 //   immediate, skipped when nothing changed, and plays no entrance animation again. Without scripts the <noscript>
 //   refresh reloads the page as before.
 // - A form sends once: pressing again, or double clicking, while its page loads does nothing.
-// - The theme page's preview follows the custom colours and the name as they change (the rest it follows by CSS).
+// - The theme page's preview follows the custom colours, the name and a logo as soon as it is picked (the rest it
+//   follows by CSS). The picked file is shown from a blob: address, never uploaded until Save theme; one that is too
+//   big or not a picture is cleared at once with the reason.
 // - The Tasks button's count follows the task list each time that list reloads in its window.
 import { fnv } from "./lib.js";
 
@@ -34,6 +36,46 @@ const SOURCE = `(() => {
       if (custom) custom.checked = true;
     }
     if (field.name === "name") form.querySelectorAll(".pvname").forEach((n) => { n.textContent = field.value.trim() || "HermitShell"; });
+  });
+
+  let markWas = null;
+  let picked = "";
+  document.addEventListener("change", (e) => {
+    const field = e.target;
+    const form = field instanceof HTMLInputElement ? field.closest("form.theme") : null;
+    const mark = form && form.querySelector(".pvmark");
+    if (!mark || !(field.name === "logo" || field.name === "nologo")) return;
+    if (!markWas) markWas = [...mark.childNodes].map((n) => n.cloneNode(true));
+    const input = form.querySelector('input[type="file"][name="logo"]');
+    const say = form.querySelector(".tlogobad");
+    const tell = (text) => { if (say) { say.textContent = text; say.hidden = !text; } };
+    const restore = () => mark.replaceChildren(...markWas.map((n) => n.cloneNode(true)));
+    const drop = form.querySelector("#nologo");
+    if (field.name === "nologo") {
+      if (picked) return;
+      if (field.checked) mark.replaceChildren((form.querySelector(".pvname").textContent.trim() || "H").slice(0, 1).toUpperCase());
+      else restore();
+      return;
+    }
+    if (picked) { URL.revokeObjectURL(picked); picked = ""; }
+    const file = input.files && input.files[0];
+    const max = Number(input.dataset.max) || 0;
+    let problem = "";
+    if (file && file.type && !input.accept.split(",").includes(file.type)) problem = "That isn't a PNG, JPEG, GIF or WebP picture. SVG isn't accepted, as it can carry script.";
+    else if (file && max && file.size > max) problem = "That picture is over " + Math.round(max / 1024) + " KB. Try a smaller one.";
+    tell(problem);
+    if (problem) input.value = "";
+    if (!file || problem) { restore(); return; }
+    const img = new Image();
+    img.alt = "";
+    img.addEventListener("error", () => {
+      tell("That picture can't be shown. Try a PNG, JPEG, GIF or WebP file.");
+      input.value = "";
+      restore();
+    });
+    img.src = picked = URL.createObjectURL(file);
+    mark.replaceChildren(img);
+    if (drop) drop.checked = false;
   });
 
   document.addEventListener("load", (e) => {
@@ -117,6 +159,7 @@ export function enhance(html) {
     .replace("</body>", `<script src="${ENHANCE_URL}" defer></script></body>`);
 }
 
+// blob: images are only the logo picked on the theme page, made by the script from a file the admin chose.
 export function enhancedCsp(csp) {
-  return csp ? csp.replace("default-src 'none';", `default-src 'none'; ${ENHANCE_CSP};`) : csp;
+  return csp ? csp.replace("default-src 'none';", `default-src 'none'; ${ENHANCE_CSP};`).replace("img-src 'self'", "img-src 'self' blob:") : csp;
 }

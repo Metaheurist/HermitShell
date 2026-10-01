@@ -615,7 +615,7 @@ HermitShell's own look ([more](feedback-worker.md#theme-and-branding)).
 | **Show the name next to the logo** / **Use the logo as the browser tab's icon** / **Logo size** | How the logo is shown |
 | **Palette** | Eight palettes, or **Custom** with two colour pickers |
 | **Background** / **Corners** / **Font** / **Spacing** / **Motion** | The look of every page |
-| **Preview** | Follows the choices as you make them |
+| **Preview** | Follows the choices as you make them, and shows a logo as soon as it is picked, before saving; one too big or not a picture is refused at once |
 | **Save theme** / **Reset to HermitShell's look** | Apply for everyone, or go back to the default |
 | **Back to recruits** | Returns to the dashboard |
 

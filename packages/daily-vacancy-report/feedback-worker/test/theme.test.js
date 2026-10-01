@@ -189,6 +189,29 @@ describe("the theme page", () => {
     expect((await worker.fetch(new Request(`${BASE}/brand/logo?v=${logo.v}`), env)).status).toBe(404);
   });
 
+  it("takes a WebP logo, serving it as WebP and as the tab icon", async () => {
+    const { env, admin } = await setup();
+    const webp = new TextEncoder().encode("RIFF\u001a\u0000\u0000\u0000WEBPVP8L\r\u0000\u0000\u0000/\u0000\u0000\u0000");
+    const res = await admin.save({ name: "Proseware" }, { bytes: webp, type: "image/webp", name: "brandmark.webp" });
+    expect(res.headers.get("Location")).toBe("/admin/theme?done=saved");
+    const { logo } = JSON.parse(env.FEEDBACK.store.get(THEME_KEY));
+    expect(logo.type).toBe("image/webp");
+    expect(await publicPage(env)).toContain(`<link rel="icon" href="/brand/logo?v=${logo.v}" type="image/webp">`);
+    const served = await worker.fetch(new Request(`${BASE}/brand/logo?v=${logo.v}`), env);
+    expect(served.headers.get("Content-Type")).toBe("image/webp");
+    expect(new Uint8Array(await served.arrayBuffer())).toEqual(webp);
+  });
+
+  it("lets the dashboard script preview a picked logo, with the limits it checks before saving", async () => {
+    const { admin } = await setup();
+    const res = await admin.get("/admin/theme");
+    const body = await res.text();
+    expect(body).toContain(`accept="image/png,image/jpeg,image/gif,image/webp" data-max="${MAX_LOGO_BYTES}"`);
+    expect(body).toContain('<span class="tlogobad" role="alert" hidden></span>');
+    expect(body).toContain("A preview of the logo, palette");
+    expect(res.headers.get("Content-Security-Policy")).toContain("img-src 'self' blob:");
+  });
+
   it("puts everything back with Reset, and pages are then HermitShell's own", async () => {
     const { env, admin } = await setup();
     await admin.save({ name: "Fabrikam", palette: "sunset", background: "plain" }, { bytes: PNG });

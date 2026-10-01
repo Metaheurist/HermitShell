@@ -63,6 +63,26 @@ describe("the dashboard script", () => {
     expect(source).toContain("badge.textContent = n;");
   });
 
+  it("previews a picked logo from a blob: address, checked for type and size, and builds no HTML from it", async () => {
+    const source = await (await worker.fetch(new Request(`${BASE}${ENHANCE_URL}`), testEnv())).text();
+    expect(source).toContain("URL.createObjectURL(file)");
+    expect(source).toContain("URL.revokeObjectURL(picked)");
+    expect(source).toContain('input.accept.split(",").includes(file.type)');
+    expect(source).toContain("file.size > max");
+    expect(source).toContain("say.textContent = text");
+    expect(source).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML/);
+  });
+
+  it("allows blob: images only on signed-in pages", async () => {
+    const env = testEnv(ADMIN);
+    const a = await signedIn(env);
+    expect((await a.get("/admin")).headers.get("Content-Security-Policy")).toContain("img-src 'self' blob:;");
+    for (const path of ["/admin", "/privacy", "/join?i=bad"]) {
+      const res = await worker.fetch(new Request(`${BASE}${path}`), env);
+      expect(res.headers.get("Content-Security-Policy") || "", path).not.toContain("blob:");
+    }
+  });
+
   it("leaves the sign-in page without it", async () => {
     const res = await worker.fetch(new Request(`${BASE}/admin`), testEnv(ADMIN));
     expect(await res.text()).not.toContain("<script");

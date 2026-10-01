@@ -16,6 +16,11 @@ using [Semantic Versioning](https://semver.org/).
   replaces it or the recruit unsubscribes or is deleted. Generate is greyed out without an uploaded CV.
   The request shows on Tasks and History, can be cancelled, and works in demo mode.
 
+- **Logo preview before saving.** On the theme page, picking a logo (WebP included) shows it in the preview
+  straight away, from the browser's own copy, before **Save theme** uploads it. A file over 200 KB or not a
+  PNG, JPEG, GIF or WebP picture is cleared at once with the reason. Signed-in pages allow `blob:` images for
+  this; other pages don't.
+
 - **Theme and branding.** Admins get a palette button at the top right, beside the server button, that
   opens `/admin/theme`. It sets a name and logo (PNG, JPEG, GIF or WebP up to 200 KB, checked by content;
   SVG refused) shown on every page and optionally as the tab icon, one of eight palettes or two custom

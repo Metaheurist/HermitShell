@@ -586,7 +586,11 @@ top left returns to the dashboard.
   rounded, serif or mono), spacing (comfortable or compact) and motion (full, or calm, which stops the
   background drifting and cards sliding in).
 
-The preview beside the form follows the palette, corners, font, spacing and name as you change them.
+The preview beside the form follows the palette, corners, font, spacing and name as you change them,
+and shows a logo as soon as you pick the file, before it is saved. A file over 200 KB, or one that isn't a
+PNG, JPEG, GIF or WebP picture, is cleared straight away with the reason. The picked file is shown from the
+browser's own copy (a `blob:` address, allowed for images on signed-in pages only) and is only uploaded
+by **Save theme**, which checks it again.
 The theme is kept in KV (`theme`, and `theme:logo` for the picture) and demo mode shows it too.
 Emails are drawn by HermitShell, so they keep HermitShell's look.
 

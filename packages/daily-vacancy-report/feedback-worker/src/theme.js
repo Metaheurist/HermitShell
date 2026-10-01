@@ -321,7 +321,7 @@ export const PALETTE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="curren
   + '<circle cx="15" cy="7.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="17.5" cy="11" r="1.2" fill="currentColor" stroke="none"/></svg>';
 
 // The preview follows the form with CSS alone (:has on the checked options); the dashboard's script also follows
-// the custom colours and the name as they are typed.
+// the custom colours and the name as they are typed, and a logo as soon as it is picked.
 function previewRules() {
   const rules = Object.entries(PALETTES).map(([id, [, a, b]]) => `.theme:has(#pal-${id}:checked){--pv1:${rgbText(a)};--pv2:${rgbText(b)}}`);
   rules.push(".theme:has(#pal-custom:checked){--pv1:var(--c1);--pv2:var(--c2)}");
@@ -360,6 +360,7 @@ background:var(--field);cursor:pointer;font-weight:650;font-size:13.5px;transiti
 .tseg label:has(input:focus-visible){outline:3px solid rgba(99,102,241,.35)}
 .tlogo{display:flex;align-items:center;gap:14px;margin:4px 0 8px}.tlogo img{width:48px;height:48px;object-fit:contain;border-radius:12px;
 border:1px solid var(--line);background:#fff;padding:4px}
+.tlogobad{display:block;margin:6px 0 2px;color:#b91c1c;font-size:13px;font-weight:650}.tlogobad[hidden]{display:none}
 .tbtns{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:18px}.tbtns button{margin:0}
 .tprev{position:sticky;top:24px}
 .pvbg{position:relative;overflow:hidden;padding:26px 18px;border-radius:18px;background:#eef1f7;border:1px solid var(--line)}
@@ -414,7 +415,8 @@ HermitShell&rsquo;s look. Changes show for everyone within a minute.</p>
 <section><h2>Branding</h2>
 <label for="tname">Name</label><input id="tname" name="name" maxlength="${MAX_NAME}" value="${esc(t.name)}" placeholder="HermitShell" autocomplete="off">
 <span class="hint">Shown at the top of every page in place of HermitShell. Messages about the HermitShell server keep its name.</span>
-<label for="tlogo">Logo</label>${logo}<input id="tlogo" type="file" name="logo" accept="image/png,image/jpeg,image/gif,image/webp">
+<label for="tlogo">Logo</label>${logo}<input id="tlogo" type="file" name="logo" accept="${LOGO_TYPES.join(",")}" data-max="${MAX_LOGO_BYTES}">
+<span class="tlogobad" role="alert" hidden></span>
 <span class="hint">PNG, JPEG, GIF or WebP, up to ${MAX_LOGO_BYTES / 1024} KB; a square picture fits best. SVG isn&rsquo;t accepted, as it can carry script.</span>
 ${check("showname", t.showName, "Show the name next to the logo")}${check("tabicon", t.tabIcon, "Use the logo as the browser tab&rsquo;s icon")}
 ${segment("logoSize", t.logoSize)}</section>
@@ -431,7 +433,7 @@ ${segment("logoSize", t.logoSize)}</section>
 <div class="pvrow"><span class="pvpill">active</span><span class="pvpill">Data Analyst</span></div>
 <div class="pvfield">BI Developer, Data Engineer</div>
 <div class="pvbtns"><span class="pvbtn">Save changes</span><span class="pvbtn q">Send jobs now</span></div>
-</div></div><p class="muted">A preview of the palette, corners, font and spacing. Save to see them on every page.</p></aside>
+</div></div><p class="muted">A preview of the logo, palette, corners, font and spacing. Save to see them on every page.</p></aside>
 </form>`;
   return page("Theme and branding", body, { wide: "full", before: BACK_TO_RECRUITS });
 }
