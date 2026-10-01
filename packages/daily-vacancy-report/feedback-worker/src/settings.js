@@ -14,6 +14,7 @@ import { MODEL_KEY_RE, MODEL_PROVIDERS, MODEL_RE, MODEL_STYLE, modelModals, mode
 import { LINK_STYLE, STATS_URL, icon } from "./stats.js";
 import { profileTabs } from "./history.js";
 import { DOC_STYLE, PROFILE_CV_STYLE, profileCvButtons } from "./docs.js";
+import { NOTES_STYLE } from "./notes.js";
 
 export const LEVELS = ["junior", "mid", "senior", "lead", "any"];
 export const EMPLOYMENT_TYPES = ["Permanent", "Contract", "Temporary", "Part-time", "Internship"];
@@ -402,7 +403,7 @@ export function sendSection(p, csrf, tz) {
 }
 
 export function profilePage(status, pid, csrf,
-  { done = "", error = "", queue = [], saving = false, draft = null, base = null, conflicts = [], code = 200, cv = null } = {}) {
+  { done = "", error = "", queue = [], saving = false, draft = null, base = null, conflicts = [], code = 200, cv = null, notes = "" } = {}) {
   const p = (status.profiles || []).find((x) => x.id === pid);
   if (!p) {
     return page("Recruit not found", '<p>HermitShell has not reported this recruit. <a href="/admin">Back to recruits</a></p>', { status: 404 });
@@ -410,7 +411,7 @@ export function profilePage(status, pid, csrf,
   const latest = latestValues(p, queue);
   const v = draft || latest;
   const message = error ? note(error, "bad") : done ? note(done) : "";
-  return page(p.name, `<style>${LINK_STYLE}${cv ? DOC_STYLE + PROFILE_CV_STYLE : ""}</style>${cv ? profileCvButtons(p, { csrf, ...cv }) : ""}${profileTabs(pid, "manage")}
+  return page(p.name, `<style>${LINK_STYLE}${cv ? DOC_STYLE + PROFILE_CV_STYLE : ""}${notes ? NOTES_STYLE : ""}</style>${cv ? profileCvButtons(p, { csrf, ...cv }) : ""}${profileTabs(pid, "manage")}
 <p><a class="statlink" href="${STATS_URL}?u=${esc(pid)}">${icon("chart")}View stats</a></p>
 ${message}<iframe class="saving" src="${STATUS_URL}?u=${esc(pid)}${saving ? "&amp;n=1" : ""}" title="Save status"></iframe>
 ${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
@@ -440,7 +441,7 @@ ${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
     `<option value="${d}"${d === v.report_days ? " selected" : ""}>${label}</option>`).join("")}</select></div></div>
 <button>Save changes</button></form>
 ${sendSection(p, csrf, status.timezone)}
-
+${notes}
 <h2 id="cv">CV</h2>
 <p class="muted">${p.has_cv ? `HermitShell has a CV${p.cv_updated ? ` (updated ${esc(when(p.cv_updated, status.timezone))})` : ""}. A new one replaces it and rebuilds the skills and profile the jobs are rated against.` : "No CV yet: jobs can't be rated until one is uploaded."}</p>
 <form method="post" action="/admin/cv" enctype="multipart/form-data">${hidden({ csrf, u: pid })}

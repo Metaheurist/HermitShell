@@ -28,6 +28,7 @@ import {
   limitedBytes, profileCvInfoKey, profileCvKey, setFlag, sha256Hex, skillAddKey, PROFILE_RE,
 } from "./lib.js";
 import { rememberRequest } from "./tasks.js";
+import { open, seal } from "./vault.js";
 
 export const DOC_URL = "/admin/doc";
 export const SKILL_URL = "/admin/skill";
@@ -49,10 +50,6 @@ const MAX_INDEX = 300;
 const MAX_ADDED = 100;
 const MAX_JOB_KEY = 300;
 const HASH_RE = /^[0-9a-f]{32}$/;
-const IV_BYTES = 12;
-const encoder = new TextEncoder();
-const ciphers = new Map();
-
 export function validJobKey(j) {
   return typeof j === "string" && j.length > 0 && j.length <= MAX_JOB_KEY && !CONTROL_RE.test(j);
 }
@@ -99,19 +96,6 @@ function cleanName(name, kind) {
   return `${base || DOC_KINDS[kind] || "CV"}.pdf`;
 }
 
-async function cipher(secret) {
-  let key = ciphers.get(secret);
-  if (!key) {
-    const base = await crypto.subtle.importKey("raw", encoder.encode(secret), "HKDF", false, ["deriveKey"]);
-    key = await crypto.subtle.deriveKey(
-      { name: "HKDF", hash: "SHA-256", salt: encoder.encode("hermitshell-docs"), info: encoder.encode("v1") },
-      base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
-    if (ciphers.size > 8) ciphers.clear();
-    ciphers.set(secret, key);
-  }
-  return key;
-}
-
 // What a profile has kept, dropping entries that have expired or do not look right.
 export async function docIndex(env, profile, now = Date.now()) {
   if (!PROFILE_RE.test(profile || "")) return [];
@@ -135,7 +119,7 @@ export async function storeDoc(request, env) {
   const h = await jobHash(j);
   const key = docKey(u, kind, h);
   const at = Date.now();
-  await env.FEEDBACK.put(key, await sealPdf(env, key, body), { expirationTtl: days * 86400 });
+  await env.FEEDBACK.put(key, await seal(env, key, body), { expirationTtl: days * 86400 });
   const index = (await docIndex(env, u, at)).filter((d) => !(d.k === kind && d.h === h));
   index.push({ k: kind, h, name: cleanName(q("name"), kind), at, exp: at + days * 86400000 });
   await env.FEEDBACK.put(docIndexKey(u), JSON.stringify(index.slice(-MAX_INDEX)), { expirationTtl: MAX_DOC_DAYS * 86400 });
@@ -146,35 +130,11 @@ function isPdf(body) {
   return body.length >= 8 && new TextDecoder().decode(body.subarray(0, 5)) === "%PDF-";
 }
 
-// The PDF encrypted and bound to the KV key it is stored under: a random IV, then the AES-GCM ciphertext.
-async function sealPdf(env, key, body) {
-  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
-  const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: encoder.encode(key) },
-    await cipher(env.JOB_FEEDBACK_SECRET), body));
-  const stored = new Uint8Array(IV_BYTES + sealed.length);
-  stored.set(iv);
-  stored.set(sealed, IV_BYTES);
-  return stored.buffer;
-}
-
-// The PDF stored under `key`, decrypted, or null when there is none or it does not open as that key's.
-async function openPdf(env, key) {
-  const stored = env.JOB_FEEDBACK_SECRET ? await env.FEEDBACK.get(key, "arrayBuffer") : null;
-  if (!stored || stored.byteLength <= IV_BYTES) return null;
-  const bytes = new Uint8Array(stored);
-  try {
-    return await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.subarray(0, IV_BYTES), additionalData: encoder.encode(key) },
-      await cipher(env.JOB_FEEDBACK_SECRET), bytes.subarray(IV_BYTES));
-  } catch {
-    return null;
-  }
-}
-
 // A kept document, decrypted: { bytes, name, at }, or null when there is none (or it does not open).
 export async function readDoc(env, profile, kind, h) {
   if (!DOC_KINDS[kind] || !HASH_RE.test(h || "") || !env.JOB_FEEDBACK_SECRET) return null;
   const entry = (await docIndex(env, profile)).find((d) => d.k === kind && d.h === h);
-  const bytes = entry ? await openPdf(env, docKey(profile, kind, h)) : null;
+  const bytes = entry ? await open(env, docKey(profile, kind, h)) : null;
   return bytes ? { bytes, name: entry.name, at: entry.at } : null;
 }
 
@@ -188,7 +148,7 @@ export async function storeProfileCv(request, env) {
   const body = await limitedBytes(request, MAX_DOC_BYTES);
   if (!body) return json({ error: "too large" }, 413);
   if (!isPdf(body)) return json({ error: "not a PDF" }, 400);
-  await env.FEEDBACK.put(profileCvKey(u), await sealPdf(env, profileCvKey(u), body));
+  await env.FEEDBACK.put(profileCvKey(u), await seal(env, profileCvKey(u), body));
   await env.FEEDBACK.put(profileCvInfoKey(u), JSON.stringify({ name: cleanName(url.searchParams.get("name"), PROFILE_CV), at: Date.now() }));
   return json({ saved: true });
 }
@@ -202,7 +162,7 @@ export async function profileCvInfo(env, profile) {
 
 export async function readProfileCv(env, profile) {
   const info = await profileCvInfo(env, profile);
-  const bytes = info ? await openPdf(env, profileCvKey(profile)) : null;
+  const bytes = info ? await open(env, profileCvKey(profile)) : null;
   return bytes ? { bytes, ...info } : null;
 }
 

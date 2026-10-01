@@ -39,6 +39,9 @@ import {
 import { LINK_STYLE, MAX_STATS_BYTES, SENT_RANGES, SENT_URL, STATS_URL, sentPage, splitStats, statsLink, statsPage, validStats } from "./stats.js";
 import { TASKS_STYLE, TASKS_URL, cancelTask, requests, taskRows, tasksButton, tasksModal, tasksPage } from "./tasks.js";
 import {
+  NOTES_DONE, NOTES_STYLE, NOTES_URL, changeNotes, indexTags, notesSection, readNotes, tagFilter, tagIndex, tagPills, tagQuery,
+} from "./notes.js";
+import {
   ADMIN_ID, KEY_ICON, PASSWORD_URL, ROLES, USERS_DONE, USERS_STYLE, USER_RE, accounts, canSee, changeOwnPassword, checkUser, displayName, initials,
   passwordModal, recruiterOf, recruiters, signOutUser, signedIn, userAction, usersPage,
 } from "./users.js";
@@ -72,6 +75,7 @@ const DONE = {
   cvgone: "Their CV is no longer kept. Generate makes a new one.",
   ...SETTINGS_DONE,
   ...DEMO_DONE,
+  ...NOTES_DONE,
   badpass: USERS_DONE.badpass,
   mismatch: USERS_DONE.mismatch,
 };
@@ -340,7 +344,7 @@ function pendingRow(p, tz, live, third) {
 // itself until they are applied.
 const QUICK_ACTIONS = { pause: "pausing", resume: "resuming", delete: "deleting", send_now: "starting a scan", assign: "assigning" };
 
-function profileRow(p, csrf, tz, stats, { admin, third, inPool, busy = "" }) {
+function profileRow(p, csrf, tz, stats, { admin, third, inPool, busy = "", tags = [] }) {
   const shown = busy === "pause" ? "paused" : busy === "resume" ? "active" : p.status;
   const status = `<span class="pill${shown === "paused" ? " paused" : ""}">${esc(shown)}</span>`
     + (busy ? ` ${savingTag(QUICK_ACTIONS[busy])}` : "")
@@ -349,7 +353,7 @@ function profileRow(p, csrf, tz, stats, { admin, third, inPool, busy = "" }) {
   const cv = p.has_cv === false ? ' <span class="pill paused">no CV</span>' : "";
   const joined = p.created ? `<div class="muted" title="${esc(when(p.created, tz))}">Joined ${esc(when(p.created, tz).slice(0, 10))}</div>` : "";
   return `<tr${inPool ? ' class="inpool"' : ""}><td><div class="who"><span class="avatar" aria-hidden="true">${esc(initials(p.name))}</span><div>
-<b>${esc(p.name)}</b>${cv}<div class="muted">${esc(p.email || "")}</div>${joined}
+<b>${esc(p.name)}</b>${cv}${tagPills(tags)}<div class="muted">${esc(p.email || "")}</div>${joined}
 <div class="rowlinks"><a class="small" href="/admin/profile?u=${esc(p.id)}">Manage</a>${statsLink(p, stats, tz)}</div></div></div></td>
 <td>${status}${whenTip(p.last_run, tz, "Last report")}${schedule(p)}</td>
 ${third === null ? "" : `<td>${third}</td>`}
@@ -375,8 +379,8 @@ function inviteForm(s, recs) {
 async function dashboard(request, env, s) {
   const url = new URL(request.url);
   const admin = s.me.admin;
-  const [current, invites, queue, presence, held] = await Promise.all([
-    status(env), openInvites(env), queued(env), hubPresence(env), requests(env)]);
+  const [current, invites, queue, presence, held, tagsOf] = await Promise.all([
+    status(env), openInvites(env), queued(env), hubPresence(env), requests(env), tagIndex(env)]);
   const recs = recruiters(s.acc, current, env);
   const byId = new Map(recs.map((r) => [r.id, r]));
   const tasks = admin ? tasksButton(taskRows(current, queue, held).length) : "";
@@ -395,14 +399,15 @@ async function dashboard(request, env, s) {
   const code = url.searchParams.get("done");
   const done = (code === "queued" || code === "assigned") && !quick.length ? APPLIED : DONE[code];
   const q = searchQuery(url);
-  const all = [...profiles.map((p, i) => ({ p, stats: stats[i], rec: admin ? recruiterOf(p, queue) : String(p.recruiter || "") })),
-    ...signups.map((p) => ({ p, rec: p.recruiter }))];
-  const shown = all.filter(({ p, rec }) => matchesProfile(p, q, byId.get(rec)));
+  const tag = tagQuery(url);
+  const all = [...profiles.map((p, i) => ({ p, stats: stats[i], rec: admin ? recruiterOf(p, queue) : String(p.recruiter || ""),
+    tags: tagsOf[p.id] || [] })), ...signups.map((p) => ({ p, rec: p.recruiter, tags: [] }))];
+  const shown = all.filter(({ p, rec, tags }) => matchesProfile({ ...p, tags }, q, byId.get(rec)) && (!tag || tags.includes(tag)));
   const hits = admin ? recruiterHits(recs, q, new Set(shown.map((e) => e.rec).filter(Boolean))) : [];
   const row = (e, inPool) => {
     const third = admin ? recruiterCell(e.p, e.rec, recs, s.csrf) : null;
     return e.p.pending ? pendingRow(e.p, current.timezone, presence.live, third)
-      : profileRow(e.p, s.csrf, current.timezone, e.stats, { admin, third, inPool, busy: busy.get(e.p.id) });
+      : profileRow(e.p, s.csrf, current.timezone, e.stats, { admin, third, inPool, busy: busy.get(e.p.id), tags: e.tags });
   };
   const listed = new Set();
   const grouped = hits.map((r) => {
@@ -411,14 +416,15 @@ async function dashboard(request, env, s) {
     return recruiterRow(r, all.filter((e) => e.rec === r.id).length) + theirs.map((e) => row(e, true)).join("");
   }).join("");
   const rows = grouped + shown.filter((e) => !listed.has(e)).map((e) => row(e, false)).join("")
-    || (all.length ? noMatch(q) : `<tr><td colspan="4" class="muted">${admin ? "HermitShell has not reported any recruits yet."
+    || (all.length ? noMatch(q || tag) : `<tr><td colspan="4" class="muted">${admin ? "HermitShell has not reported any recruits yet."
       : "You have no recruits yet. The people you invite join your recruits, and an admin can assign others to you."}</td></tr>`);
   const deletes = admin ? shown.filter(({ p }) => !p.pending).map(({ p }) => deleteRecruitModal(p, s.csrf)).join("") : "";
-  return page("Recruits", `<style>${LINK_STYLE}${MODAL_STYLE}${CONFIRM_STYLE}${SEARCH_STYLE}${PENDING_STYLE}${TASKS_STYLE}${RECRUITER_STYLE}</style>${nav("profiles", admin)}${done ? note(done) : ""}
+  return page("Recruits", `<style>${LINK_STYLE}${MODAL_STYLE}${CONFIRM_STYLE}${SEARCH_STYLE}${PENDING_STYLE}${TASKS_STYLE}${RECRUITER_STYLE}${NOTES_STYLE}</style>${nav("profiles", admin)}${done ? note(done) : ""}
 ${lastUpdate(current, waiting, presence, admin)}
 ${quick.length ? waitBar(quick.length === 1 ? "the change" : `${quick.length} changes`, refresh) : ""}
 ${admin ? `${problems(current)}${checklist(current)}` : ""}
 ${all.length ? searchBar(q, shown.length, all.length, tasks) : tasks ? `<div class="tabletools"><span></span><div class="tools">${tasks}</div></div>` : ""}
+${tagFilter(tag, shown.length)}
 <table class="list stack recruits"><tr class="head"><th>Recruit</th><th>Status</th>${admin ? "<th>Recruiter</th>" : ""}<th></th></tr>
 ${rows}</table>
 ${inviteForm(s, recs)}
@@ -529,6 +535,22 @@ async function profileCvRequest(request, env, s) {
     await record(env, u, "profile_cv", "Asked for their CV", { by: displayName(s.me, current) });
   }
   return redirect(`/admin/profile?u=${u}&done=cvmaking`);
+}
+
+// The profile page's Notes box: a note added or deleted, or the tags saved (admins, and a recruiter for their own pool).
+async function notesRequest(request, env, s) {
+  const form = await limitedForm(request, 16384);
+  if (!form || !safeEqual(String(form.get("csrf") || ""), s.csrf)) {
+    return page("Expired form", "<p>Reload the admin page and try again.</p>", { status: 403 });
+  }
+  const u = String(form.get("u") || "");
+  if (!PROFILE_RE.test(u)) return page("Unknown recruit", "<p>Reload the admin page and try again.</p>", { status: 400 });
+  const current = await status(env);
+  if (!allowed(s, current, u)) return page(...NOT_FOUND);
+  const by = displayName(s.me, current);
+  const { done, history } = await changeNotes(env, u, form, s.me, by);
+  if (history) await record(env, u, "note", history, { by });
+  return redirect(`/admin/profile?u=${u}${done ? `&done=${done}` : ""}#notes`);
 }
 
 async function profileCvDownload(request, env, s) {
@@ -770,10 +792,14 @@ async function signedInRoute(request, env, s, path) {
   if (path === "/admin/profile" && request.method === "GET") {
     const [current, queue, held, info] = await Promise.all([status(env), queued(env), requests(env), profileCvInfo(env, u)]);
     if (!allowed(s, current, u)) return page(...NOT_FOUND);
+    const notes = await readNotes(env, u);
+    await indexTags(env, u, notes.tags);
     const done = url.searchParams.get("done");
     return profilePage(current, u, s.csrf,
-      { done: DONE[done] || "", queue, saving: ["saved", "cvqueued", "sending"].includes(done), cv: { info, busy: profileCvBusy(current, held, u) } });
+      { done: DONE[done] || "", queue, saving: ["saved", "cvqueued", "sending"].includes(done), cv: { info, busy: profileCvBusy(current, held, u) },
+        notes: notesSection(notes, u, s.csrf, s.me, current.timezone) });
   }
+  if (path === NOTES_URL && request.method === "POST") return notesRequest(request, env, s);
   if (path === CV_URL && request.method === "GET") return profileCvDownload(request, env, s);
   if (path === CV_URL && request.method === "POST") return profileCvRequest(request, env, s);
   if (path === HISTORY_URL && request.method === "GET") {

@@ -295,7 +295,15 @@ await call("/api/invite", { method: "POST", headers: { Authorization: `Bearer ${
 await save("admin-invite-link", await admin((await admin("/admin/action", { method: "POST", form: { csrf, action: "invite", note: "Jamie from the course" } })).headers.get("Location")));
 await admin("/admin/action", { method: "POST", form: { csrf, action: "resume", u: "jordan-patel" } });
 await call("/f", { method: "POST", form: { ...(await link("tailored_cv", "BI Developer at Fabrikam", { profile: "sam-lee" })), r: "" } });
+// Notes and tags: pills on the list, and the Notes box on a profile.
+await admin("/admin/notes", { method: "POST", form: { csrf, op: "tags", u: "avery-lane", tags: "shortlist, hybrid only" } });
+await admin("/admin/notes", { method: "POST", form: { csrf, op: "tags", u: "jordan-patel", tags: "shortlist" } });
+await admin("/admin/notes", { method: "POST", form: { csrf, op: "add", u: "avery-lane", note: "Spoke on the phone: open to contract roles, three months' notice." } });
+await admin("/admin/notes", { method: "POST", form: { csrf, op: "add", u: "avery-lane", note: "Interviewing with Contoso next week; keep Northwind roles warm." } });
 await save("admin-dashboard", await admin("/admin?done=queued"));
+await save("admin-dashboard-tag", await admin("/admin?tag=shortlist"));
+await save("admin-profile-notes", new Response((await (await admin("/admin/profile?u=avery-lane")).text())
+  .replace("</head>", "<style>main>:not(.eyebrow):not(h1):not(#notes):not(#notes~*),#cv,#cv~*{display:none!important}</style></head>")));
 // The Tasks modal, open, with its self-refreshing list inlined (opened as files, pages get no #tasks fragment).
 const tasksList = (await (await admin("/admin/tasks")).text()).replace(/<meta http-equiv="refresh"[^>]*>/, "");
 const withTasks = (await (await admin("/admin")).text()).replace("</head>", "<style>#tasks{display:grid}</style></head>")

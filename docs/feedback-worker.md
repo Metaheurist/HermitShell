@@ -800,6 +800,24 @@ checking every 30 seconds (from HermitShell's status report only, with no KV lis
 minutes. A second press while a scan is running does nothing. A recruit without a CV has no button;
 HermitShell refuses the request and says so under **HermitShell could not apply**.
 
+#### Notes and tags
+
+The **Notes** box on a recruit's page keeps notes and tags for you and the other recruiters. A note is up
+to 1,000 characters (the newest 100 are kept) and shows who wrote it and when; its writer and admins can
+delete it. Tags are up to 8 per recruit, each up to 20 letters, numbers, spaces or dashes, separated by
+commas. They show as pills beside the recruit's name on the Recruits list; pressing one lists only the
+recruits with that tag (`/admin?tag=<tag>`), and the search finds tags too.
+
+<img src="images/worker/admin-profile-notes.png" alt="The Notes box on a recruit's page: tags, a note being added and two earlier notes" width="620">
+
+Notes stay on the Worker and never reach HermitShell or the recruit. Each recruit's notes and tags are
+one KV value (`notes:<id>`) and every recruit's tags one index (`tags`, so the list costs one read), both
+encrypted with a key derived from `JOB_FEEDBACK_SECRET` and bound to their KV key, like kept documents.
+Recruiters see and change only their own pool's; the history records **Added a note** or **Changed their
+tags**, never the text. A save costs one KV write, plus one for the index when the tags change and one for
+the history. Unsubscribing or deleting the recruit deletes them. If two people change tags at the same
+moment, opening the recruit's page puts their tags back into the index.
+
 #### History
 
 The **History** tab on a recruit's page (`/admin/history?u=<id>`, also linked from their Stats and

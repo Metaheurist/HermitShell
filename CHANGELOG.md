@@ -8,6 +8,13 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Notes and tags.** A recruit's page has a **Notes** box: notes for you and the other recruiters (up to
+  1,000 characters, the newest 100 kept, deletable by their writer or an admin) and up to 8 tags. Tags show as
+  pills on the Recruits list; pressing one lists only the recruits with it (`?tag=`), and the search finds
+  them. Notes and the tags index are encrypted in KV and bound to their key, stay on the Worker (HermitShell
+  never gets them), respect recruiters' pools, and are deleted when the recruit unsubscribes or is deleted.
+  The history says a note was added, never what it said. Documents and notes now share one sealing module.
+
 - **Admin alerts by email.** The profiles check (at most every 15 minutes) emails the admin when a web
   search or cloud model key has less than `ALERT_CREDITS_BELOW_PCT` (10%) of its allowance left, a cloud model
   is out of credits or its key was rejected, Ollama hasn't answered for over 30 minutes, the last backup failed

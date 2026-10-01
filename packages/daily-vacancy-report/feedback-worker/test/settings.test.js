@@ -472,7 +472,8 @@ describe("profile page", () => {
     expect(body.match(/<button>Save changes<\/button>/g)).toHaveLength(1);
     expect(body.match(/<button>Upload CV<\/button>/g)).toHaveLength(1);
     expect(body.match(/<button class="small">Send jobs now<\/button>/g)).toHaveLength(1);
-    expect(body.slice(body.indexOf("<main")).match(/<form /g)).toHaveLength(4);
+    expect(body.slice(body.indexOf("<main")).match(/<form (?![^>]*action="\/admin\/notes")/g)).toHaveLength(4);
+    expect(body.slice(body.indexOf("<main")).match(/<form [^>]*action="\/admin\/notes"/g)).toHaveLength(2);
     expect(body.slice(body.indexOf("<main")).match(/<form [^>]*action="\/admin\/cvpdf"/g)).toHaveLength(1);
     expect(body).not.toContain("Save details");
     expect(body).not.toContain("Save job search");

@@ -19,7 +19,7 @@ const words = (q) => q.toLowerCase().split(" ").filter(Boolean);
 export function matchesProfile(p, q, recruiter = null) {
   if (!q) return true;
   const text = [p.name, p.email, p.id, p.status, p.details?.location,
-    p.scanning ? "scanning" : "", p.has_cv === false ? "no cv" : "", recruiter?.name, recruiter?.username]
+    p.scanning ? "scanning" : "", p.has_cv === false ? "no cv" : "", recruiter?.name, recruiter?.username, ...(p.tags || [])]
     .map((v) => String(v || "")).join(" ").toLowerCase();
   return words(q).every((word) => text.includes(word));
 }

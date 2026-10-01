@@ -20,7 +20,9 @@ a stats page of counts (jobs found, buttons pressed, the employers and titles of
 the last 90 days (each advert's title, employer, place, salary, link, the details shown on its email card and the last
 button you pressed on it), never your notes, until HermitShell next reports that you have left. It also keeps a history of
 what was done for you (changes to your profile, the requests and buttons you or the operator pressed with each job's title,
-and the reports that ran), never your notes, until you unsubscribe or are deleted. Only the operator's admins
+and the reports that ran), never your notes, until you unsubscribe or are deleted. Your recruiter and the admins can
+keep their own notes and short tags about you there (for example how a call went), encrypted, until you unsubscribe or
+are deleted. Only the operator's admins
 and your recruiter (the person who invited you, unless the operator moves you to another) can sign in to that page. Cover letters and
 tailored CVs made for you are also kept there, encrypted, for 7 days so they can be downloaded again, and a CV made from
 the one you uploaded is kept there, encrypted, until a new one replaces it or you unsubscribe. When the
@@ -36,7 +38,8 @@ months (14 daily and 8 weekly copies), then deleted.`],
 account and, when the operator has turned encryption on, your CV, profile, letters and CVs are encrypted
 (AES-256-GCM), as are the backups. Email buttons are signed and stop working after 90 days.`],
   ["Deleting your data", `The unsubscribe link at the end of every report deletes your profile, CV, jobs, answers,
-letters and tailored CVs from the server, drops anything still waiting on Cloudflare and your history there, removes your name and email
+letters and tailored CVs from the server, drops anything still waiting on Cloudflare and your history and the notes
+about you there, removes your name and email
 address from the logs and emails you a confirmation. Copies in the encrypted backups disappear as those backups are
 rotated out. For a copy of your data or a correction, reply to any report.`],
 ];

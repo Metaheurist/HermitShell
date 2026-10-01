@@ -337,6 +337,7 @@ buttons. On a phone everything is in one column.
 | **Tasks** (loading circle + number, admins only) | Opens the [task list](#tasks): everything HermitShell is doing or has waiting. The ring turns while something runs and the number in the corner says how many tasks there are |
 | Search (magnifying glass) | Slides out a search box. Type part of a name, email, place, status (**paused**, **scanning**, **no cv**) or recruiter and press Enter: only the recruits with every word are listed, with **1 of 3 recruits** above the table. Searching a recruiter lists them first, followed by all their recruits. **&times;** shows everyone again |
 | **pending** (orange) | Someone who has sent the invite form. They stay in the table, with when they signed up and what they're looking for, while HermitShell reads their CV, then the row becomes their profile |
+| Tag pills | The recruit's tags beside their name; pressing one lists only the recruits with it (**2 tagged**, **Show everyone**). Searching a tag finds them too |
 | Recruit, Status | Name, email and the date they joined, **no CV** when there is none yet; active or paused; **scanning now** while a report runs; when the last report ran (hover for the exact time) and the report time, **Daily at 08:00** or **Weekdays at 08:15** |
 | **Send jobs** | Runs that recruit's report straight away and emails it when the scan finishes, even if nothing new turned up. Shows **Scanning…** while a report runs; missing without a CV |
 | **Manage** | Opens [that profile's page](#a-recruits-page): details, job search, report time and CV |
@@ -362,6 +363,8 @@ buttons. On a phone everything is in one column.
 <td><img src="images/worker/admin-recruiter-search.png" alt="Searching a recruiter: the recruiter first, then their recruits" width="380"></td>
 </tr>
 </table>
+
+<img src="images/worker/admin-dashboard-tag.png" alt="The recruits list showing only the two recruits tagged shortlist" width="620">
 
 ### Users and roles
 
@@ -508,7 +511,11 @@ older and how to update it ([why](feedback-worker.md#how-it-stays-safe)).
 | Daily report | The time and days (every day or weekdays) HermitShell sends this profile's report; each profile's report is its own scheduled job |
 | **Save changes** | One button for details, job search and report time; only the fields you changed are sent |
 | **Send jobs now** | Runs the report now instead of at the daily time ([more](feedback-worker.md#send-jobs-now)) |
+| Notes: **Tags** + **Save tags** | Up to 8 tags, separated by commas, shown as pills on the recruits list ([more](feedback-worker.md#notes-and-tags)) |
+| Notes: **Add a note** + **Add note** | A note for you and the other recruiters, newest first with who wrote it and when; **Delete** for its writer and admins |
 | CV + **Upload CV** | A new CV file or pasted text; HermitShell rebuilds the profile and skills from it and emails a summary |
+
+<img src="images/worker/admin-profile-notes.png" alt="The Notes box on a recruit's page: tags, a note being added and two earlier notes" width="620">
 
 <table><tr><th>Just saved</th><th>Someone else changed the same field</th></tr>
 <tr><td><img src="images/worker/admin-profile-saved.png" alt="Profile page right after saving, waiting for HermitShell" width="380"></td>

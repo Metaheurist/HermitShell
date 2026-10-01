@@ -31,6 +31,7 @@ const PATHS = {
   clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2.5"/>',
   cross: '<circle cx="12" cy="12" r="8"/><path d="m9 9 6 6M15 9l-6 6"/>',
   download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/>',
+  note: '<path d="M5 4h14v11l-5 5H5z"/><path d="M14 20v-5h5M8.5 9h7M8.5 12.5h4"/>',
 };
 // Each kind of event: its icon and colour.
 const KINDS = {
@@ -38,6 +39,7 @@ const KINDS = {
   report: ["send", "violet"], pause: ["pause", "amber"], resume: ["play", "green"], assign: ["person", "teal"],
   cv: ["doc", "blue"], cv_read: ["doc", "blue"], cover_letter: ["doc", "brand"], tailored_cv: ["doc", "brand"], profile_cv: ["doc", "green"],
   send_job: ["mail", "brand"], skill: ["star", "amber"], answer: ["reply", "slate"], cancel: ["cross", "slate"],
+  note: ["note", "teal"],
 };
 
 function clean(value, max) {

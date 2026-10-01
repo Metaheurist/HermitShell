@@ -1,5 +1,7 @@
 // Shared helpers: signing, escaping, pages, JSON responses, KV layout and Cloudflare Access.
 
+import { getSealedJson, putSealedJson } from "./vault.js";
+
 const encoder = new TextEncoder();
 
 export const SECURITY_HEADERS = {
@@ -473,6 +475,20 @@ export function historyPrefix(profile) {
   return `history:${profile}:`;
 }
 
+// A recruit's notes and tags, and every recruit's tags (notes.js), both encrypted.
+export function notesKey(profile) {
+  return `notes:${profile}`;
+}
+
+export const TAGS_KEY = "tags";
+
+async function dropTags(env, profile) {
+  const all = await getSealedJson(env, TAGS_KEY);
+  if (!all || typeof all !== "object" || !Object.hasOwn(all, profile)) return;
+  delete all[profile];
+  await putSealedJson(env, TAGS_KEY, all);
+}
+
 async function deletePrefix(env, prefix) {
   let cursor;
   do {
@@ -506,8 +522,8 @@ export async function recentStats(env, ids) {
 }
 
 // An extra profile that unsubscribes or is deleted: its answers not yet collected by HermitShell, its stats, its
-// list of jobs sent, the skills added from it, the letters and CVs kept for download, their own CV and their history
-// are dropped.
+// list of jobs sent, the skills added from it, the letters and CVs kept for download, their own CV, their notes and
+// tags and their history are dropped.
 export async function purgeProfileEvents(env, profile) {
   if (!profile) return;
   const docs = await env.FEEDBACK.get(docIndexKey(profile), "json");
@@ -515,7 +531,8 @@ export async function purgeProfileEvents(env, profile) {
     .map((d) => env.FEEDBACK.delete(docKey(profile, d.k, d.h))));
   await Promise.all([env.FEEDBACK.delete(docIndexKey(profile)), env.FEEDBACK.delete(emailedKey(profile)), env.FEEDBACK.delete(skillAddKey(profile)),
     env.FEEDBACK.delete(profileCvKey(profile)), env.FEEDBACK.delete(profileCvInfoKey(profile)),
-    env.FEEDBACK.delete(`sent:${profile}`), env.FEEDBACK.delete(`stats:${profile}`), rememberWeek(env, profile, null)]);
+    env.FEEDBACK.delete(`sent:${profile}`), env.FEEDBACK.delete(`stats:${profile}`), rememberWeek(env, profile, null),
+    env.FEEDBACK.delete(notesKey(profile)), dropTags(env, profile)]);
   await Promise.all([deletePrefix(env, eventPrefix(profile)), deletePrefix(env, historyPrefix(profile))]);
   await env.FEEDBACK.delete(eventFlag(profile));
 }

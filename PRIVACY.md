@@ -37,7 +37,8 @@ advert's title, employer, place, salary, link, the details shown on its email ca
 button you pressed on it), never your notes, until HermitShell next reports that you have left.
 It also keeps a history of what was done for you (changes to your profile, the requests and buttons
 you or the operator pressed with each job's title, and the reports that ran), never your notes,
-until you unsubscribe or are deleted.
+until you unsubscribe or are deleted. Your recruiter and the admins can keep their own notes and short
+tags about you there (for example how a call went), encrypted, until you unsubscribe or are deleted.
 Only the operator's admins and your recruiter (the person who invited you, unless the operator moves you to another)
 can sign in to that page.
 Cover letters and tailored CVs made for you are also kept there, encrypted, for 7 days so they can
@@ -64,7 +65,8 @@ when the operator has turned encryption on, your CV, profile, letters and CVs ar
 ## Deleting your data
 
 The unsubscribe link at the end of every report deletes your profile, CV, jobs, answers, letters
-and tailored CVs from the server, drops anything still waiting on Cloudflare and your history there,
+and tailored CVs from the server, drops anything still waiting on Cloudflare and your history and the
+notes about you there,
 removes your name and
 email address from the logs and emails you a confirmation. Copies in the encrypted backups
 disappear as those backups are rotated out. For a copy of your data or a correction, reply to any
