@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import worker, { sign } from "../src/index.js";
 import { queueItem } from "../src/join.js";
 import { today } from "../src/lib.js";
@@ -104,6 +104,16 @@ describe("the task list", () => {
     expect(body).toContain(".s-running .ticon{margin:0 3px;border-radius:50%");
     expect(body).toContain("animation:tspin 1s linear infinite;animation-delay:var(--spin,0s)");
     expect(body).toMatch(/mask:radial-gradient\(farthest-side/);
+  });
+
+  it("starts the ring within its one-second turn even in the last milliseconds of a second", async () => {
+    const { get } = await setup([REPORT]);
+    const now = vi.spyOn(Date, "now").mockReturnValue(Math.floor(Date.now() / 1000) * 1000 + 999);
+    try {
+      expect(await (await get("/admin/tasks")).text()).toContain('style="--spin:-0.99s"');
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("estimates progress from the last run when there is no count, and slows then stops refreshing", async () => {

@@ -200,7 +200,7 @@ function cancelForm(t, csrf) {
 
 // The list reloads every few seconds; starting the ring where the clock says it is keeps the spin from jumping back.
 function spinPhase(now = Date.now()) {
-  return ` style="--spin:-${((now % 1000) / 1000).toFixed(2)}s"`;
+  return ` style="--spin:-${(Math.floor((now % 1000) / 10) / 100).toFixed(2)}s"`;
 }
 
 function taskRow(t, csrf, tz) {
