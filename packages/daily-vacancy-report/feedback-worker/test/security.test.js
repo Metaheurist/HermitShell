@@ -1003,8 +1003,8 @@ describe("pages that update themselves", () => {
       expect(body).not.toContain("<img");
       expect(body).toMatch(/<meta http-equiv="refresh" content="4(;url=\/admin\/settings\?w=1#models)?">/);
     }
-    expect(settings).not.toContain("savingtag keepanim");
-    expect(board).not.toContain("savingtag keepanim");
+    expect(settings).not.toContain("savingtag");
+    expect(board).not.toContain("savingtag");
   });
 });
 

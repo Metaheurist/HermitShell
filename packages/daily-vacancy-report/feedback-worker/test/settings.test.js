@@ -244,14 +244,14 @@ describe("pages that update themselves", () => {
     expect(waiting).toContain("Saved. HermitShell applies it within seconds while it is connected.");
     const keys = waiting.slice(waiting.indexOf('<h2 id="keys">'), waiting.indexOf('<h2 id="models">'));
     const tavily = keys.slice(keys.indexOf("cr-tavily"), keys.indexOf("cr-scrapfly"));
-    expect(tavily).toContain('<span class="savingtag keepanim">saving&hellip;</span>');
-    expect(waiting.match(/savingtag keepanim/g)).toHaveLength(1);
+    expect(tavily).toContain('<span class="savingtag">saving&hellip;</span>');
+    expect(waiting.match(/savingtag/g)).toHaveLength(1);
     await clearQueue(env);
     const applied = (await get("/admin/settings?done=queued")).body;
     expect(refreshOf(applied)).toBeNull();
     expect(applied).toContain(APPLIED);
     expect(applied).not.toContain('class="waitbar');
-    expect(applied).not.toContain("savingtag keepanim");
+    expect(applied).not.toContain("savingtag");
   });
 
   it("shows a saved model order and model key at once", async () => {
@@ -260,11 +260,11 @@ describe("pages that update themselves", () => {
     await act({ action: "model_key_clear", provider: "openrouter" });
     const body = (await get("/admin/settings")).body;
     expect(body).toMatch(/name="order" value="local" checked/);
-    expect(body).toContain('Save order</button> <span class="savingtag keepanim">');
+    expect(body).toContain('Save order</button> <span class="savingtag">');
     const models = body.slice(body.indexOf('<h2 id="models">'));
     const or = models.slice(models.indexOf("cr-openrouter"), models.indexOf("cr-bazaarlink"));
     expect(models.slice(models.indexOf("cr-bazaarlink"), models.indexOf("cr-ollama"))).not.toContain("savingtag");
-    expect(or).toContain("savingtag keepanim");
+    expect(or).toContain("savingtag");
     expect(refreshOf(body)).toBe("4");
   });
 
@@ -292,7 +292,7 @@ describe("pages that update themselves", () => {
     expect(refreshOf(body)).toBe("4");
     expect(body).toContain("Waiting for HermitShell to apply the change; this page updates by itself.");
     const row = body.slice(body.indexOf("Sam &lt;b&gt;Lee"));
-    expect(row).toMatch(/<span class="pill paused">paused<\/span> <span class="savingtag keepanim">pausing&hellip;<\/span>/);
+    expect(row).toMatch(/<span class="pill paused">paused<\/span> <span class="savingtag">pausing&hellip;<\/span>/);
     expect(row).toContain('aria-label="Resume reports for Sam &lt;b&gt;Lee&lt;/b&gt;"');
     const jordan = body.slice(body.indexOf("Jordan Patel"), body.indexOf("Sam &lt;b&gt;Lee") > body.indexOf("Jordan Patel") ? body.indexOf("Sam &lt;b&gt;Lee") : undefined);
     expect(jordan).not.toContain("savingtag");

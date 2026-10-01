@@ -855,6 +855,11 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Loading circles turn while a page waits.** On a page that updates itself, the circle on a cover letter
+  or tailored CV being made (and its shimmer, the task list's spinners and the CV status page's spinner)
+  stood still, as waiting pages stopped every animation that wasn't marked to keep going. Now only
+  entrance animations are held (they count as already played) and every loop keeps turning, in step with
+  the clock across updates.
 - **The dashboard is quick again.** Each click waited for a quarter-second cross-fade between pages, during
   which the page ignored clicks, and a page waiting for HermitShell cross-faded the whole window every few
   seconds even when nothing had changed. Pages now switch as soon as they load (a tab took about 420 ms

@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { page, phaseStyle } from "../src/lib.js";
+import { page, phaseStyle, stylesheet } from "../src/lib.js";
 import { tasksPage } from "../src/tasks.js";
 import { styled } from "./helpers.js";
 
@@ -43,6 +43,14 @@ describe("page styles", () => {
     expect(html).not.toMatch(/main\{[^}]*animation:rise/);
     expect(html).toMatch(/:root\{--phase:-[\d.]+s;--drift:-[\d.]+s\}/);
     expect(html).toContain("@media (prefers-reduced-motion:reduce)");
+  });
+
+  it("on a page that reloads itself, count entrances as played but keep every spinner and dot turning", async () => {
+    const css = await stylesheet().text();
+    expect(css).toContain("body.still *,body.still *::before,body.still *::after{animation-delay:calc(var(--phase,0s) - 60s)!important}");
+    expect(css).not.toMatch(/body\.still[^{]*\{animation:none/);
+    expect(css).not.toContain("keepanim");
+    expect(await page("Saving", "<p>x</p>", { refresh: 4 }).text()).toContain('<body class="still">');
   });
 
   it("don't slide the task list in again each time it reloads", async () => {

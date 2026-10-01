@@ -339,10 +339,7 @@ border-top-color:var(--brand);animation:spin .8s linear var(--phase,0s) infinite
 .savingtag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:#c2410c;background:#fff7ed;
 border-radius:99px;padding:1px 8px;vertical-align:1px}
 .savingtag::before{content:"";width:6px;height:6px;border-radius:50%;background:#f97316;animation:blink .8s ease-in-out var(--phase,0s) infinite alternate}
-body.still *:not(.keepanim),body.still *:not(.keepanim)::before,body.still *:not(.keepanim)::after{animation:none!important}
-body.still .live::after{animation:ripple 2s ease-out var(--phase,0s) infinite!important}
-body.still .pill.scanning::before{animation:blink .9s ease-in-out var(--phase,0s) infinite alternate!important}
-body.still li.todo .tick::before{animation:ripple 2.2s ease-out var(--phase,0s) infinite!important}
+body.still *,body.still *::before,body.still *::after{animation-delay:calc(var(--phase,0s) - 60s)!important}
 @media (pointer:coarse){.skills.gap button{position:relative}.skills.gap button::after{content:"";position:absolute;inset:-9px -2px}
 .x{min-width:44px;min-height:44px}.mebtn{min-width:40px;min-height:40px}}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -390,12 +387,12 @@ export function reloadTo(url, section) {
 
 export function waitBar(what, refresh) {
   return refresh
-    ? `<p class="waitbar" role="status"><span class="spinner keepanim" aria-hidden="true"></span><span><b>Saving.</b> Waiting for HermitShell to apply ${esc(what)}; this page updates by itself.</span></p>`
+    ? `<p class="waitbar" role="status"><span class="spinner" aria-hidden="true"></span><span><b>Saving.</b> Waiting for HermitShell to apply ${esc(what)}; this page updates by itself.</span></p>`
     : `<p class="waitbar late" role="status"><span><b>Still waiting for HermitShell</b> to apply ${esc(what)}. It may be offline or busy; reload the page to check again.</span></p>`;
 }
 
 export function savingTag(label = "saving") {
-  return `<span class="savingtag keepanim">${esc(label)}&hellip;</span>`;
+  return `<span class="savingtag">${esc(label)}&hellip;</span>`;
 }
 
 // Every page's shared styles, fetched once and then cached for good: the URL changes whenever they do.

@@ -16,6 +16,26 @@ test.afterEach(async ({ page }) => {
   }
 });
 
+test("a tailored CV being made keeps its circle turning while the page waits, and nothing slides in again", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/admin/settings");
+  await page.getByRole("switch", { name: "Demo mode" }).click();
+  await expect(page).toHaveURL(/done=demo_on#demo$/);
+  await page.goto("/admin/sent?u=avery-lane&r=30");
+  await page.locator('form:has(input[name="k"][value="tailored_cv"]):has(button:text-is("Generate"))').first().evaluate((f) => f.requestSubmit());
+  const spin = page.locator(".doc.busy .dspin").first();
+  await expect(spin).toBeAttached();
+  await expect(page.locator("body")).toHaveClass(/\bstill\b/);
+  const motion = await page.evaluate(async () => {
+    const [turn] = document.querySelector(".doc.busy .dspin").getAnimations();
+    const from = turn?.currentTime;
+    await new Promise((r) => setTimeout(r, 300));
+    const entrances = document.getAnimations().filter((a) => a.playState === "running" && a.effect.getTiming().iterations !== Infinity);
+    return { turning: !!turn && turn.playState === "running" && turn.currentTime > from, entrances: entrances.length };
+  });
+  expect(motion).toEqual({ turning: true, entrances: 0 });
+});
+
 test("demo mode fills the dashboard with made-up recruits, plays presses out without queuing them and turns off again", async ({ page, request }) => {
   await signIn(page);
   await page.goto("/admin/settings");
