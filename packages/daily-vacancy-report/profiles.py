@@ -72,7 +72,7 @@ RUNNABLE = ("job_scanner.py", "job_weekly.py", "cover_letter.py")
 PERSONAL_KEYS = ("ALERT_EMAIL", "JOB_CANDIDATE_NAME", "JOB_PROFILE_FILE", "JOB_KEYWORDS_FILE", "JOB_SCANNER_QUERIES",
                  "JOB_SCANNER_NIJOBS_KEYWORDS", "JOB_TARGET_TITLES", "JOB_TITLE_STRONG", "JOB_TITLE_MEDIUM",
                  "JOB_LEVEL", "JOB_MIN_SALARY", "JOB_REPORT_TAGLINE", "COVER_LETTER_NAME", "COVER_LETTER_CONTACT",
-                 "COVER_LETTER_CV_FILE", "COVER_LETTER_SIGN_OFF")
+                 "COVER_LETTER_CV_FILE", "COVER_LETTER_SIGN_OFF", "JOB_HOME_TOWN")
 # The rest of a job search (region, places, country, employment types, work modes, currency...): each recruit has
 # its own in settings.json, so these are blanked for recruits too rather than taken from .env.
 SEARCH_KEYS = tuple(k for k in job_settings.KEYS if k not in PERSONAL_KEYS)
@@ -80,7 +80,7 @@ SEARCH_KEYS = tuple(k for k in job_settings.KEYS if k not in PERSONAL_KEYS)
 PROFILE_KEYS = frozenset(PERSONAL_KEYS) | frozenset(job_settings.KEYS)
 # Set for every recruit by child_env from its profile and folder, so never copied into its settings.json.
 IDENTITY_KEYS = frozenset({"ALERT_EMAIL", "JOB_CANDIDATE_NAME", "JOB_PROFILE_FILE", "JOB_KEYWORDS_FILE", "COVER_LETTER_NAME",
-                           "COVER_LETTER_CONTACT", "COVER_LETTER_CV_FILE"})
+                           "COVER_LETTER_CONTACT", "COVER_LETTER_CV_FILE", "JOB_HOME_TOWN"})
 # What the owner's own job search kept in the state folder, moved with it to its recruit profile.
 OWNER_STATE_FILES = ("job_scanner_seen.json", "job_scanner_retry.json", "job_scanner_last.json", "job_scanner_last.html",
                      "job_scanner_weekly.html", "cv.json", "cv_skills_merged.json")
@@ -343,6 +343,7 @@ def child_env(profile: dict) -> dict[str, str]:
         "COVER_LETTER_NAME": profile.get("name", ""),
         "COVER_LETTER_CONTACT": contact,
         "COVER_LETTER_CV_FILE": str(d / "cv.txt"),
+        "JOB_HOME_TOWN": str(profile.get("location") or ""),
     })
     return environ
 

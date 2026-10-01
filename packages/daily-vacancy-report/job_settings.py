@@ -16,11 +16,13 @@ WORK_MODES = ("On-site", "Hybrid", "Remote")
 DEFAULT_TYPES = "Permanent,Contract,Temporary"
 MAX_TITLES = 8
 MAX_PLACES = 30
+MAX_DISTANCE_KM = 500
 
 # Dashboard field -> setting.
 FIELDS = {
     "region": "JOB_REGION_NAME",
     "places": "JOB_REGION_PLACES",
+    "max_km": "JOB_MAX_DISTANCE_KM",
     "search_location": "JOB_SEARCH_LOCATION",
     "country": "JOB_SEARCH_COUNTRY",
     "remote_anywhere": "JOB_REMOTE_ANYWHERE",
@@ -68,6 +70,7 @@ def form_values(get) -> dict:
     return {
         "region": val("JOB_REGION_NAME"),
         "places": _split(val("JOB_REGION_PLACES"), ","),
+        "max_km": distance_km(val("JOB_MAX_DISTANCE_KM", "0")),
         "search_location": val("JOB_SEARCH_LOCATION"),
         "country": val("JOB_SEARCH_COUNTRY").lower(),
         "remote_anywhere": val("JOB_REMOTE_ANYWHERE", "0") == "1",
@@ -96,6 +99,12 @@ def _salary(value) -> str:
     return str(int(float(m.group(1)) * (1000 if m.group(2) else 1))) if m else "0"
 
 
+def distance_km(value) -> str:
+    """How far from home a job may be, in whole kilometres; "0" (no limit) for anything out of range."""
+    text = str(value if value is not None else "").strip()
+    return text if re.fullmatch(r"\d{1,3}", text) and int(text) <= MAX_DISTANCE_KM else "0"
+
+
 def clean_form(raw: dict) -> dict:
     """Validated form values; anything unknown is dropped."""
     country = _text(raw.get("country"), 2).lower()
@@ -106,6 +115,7 @@ def clean_form(raw: dict) -> dict:
     return {
         "region": _text(raw.get("region"), 80),
         "places": _items(raw.get("places"), MAX_PLACES, 40),
+        "max_km": distance_km(raw.get("max_km")),
         "search_location": _text(raw.get("search_location"), 80),
         "country": country,
         "remote_anywhere": raw.get("remote_anywhere") in (True, "1", "yes", "on"),
@@ -126,6 +136,7 @@ def env_updates(form: dict, get, title_keywords: list[str] = ()) -> dict[str, st
     updates = {
         "JOB_REGION_NAME": form["region"],
         "JOB_REGION_PLACES": ", ".join(form["places"]),
+        "JOB_MAX_DISTANCE_KM": form["max_km"],
         "JOB_SEARCH_LOCATION": form["search_location"],
         "JOB_SEARCH_COUNTRY": form["country"],
         "JOB_REMOTE_ANYWHERE": "1" if form["remote_anywhere"] else "0",

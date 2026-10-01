@@ -272,6 +272,8 @@ Full template: [`.env.example`](../.env.example).
 | --- | --- | --- |
 | `JOB_REGION_NAME` | none | Region or city you're job hunting in. Empty = no location filter |
 | `JOB_REGION_PLACES` | none | Comma-separated towns or areas that count as inside the region |
+| `JOB_MAX_DISTANCE_KM` | `0` | Keep jobs within this many km (a whole number up to 500) of the recruit's Home town, as the crow flies. `0` = off. Where a job's town is found in the place data, its distance decides instead of the region; remote and hybrid jobs, and towns that aren't found, still go by the region. Needs `JOB_SEARCH_COUNTRY`. See [Distance from home](../packages/daily-vacancy-report/README.md#distance-from-home) |
+| `JOB_HOME_TOWN` | the recruit's Home town | Where the distance is measured from. Set for each recruit from the Home town on their profile, never from `.env` |
 | `JOB_SEARCH_COUNTRY` | none | Two-letter country code for searches (`gb`, `ie`, `us`...). The dashboard picks it from a list of countries; a code that isn't in the list is shown as its own option and kept |
 | `JOB_SEARCH_LOCATION` | `JOB_REGION_NAME` | Place name put into web searches, when it should differ from the region. `.env` only: saving the job search on the dashboard clears it, so searches use the region |
 | `JOB_REMOTE_ANYWHERE` | `0` | `1` lets fully remote jobs through the region filter |

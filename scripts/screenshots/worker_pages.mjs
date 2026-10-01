@@ -120,7 +120,7 @@ env = freshEnv({ HUB: LIVE_HUB });
 const now = Date.now();
 const day = 86400000;
 const JOB = { titles: ["Data Engineer", "Analytics Engineer", "Python Developer"], region: "Greater Manchester",
-  places: ["Manchester", "Salford", "Stockport", "Trafford"], country: "gb", remote_anywhere: true,
+  places: ["Manchester", "Salford", "Stockport", "Trafford"], max_km: "25", country: "gb", remote_anywhere: true,
   level: "mid", types: ["Permanent", "Contract"], modes: ["Hybrid", "Remote"], min_salary: "45000", currency: "GBP", hide_agency: true };
 const STATUS = {
   ...(await sealingKeys()).status,
@@ -414,8 +414,8 @@ async function profileForm(u) {
   const base = unescape(html.match(/name="base" value="([^"]*)"/)[1]);
   const v = JSON.parse(base);
   const form = new URLSearchParams({ csrf, action: "profile", u, base, name: v.name, email: v.email, phone: v.phone,
-    location: v.location, titles: v.titles.join("\n"), region: v.region, places: v.places.join(", "), country: v.country,
-    level: v.level, min_salary: v.min_salary, currency: v.currency, report_time: v.report_time, report_days: v.report_days });
+    location: v.location, titles: v.titles.join("\n"), region: v.region, places: v.places.join(", "), max_km: v.max_km,
+    country: v.country, level: v.level, min_salary: v.min_salary, currency: v.currency, report_time: v.report_time, report_days: v.report_days });
   v.types.forEach((t) => form.append("types", t));
   v.modes.forEach((m) => form.append("modes", m));
   if (v.remote_anywhere) form.append("remote_anywhere", "1");

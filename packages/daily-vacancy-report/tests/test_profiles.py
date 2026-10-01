@@ -453,6 +453,23 @@ def test_a_dashboard_change_only_touches_the_fields_it_names(home, monkeypatch):
     assert (sam["location"], sam["phone"], sam["email"]) == ("Bangor", "07700 900123", "sam@example.com")
 
 
+def test_a_distance_from_home_is_kept_and_the_home_town_reaches_the_scan(home, monkeypatch):
+    monkeypatch.setenv("JOB_HOME_TOWN", "Admin Town")
+    profiles.sync(FakeApi([signup()]))
+    pid = "sam-lee-456789"
+    path = home[0] / "profiles" / pid / "settings.json"
+    for sent, kept in (("30", "30"), ("501", "0"), ("-5", "0"), ("2.5", "0"), ("120", "120")):
+        profiles.sync(FakeApi([{"id": "queue:2:a", "type": "admin", "action": "profile", "u": pid,
+                                "job": {"max_km": sent}}]))
+        assert json.loads(path.read_text())["JOB_MAX_DISTANCE_KM"] == kept, sent
+    sam = profiles.load(pid)
+    environ = profiles.child_env(sam)
+    assert (environ["JOB_HOME_TOWN"], environ["JOB_MAX_DISTANCE_KM"]) == ("Lisburn", "120")
+    assert profiles.job_settings.form_values(profiles.profile_getter(sam))["max_km"] == "120"
+    profiles.save({**sam, "location": ""})
+    assert profiles.child_env(profiles.load(pid))["JOB_HOME_TOWN"] == "", "the admin's own town is never used"
+
+
 def test_recruits_have_their_own_search_not_the_admins(home, monkeypatch):
     monkeypatch.setenv("JOB_EMPLOYMENT_TYPES", "Contract")
     monkeypatch.setenv("JOB_SALARY_CURRENCY", "EUR")

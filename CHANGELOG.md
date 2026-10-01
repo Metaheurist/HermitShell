@@ -8,6 +8,20 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Distance from home.** A recruit's job search can keep jobs within a set distance of their Home town, as
+  the crow flies: **Within N km of home town** on their profile page (`JOB_MAX_DISTANCE_KM`, a whole number
+  up to 500, off by default). The new `geo.py` downloads the country's places from GeoNames (CC BY 4.0;
+  the request names only the country) once, keeps towns of 500 or more and every administrative seat in
+  `state/geo/<cc>.json.gz` for all recruits, and refreshes it every 180 days, keeping the old copy if a
+  refresh fails. With no checksums published, the download is held to 50 MB, the unpacked text to 300 MB
+  read as a stream, and every row to GeoNames' 19 columns with valid positions and the right country; the
+  cache is written to a temp file and renamed. Location lines are matched longest name first, a shared
+  name prefers the Home town's region then the bigger town, and the haversine distance decides. Remote and
+  hybrid jobs, and towns that aren't found, still go by the region filter. Each recruit's Home town reaches
+  their scan as `JOB_HOME_TOWN`. `doctor.py` has a new `commute` check that warns when a recruit's filter
+  can't work (no country, an unknown Home town or no place data). Tests cover the parsing caps (including a
+  zip bomb and an endless line), the cache, matching, the dashboard field's limits and the security suite's
+  hostile values.
 - **Word copies of letters, CVs and prep packs.** With `DOC_WORD_COPIES=1` (or the **Word copies of letters
   and CVs** switch under Features, off by default) each cover letter, tailored CV and interview prep pack also
   gets a `.docx`, written by the new standard-library `letter_docx.py` in the PDF's layout, saved beside the

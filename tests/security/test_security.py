@@ -903,6 +903,69 @@ def test_a_profiles_currency_is_one_of_the_offered_codes():
     assert job_settings.form_values({"JOB_SALARY_CURRENCY": HOSTILE}.get)["currency"] == ""
 
 
+# --------------------------------------------------------------------------- place data for the distance filter
+
+def test_a_distance_from_the_dashboard_is_a_small_whole_number():
+    for raw in (HOSTILE, "1; rm -rf /", "50 km", "0x10", "1e3", "9999", "-1", 7.5, ["30"], {"km": 30}):
+        assert job_settings.clean_form({"max_km": raw})["max_km"] == "0", raw
+    assert job_settings.form_values({"JOB_MAX_DISTANCE_KM": HOSTILE}.get)["max_km"] == "0"
+
+
+def test_place_data_is_asked_for_by_country_only_over_https(monkeypatch, tmp_path):
+    import geo
+    asked = []
+
+    class Resp:
+        url, headers = "http://download.geonames.org/export/dump/GB.zip", {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def raise_for_status(self):
+            pass
+
+        def iter_content(self, size):
+            yield b"PK"
+
+    def get(url, **kwargs):
+        asked.append((url, kwargs))
+        return Resp()
+
+    monkeypatch.setenv("JOB_HOME_TOWN", "Kingsford")
+    with pytest.raises(geo.GeoError, match="HTTPS"):
+        geo.download("gb", get)
+    url, kwargs = asked[0]
+    assert url == "https://download.geonames.org/export/dump/GB.zip"
+    assert set(kwargs) == {"stream", "timeout", "headers"} and "Kingsford" not in json.dumps(kwargs)
+
+
+def test_place_data_never_leaves_its_folder(tmp_path):
+    import geo
+    for country in ("../../etc/passwd", "g/", "..", "gb\x00", HOSTILE, "gbr"):
+        with pytest.raises(geo.GeoError, match="no country"):
+            geo.load(country, where=tmp_path, fetch=lambda cc: b"")
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_hostile_place_dump_is_refused_without_unpacking_it(monkeypatch):
+    import geo
+    monkeypatch.setattr(geo, "MAX_INFLATE", 64 * 1024)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("GB.txt", b"\t" * (5 * 1024 * 1024))
+    assert len(buf.getvalue()) < 64 * 1024
+    with pytest.raises(geo.GeoError, match="larger than allowed"):
+        geo.parse(buf.getvalue(), "gb")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("../GB.txt", "x")
+    with pytest.raises(geo.GeoError, match="no list of places"):
+        geo.parse(buf.getvalue(), "gb")
+
+
 # --------------------------------------------------------------------------- the Worker link: signing and sealing
 
 WORKER_SRC = PACKAGE / "feedback-worker" / "src"

@@ -11,7 +11,8 @@ Runs in the Python that runs the scripts (the setup wizard runs it after install
 Checks: Python version; the Python packages (installed with --fix into scripts/.deps/pyX.Y, on the data volume,
 using pip or uv, so they survive updates); the scheduler's jobs and whether it is running; Ollama
 reachable with the model the scripts will use (downloaded with --fix); the .env file's permissions, the data
-key, email and web search settings; the feedback Worker; free disk space. Exit code 1 when a check fails.
+key, email and web search settings; the feedback Worker; the place data and home towns behind recruits' distance
+filters; free disk space. Exit code 1 when a check fails.
 Uses only the standard library until `requests` is available, so it can repair a bare Python.
 """
 from __future__ import annotations
@@ -39,7 +40,7 @@ REQUIREMENTS = [
     ("yaml", "pyyaml", "6.0", False),
     ("websockets", "websockets", "13.0", False),
 ]
-CHECKS = ("python", "packages", "scheduler", "ollama", "settings", "worker", "disk")
+CHECKS = ("python", "packages", "scheduler", "ollama", "settings", "worker", "commute", "disk")
 MIN_FREE_GB = 1.0
 PULL_TIMEOUT = 3600
 
@@ -410,6 +411,29 @@ def check_worker(report: Report, _fix: bool) -> None:
         report.add("worker", "ok", f"feedback Worker speaks HermitShell's protocol ({ours}), signed and sealed")
 
 
+def check_commute(report: Report, _fix: bool) -> None:
+    """A recruit searching within a distance of home needs the country's place data and a home town found in it;
+    without them their scans use the region filter alone."""
+    common()
+    try:
+        import geo
+        import profiles
+    except ImportError:
+        return
+    for p in profiles.active_extra():
+        get = profiles.profile_getter(p)
+        max_km = int(profiles.job_settings.distance_km(get("JOB_MAX_DISTANCE_KM", "0")))
+        if not max_km:
+            continue
+        try:
+            geo.reach(get("JOB_SEARCH_COUNTRY", ""), str(p.get("location") or ""), max_km)
+            report.add("commute", "ok", f"{p.get('name', p['id'])}: jobs within {max_km} km of their home town")
+        except geo.GeoError as exc:
+            report.add("commute", "warn", f"{p.get('name', p['id'])}: distance filter off ({exc}), the region filter "
+                       "is used instead", "set their Home town and Country on /admin, and check the server can reach "
+                       "download.geonames.org over HTTPS")
+
+
 def check_disk(report: Report, _fix: bool) -> None:
     hc = common()
     folder = hc.APP_HOME if hc.APP_HOME.is_dir() else SCRIPT_DIR
@@ -423,7 +447,7 @@ def check_disk(report: Report, _fix: bool) -> None:
 def run(only: list[str], fix: bool, report: Report, model: str | None = None, pull: bool = True) -> None:
     steps = {"python": check_python, "packages": check_packages, "scheduler": check_scheduler,
              "ollama": lambda r, f: check_ollama(r, f, model, pull), "settings": check_settings,
-             "worker": check_worker, "disk": check_disk}
+             "worker": check_worker, "commute": check_commute, "disk": check_disk}
     for name in only:
         if name not in ("python", "packages") and installed_version("requests", "requests") is None:
             report.add(name, "fail", "skipped: the requests package is missing", "run: python3 doctor.py --fix")

@@ -98,6 +98,7 @@ definitely ruled out; ratings that fail are retried on the next runs, up to 4 at
 | `cv_text.py` | Dependency-free text extraction from PDF, Word .docx and text CVs |
 | `icons/` | Button icons: Lucide SVG sources in `icons/src`, PNGs built by `icons/build_icons.py` |
 | `companies.py` | Employer website, logo and profile lookup with caching |
+| `geo.py` | Place data (GeoNames, cached per country) and distances for the [distance from home](#distance-from-home) filter |
 | `feedback-worker/` | Optional Cloudflare Worker for the feedback buttons ([guide](../../docs/feedback-worker.md)); deployed to Cloudflare, not installed on the server |
 | `jobs.json` | The standard schedule, added when HermitShell first starts (`scheduler.py defaults`) |
 | `tests/` | Unit tests (`python -m pytest packages/daily-vacancy-report/tests`) |
@@ -216,6 +217,8 @@ Every option is an environment variable (or a line in `$HERMITSHELL_HOME/.env`).
 - **`JOB_REGION_NAME`, `JOB_REGION_PLACES`, `JOB_REGION_REGEX`.** Restrict results to one region.
   With none of these set, jobs from any location are kept. `JOB_REMOTE_ANYWHERE=1` also keeps
   fully remote jobs based elsewhere.
+- **`JOB_MAX_DISTANCE_KM`.** Keep jobs within this many km of the recruit's Home town instead; see
+  [Distance from home](#distance-from-home).
 - **`JOB_LEVEL`.** The seniority you're targeting: `junior`, `mid`, `senior`, `lead` or `any`
   (the default). Titles above or below it lose fit points, and the model is told your target.
 - **`JOB_EMPLOYMENT_TYPES`, `JOB_WORK_MODES`.** Comma-separated lists of what to keep. Defaults:
@@ -253,6 +256,30 @@ Every option is an environment variable (or a line in `$HERMITSHELL_HOME/.env`).
   and how many titles the model screens first (default 60).
 - **`JOB_FEEDBACK_URL`, `JOB_FEEDBACK_SECRET`, `JOB_FEEDBACK_API_TOKEN`.** The optional
   feedback buttons. See [docs/feedback-worker.md](../../docs/feedback-worker.md).
+
+### Distance from home
+
+A recruit's job search can keep jobs within a set distance of their Home town, as the crow flies: the
+**Within N km of home town** field on their profile page (`JOB_MAX_DISTANCE_KM`, a whole number up to
+500; empty or `0` is off). It needs the profile's Country and Home town.
+
+- **Place data.** The first scan that needs it downloads the country's list of places from
+  [GeoNames](https://www.geonames.org/) (`https://download.geonames.org/export/dump/<CC>.zip`,
+  Creative Commons Attribution 4.0). Only the country is named in the request. Towns and cities with
+  at least 500 people, and every administrative seat, are kept in `state/geo/<cc>.json.gz`, shared by
+  every recruit and refreshed every 180 days. GeoNames publishes no checksums, so a download over 50 MB,
+  or over 300 MB once unpacked, is refused, and so is a file whose rows don't have GeoNames' 19 columns,
+  valid positions and the right country. A failed refresh keeps the old copy, and a failed download is
+  tried again after a day.
+- **Matching.** The job's location line is matched to a place, the longest name first ("Newcastle upon
+  Tyne" before "Newcastle"). A name several places share means the one in the Home town's region, else
+  the most populous. The distance is the great-circle (haversine) distance to the Home town.
+- **What decides.** Where the job's town is found, its distance decides instead of the region and towns.
+  Remote and hybrid jobs, jobs with no location line and towns that aren't found still go by the region
+  filter, so a place missing from the data never hides a job the region would keep.
+- **Doctor.** `python3 doctor.py --only commute` warns for each recruit whose filter can't work (no
+  Country, a Home town that isn't found, or no place data); their scans use the region filter until it's
+  fixed.
 
 ### Writing a good profile
 

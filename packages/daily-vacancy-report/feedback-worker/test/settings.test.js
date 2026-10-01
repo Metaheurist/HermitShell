@@ -69,7 +69,8 @@ async function openForm(get, u) {
   const base = unescape(body.match(/name="base" value="([^"]*)"/)[1]);
   const v = JSON.parse(base);
   const fields = { action: "profile", u, base, name: v.name, email: v.email, phone: v.phone, location: v.location,
-    titles: v.titles.join("\n"), region: v.region, places: v.places.join(", "), country: v.country, level: v.level,
+    titles: v.titles.join("\n"), region: v.region, places: v.places.join(", "), max_km: v.max_km === "0" ? "" : v.max_km,
+    country: v.country, level: v.level,
     types: v.types, modes: v.modes, min_salary: v.min_salary === "0" ? "" : v.min_salary, currency: v.currency,
     report_time: v.report_time, report_days: v.report_days,
     ...(v.remote_anywhere ? { remote_anywhere: "1" } : {}), ...(v.hide_agency ? { hide_agency: "1" } : {}) };
@@ -573,6 +574,28 @@ describe("profile page", () => {
     expect(valuesWith(env, "queue:").map((i) => i.job)).toEqual([{ region: "West Yorkshire" }]);
     await save(get, act, "sam-lee", { country: "yy" });
     expect(valuesWith(env, "queue:").map((i) => i.job.country)).toEqual([undefined, ""]);
+  });
+
+  it("offers a distance from home and queues only whole kilometres up to 500", async () => {
+    const { env, act, get } = await setup();
+    const { body } = await get("/admin/profile?u=sam-lee");
+    expect(body).toContain('<label for="max_km">Within N km of home town (as the crow flies)</label>');
+    expect(body).toContain('id="max_km" name="max_km" type="number" min="0" max="500" step="1" value=""');
+    expect(body).toContain('Place data from <a href="https://www.geonames.org/" rel="noopener noreferrer">GeoNames</a>, CC BY 4.0.');
+    for (const max_km of ["25", "501", "-3", "2.5", "1e2", "<b>", "", "500"]) await save(get, act, "jordan-patel", { max_km });
+    expect(valuesWith(env, "queue:").map((i) => i.job.max_km)).toEqual(["25", "0", "500"]);
+    expect(valuesWith(env, "history:jordan-patel:").flat().map((h) => h.t)).toContain("Changed Distance from home town");
+  });
+
+  it("shows a distance someone else changed meanwhile in plain words", async () => {
+    const { act, get } = await setup();
+    const first = await openForm(get, "sam-lee");
+    await save(get, act, "sam-lee", { max_km: "30" });
+    const body = await (await act(first({ max_km: "45" }))).text();
+    expect(body).toContain("<b>Distance from home town</b>: now <i>within 30 km</i>, yours <i>within 45 km</i>");
+    const again = await openForm(get, "sam-lee");
+    await save(get, act, "sam-lee", { max_km: "" });
+    expect(await (await act(again({ max_km: "60" }))).text()).toContain("now <i>no limit</i>, yours <i>within 60 km</i>");
   });
 
   it("uses plain labels with hints, an empty salary box for no minimum, and a back button", async () => {

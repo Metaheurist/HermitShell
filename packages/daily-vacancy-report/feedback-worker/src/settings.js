@@ -248,8 +248,9 @@ function boxes(name, options, current) {
 // saved.
 
 const DETAIL_FIELDS = ["name", "email", "phone", "location"];
-const JOB_FIELDS = ["titles", "region", "places", "country", "remote_anywhere", "level", "types", "modes", "min_salary",
-  "currency", "hide_agency"];
+const JOB_FIELDS = ["titles", "region", "places", "max_km", "country", "remote_anywhere", "level", "types", "modes",
+  "min_salary", "currency", "hide_agency"];
+const MAX_DISTANCE_KM = 500;
 const REPORT_FIELDS = ["report_time", "report_days"];
 const PROFILE_FIELDS = [...DETAIL_FIELDS, ...JOB_FIELDS, ...REPORT_FIELDS];
 const REPORT_DAYS = [["daily", "Every day"], ["weekdays", "Weekdays (Monday to Friday)"]];
@@ -257,7 +258,7 @@ const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const LABELS = {
   report_time: "Daily report time", report_days: "Report days",
   name: "Name", email: "Email for reports", phone: "Phone", location: "Home town", titles: "Job titles",
-  region: "Region or city", places: "Towns", country: "Country", remote_anywhere: "Fully remote jobs", level: "Seniority",
+  region: "Region or city", places: "Towns", max_km: "Distance from home town", country: "Country", remote_anywhere: "Fully remote jobs", level: "Seniority",
   types: "Employment types", modes: "Work location", min_salary: "Minimum salary", currency: "Currency",
   hide_agency: "Hide agency adverts",
 };
@@ -271,6 +272,12 @@ function salary(value) {
   return m ? String(Math.trunc(Number(m[1]) * (m[2] ? 1000 : 1))) : "0";
 }
 
+// Whole kilometres from 0 (no limit) to MAX_DISTANCE_KM, as job_settings.distance_km takes them.
+function distance(value) {
+  const text = String(value ?? "").trim();
+  return /^\d{1,3}$/.test(text) && Number(text) <= MAX_DISTANCE_KM ? String(Number(text)) : "0";
+}
+
 function byId(list) {
   return [...list].sort((a, b) => String(a.id).localeCompare(String(b.id)));
 }
@@ -282,6 +289,7 @@ export function profileValues(src = {}) {
   return {
     name: tidy(src.name, 80), email: tidy(src.email, 120), phone: tidy(src.phone, 40), location: tidy(src.location, 80),
     titles: items(src.titles, MAX_TITLES, 60), region: tidy(src.region, 80), places: items(src.places, MAX_PLACES, 40),
+    max_km: distance(src.max_km),
     country: savedCountry(tidy(src.country, 2)), remote_anywhere: src.remote_anywhere === true,
     level: LEVELS.includes(level) ? level : "any",
     types: EMPLOYMENT_TYPES.filter((t) => items(src.types, 10, 20).includes(t)),
@@ -364,6 +372,7 @@ export function profileChange(p, queue, form) {
 
 function shown(key, value) {
   if (key === "min_salary" && value === "0") return "no minimum";
+  if (key === "max_km") return value === "0" ? "no limit" : `within ${value} km`;
   if (key === "currency") return value ? `${currencySymbol(value)} (${value})` : "as advertised";
   if (key === "report_days") return REPORT_DAYS.find(([d]) => d === value)?.[1] || value;
   if (key === "country") return COUNTRIES.find(([c]) => c === value)?.[1] || value.toUpperCase() || "any country";
@@ -427,6 +436,7 @@ ${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
 <div class="grid2"><div><label for="region">Region or city</label><input id="region" name="region" value="${esc(v.region)}" maxlength="80" placeholder="Greater Manchester">${hint("Where to look. Web searches use this.")}</div>
 <div><label for="country">Country</label>${countrySelect(v.country)}${hint("Searches favour jobs in this country.")}</div></div>
 <label for="places">Towns</label><input id="places" name="places" value="${esc(v.places.join(", "))}" maxlength="1200" placeholder="Salford, Stockport, Trafford">${hint("Towns in the region whose jobs count as local, separated by commas.")}
+<label for="max_km">Within N km of home town (as the crow flies)</label><input id="max_km" name="max_km" type="number" min="0" max="${MAX_DISTANCE_KM}" step="1" value="${esc(v.max_km === "0" ? "" : v.max_km)}" placeholder="No limit" inputmode="numeric">${hint(`Up to ${MAX_DISTANCE_KM} km from the Home town above. Where a job's town is known, its distance decides instead of the region and towns; remote and hybrid jobs, and towns that aren't found, still go by the region.`)}<span class="hint">Place data from <a href="https://www.geonames.org/" rel="noopener noreferrer">GeoNames</a>, CC BY 4.0.</span>
 <label class="check"><input type="checkbox" name="remote_anywhere" value="1"${checked(v.remote_anywhere)}> <span>Include fully remote jobs based anywhere</span></label>
 <div class="grid2"><div><label for="level">Seniority</label>${select("level", LEVELS, v.level)}</div>
 <div><label for="min_salary">Minimum salary</label><input id="min_salary" name="min_salary" value="${esc(v.min_salary === "0" ? "" : v.min_salary)}" maxlength="12" placeholder="No minimum" inputmode="decimal">${hint("For example 45000 or 45k. Jobs that don't show a salary are always included.")}</div>

@@ -510,8 +510,8 @@ older and how to update it ([why](feedback-worker.md#how-it-stays-safe)).
 | **Manage** / **History** | The page's own tabs: this page and [its timeline](#a-recruits-history); Users and roles and Global settings are only on the dashboard |
 | **View stats** | Opens [this profile's stats](#a-recruits-stats) |
 | Status box | Under the tabs: **Up to date**, **Waiting for HermitShell** while a save is queued (it checks again by itself), **Applied by HermitShell**, **Scanning for jobs since…** while a report runs, or why a change couldn't be applied |
-| Details | Name, the email address reports go to, phone and home town (for cover letters) |
-| Job search | Job titles (up to 8), region or city (used in web searches), country from a list (a hand-set code not in the list is kept as its own option), towns, remote elsewhere, seniority, minimum salary (empty = none), salary currency (a list; salaries in other currencies are converted to it), employment types, work location, hiding unnamed agency adverts |
+| Details | Name, the email address reports go to, phone and home town (for cover letters and the distance filter) |
+| Job search | Job titles (up to 8), region or city (used in web searches), country from a list (a hand-set code not in the list is kept as its own option), towns, within N km of home town (as the crow flies, empty = no limit; GeoNames place data, CC BY 4.0), remote elsewhere, seniority, minimum salary (empty = none), salary currency (a list; salaries in other currencies are converted to it), employment types, work location, hiding unnamed agency adverts |
 | Daily report | The time and days (every day or weekdays) HermitShell sends this profile's report; each profile's report is its own scheduled job |
 | **Save changes** | One button for details, job search and report time; only the fields you changed are sent |
 | **Send jobs now** | Runs the report now instead of at the daily time ([more](feedback-worker.md#send-jobs-now)) |

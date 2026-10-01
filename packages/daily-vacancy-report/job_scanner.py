@@ -44,7 +44,9 @@ from zoneinfo import ZoneInfo
 import requests
 
 import autofit
+import geo
 import hermes_common as hc
+import job_settings
 import llm_providers
 import money
 import profiles
@@ -532,6 +534,24 @@ def detect_mode(text: str) -> str | None:
 
 def in_region(text: str) -> bool:
     return CFG.region_re is None or bool(CFG.region_re.search(COUNTRY_FULL_NAMES.sub(" ", text)))
+
+
+def commute_reach() -> geo.Reach | None:
+    """The distance filter when JOB_MAX_DISTANCE_KM is set and it can work; otherwise the region filter alone."""
+    max_km = int(job_settings.distance_km(env("JOB_MAX_DISTANCE_KM", "0")))
+    try:
+        return geo.reach(CFG.country or "", env("JOB_HOME_TOWN", ""), max_km)
+    except geo.GeoError as exc:
+        log(f"Distance filter off for this scan ({exc}); the region filter applies instead")
+        return None
+
+
+def within_reach(reach: geo.Reach | None, location: str, mode: str | None) -> tuple[bool | None, geo.Place | None, float]:
+    """(near enough, place, km) for a job's location line; (None, None, 0) leaves it to the region filter, as
+    it does for remote and hybrid jobs and places that are not found."""
+    if not reach or not location or mode in ("Remote", "Hybrid"):
+        return None, None, 0.0
+    return reach.check(location)
 
 
 def keyword_match(text: str, cv: dict[str, re.Pattern], other: dict[str, re.Pattern]) -> tuple[list[str], list[str]]:
@@ -1214,6 +1234,7 @@ def run(args: argparse.Namespace) -> int:
         return 2
     nijobs = Nijobs(web)
     companies = Companies(web, CFG.region_re, CFG.region, CFG.country or "")
+    reach = commute_reach()
     seen = load_seen()
     retries = load_retries()
 
@@ -1297,12 +1318,15 @@ def run(args: argparse.Namespace) -> int:
             log(f"[{i}/{len(queue)}] skip ({mode}) {job['title'][:70]}")
             return "skipped"
         remote_ok = CFG.remote_anywhere and (mode or detect_mode(full_text[:4000])) == "Remote"
-        local = remote_ok or (in_region(loc_text) if loc_text else in_region(full_text[:5000]))
+        near, place, km = within_reach(reach, loc_text, mode)
+        local = remote_ok or (near if near is not None else
+                              in_region(loc_text) if loc_text else in_region(full_text[:5000]))
         if not local and (loc_text or job["source"] != "nijobs.com"):
             excluded_location += 1
             done.append(job["key"])
-            log(f"[{i}/{len(queue)}] skip (outside region: '{loc_text or 'no matching location found'}') "
-                f"{job['title'][:60]}")
+            why = (f"{km:.0f} km from home: '{place.name}'" if place else
+                   f"outside region: '{loc_text or 'no matching location found'}'")
+            log(f"[{i}/{len(queue)}] skip ({why}) {job['title'][:60]}")
             return "skipped"
 
         # Salary and closing date from the page itself are checked before spending model time on the job.
