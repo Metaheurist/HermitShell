@@ -56,6 +56,13 @@ describe("the dashboard script", () => {
     expect(source).toMatch(/getAnimations\(\{ subtree: true \}\)\) if \(a\.effect && a\.effect\.getTiming\(\)\.iterations !== Infinity\) a\.finish\(\)/);
   });
 
+  it("keeps the Tasks count in step with the task list's window, as text only", async () => {
+    const source = await (await worker.fetch(new Request(`${BASE}${ENHANCE_URL}`), testEnv())).text();
+    expect(source).toContain('frame.matches(".tasksframe")');
+    expect(source).toContain('list.querySelector("ul.tasks, .tempty")');
+    expect(source).toContain("badge.textContent = n;");
+  });
+
   it("leaves the sign-in page without it", async () => {
     const res = await worker.fetch(new Request(`${BASE}/admin`), testEnv(ADMIN));
     expect(await res.text()).not.toContain("<script");

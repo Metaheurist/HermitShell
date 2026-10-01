@@ -65,6 +65,26 @@ test.describe("without JavaScript", () => {
   });
 });
 
+test("the Tasks count follows the open task list and clears when the task finishes, without a reload", async ({ page, request }) => {
+  const running = hermitShellStatus();
+  running.tasks = [{ id: "report:sam-lee", kind: "report", u: "sam-lee", state: "running", trigger: "schedule", at: Date.now(), stage: "Searching" }];
+  await applyQueue(request, running);
+  await signIn(page);
+  const button = page.locator("a.tasksbtn");
+  await expect(button.locator(".tcount")).toHaveText("1");
+  await button.click();
+  const list = page.frameLocator("iframe.tasksframe");
+  await expect(list.locator("li.task")).toHaveCount(1);
+  await page.evaluate(() => { window.stayed = true; });
+
+  await applyQueue(request, hermitShellStatus());
+  await expect(list.getByText("Nothing waiting or running")).toBeVisible({ timeout: 15_000 });
+  await expect(button.locator(".tcount")).toHaveCount(0);
+  await expect(button).toHaveAttribute("title", "Tasks");
+  await expect(button).not.toHaveClass(/busy/);
+  expect(await page.evaluate(() => window.stayed)).toBe(true);
+});
+
 test("a pause shows on the dashboard at once, keeps the scroll while it updates, and settles when applied", async ({ page, request }) => {
   await applyQueue(request, hermitShellStatus());
   await page.setViewportSize({ width: 1280, height: 560 });

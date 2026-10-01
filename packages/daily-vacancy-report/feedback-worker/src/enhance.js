@@ -6,6 +6,7 @@
 //   refresh reloads the page as before.
 // - A form sends once: pressing again, or double clicking, while its page loads does nothing.
 // - The theme page's preview follows the custom colours and the name as they change (the rest it follows by CSS).
+// - The Tasks button's count follows the task list each time that list reloads in its window.
 import { fnv } from "./lib.js";
 
 const SOURCE = `(() => {
@@ -34,6 +35,23 @@ const SOURCE = `(() => {
     }
     if (field.name === "name") form.querySelectorAll(".pvname").forEach((n) => { n.textContent = field.value.trim() || "HermitShell"; });
   });
+
+  document.addEventListener("load", (e) => {
+    const frame = e.target;
+    const btn = document.querySelector("a.tasksbtn");
+    if (!(frame instanceof HTMLIFrameElement) || !frame.matches(".tasksframe") || !btn) return;
+    let list;
+    try { list = frame.contentDocument; } catch { return; }
+    if (!list || !list.querySelector("ul.tasks, .tempty")) return;
+    const count = list.querySelectorAll("li.task").length;
+    const n = count > 99 ? "99+" : String(count);
+    btn.classList.toggle("busy", count > 0);
+    btn.title = count ? n + (count === 1 ? " task" : " tasks") + " waiting or running" : "Tasks";
+    let badge = btn.querySelector(".tcount");
+    if (!count) { if (badge) badge.remove(); return; }
+    if (!badge) { badge = document.createElement("span"); badge.className = "tcount"; btn.append(badge); }
+    badge.textContent = n;
+  }, true);
 
   const meta = document.querySelector('meta[name="hs-refresh"]');
   if (!meta) return;

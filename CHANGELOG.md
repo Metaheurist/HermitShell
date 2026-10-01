@@ -855,6 +855,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The Tasks count clears when the work is done.** The number on the **Tasks** button was drawn with the
+  dashboard and stayed (say at 1) after the task finished, even though the open Tasks window already said
+  **Nothing waiting or running**, until the page was reloaded. The dashboard's script now updates the
+  count, the circle and the button's tooltip from the task list each time it refreshes.
 - **Loading circles turn while a page waits.** On a page that updates itself, the circle on a cover letter
   or tailored CV being made (and its shimmer, the task list's spinners and the CV status page's spinner)
   stood still, as waiting pages stopped every animation that wasn't marked to keep going. Now only
