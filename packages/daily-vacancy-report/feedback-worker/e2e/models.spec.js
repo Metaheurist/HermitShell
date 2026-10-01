@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { hermitShellApi, reportStatus, sealing, signIn } from "./fixtures.js";
+import { hermitShellApi, hermitShellStatus, reportStatus, sealing, signIn } from "./fixtures.js";
 
 test("the server button shows the machine and the models on hover, and on focus from the keyboard", async ({ page }) => {
   await signIn(page);
@@ -28,6 +28,21 @@ test("on a phone the server panel stays inside the screen", async ({ page }) => 
   const box = await page.locator(".srvpanel").boundingBox();
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(390);
+});
+
+test("the server panel shows the last backup, and Back up now queues one for HermitShell", async ({ page, request }) => {
+  await reportStatus(request, { ...hermitShellStatus(),
+    backup: { at: Date.now() - 2 * 3600000, size: 5_400_000, kept: 9, error: "", failed_at: null, encrypted: true } });
+  await signIn(page);
+  await page.locator(".srv").focus();
+  const panel = page.locator(".srvpanel");
+  await expect(panel).toContainText("Last backup 2 hours ago · 5.1 MB · 9 kept");
+  await expect(panel).toContainText("keep a copy of it away from this server");
+  await panel.getByRole("button", { name: "Back up now" }).click();
+  await expect(page).toHaveURL(/\/admin\?done=backup$/);
+  await expect(page.getByText("Backing up. HermitShell starts within seconds")).toBeVisible();
+  const res = await hermitShellApi(request, "GET", "/api/queue?full=1");
+  expect((await res.json()).items.some((i) => i.type === "admin" && i.action === "backup_now")).toBe(true);
 });
 
 test("an AI model key is added from its modal and queued for HermitShell, sealed", async ({ page, request }) => {

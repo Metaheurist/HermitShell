@@ -177,6 +177,7 @@ const STATUS = {
   ] },
   server: { cpu: { model: "AMD Ryzen 7 5700G", cores: 16 }, load: 3.4, ram_mb: { total: 32768, available: 19000 },
     gpus: [{ name: "NVIDIA GeForce RTX 3060", vram_mb: 12288, free_mb: 7400 }], disk_mb: { total: 953000, free: 512000 } },
+  backup: { at: now - 5 * 3600000, size: 18_400_000, kept: 14, error: "", failed_at: null, encrypted: true },
   problems: [],
   features: { alerts: true },
   timezone: "Europe/London",

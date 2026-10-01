@@ -1,5 +1,7 @@
 """Unit tests for maintenance.py and Tracker.prune: retention, encryption of older files, backups and restores."""
 
+import contextlib
+import json
 import os
 import sqlite3
 import sys
@@ -154,6 +156,65 @@ def test_backups_rotate_to_daily_and_weekly(tmp_path):
     assert len(names) == 8 and (tmp_path / "notes.txt").exists()
     weeks = [datetime.strptime(n, "%Y%m%d").isocalendar()[:2] for n in names[5:]]
     assert len(set(weeks)) == 3
+
+
+def test_backup_outcome_is_noted_for_the_dashboard(tree):
+    home, _, state = tree
+    maintenance.make_backup(datetime(2026, 5, 1, 3, 30))
+    info = maintenance.backup_info()
+    assert info["error"] == "" and info["kept"] == 1 and info["size"] > 0 and info["encrypted"] is False
+    assert abs(info["at"] - time.time()) < 60
+    assert json.loads((state / "backup.json").read_text(encoding="utf-8")) == info
+
+
+def test_failed_backup_keeps_the_last_good_one_beside_the_error(tree, monkeypatch):
+    maintenance.make_backup(datetime(2026, 5, 1, 3, 30))
+    good = maintenance.backup_info()
+
+    def broken():
+        raise PermissionError("[Errno 13] Permission denied: '/backups'")
+
+    monkeypatch.setattr(maintenance, "build_archive", broken)
+    with pytest.raises(PermissionError):
+        maintenance.make_backup(datetime(2026, 5, 2, 3, 30))
+    info = maintenance.backup_info()
+    assert info["error"].startswith("PermissionError: [Errno 13]") and info["failed_at"] >= good["at"]
+    assert (info["at"], info["size"], info["kept"]) == (good["at"], good["size"], good["kept"])
+    assert maintenance.main([]) == 1, "the nightly run reports the failed step"
+
+
+def test_backup_info_ignores_a_damaged_file(tree):
+    _, _, state = tree
+    (state / "backup.json").write_text("[1, 2]", encoding="utf-8")
+    assert maintenance.backup_info() == {}
+    (state / "backup.json").write_text("{not json", encoding="utf-8")
+    assert maintenance.backup_info() == {}
+
+
+def test_backup_now_makes_one_and_is_refused_within_ten_minutes(tree, monkeypatch):
+    assert maintenance.backup_refusal(time.time()) == ""
+    assert maintenance.main(["--backup-now"]) == 0
+    assert len(maintenance.list_backups()) == 1
+    assert "10 minutes" in maintenance.backup_refusal(time.time())
+    assert maintenance.backup_refusal(time.time() + maintenance.BACKUP_NOW_GAP + 1) == ""
+    assert maintenance.main(["--backup-now"]) == 0
+    assert len(maintenance.list_backups()) == 1, "the second press made no backup"
+
+
+def test_backup_now_waits_for_the_nightly_run(tree, monkeypatch):
+    @contextlib.contextmanager
+    def held(_path):
+        yield False
+
+    monkeypatch.setattr(hc, "run_lock", held)
+    assert maintenance.main(["--backup-now"]) == 0
+    assert maintenance.list_backups() == [] and maintenance.backup_info() == {}
+
+
+def test_backup_now_failure_is_noted(tree, monkeypatch):
+    monkeypatch.setattr(maintenance, "build_archive", lambda: (_ for _ in ()).throw(OSError("disk full")))
+    assert maintenance.main(["--backup-now"]) == 1
+    assert maintenance.backup_info()["error"] == "OSError: disk full"
 
 
 def test_nightly_run_and_decrypt_command(tree, monkeypatch, tmp_path, capsys):

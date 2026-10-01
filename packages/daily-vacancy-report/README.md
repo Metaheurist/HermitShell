@@ -188,7 +188,8 @@ python3 maintenance.py --decrypt state/profiles/<id>/cv.txt     # print one encr
 ```
 
 A restore unpacks into an empty folder; copy back what you need. Without the key the backups
-can't be opened, so keep a copy of it in a password manager.
+can't be opened, so keep a copy of it in a password manager. The dashboard's server panel shows the
+last backup and has **Back up now** (`python3 maintenance.py --backup-now`).
 
 Schedule times are in `HERMES_TIMEZONE` (default UTC). Use `0 7 * * 1-5` for weekdays only. Scheduled jobs
 can't pass arguments to a script, which is why the weekly roll-up has its own entry point, `job_weekly.py`.

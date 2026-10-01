@@ -583,6 +583,24 @@ describe("AI models and the server panel", () => {
       { Cookie: casey.cookie }), env);
     expect(res.status).not.toBe(302);
     expect(valuesWith(env, "queue:").filter((i) => i.action === "model_keys")).toEqual([]);
+    const backup = await worker.fetch(form("/admin/action", { csrf: casey.csrf, action: "backup_now" }, { Cookie: casey.cookie }), env);
+    expect(backup.status).toBe(403);
+    const stale = await worker.fetch(form("/admin/action", { action: "backup_now" }, { Cookie: admin.cookie }), env);
+    expect(stale.status).toBe(403);
+    expect(valuesWith(env, "queue:").filter((i) => i.action === "backup_now")).toEqual([]);
+  });
+
+  it("escapes and checks the backup fields HermitShell reports", async () => {
+    const { serverBox } = await import("../src/models.js");
+    const html = serverBox({ backup: { at: HOSTILE, size: -1, kept: 1e9, error: HOSTILE, failed_at: Date.now() - 60000, encrypted: HOSTILE } },
+      `"><script>`);
+    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<img");
+    expect(html).toContain("No backup yet.");
+    expect(html).toContain("Backups are not encrypted");
+    expect(html).not.toContain(" kept");
+    expect(serverBox({ backup: HOSTILE })).not.toContain("Backups");
+    expect(serverBox({ backup: [1, 2] })).toContain("No backup yet.");
   });
 });
 

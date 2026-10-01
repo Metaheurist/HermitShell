@@ -11,8 +11,12 @@ services:
     restart: unless-stopped
     volumes:
       - ${HERMITSHELL_DATA:-./data}:/data
+      # Nightly backups on a NAS share or another disk (docs/configuration.md#backups-somewhere-else): uncomment this
+      # and HERMES_BACKUP_DIR below. The folder must be mounted before the container starts and writable by uid 10000.
+      # - ${HERMITSHELL_BACKUPS:?set HERMITSHELL_BACKUPS to the backup folder}:/backups
     environment:
       TZ: ${TZ:-UTC}
+      # HERMES_BACKUP_DIR: /backups
     extra_hosts:
       - "host.docker.internal:host-gateway"
     read_only: true

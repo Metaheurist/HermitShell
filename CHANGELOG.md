@@ -8,6 +8,16 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Backups in the server panel, and Back up now.** The admin's server panel shows the last backup, its size
+  and how many are kept, or why the last one failed (beside the last good one), with a reminder to keep
+  `HERMES_DATA_KEY` away from the server, or a warning when backups aren't encrypted. **Back up now** queues
+  one backup (admins only, once per 10 minutes); HermitShell runs `maintenance.py --backup-now` in the
+  background under the nightly run's lock, and refuses it within 10 minutes of a backup or while maintenance
+  runs. `maintenance.py` writes each outcome to `state/backup.json`, which the admin alerts already read.
+  `docker-compose.yml` has commented lines for a second volume (`HERMITSHELL_BACKUPS`) that puts the backups
+  on a NAS share or another disk; see `docs/configuration.md#backups-somewhere-else` for mounting it first
+  and letting uid 10000 write.
+
 - **A note with dashboard letters and CVs.** **Options** beside **Generate** and **Regenerate** on the list
   of jobs sent now asks "Anything to stress?" for the cover letter and the tailored CV (up to 300
   characters, control characters stripped), as the email button's page does. A note always gets a new one

@@ -1150,6 +1150,61 @@ def test_send_now_starts_that_profiles_report_in_the_background(home, monkeypatc
     assert len(started) == 1
 
 
+@pytest.fixture
+def backups(home, monkeypatch):
+    import maintenance
+    tmp, _ = home
+    monkeypatch.setattr(maintenance, "STATE_DIR", tmp / "state")
+    (tmp / "state").mkdir(parents=True, exist_ok=True)
+    started = []
+    monkeypatch.setattr(profiles.subprocess, "Popen", lambda cmd, **kw: started.append(cmd))
+    return maintenance, tmp / "state" / "backup.json", started
+
+
+def test_back_up_now_starts_maintenance_in_the_background(backups):
+    _, _, started = backups
+    report = profiles.sync(FakeApi([{"id": "queue:2:a2", "type": "admin", "action": "backup_now"}]))
+    assert report == ["admin: done (backup_now)"]
+    assert started == [[sys.executable, str(profiles.SCRIPT_DIR / "maintenance.py"), "--backup-now"]]
+
+
+def test_back_up_now_is_refused_soon_after_a_backup(backups):
+    _, note, started = backups
+    note.write_text(json.dumps({"at": profiles.time.time() - 120, "size": 10, "kept": 1, "error": ""}))
+    report = profiles.sync(FakeApi([{"id": "queue:2:a2", "type": "admin", "action": "backup_now"}]))
+    assert report == ["admin: rejected (a backup finished less than 10 minutes ago)"] and started == []
+    assert profiles.recent_problems()[-1]["what"] == "backup now"
+
+
+def test_back_up_now_is_refused_while_maintenance_runs(backups, monkeypatch):
+    import contextlib
+
+    @contextlib.contextmanager
+    def held(_path):
+        yield False
+
+    _, _, started = backups
+    monkeypatch.setattr(profiles.hc, "run_lock", held)
+    with pytest.raises(profiles.ProfileError, match="maintenance is running"):
+        profiles.start_backup()
+    assert started == []
+
+
+def test_status_carries_the_last_backup_without_paths(backups, monkeypatch):
+    _, note, _ = backups
+    assert profiles.status_payload()["backup"] == {"at": None, "size": 0, "kept": 0, "error": "", "failed_at": None,
+                                                   "encrypted": False}
+    note.write_text(json.dumps({"at": 1_700_000_000.5, "size": 2048, "kept": 3, "encrypted": True,
+                                "error": "PermissionError: denied", "failed_at": 1_700_000_100, "dir": "/secret"}))
+    monkeypatch.setenv(profiles.hc.DATA_KEY_ENV, "x" * 43)
+    backup = profiles.status_payload()["backup"]
+    assert backup == {"at": 1_700_000_000_500, "size": 2048, "kept": 3, "error": "PermissionError: denied",
+                      "failed_at": 1_700_000_100_000, "encrypted": True}
+    note.write_text(json.dumps({"at": "soon", "size": -5, "kept": "lots", "error": None, "failed_at": True}))
+    assert profiles.status_payload()["backup"] == {"at": None, "size": 0, "kept": 0, "error": "", "failed_at": None,
+                                                   "encrypted": True}
+
+
 def bulk(op, us, n=5, **extra):
     return {"id": f"queue:{n}:b{n}", "type": "admin", "action": "bulk", "op": op, "us": us, **extra}
 

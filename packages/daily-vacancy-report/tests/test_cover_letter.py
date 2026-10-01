@@ -308,8 +308,9 @@ def test_uploads_send_the_plain_pdf_even_when_files_are_encrypted(kept, monkeypa
     tracker.add_event("e1", "k1", "cover_letter", flags="fresh")
     cover_letter.process_pending(tracker, lambda: ("h", "m", None))
     newest = max(cover_letter.LETTER_DIR.glob("*.pdf"), key=lambda p: p.stat().st_mtime)
-    assert not newest.read_bytes().startswith(b"%PDF") and uploads[0][2].startswith(b"%PDF")
-    assert uploads[0][1]["u"] == "sam-lee-456789"
+    pdf = next(u for u in uploads if u[0].endswith("/api/doc"))
+    assert not newest.read_bytes().startswith(b"%PDF") and pdf[2].startswith(b"%PDF")
+    assert pdf[1]["u"] == "sam-lee-456789"
     assert cover_letter.doc_info(newest, "cover_letter", JOB) == ("Cover letter - Sam Taylor - AI Engineer.pdf", PARAGRAPHS)
 
 

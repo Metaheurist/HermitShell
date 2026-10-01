@@ -243,15 +243,34 @@ function modelFacts(status) {
   return `<div class="ssec"><b>Models, in the order they are asked</b></div><ol class="smodels">${rows}</ol>${answered}`;
 }
 
+const size = (bytes) => (bytes >= 2 ** 30 ? `${(bytes / 2 ** 30).toFixed(1)} GB`
+  : bytes >= 2 ** 20 ? `${(bytes / 2 ** 20).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+
+// The nightly backups (maintenance.py, state/backup.json): the last one or its failure, and Back up now. An older
+// HermitShell sends no backup field, so the section is left out.
+function backupFacts(status, csrf) {
+  if (!status.backup || typeof status.backup !== "object") return "";
+  const b = obj(status.backup);
+  const [at, failed] = [whole(b.at, 1e14), whole(b.failed_at, 1e14)];
+  const [bytes, kept] = [whole(b.size, 2 ** 50), whole(b.kept, 10000)];
+  const error = text(b.error, 200);
+  const last = at ? `Last backup ${esc(ago(at))}${bytes ? ` &middot; ${size(bytes)}` : ""}${kept ? ` &middot; ${kept} kept` : ""}` : "No backup yet.";
+  return `<div class="ssec"><b>Backups</b></div>
+${error && failed ? `<p class="sbad">The last backup failed ${esc(ago(failed))}: ${esc(error)}</p>` : ""}<p class="sback">${last}</p>
+${b.encrypted === true ? '<p class="snote">Backups open only with <code>HERMES_DATA_KEY</code>: keep a copy of it away from this server, in a password manager.</p>'
+    : '<p class="sbad">Backups are not encrypted: set <code>HERMES_DATA_KEY</code> (<code>python3 maintenance.py --new-key</code>).</p>'}
+<form method="post" action="/admin/action" class="sbackup"><input type="hidden" name="csrf" value="${esc(csrf)}"><input type="hidden" name="action" value="backup_now"><button class="small quiet">Back up now</button></form>`;
+}
+
 // The admin's server button and its panel; recruiters don't get one.
-export function serverBox(status) {
+export function serverBox(status, csrf = "") {
   const server = obj(status.server);
   const facts = serverFacts(server);
   const reportedAt = Number.isFinite(status.updated) ? `reported ${esc(ago(status.updated))}` : "not reported yet";
   return `<div class="srv" tabindex="0" aria-label="Server and models" aria-describedby="srvpanel"><span class="mebtn srvbtn" title="Server">${logo("server")}</span>
 <div class="srvpanel" id="srvpanel" role="tooltip"><div class="stitle">${logo("server")}<b>Server</b><span>${reportedAt}</span></div>
 ${facts || '<p class="muted small">HermitShell hasn&rsquo;t reported the machine yet.</p>'}
-${modelFacts(status)}<a class="small" href="/admin/settings#models">Model settings</a></div></div>`;
+${modelFacts(status)}${backupFacts(status, csrf)}<a class="small" href="/admin/settings#models">Model settings</a></div></div>`;
 }
 
 export const SERVER_STYLE = `
@@ -276,4 +295,6 @@ font-size:13px;color:var(--ink);animation:panelin .2s var(--ease) both}
 .smodels li>svg{flex:none;width:16px;height:16px;margin-top:2px;color:var(--brand)}
 .smodels small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
 .slast{margin:8px 0;font-size:12px;color:var(--muted)}
+.sback,.sbad,.snote{margin:4px 0;font-size:12px}.sbad{color:#b91c1c;font-weight:600}.snote{color:var(--muted);font-size:11.5px}
+.sback+.snote,.sback+.sbad{margin-top:2px}.sbackup{margin:6px 0 10px}
 `;

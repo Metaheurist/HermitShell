@@ -10,10 +10,12 @@ Runs nightly (the setup wizard schedules it as vacancy-maintenance), for the own
 4. Backup: .env, the scheduler's jobs (cron/) and this scripts folder with its state go into
    one archive, encrypted with HERMES_DATA_KEY (AES-256-GCM), in HERMES_BACKUP_DIR (default
    <HermitShell home>/backups/nightly). The newest HERMES_BACKUP_KEEP_DAILY (14) are kept, plus the newest of each week
-   for HERMES_BACKUP_KEEP_WEEKLY (8) more weeks.
+   for HERMES_BACKUP_KEEP_WEEKLY (8) more weeks. The outcome goes to state/backup.json, which the dashboard's
+   server panel and the admin alerts read.
 
     python3 maintenance.py                          # all of the above (cron)
     python3 maintenance.py --no-backup
+    python3 maintenance.py --backup-now             # just the backup (the dashboard's Back up now)
     python3 maintenance.py --new-key                # print a new HERMES_DATA_KEY
     python3 maintenance.py --list-backups
     python3 maintenance.py --restore FILE --to DIR  # decrypt and unpack a backup into an empty folder
@@ -23,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
 import os
 import sqlite3
 import sys
@@ -37,7 +40,6 @@ import profiles
 from hermes_common import STATE_DIR, env, env_int, log
 from job_tracker import Tracker
 
-hc.LOG_TAG = "maintenance"
 SCRIPT_DIR = Path(__file__).resolve().parent
 DAY = 86400
 # Backups made while HermitShell ran inside Hermes are named hermes-..., and are listed and rotated too.
@@ -49,6 +51,10 @@ SKIP_DIRS = {"__pycache__", ".ruff_cache", ".pytest_cache", "model-queue", "outp
 SKIP_SUFFIXES = (".lock", ".tmp", "-wal", "-shm", "-journal", ".pyc")
 LETTER_DIRS = ("cover_letters", "tailored_cvs")
 STATE_PRIVATE = ("cv.json", "cv_skills_merged.json")
+BACKUP_FILE = "backup.json"
+LOCK_FILE = "maintenance.lock"
+# Back up now is refused this soon after a backup finished.
+BACKUP_NOW_GAP = 10 * 60
 
 
 def backup_dir() -> Path:
@@ -226,17 +232,64 @@ def rotate(folder: Path, keep_daily: int, keep_weekly: int) -> int:
     return removed
 
 
+def backup_info() -> dict:
+    """The last backup's outcome: at, size, kept and encrypted, or error and failed_at after a failure."""
+    try:
+        info = json.loads((STATE_DIR / BACKUP_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return info if isinstance(info, dict) else {}
+
+
+def _note_backup(info: dict) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    hc.write_atomic(STATE_DIR / BACKUP_FILE, json.dumps(info).encode())
+
+
 def make_backup(now: datetime | None = None) -> str:
-    folder = backup_dir()
-    folder.mkdir(parents=True, exist_ok=True)
-    data = build_archive()
-    encrypted = bool(env(hc.DATA_KEY_ENV))
-    name = f"{BACKUP_PREFIX}{(now or datetime.now()):%Y%m%d-%H%M%S}.tar.gz" + (".enc" if encrypted else "")
-    hc.write_private(folder / name, data)
-    removed = rotate(folder, env_int("HERMES_BACKUP_KEEP_DAILY", 14), env_int("HERMES_BACKUP_KEEP_WEEKLY", 8))
+    try:
+        folder = backup_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        data = build_archive()
+        encrypted = bool(env(hc.DATA_KEY_ENV))
+        name = f"{BACKUP_PREFIX}{(now or datetime.now()):%Y%m%d-%H%M%S}.tar.gz" + (".enc" if encrypted else "")
+        hc.write_private(folder / name, data)
+        removed = rotate(folder, env_int("HERMES_BACKUP_KEEP_DAILY", 14), env_int("HERMES_BACKUP_KEEP_WEEKLY", 8))
+    except Exception as exc:
+        # The last good backup's numbers stay, beside the error.
+        _note_backup({**backup_info(), "error": f"{exc.__class__.__name__}: {exc}"[:200], "failed_at": time.time()})
+        raise
+    _note_backup({"at": time.time(), "size": len(data), "kept": len(list_backups(folder)), "encrypted": encrypted,
+                  "error": ""})
     if not encrypted:
         log("Warning: HERMES_DATA_KEY is not set, so this backup is NOT encrypted (python3 maintenance.py --new-key)")
     return f"backup: {name} ({len(data) // 1024} KB{', encrypted' if encrypted else ''}), {removed} old removed"
+
+
+def backup_refusal(now: float) -> str:
+    """Why Back up now shouldn't run, or ""."""
+    at = backup_info().get("at")
+    if isinstance(at, (int, float)) and 0 <= now - at < BACKUP_NOW_GAP:
+        return "a backup finished less than 10 minutes ago"
+    return ""
+
+
+def backup_now() -> int:
+    """One backup, under the nightly run's lock so the two never overlap."""
+    with hc.run_lock(STATE_DIR / LOCK_FILE) as got:
+        if not got:
+            log("Maintenance is running, and its backup with it; Back up now skipped")
+            return 0
+        refusal = backup_refusal(time.time())
+        if refusal:
+            log(f"Back up now skipped: {refusal}")
+            return 0
+        try:
+            log(make_backup())
+        except Exception as exc:
+            log(f"backup failed: {exc.__class__.__name__}: {exc}")
+            return 1
+        return 0
 
 
 def restore(archive: Path, target: Path) -> int:
@@ -258,8 +311,11 @@ def restore(archive: Path, target: Path) -> int:
 # --------------------------------------------------------------------------- command line
 
 def main(argv: list[str] | None = None) -> int:
+    # Set here, not on import: profiles.py and alerts.py import this module and keep their own tag.
+    hc.LOG_TAG = "maintenance"
     parser = argparse.ArgumentParser(description="Retention, encryption at rest and encrypted backups.")
     parser.add_argument("--no-backup", action="store_true", help="skip the backup")
+    parser.add_argument("--backup-now", action="store_true", help="only the backup (refused within 10 minutes of one)")
     parser.add_argument("--new-key", action="store_true", help="print a new random HERMES_DATA_KEY")
     parser.add_argument("--list-backups", action="store_true")
     parser.add_argument("--restore", metavar="FILE", help="decrypt and unpack a backup (needs --to)")
@@ -287,8 +343,10 @@ def main(argv: list[str] | None = None) -> int:
         else:
             sys.stdout.buffer.write(data)
         return 0
+    if args.backup_now:
+        return backup_now()
 
-    with hc.run_lock(STATE_DIR / "maintenance.lock") as got:
+    with hc.run_lock(STATE_DIR / LOCK_FILE) as got:
         if not got:
             log("Maintenance is already running; skipping")
             return 0

@@ -1129,6 +1129,8 @@ def admin_action(item: dict, api=None) -> None:
     if action == "test_email":
         send_test_email(str(item.get("to") or ""))
         return None
+    if action == "backup_now":
+        return start_backup()
     profile = load(pid)
     if not profile:
         raise ProfileError(f"no profile {pid}")
@@ -1254,7 +1256,7 @@ def status_payload() -> dict:
     return {"profiles": profiles, "email": email, "keys": keys, "problems": problems, "timezone": timezone_name(),
             "scheduler": jobs is not None, "tasks": tasks(), "models": models_info(every), "llm": llm_info(),
             "usage": llm_usage.summary(), "features": features(),
-            "server": server_info(), "protocol": worker_link.PROTOCOL,
+            "server": server_info(), "backup": backup_status(), "protocol": worker_link.PROTOCOL,
             "worker_protocol": worker_link.worker_protocol().get("protocol"), "seal": worker_seal.public_key()}
 
 
@@ -1883,14 +1885,44 @@ def start_reports(profiles: list[dict], spawn=None) -> None:
             pids.append(profile["id"])
     if not pids:
         return
+    _background([sys.executable, str(Path(__file__).resolve()), "report", "--now", *pids], spawn)
+    log(f"Started the report{'s' if len(pids) > 1 else ''} for {', '.join(pids)} from the dashboard")
+
+
+def _background(cmd: list[str], spawn=None) -> None:
+    """Run cmd detached, its output appended to the runs log."""
     log_file = PROFILES_DIR / "runs.log"
     if log_file.is_file() and log_file.stat().st_size > 2_000_000:
         log_file.replace(log_file.with_suffix(".log.1"))
     with open(log_file, "ab") as out:
-        (spawn or subprocess.Popen)([sys.executable, str(Path(__file__).resolve()), "report", "--now", *pids],
-                                    stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, cwd=SCRIPT_DIR,
+        (spawn or subprocess.Popen)(cmd, stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, cwd=SCRIPT_DIR,
                                     start_new_session=True)
-    log(f"Started the report{'s' if len(pids) > 1 else ''} for {', '.join(pids)} from the dashboard")
+
+
+def start_backup(spawn=None) -> None:
+    """Back up now: maintenance.py --backup-now in the background, refused while the nightly run holds its lock
+    or within 10 minutes of the last backup (it checks both again itself)."""
+    import maintenance
+    refusal = maintenance.backup_refusal(time.time())
+    if refusal:
+        raise ProfileError(refusal)
+    with hc.run_lock(maintenance.STATE_DIR / maintenance.LOCK_FILE) as got:
+        if not got:
+            raise ProfileError("maintenance is running now, and its backup with it")
+    _background([sys.executable, str(SCRIPT_DIR / "maintenance.py"), "--backup-now"], spawn)
+    log("Started a backup from the dashboard")
+
+
+def backup_status() -> dict:
+    """The server panel's backup line."""
+    import maintenance
+    info = maintenance.backup_info()
+    number = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0  # noqa: E731
+    whole = lambda v: int(v) if number(v) else 0  # noqa: E731
+    stamp = lambda v: _ms(v) if number(v) else None  # noqa: E731
+    return {"at": stamp(info.get("at")), "size": whole(info.get("size")), "kept": whole(info.get("kept")),
+            "error": str(info.get("error") or "")[:200], "failed_at": stamp(info.get("failed_at")),
+            "encrypted": bool(env(hc.DATA_KEY_ENV))}
 
 
 # --------------------------------------------------------------------------- the dashboard's task list

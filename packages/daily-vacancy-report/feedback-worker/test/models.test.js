@@ -175,6 +175,42 @@ describe("the admin's server panel", () => {
   });
 });
 
+describe("backups in the server panel", () => {
+  const BACKUP = { at: NOW - 3 * 3600000, size: 18_400_000, kept: 14, error: "", failed_at: null, encrypted: true };
+
+  it("shows the last backup, its size, how many are kept and the key reminder, with Back up now", () => {
+    const html = serverBox({ ...STATUS, backup: BACKUP }, "c".repeat(32));
+    expect(html).toContain("<b>Backups</b>");
+    expect(html).toContain("Last backup 3 hours ago &middot; 17.5 MB &middot; 14 kept");
+    expect(html).toContain("keep a copy of it away from this server");
+    expect(html).toMatch(/<form method="post" action="\/admin\/action" class="sbackup"><input type="hidden" name="csrf" value="c{32}"><input type="hidden" name="action" value="backup_now">/);
+    expect(html).not.toContain("sbad");
+  });
+
+  it("shows a failure beside the last good backup, and warns when backups aren't encrypted", () => {
+    const html = serverBox({ ...STATUS, backup: { ...BACKUP, error: "PermissionError: denied", failed_at: NOW - 600000, encrypted: false } }, "c");
+    expect(html).toContain("The last backup failed 10 minutes ago: PermissionError: denied");
+    expect(html).toContain("Last backup 3 hours ago");
+    expect(html).toContain("Backups are not encrypted");
+    expect(serverBox({ ...STATUS, backup: { kept: 0 } }, "c")).toContain("No backup yet.");
+  });
+
+  it("is left out for a HermitShell that doesn't report backups", () => {
+    expect(serverBox(STATUS, "c")).not.toContain("Backups");
+  });
+
+  it("queues one backup however often it is pressed, and says so", async () => {
+    const { env, admin, act } = await setup({ ...STATUS, backup: BACKUP });
+    const res = await act({ action: "backup_now" });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("Location")).toBe("/admin?done=backup");
+    await act({ action: "backup_now" });
+    expect(valuesWith(env, "queue:").filter((i) => i.action === "backup_now")).toEqual([expect.objectContaining({ type: "admin", action: "backup_now" })]);
+    expect(await admin.get("/admin?done=backup")).toContain("Backing up. HermitShell starts within seconds");
+    expect(await admin.get("/admin")).toContain("Back up now");
+  });
+});
+
 const USAGE = { days: 7, since: "2026-09-24", tasks: [
   { task: "rating", label: "ignored", today: { calls: 10, failed: 0, in: 20000, out: 3000, avg_ms: 4000, estimated: 0 },
     period: { calls: 60, failed: 2, in: 120000, out: 18000, avg_ms: 4200, estimated: 0 } },

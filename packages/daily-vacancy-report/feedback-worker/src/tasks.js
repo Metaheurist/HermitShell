@@ -53,6 +53,7 @@ const ADMIN_LABELS = {
   send_now: "Send jobs now", pause: "Pause reports", resume: "Resume reports", delete: "Delete recruit",
   assign: "Assign to a recruiter", profile: "Recruit changes", cv: "New CV",
   api_keys: "Global API keys", model_keys: "AI model settings", email: "Email settings", test_email: "Test email",
+  backup_now: "Back up now",
 };
 const KIND_LABELS = {
   report: "Daily report", cover_letter: "Cover letter", tailored_cv: "Tailored CV", send_job: "Job email", profile_cv: "CV", signup: "Sign-up",

@@ -532,11 +532,14 @@ Admins also get a **server** button before the key button. Point at it (or Tab t
 opens with the machine HermitShell runs on: CPU and its load, memory, each GPU's memory and free
 disk, each with a bar (amber from 70%, red from 90%). Under them are the AI models in the order they
 are asked, each with its model name and whether it is ready, how many requests it answered today or
-why it is resting, then which one gave the last answer and **Model settings**. It needs no
-JavaScript, and it shows what HermitShell last reported (see [AI models](#ai-models)). Recruiters
-don't get the button.
+why it is resting, then which one gave the last answer. **Backups** shows the last backup, its size
+and how many are kept (or why the last one failed), a reminder to keep `HERMES_DATA_KEY` away from the
+server, and **Back up now**, which asks HermitShell for a backup straight away (once per 10 minutes; it
+won't run beside the nightly one, see [Data protection](configuration.md#data-protection)). Last comes
+**Model settings**. It needs no JavaScript, and it shows what HermitShell last reported (see
+[AI models](#ai-models)). Recruiters don't get the button.
 
-<img src="images/worker/admin-server-panel.png" alt="The admin's server panel: CPU, memory, GPU and disk bars, then the models in the order they are asked" width="720">
+<img src="images/worker/admin-server-panel.png" alt="The admin's server panel: CPU, memory, GPU and disk bars, then the models in the order they are asked, the last backup and Back up now" width="720">
 
 Between the server button and the key button, admins have a **palette** button that opens
 [Theme and branding](#theme-and-branding).

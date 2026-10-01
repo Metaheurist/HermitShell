@@ -522,6 +522,7 @@ function statusOf(now) {
     ] },
     server: { cpu: { model: "AMD Ryzen 9 7950X", cores: 32 }, load: 4.1, ram_mb: { total: 65536, available: 38000 },
       gpus: [{ name: "NVIDIA GeForce RTX 4090", vram_mb: 24576, free_mb: 6100 }], disk_mb: { total: 1907000, free: 1210000 } },
+    backup: { at: now - 5 * 3600000, size: 18_400_000, kept: 14, error: "", failed_at: null, encrypted: true },
     tasks: [
       { id: "report:jamie-walsh", kind: "report", u: "jamie-walsh", state: "running", at: now - 3 * 60000, trigger: "schedule",
         stage: "Rating jobs", done: 17, total: 26, expected: 12 * 60000 },

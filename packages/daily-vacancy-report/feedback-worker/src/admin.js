@@ -55,6 +55,8 @@ const COOKIE = "__Host-hv_admin";
 const INVITE_URL = "/admin/invite";
 // KV's shortest expiry: how long a second Send jobs for the same recruit is taken as the same press.
 const SEND_NOW_SECONDS = 60;
+// Back up now pressed again this soon is not queued again (maintenance.py BACKUP_NOW_GAP refuses it too).
+const BACKUP_NOW_SECONDS = 10 * 60;
 // What a recruiter may do from the dashboard, and then only for their own recruits.
 const RECRUITER_ACTIONS = new Set(["invite", "revoke", "profile", "send_now", "pause", "resume", "bulk"]);
 // What the bar under the recruits does to the ticked ones, and how many at once (profiles.py BULK_OPS, MAX_BULK).
@@ -78,6 +80,7 @@ const DONE = {
   cvgone: "Their CV is no longer kept. Generate makes a new one.",
   bulknone: "Tick at least one recruit first.",
   bulkmany: `Tick at most ${MAX_BULK} recruits at a time.`,
+  backup: "Backing up. HermitShell starts within seconds while it is connected; the server panel shows the backup when it finishes.",
   ...SETTINGS_DONE,
   ...DEMO_DONE,
   ...NOTES_DONE,
@@ -659,6 +662,13 @@ async function action(request, env, s) {
     await record(env, u, "assign", to ? `Assigned to ${to.name}` : "Unassigned from their recruiter", by);
     return redirect("/admin?done=assigned");
   }
+  if (act === "backup_now") {
+    if (!(await env.FEEDBACK.get("backupnow"))) {
+      await env.FEEDBACK.put("backupnow", "1", { expirationTtl: BACKUP_NOW_SECONDS });
+      await queueItem(env, { type: "admin", action: "backup_now" });
+    }
+    return redirect("/admin?done=backup");
+  }
   const setting = settingsItem(act, form);
   if (setting) {
     const back = `${SETTINGS_URL}?done=`;
@@ -815,7 +825,7 @@ function signedInBox(s, current) {
   const label = `Signed in as ${name} (${roles.toLowerCase()})`;
   return `<style>${ME_STYLE}${s.me.admin ? SERVER_STYLE : ""}</style><div class="me" role="region" aria-label="${esc(label)}">
 <div class="mecard" title="${esc(label)}"><span class="avatar${s.me.admin ? "" : " rec"}" aria-hidden="true">${esc(initials(name))}</span><span class="mename"><b>${esc(name)}</b><small>${esc(roles)}</small></span></div>
-<div class="mebtns">${s.me.admin ? `${serverBox(current)}<a class="mebtn" href="${THEME_URL}" title="Theme and branding" aria-label="Theme and branding">${PALETTE_ICON}</a>` : ""}<a class="mebtn" href="/admin#password" title="Change password" aria-label="Change password">${KEY_ICON}</a><form method="post" action="/admin/logout"><button class="mebtn">${LOGOUT_ICON}Sign out</button></form></div></div>`;
+<div class="mebtns">${s.me.admin ? `${serverBox(current, s.csrf)}<a class="mebtn" href="${THEME_URL}" title="Theme and branding" aria-label="Theme and branding">${PALETTE_ICON}</a>` : ""}<a class="mebtn" href="/admin#password" title="Change password" aria-label="Change password">${KEY_ICON}</a><form method="post" action="/admin/logout"><button class="mebtn">${LOGOUT_ICON}Sign out</button></form></div></div>`;
 }
 
 // The invite link just made, on its own address so reloading it doesn't make another. Only its maker (or an admin)

@@ -351,9 +351,9 @@ buttons. On a phone everything is in one column.
 | Invite someone + recruiter list + **Create invite link** | Makes a one-time `/join` link; the note is only for you. Admins pick whose recruit the person becomes; a recruiter's invites join their own pool |
 | **Revoke** | Cancels an unused invite |
 | Badge + key + **Sign out** (top right) | Your initials, name and roles, on every dashboard page (just the initials, above the page, on narrower windows, and on Recruits and Users and roles below 1860px). The key button opens **Change password**: your current password and the new one twice; you stay signed in here and are signed out everywhere else. For the main admin it shows the `wrangler secret put ADMIN_PASSWORD` command instead. Signing out ends that user's sessions |
-| Server button (admins only, before the key) | Pointed at or tabbed to, opens a panel with the machine HermitShell runs on (CPU and load, memory, each GPU and the disk, with bars that turn amber from 70% and red from 90%), the AI models in the order they are asked with their model and state, the last answer and **Model settings** |
+| Server button (admins only, before the key) | Pointed at or tabbed to, opens a panel with the machine HermitShell runs on (CPU and load, memory, each GPU and the disk, with bars that turn amber from 70% and red from 90%), the AI models in the order they are asked with their model and state, the last answer, the last backup (its size and how many are kept, or why it failed) with **Back up now**, and **Model settings** |
 
-<img src="images/worker/admin-server-panel.png" alt="The server panel open under the server button: CPU, memory, GPU and disk bars, then OpenRouter, Hugging Face and the server model in order" width="760">
+<img src="images/worker/admin-server-panel.png" alt="The server panel open under the server button: CPU, memory, GPU and disk bars, then OpenRouter, Hugging Face and the server model in order, then the last backup with Back up now" width="760">
 
 <img src="images/worker/admin-delete-modal.png" alt="Deleting a recruit: the confirm window with the CV and history tick box" width="380">
 

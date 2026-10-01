@@ -387,7 +387,10 @@ This is how it is carried out:
   encrypted archive (`hermitshell-<date>.tar.gz.enc`) in `HERMES_BACKUP_DIR`, rotated to 14 daily and 8 weekly
   copies (archives from an install inside Hermes, `hermes-*`, are rotated with them). Keep [a second copy](#a-second-copy-of-the-backups) on another disk.
   Restore with `python3 maintenance.py --restore FILE --to EMPTY_DIR`, then copy back
-  what you need.
+  what you need. The server panel on `/admin` (the server button beside Sign out) shows the last backup,
+  its size and how many are kept, or why the last one failed, and has **Back up now**. That runs
+  `maintenance.py --backup-now` in the background, never at the same time as the nightly run, and is refused within
+  10 minutes of a backup. A failed backup also sends an [admin alert](#admin-alerts).
 - **Unsubscribe and deletion.** A recruit's unsubscribe link, or Delete on `/admin`,
   removes its folder (profile, CV, tracker, letters, keys) within about a minute, drops its
   answers still waiting on the Worker, replaces its name, email address and profile id with
@@ -401,7 +404,7 @@ Backups on the same disk as HermitShell don't survive that disk failing. Check w
 live on the small system SSD while the RAID or data disks are mounted elsewhere.
 
 In Docker, `HERMES_BACKUP_DIR` is a path inside the container, so pointing it at another disk means
-adding a volume to the container. A host timer that copies the finished archives needs no
+adding a volume to the container ([below](#backups-somewhere-else)). A host timer that copies the finished archives needs no
 change to the container, and the container can't touch the copies. As root on the host (adjust the
 two paths):
 
@@ -433,6 +436,28 @@ nothing.
 
 If the host shares its disks over SMB (common on NAS systems), anyone with that login can read
 `.env` and the backups, so give the share a strong password or leave HermitShell's folder out of it.
+
+### Backups somewhere else
+
+To have the container write the nightly backups straight to a NAS share or another disk, uncomment
+the two backup lines in `docker-compose.yml` and set the folder next to it, in the `.env` that Compose reads
+(beside `docker-compose.yml`, not `data/.env`):
+
+```sh
+HERMITSHELL_BACKUPS=/mnt/nas/hermitshell-backups
+```
+
+- **Mount it first.** The share must be mounted on the host before the container starts (an `fstab` entry
+  or a systemd mount unit, with `x-systemd.automount` or `_netdev` for network shares). If it isn't,
+  Docker creates an empty folder owned by root on the local disk, and the backups fail until it is.
+- **Let uid 10000 write.** The container runs as uid 10000, so the folder must be writable by it:
+  `sudo chown 10000:10000 /mnt/nas/hermitshell-backups` on a local disk or NFS export (where the NFS server
+  squashes root, set the owner on the NAS itself), or `uid=10000,gid=10000,file_mode=0600,dir_mode=0700`
+  in the CIFS mount options for an SMB share.
+- **Check it.** Press **Back up now** in the server panel on `/admin`. Within a minute it shows the new backup,
+  or the error (a permission error names the folder).
+
+With `HERMES_DATA_KEY` set the archives there are encrypted; keep the key somewhere else.
 
 ## Keeping secrets safe
 
