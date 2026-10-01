@@ -69,6 +69,18 @@ def test_a_full_board_is_trimmed_alongside_the_jobs_sent():
     assert stats["sent"] and stats["board"] and stats["board"][0]["key"].startswith("000")
 
 
+def test_also_suits_and_salaries_at_their_caps_still_fit():
+    stats = worst_stats("\u4e2d")
+    stats["board"] = [worst_card(i, "\u4e2d") for i in range(ps.BOARD_MAX)]
+    for job in stats["sent"]:
+        job["others"] = [{"u": "p" * 40, "fit": 10}] * ps.OTHERS_MAX
+    for r in stats["ranges"].values():
+        r["salary_titles"] = [{"title": "\u4e2d" * ps.MAX_TITLE, "n": 999, "median": 999999}] * ps.SALARY_TITLES
+    stats = ps.fit(stats)
+    assert ps.body_size(stats) <= ps.MAX_BYTES
+    assert stats["sent"] and stats["sent"][0]["others"]
+
+
 def test_ordinary_stats_are_left_alone():
     stats = worst_stats()
     stats["sent"] = stats["sent"][:20]

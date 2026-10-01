@@ -453,7 +453,7 @@ Applied…) are never listed and can't be cancelled here.
 Keys are shown only as `fc-...1234`. Keys typed here are encrypted for your server before they are
 stored, and removed from the Worker after 2 days if HermitShell hasn't collected them.
 
-<img src="images/worker/admin-settings-mismatch.png" alt="Global settings with a warning that the Worker (protocol 3) is older than HermitShell (protocol 4) and the command that redeploys it" width="620">
+<img src="images/worker/admin-settings-mismatch.png" alt="Global settings with a warning that the Worker (protocol 4) is older than HermitShell (protocol 5) and the command that redeploys it" width="620">
 
 When HermitShell and the Worker are different versions, the dashboard and Global settings say which is
 older and how to update it ([why](feedback-worker.md#how-it-stays-safe)).
@@ -564,6 +564,23 @@ sealed for HermitShell and never shown on the board or to recruiters. Cards at I
 an **Interview prep** button, then a **Prep pack** download once HermitShell has made it
 ([more](feedback-worker.md#pipeline)).
 
+### The desk
+
+<img src="images/worker/admin-desk.png" alt="The Desk page: totals tiles, a card per recruiter with each recruit's sent, applied, interviews, offers, placed and fees, and the salaries by job title" width="620">
+
+`/admin/desk`, the **Desk** tab: the whole desk for 7 days, 30 days, 90 days or 12 months.
+
+| Part | What it shows |
+| --- | --- |
+| Tiles | Jobs sent, applied, interviews, offers and placed across every recruit, and (admins only) the fees from placements per currency |
+| A card per recruiter | Their recruits, each with the same counts and a link to their page and jobs sent, and a total row. Recruits with no recruiter come last |
+| **Salaries by job title across the desk** | The median of each advert's lowest yearly figure over the last 90 days, across every recruit's jobs rated, for titles with at least 3 salaries |
+| **Updated** | When HermitShell last sent the desk (at most every 30 minutes, only when something changed) |
+
+A recruiter sees only their own recruits, with no fees ([more](feedback-worker.md#desk)):
+
+<img src="images/worker/admin-desk-recruiter.png" alt="A recruiter's desk with only their recruits and no fees" width="460">
+
 ### A recruit's stats
 
 `/admin/stats?u=<id>`: one profile's numbers at a glance. Hover a bar or ring segment for its figures.
@@ -582,6 +599,7 @@ an **Interview prep** button, then a **Prep pack** download once HermitShell has
 | Where applications stand | Each job's latest answer, over all time: waiting, heard back, interview, offer, placed, rejected; the reply rate |
 | Top employers / Top sources | Where the jobs sent came from, and their hybrid, remote and on-site split |
 | Best matches sent | The three highest scores of the period |
+| Salaries by job title | The median of each advert's lowest yearly figure for the commonest titles rated, once 3 jobs with that title give a salary |
 
 <table><tr><th>90 days, weekly bars</th><th>A new recruit, 7 days</th><th>Before HermitShell sends stats</th></tr>
 <tr><td><img src="images/worker/admin-stats-90-days.png" alt="The stats page for 90 days" width="250"></td>
@@ -621,6 +639,7 @@ it to the profile:
 | Why | Why it was rated a fit, with anything it lacks (contact details and your name are removed) |
 | **About the company** | The employer, what it does, its website, what the role is, and the agency when one posted it |
 | **Strongest matches** / **Missing from the CV** | The skills found, and the ones the advert wants that your CV doesn't show. Press a missing skill the profile has (**+**) to count it as on the CV, as the email's missing-skill tag does: it shows dashed with a tick until HermitShell's next stats update, then with a solid tick |
+| **Also suits** | Up to 5 other recruits this job was a fit for in the last 90 days, with their scores, each opening their jobs sent. Only recruits you can see are listed |
 | **Cover letter** / **Tailored CV** | **Generate** has one made (not emailed), shown with a loading circle until it is ready. **Download** gets the one made in the last `COVER_LETTER_KEEP_DAYS` days (7 by default), from here or an email button; **Email to Sam** (**Email to you**) has HermitShell email that same PDF to the profile, showing **Emailing to Sam…** until it has gone; **Regenerate** replaces it. **Options** picks the length and tone a new cover letter is written in and, for either, takes an optional note (**Anything to stress?**, up to 300 characters); the history says there was a note, not what it said |
 | **Email to Sam** (**Email to you**) | **Send** has HermitShell email the job to the profile as its report card, with a loading circle while it goes; then **Emailed to Sam** with when, and **Send again** |
 | **View the advert** | Opens the advert in a new tab, when the report had a link |

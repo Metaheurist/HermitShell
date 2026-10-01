@@ -909,7 +909,38 @@ history write. HermitShell only sends the board, and the Interview button, once 
 protocol 3 or later (`X-HermitShell-Protocol`), so updating one side before the other is safe.
 Recruiters see and move only their own pool's jobs. Fees stay in the tracker on your server (plain
 SQLite, readable only by its user, like salaries and answers); neither the board nor the stats bring
-them back to the Worker.
+them back to the Worker. Only their totals do, sealed, for the [desk](#desk).
+
+#### Desk
+
+The **Desk** tab (`/admin/desk`) is the whole desk on one page for the last **7 days**, **30 days**,
+**90 days** or **12 months**: tiles for jobs sent, applied, interviews, offers and placed (and, for
+admins, the fees from placements, summed per currency), then one card per recruiter listing their
+recruits with the same counts and a total row. Recruits without a recruiter come last. Each name opens
+the recruit's page, and **Jobs sent** their list. Below is **Salaries by job title across the desk**:
+the median of each advert's lowest yearly figure over the last 90 days, across every recruit's jobs
+rated, in each recruit's own currency, for titles with at least 3 salaries.
+
+<img src="images/worker/admin-desk.png" alt="The Desk page: totals tiles, a card per recruiter with each recruit's sent, applied, interviews, offers, placed and fees, and the salaries by job title" width="720">
+
+- **Counting**: Sent counts the jobs emailed in the period; Applied to Placed count each job once if it
+  reached that stage in the period, however often it was moved (a job that went from Applied to Placed
+  counts in each).
+  Fees come only from **Placed** moves.
+- **Recruiters** get the tab too, with only their own recruits and no fees column or fees tile; the page
+  says **Your recruits only.**
+- **Where it comes from**: `profiles.py` adds up every recruit's tracker (`profile_stats.desk`) and
+  sends the result (`POST /api/desk`) at most every 30 minutes and only when it has changed, so a
+  quiet desk costs no KV writes. The Worker seals it before it is stored (`stats:desk`, like API keys),
+  checks its shape and size (300 KB) first, and draws the page from it. Until the first upload the page
+  says HermitShell sends the desk within 30 minutes.
+
+HermitShell only sends the desk, and the [Also suits](#jobs-sent) list, once the Worker reports
+protocol 4 or later. Until you redeploy the Worker, `doctor.py` and the Global settings page warn that
+it is older than HermitShell; nothing else changes.
+
+<table><tr><th>A recruiter's desk</th></tr>
+<tr><td><img src="images/worker/admin-desk-recruiter.png" alt="A recruiter's desk with only their recruits and no fees" width="480"></td></tr></table>
 
 #### Tasks
 
@@ -975,6 +1006,11 @@ opens the [jobs sent](#jobs-sent).
   heard back, interview, offer, placed and rejected, with the reply rate (any answer after applying).
 - **Top employers**, **Top sources** (with the split between hybrid, remote and on-site) and the
   **best matches sent**, each with a ring of its score.
+- **Salaries by job title**: the median of each advert's lowest yearly figure for the commonest job
+  titles among the jobs rated in the period (up to 8), each shown once 3 jobs with that title give a
+  salary. Titles are matched without brackets or anything after a dash, so "Data Engineer (Python)"
+  and "Data Engineer - Remote" count together, but seniority is kept. The weekly summary email's
+  **Who is hiring** card carries the top 3 as **Typical salaries this week**.
 
 Scores share one colour scale on every chart and list: green from 8, amber from 6, orange at 5 and grey
 below. Rings sweep in as the page opens and scores of 8 and over glow twice, then hold a soft, steady
@@ -1016,7 +1052,14 @@ press one the recruit has and it is stored as the email's **Add to my skills** a
 their skills pool at HermitShell's next sync and counts as on the CV from then on (see
 [Adding missing skills](#adding-missing-skills)). It then shows as added (dashed, with a tick) until
 HermitShell's next stats update, at most 30 minutes later, lists it with a solid tick. Admins can do this for
-any recruit, a recruiter only for their own pool. Below that are the document tiles. For a **Cover
+any recruit, a recruiter only for their own pool.
+
+**Also suits** lists up to 5 other recruits the same job was rated a fit for in the last 90 days (at
+or above each one's own `JOB_SCANNER_MIN_SCORE`), best first, each with their score and a link to
+their jobs sent. HermitShell works it out from the trackers on your server, rereading one only when it
+has changed, and sends only profile ids and scores. The Worker shows only the recruits the viewer can
+see, so a recruiter never learns of a recruit outside their pool, and the recruit themselves never
+appears. Below that are the document tiles. For a **Cover
 letter**, a **Tailored CV** and, once the recruit has answered **I applied** or anything after it, an
 **Interview prep** pack:
 

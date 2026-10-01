@@ -13,7 +13,7 @@ test("a wrong password is refused and the right one opens the recruits", async (
   const table = page.locator("table.recruits");
   for (const name of ["Drew Harper", "Sam Lee", "Jordan Patel"]) await expect(table.getByText(name, { exact: true })).toBeVisible();
   await expect(table.getByText("Alex Morgan", { exact: true })).toHaveCount(0);
-  await expect(page.locator("nav.tabs a")).toHaveText(["Recruits", "Users and roles", "Global settings"]);
+  await expect(page.locator("nav.tabs a")).toHaveText(["Recruits", "Desk", "Users and roles", "Global settings"]);
 });
 
 test("the search box narrows the recruits", async ({ page }) => {

@@ -6,7 +6,7 @@
 import { currencyCode, currencySymbol, moneyIcon } from "./currency.js";
 import { DOC_STYLE, SKILL_URL, docActions, jobHash, validJobKey } from "./docs.js";
 import { HISTORY_URL, PIPELINE_URL } from "./history.js";
-import { BACK_TO_RECRUITS, EXTERNAL_ICON, ago, cleanSkill, esc, page, reloadTo, MONTHS_SHORT as MONTHS } from "./lib.js";
+import { BACK_TO_RECRUITS, EXTERNAL_ICON, PROFILE_RE, ago, cleanSkill, esc, page, reloadTo, MONTHS_SHORT as MONTHS } from "./lib.js";
 
 export const STATS_URL = "/admin/stats";
 export const SENT_URL = "/admin/sent";
@@ -27,6 +27,9 @@ const DAY_MS = 86400000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // The skills HermitShell counts as on the CV (profile_stats.MAX_POOL).
 const MAX_POOL = 200;
+// "Also suits" (profile_stats.OTHERS_MAX) and salaries by job title (profile_stats.SALARY_MIN_N).
+export const OTHERS_MAX = 5;
+export const SALARY_MIN_N = 3;
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 // ------------------------------------------------------------------------- what HermitShell may store
@@ -43,22 +46,29 @@ export function validStats(s) {
     (s.skills == null || (Array.isArray(s.skills) && s.skills.length <= MAX_POOL && s.skills.every((k) => typeof k === "string" && k.length <= 60))) &&
     (s.sent == null || (Array.isArray(s.sent) && s.sent.length <= MAX_SENT &&
       s.sent.every((j) => j && typeof j === "object" && !Array.isArray(j) &&
-        (j.more == null || (typeof j.more === "object" && !Array.isArray(j.more)))))) &&
+        (j.more == null || (typeof j.more === "object" && !Array.isArray(j.more))) && validOthers(j.others)))) &&
     (s.board == null || (Array.isArray(s.board) && s.board.length <= MAX_BOARD && s.board.every(validCard)));
 }
 
 const shortText = (v, n) => v == null || (typeof v === "string" && v.length <= n);
+const validFit = (n) => Number.isInteger(n) && n >= 0 && n <= 10;
+
+function validOthers(v) {
+  return v == null || (Array.isArray(v) && v.length <= OTHERS_MAX &&
+    v.every((o) => o && typeof o === "object" && typeof o.u === "string" && PROFILE_RE.test(o.u) && validFit(o.fit)));
+}
 
 function validCard(c) {
   return Boolean(c) && typeof c === "object" && !Array.isArray(c) && validJobKey(c.key) && BOARD_STAGES.includes(c.stage) &&
     DATE_RE.test(c.day || "") && shortText(c.title, 200) && shortText(c.employer, 120);
 }
 
-// What is stored: the stats without the jobs' details or the board, and "sent:<id>" with both: { jobs, board }.
+// What is stored: the stats without the jobs' details, "Also suits" or the board, and "sent:<id>" with them all:
+// { jobs, board }.
 export function splitStats(stats) {
   const { board, ...rest } = stats;
   const sent = Array.isArray(stats.sent) ? stats.sent : [];
-  return { stats: { ...rest, sent: sent.map(({ more, ...job }) => job) }, sent: { jobs: sent, board: Array.isArray(board) ? board : null } };
+  return { stats: { ...rest, sent: sent.map(({ more, others, ...job }) => job) }, sent: { jobs: sent, board: Array.isArray(board) ? board : null } };
 }
 
 // "sent:<id>" as stored: { jobs, board }, or the jobs alone from before the board. null for what isn't there.
@@ -334,6 +344,20 @@ function topList(pairs, color) {
 <span class="track"><span class="fillbar" style="width:${Math.max(4, (num(n) / max) * 100).toFixed(1)}%;animation-delay:${i * 70}ms"></span></span><b>${compact(num(n))}</b></li>`).join("")}</ul>`;
 }
 
+// Salaries by job title ([{title, n, median, currency?}]): only titles with SALARY_MIN_N salaries or more, so no
+// single advert's salary is shown on its own. A row's own currency wins over the recruit's.
+export function salaryList(rows, currency = "") {
+  const shown = (Array.isArray(rows) ? rows : []).filter((r) => r && typeof r.title === "string" && r.title.trim() &&
+    Number.isInteger(r.n) && r.n >= SALARY_MIN_N && num(r.median)).slice(0, 12);
+  if (!shown.length) return `<p class="muted">Shown once ${SALARY_MIN_N} jobs with the same title give a salary.</p>`;
+  const max = Math.max(...shown.map((r) => num(r.median)));
+  return `<ul class="toplist money k-green">${shown.map((r, i) => {
+    const symbol = currencySymbol(currencyCode(typeof r.currency === "string" ? r.currency : currency));
+    return `<li><span class="name" title="${esc(r.title)}">${esc(r.title.slice(0, 60))} <small class="muted">${r.n} jobs</small></span>
+<span class="track"><span class="fillbar" style="width:${Math.max(4, (num(r.median) / max) * 100).toFixed(1)}%;animation-delay:${i * 70}ms"></span></span><b>${esc(symbol)}${compact(num(r.median))}</b></li>`;
+  }).join("")}</ul>`;
+}
+
 function modes(pairs) {
   const rows = (Array.isArray(pairs) ? pairs : []).filter((p) => Array.isArray(p) && p[0] && num(p[1]));
   const total = rows.reduce((s, p) => s + num(p[1]), 0);
@@ -446,6 +470,17 @@ function gapChips(items, key, ctx) {
   return `<div class="skills gap"><span class="lbl">Missing from the CV</span><div>${chips}</div>${hint}</div>`;
 }
 
+// The other recruits HermitShell rated this job a fit for, each linking to their jobs sent; only those the person
+// looking may see (ctx.visible: id to name), whatever HermitShell sent.
+function alsoSuits(others, ctx) {
+  const seen = (Array.isArray(others) ? others : []).filter((o) => o && ctx.visible?.has(o.u) && validFit(o.fit)).slice(0, OTHERS_MAX);
+  if (!seen.length) return "";
+  return `<div class="skills also"><span class="lbl">Also suits</span><div>${seen.map((o) => {
+    const name = cut(ctx.visible.get(o.u) || o.u, 60);
+    return `<a href="${SENT_URL}?u=${esc(o.u)}" title="Rated ${o.fit}/10 for ${esc(name)}">${esc(name)} <b>${o.fit}/10</b></a>`;
+  }).join("")}</div></div>`;
+}
+
 // What the job's email card showed, below its title line.
 function jobMore(j, fit, color, docs, key, ctx) {
   const { today, currency = "" } = ctx;
@@ -465,7 +500,7 @@ function jobMore(j, fit, color, docs, key, ctx) {
   const url = safeUrl(j.url);
   const advert = url ? `<a class="advert" href="${esc(url)}" target="_blank" rel="noopener noreferrer nofollow">View the advert on ${esc(domain(url))}${EXTERNAL_ICON}</a>` : "";
   return `<div class="more">${chips ? `<div class="facts">${chips}</div>` : ""}${salary}${meters ? `<div class="meters">${meters}</div>` : ""}${why}${about}
-${skillChips("Strongest matches with the CV", words(m.matched, 12), "have")}${gapChips(words(m.gaps, 6), key, ctx)}
+${skillChips("Strongest matches with the CV", words(m.matched, 12), "have")}${gapChips(words(m.gaps, 6), key, ctx)}${alsoSuits(j.others, ctx)}
 ${docs ? `<div class="docs">${docs}</div>` : ""}${advert}</div>`;
 }
 
@@ -500,7 +535,8 @@ const SENT_NOTES = {
 
 // `opts`: range and answer (the filters), open (the job to show opened), done (a note), csrf, sent (the jobs with
 // their details), docs (the letters and CVs kept), emailed (the jobs emailed from here), pending (those being
-// made or sent), added (the skills added from here, docs.addedSkills) and here (the page's address, for reloads).
+// made or sent), added (the skills added from here, docs.addedSkills), visible (the other recruits the person
+// looking may see, id to name, for "Also suits") and here (the page's address, for reloads).
 export async function sentPage(status, stats, pid, opts = {}) {
   const p = (status.profiles || []).find((x) => x.id === pid);
   const back = { wide: true, before: BACK_TO_RECRUITS };
@@ -516,7 +552,7 @@ export async function sentPage(status, stats, pid, opts = {}) {
   const open = /^[0-9a-f]{16}$/.test(opts.open || "") ? opts.open : "";
   const recipient = cut(String(p.name || "").trim().split(/\s+/)[0], 40) || "this recruit";
   const ctx = { profile: pid, csrf: opts.csrf || "", docs: opts.docs || [], emailed: opts.emailed || [], recipient,
-    pending: opts.pending || new Map(), today, open, currency: p.job?.currency, back: `r=${range}${answer ? `&a=${answer}` : ""}`,
+    pending: opts.pending || new Map(), visible: opts.visible || new Map(), today, open, currency: p.job?.currency, back: `r=${range}${answer ? `&a=${answer}` : ""}`,
     skills: new Set((Array.isArray(stats?.skills) ? stats.skills : []).map((k) => cleanSkill(k).toLowerCase()).filter(Boolean)) };
   ctx.adding = new Set((opts.added || []).map((e) => e.s.toLowerCase()).filter((k) => !ctx.skills.has(k)));
   const rows = await Promise.all(shown.map((j, i) => sentRow(j, i, ctx)));
@@ -571,6 +607,7 @@ ${card("Match scores", "star", histogram(r.fit), "", "amber")}
 ${card("Where applications stand", "plane", pipeline(stats.pipeline), "", "green")}
 ${card("Top employers", "target", topList(r.employers, "violet"), "", "violet")}
 ${card("Top sources", "radar", `${topList(r.sources, "blue")}${modes(r.modes)}`, "", "blue")}
+${card("Salaries by job title", moneyIcon("", p.job?.currency), `${salaryList(r.salary_titles, p.job?.currency)}<p class="muted small">The median of each advert's lowest yearly figure, across every job rated.</p>`, "", "green")}
 </div>
 ${card("Best matches sent", "star", bestMatches(r.best), "wide", "green")}`, back);
 }
@@ -656,6 +693,7 @@ border-radius:14px;background:var(--cb)}
 .toplist{list-style:none;padding:0;margin:0;display:grid;gap:9px}
 .toplist li{display:grid;grid-template-columns:minmax(0,1.3fr) 1fr 30px;gap:10px;align-items:center;font-size:13px}
 .toplist .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);font-weight:600}.toplist b{text-align:right}
+.toplist.money li{grid-template-columns:minmax(0,1.6fr) 1fr 56px}.toplist .name small{font-weight:600}
 .stack{display:flex;height:12px;border-radius:99px;overflow:hidden;gap:2px;margin-top:16px;animation:growx .9s var(--ease) both .3s;transform-origin:left}
 .best{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
 .best li{position:relative;overflow:hidden;display:flex;gap:14px;align-items:center;padding:12px 16px 12px 12px;border-radius:16px;
@@ -749,6 +787,9 @@ transition:background .15s,border-color .15s,transform .15s}
 .skills.gap button:hover{background:#fef3c7;border-color:#f59e0b;transform:translateY(-1px);filter:none;box-shadow:none}
 .skills.gap button:focus-visible{outline:3px solid rgba(245,158,11,.35);outline-offset:1px}
 .skills.gap svg{width:12px;height:12px;flex:none}
+.skills.also .lbl{color:#4338ca}.skills.also a{font-size:12px;font-weight:650;padding:3px 10px;border-radius:99px;border:1px solid #c7d2fe;
+background:#eef2ff;color:#4338ca;text-decoration:none;transition:background .15s,transform .15s}
+.skills.also a:hover{background:#e0e7ff;transform:translateY(-1px)}.skills.also a b{font-weight:800}
 .skills.gap span.added,.skills.gap span.adding{display:inline-flex;align-items:center;gap:4px;padding-left:7px;background:#ecfdf5;border-color:#6ee7b7;color:#047857}
 .skills.gap span.adding{border-style:dashed;background:#f0fdf4}
 .skillhint{display:block;margin-top:6px;font-size:12px;color:var(--muted)}

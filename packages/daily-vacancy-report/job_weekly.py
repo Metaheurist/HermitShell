@@ -13,8 +13,10 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
+import money
 from hermes_common import EMAIL_HEAD, email_header, white_label
 from job_tracker import ACTIONS
+from profile_stats import salary_titles
 
 C_BG, C_CARD, C_INK, C_MUTED, C_ACCENT = "#eef1f7", "#ffffff", "#0f172a", "#64748b", "#4f46e5"
 BUTTON_STYLES = {
@@ -202,6 +204,28 @@ def _run_problems(info: dict) -> str:
                    if info[key])
 
 
+def _salary_code(job: dict) -> str:
+    try:
+        details = json.loads(job.get("details") or "{}")
+    except ValueError:
+        return ""
+    return money.currency_code(details.get("salary_code")) if isinstance(details, dict) else ""
+
+
+def weekly_salaries(jobs: list[dict], limit: int = 3) -> list[dict]:
+    """The week's commonest job titles with a salary, each from at least profile_stats.SALARY_MIN_N jobs in one
+    currency: [{title, n, median, currency}]."""
+    by_code: dict[str, list] = {}
+    for j in jobs:
+        by_code.setdefault(_salary_code(j), []).append((j.get("title"), j.get("year_low")))
+    rows = [{**r, "currency": code} for code, pairs in by_code.items() for r in salary_titles(pairs, limit)]
+    return sorted(rows, key=lambda r: (-r["n"], r["title"]))[:limit]
+
+
+def salary_line(rows: list[dict]) -> str:
+    return ", ".join(f"{r['title']} {money.symbol(r['currency'])}{r['median']:,} ({r['n']} jobs)" for r in rows)
+
+
 def weekly_summary(data: dict) -> dict:
     jobs, events, runs = data["jobs"], data["events"], data["runs"]
     fits = [j["fit"] for j in jobs if j.get("fit") is not None]
@@ -227,7 +251,7 @@ def weekly_summary(data: dict) -> dict:
         "gaps": gaps.most_common(10), "spread": spread, "activity": activity, "sources": sources,
         "top": sorted((j for j in jobs if j.get("emailed")), key=lambda j: (j["fit"], j.get("confidence") or 0),
                       reverse=True)[:5],
-        "applications": data["applications"], "runs": len(runs),
+        "applications": data["applications"], "runs": len(runs), "salaries": weekly_salaries(jobs),
     }
 
 
@@ -254,6 +278,8 @@ def build_weekly(data: dict, when: str, title: str, eyebrow: str, now: float,
     companies = "".join(f'<tr><td style="font-size:13px;color:#334155;padding:3px 0">{esc(n)}</td>'
                         f'<td align="right" style="font-size:13px;color:{C_MUTED}">{c} role{"s" if c > 1 else ""}</td></tr>'
                         for n, c in s["companies"]) or f'<tr><td style="color:{C_MUTED};font-size:13px">No jobs rated this week.</td></tr>'
+    salaries = (f'<div style="font-size:12px;color:{C_MUTED};margin-top:8px">Typical salaries this week (the median of '
+                f"each advert's lowest yearly figure): {esc(salary_line(s['salaries']))}</div>" if s["salaries"] else "")
     gaps = "".join(_chip(g, c) for g, c in s["gaps"]) or \
         f'<span style="color:{C_MUTED};font-size:13px">No recurring gaps this week.</span>'
     top = "".join(
@@ -288,7 +314,7 @@ def build_weekly(data: dict, when: str, title: str, eyebrow: str, now: float,
   {_card("Applications", f'<table width="100%" cellpadding="0" cellspacing="0">{apps}</table>'
          f'<div style="font-size:12px;color:{C_MUTED};margin-top:8px">Your feedback this week: {activity}</div>')}
   {_card("Skills that keep coming up as gaps", gaps + f'<div style="font-size:12px;color:{C_MUTED};margin-top:4px">Worth learning or adding to your CV if you already have them.</div>')}
-  {_card("Who is hiring", f'<table width="100%" cellpadding="0" cellspacing="0">{companies}</table>')}
+  {_card("Who is hiring", f'<table width="100%" cellpadding="0" cellspacing="0">{companies}</table>' + salaries)}
   {_card("Fit scores this week", f'<table width="100%" cellpadding="0" cellspacing="0">{spread_rows}</table>')}
   {_card("Source health", f'<table width="100%" cellpadding="0" cellspacing="0">{health}</table>'
          f'<div style="font-size:12px;color:{C_MUTED};margin-top:8px">{s["runs"]} daily runs recorded this week.</div>')}
@@ -303,6 +329,7 @@ def build_weekly(data: dict, when: str, title: str, eyebrow: str, now: float,
         "", "Applications:", *[f"- {a.get('title') or a['key']}: {STATUS_LABELS.get(a['status'], a['status'])}"
                                for a in s["applications"]],
         "", "Common gaps: " + (", ".join(f"{g} ({c})" for g, c in s["gaps"]) or "none"),
+        *(["", f"Typical salaries this week: {salary_line(s['salaries'])}"] if s["salaries"] else []),
         "", "Sources: " + (", ".join(f"{n} {i['found']} found" for n, i in s["sources"].items()) or "no runs"),
         *(["", f"Unsubscribe: {unsubscribe}"] if unsubscribe else []),
     ])

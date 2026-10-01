@@ -1,8 +1,17 @@
 import { expect, test } from "@playwright/test";
 
-import { RECRUITER, hermitShellStatus, reportStatus, signIn } from "./fixtures.js";
+import { RECRUITER, hermitShellApi, hermitShellStatus, reportStatus, signIn } from "./fixtures.js";
 
 test.describe.configure({ mode: "serial" });
+
+const line = (n, fees = {}) => ({ sent: n * 4, applied: n * 2, interview: n, offer: n, placed: n, fees });
+const ranges = (n, fees) => Object.fromEntries(["7", "30", "90", "365"].map((r) => [r, line(n, fees)]));
+
+async function sendDesk(request) {
+  const desk = { v: 1, recruits: { "sam-lee": ranges(1, { GBP: 4500 }), "jordan-patel": ranges(2), "drew-harper": ranges(0) },
+    salaries: [{ title: "Data Engineer", n: 4, median: 52000, currency: "GBP" }] };
+  expect((await hermitShellApi(request, "POST", "/api/desk", { desk })).ok()).toBe(true);
+}
 
 test("an admin adds a recruiter from the Add user window", async ({ page }) => {
   await signIn(page);
@@ -33,7 +42,7 @@ test("a recruiter sees only their own recruits and no admin pages", async ({ bro
   const page = await context.newPage();
   await signIn(page, RECRUITER.username, RECRUITER.password);
   await expect(page.getByRole("heading", { name: "Recruits" })).toBeVisible();
-  await expect(page.locator("nav.tabs a")).toHaveText(["Recruits"]);
+  await expect(page.locator("nav.tabs a")).toHaveText(["Recruits", "Desk"]);
   await expect(page.locator(".srv")).toHaveCount(0);
   const table = page.locator("table.recruits");
   await expect(table.getByText("Sam Lee", { exact: true })).toBeVisible();
@@ -50,5 +59,27 @@ test("a recruiter sees only their own recruits and no admin pages", async ({ bro
 
   await page.goto("/admin/history?u=sam-lee");
   await expect(page.getByText(`Assigned to ${RECRUITER.name}`)).toBeVisible();
+
+  await sendDesk(request);
+  await page.goto("/admin");
+  await page.locator("nav.tabs").getByRole("link", { name: "Desk" }).click();
+  await expect(page.getByRole("heading", { name: "Desk", exact: true })).toBeVisible();
+  const desk = page.locator("table.desk");
+  await expect(desk.getByRole("link", { name: "Sam Lee" })).toBeVisible();
+  await expect(desk.getByText("Jordan Patel")).toHaveCount(0);
+  await expect(page.getByRole("columnheader", { name: "Fees" })).toHaveCount(0);
+  expect(await page.content()).not.toContain("4,500");
   await context.close();
+});
+
+test("an admin's desk shows every recruiter's recruits and the fees from placements", async ({ page, request }) => {
+  await reportStatus(request, hermitShellStatus({ samRecruiter: RECRUITER.username }));
+  await sendDesk(request);
+  await signIn(page);
+  await page.goto("/admin/desk?r=30");
+  const riley = page.locator("section.deskgroup", { hasText: RECRUITER.name });
+  await expect(riley.getByRole("link", { name: "Sam Lee" })).toBeVisible();
+  await expect(riley.locator("tfoot")).toContainText("\u00a34,500");
+  await expect(page.locator("section.deskgroup", { hasText: "No recruiter" }).getByRole("link", { name: "Jordan Patel" })).toBeVisible();
+  await expect(page.getByText("Data Engineer")).toBeVisible();
 });

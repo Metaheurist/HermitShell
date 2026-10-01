@@ -33,7 +33,7 @@ MODEL_REPLY = {
 class FakeApi:
     def __init__(self, items=None, files=None):
         self.items, self.files = list(items or []), dict(files or {})
-        self.acked, self.statuses, self.fulls, self.pushed = [], [], [], []
+        self.acked, self.statuses, self.fulls, self.pushed, self.desks = [], [], [], [], []
 
     def queue(self, full=False):
         self.fulls.append(full)
@@ -51,6 +51,9 @@ class FakeApi:
 
     def stats(self, pid, data):
         self.pushed.append((pid, data))
+
+    def desk(self, data):
+        self.desks.append(data)
 
     def flag(self):
         if getattr(self, "flags", None):
@@ -1437,6 +1440,111 @@ def test_the_board_goes_only_to_a_worker_with_the_pipeline(home, monkeypatch):
         api = FakeApi()
         profiles.push_stats(api, now_for=pid)
         assert ("board" in api.pushed[0][1]) is has_board
+
+
+def _two_recruits(home):
+    profiles.sync(FakeApi([signup()]))
+    profiles.sync(FakeApi([signup(id="queue:1700000000001:abcdef0123456780", name="Jordan Patel",
+                                  email="jordan@example.com")]))
+    return sorted(p["id"] for p in profiles.all_profiles() if not p.get("owner"))
+
+
+def _rate(pid, key, fit, at, title="Data Analyst", year_low=None):
+    from job_tracker import Tracker
+    with Tracker(profiles.tracker_file(pid)) as tracker:
+        tracker.upsert_job(key, {"title": title, "fit": fit, "employer": "Contoso",
+                                 "salary_range": {"year_low": year_low} if year_low else {}}, True, at)
+
+
+def test_also_suits_lists_the_other_recruits_a_job_fits_and_never_the_recruit_themselves(home, monkeypatch):
+    now = profiles.time.time()
+    a, b = _two_recruits(home)
+    _rate(a, "https://jobs.example.com/shared", 8, now)
+    _rate(b, "https://jobs.example.com/shared", 7, now)
+    _rate(a, "https://jobs.example.com/mine", 9, now)
+    _rate(b, "https://jobs.example.com/weak", 2, now)
+    _rate(a, "https://jobs.example.com/weak", 9, now)
+    shared = profiles.shared_jobs([p for p in profiles.all_profiles() if not p.get("owner")], now)
+    assert shared == {"https://jobs.example.com/shared": [(a, 8), (b, 7)]}, "below b's threshold, weak is b's alone"
+    assert profiles.others_for(a, shared) == {"https://jobs.example.com/shared": [{"u": b, "fit": 7}]}
+    assert profiles.others_for(b, shared) == {"https://jobs.example.com/shared": [{"u": a, "fit": 8}]}
+    api = FakeApi()
+    profiles.push_stats(api, now_for=a)
+    sent = {j["key"]: j for j in dict(api.pushed)[a]["sent"]}
+    assert sent["https://jobs.example.com/shared"]["others"] == [{"u": b, "fit": 7}]
+    assert "others" not in sent["https://jobs.example.com/mine"]
+
+
+def test_also_suits_reads_each_tracker_again_only_when_it_changes(home, monkeypatch):
+    now = profiles.time.time()
+    a, b = _two_recruits(home)
+    _rate(a, "https://jobs.example.com/shared", 8, now)
+    _rate(b, "https://jobs.example.com/shared", 8, now)
+    reads = []
+    real = profiles.profile_stats.fits_index
+    monkeypatch.setattr(profiles.profile_stats, "fits_index", lambda *a_, **k: reads.append(a_[0]) or real(*a_, **k))
+    people = [p for p in profiles.all_profiles() if not p.get("owner")]
+    profiles._fits.clear()
+    profiles.shared_jobs(people, now)
+    profiles.shared_jobs(people, now)
+    assert len(reads) == 2, "one read per tracker, then the cache"
+    _rate(b, "https://jobs.example.com/other", 9, now + 5)
+    import os
+    os.utime(profiles.tracker_file(b), (now + 10, now + 10))
+    profiles.shared_jobs(people, now)
+    assert len(reads) == 3
+
+
+def test_the_desk_goes_up_only_to_a_worker_that_has_it_when_it_changes_at_most_every_half_hour(home, monkeypatch):
+    clock = [1_790_000_000.0]
+    monkeypatch.setattr(profiles.time, "time", lambda: clock[0])
+    a, b = _two_recruits(home)
+    monkeypatch.setattr(profiles.worker_link, "desk_ready", lambda: False)
+    api = FakeApi()
+    profiles.push_desk(api)
+    assert api.desks == []
+    monkeypatch.setattr(profiles.worker_link, "desk_ready", lambda: True)
+    profiles.push_desk(api)
+    assert len(api.desks) == 1 and sorted(api.desks[0]["recruits"]) == [a, b]
+    assert set(api.desks[0]["recruits"][a]) == {"7", "30", "90", "365"}
+    _rate(a, "https://jobs.example.com/new", 8, clock[0])
+    clock[0] += 60
+    profiles.push_desk(api)
+    assert len(api.desks) == 1, "not again within DESK_EVERY"
+    clock[0] += profiles.DESK_EVERY
+    profiles.push_desk(api)
+    assert len(api.desks) == 2 and api.desks[1]["recruits"][a]["7"]["sent"] == 1
+    clock[0] += profiles.DESK_EVERY + 1
+    profiles.push_desk(api)
+    assert len(api.desks) == 2, "nothing changed"
+
+
+def test_desk_salaries_need_three_jobs_with_the_same_title(home, monkeypatch):
+    now = profiles.time.time()
+    a, b = _two_recruits(home)
+    for pid, n in ((a, 2), (b, 1)):
+        for i in range(n):
+            _rate(pid, f"https://jobs.example.com/{pid}/{i}", 7, now, "Data Analyst", 40000 + i * 1000)
+    _rate(a, "https://jobs.example.com/x", 7, now, "Data Engineer", 60000)
+    people = [p for p in profiles.all_profiles() if not p.get("owner")]
+    monkeypatch.setattr(profiles.job_settings, "form_values", lambda get: {"currency": "GBP"})
+    monkeypatch.setattr(profiles.money, "rates", lambda *a_, **k: {})
+    data = profiles.desk_payload(people, now)
+    assert data["salaries"] == [{"title": "Data Analyst", "n": 3, "median": 40000, "currency": "GBP"}]
+
+
+def test_desk_totals_that_cannot_be_sent_are_logged_and_retried(home, monkeypatch, capsys):
+    class Down(FakeApi):
+        def desk(self, data):
+            raise requests.ConnectionError("down")
+
+    _two_recruits(home)
+    monkeypatch.setattr(profiles.worker_link, "desk_ready", lambda: True)
+    profiles.push_desk(Down())
+    assert "Could not send the desk totals" in capsys.readouterr().err
+    api = FakeApi()
+    profiles.push_desk(api)
+    assert len(api.desks) == 1
 
 
 def test_a_finished_report_sends_its_stats_at_once(home, monkeypatch):

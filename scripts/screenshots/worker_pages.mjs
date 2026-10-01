@@ -230,6 +230,8 @@ function fakeStats(daysBack, scale, seed) {
     modes: [["Hybrid", 18], ["Remote", 9], ["On-site", 5]].map(([m, c]) => [m, Math.ceil(c * n / 30)]),
     fit: [0, 1, 3, 6, 11, 19, 27, 31, 18, 7, 2].map((c) => Math.ceil(c * n / 30)),
     salary: 52000,
+    salary_titles: [["Data Engineer", 14, 52000], ["Senior Data Engineer", 9, 64000], ["Analytics Engineer", 6, 55000],
+      ["BI Developer", 4, 45000], ["Lead Data Engineer", 3, 75000]].map(([title, c, median]) => ({ title, n: Math.max(3, Math.ceil(c * n / 30)), median })),
     best: [{ title: "Senior Data Engineer (Python, Airflow)", employer: "Northwind Traders", fit: 9, day: new Date(end - 2 * day).toISOString().slice(0, 10) },
       { title: "Analytics Engineer (dbt, Snowflake)", employer: "Contoso", fit: 9, day: new Date(end - 5 * day).toISOString().slice(0, 10) },
       { title: "Data Platform Engineer", employer: "Fabrikam", fit: 8, day: new Date(end - 9 * day).toISOString().slice(0, 10) }],
@@ -249,7 +251,8 @@ function fakeStats(daysBack, scale, seed) {
     title, employer, location, mode, salary, fit, source, answer,
     day: new Date(end - [0, 0, 0, 1, 1, 2, 4, 5, 8][i] * day).toISOString().slice(0, 10),
     url: i % 4 === 3 ? "" : `https://jobs.example.com/ad/${1000 + i}`, key: `https://jobs.example.com/ad/${1000 + i}`,
-    more: MORE[i] || { type: "Permanent", confidence: 70, matched: ["Python", "SQL"], gaps: ["Kubernetes"] } }));
+    more: MORE[i] || { type: "Permanent", confidence: 70, matched: ["Python", "SQL"], gaps: ["Kubernetes"] },
+    ...(i === 0 ? { others: [{ u: "sam-lee", fit: 8 }, { u: "jordan-patel", fit: 7 }] } : {}) }));
   const iso = (ago) => new Date(end - ago * day).toISOString().slice(0, 10);
   const board = [...sent.filter((j) => j.answer && j.answer !== "not_for_me").map((j) => ({ key: j.key, title: j.title, employer: j.employer,
     stage: j.answer, day: j.day })),
@@ -448,6 +451,16 @@ await casey("/admin/action", { method: "POST", form: { csrf: caseyCsrf, action: 
 await save("admin-history", await casey(`/admin/history?u=sam-lee&m=${new Date(now - 5 * day).toISOString().slice(0, 7)}`));
 // Avery Lane's Pipeline, as an admin sees it.
 await save("admin-pipeline", await admin("/admin/pipeline?u=avery-lane"));
+// The desk HermitShell sends (sealed on the Worker): every recruit's totals by recruiter, as an admin and as Casey.
+const deskLine = (n, fee) => ({ sent: n * 9, applied: n * 3, interview: n * 2, offer: n, placed: Math.ceil(n / 2), fees: fee ? { GBP: fee } : {} });
+const deskRanges = (n, fee) => ({ 7: deskLine(n, 0), 30: deskLine(n * 3, fee), 90: deskLine(n * 8, fee * 2), 365: deskLine(n * 20, fee * 5) });
+await call("/api/desk", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: { desk: { v: 1,
+  recruits: { "avery-lane": deskRanges(2, 9500), "sam-lee": deskRanges(1, 7200), "jordan-patel": deskRanges(1, 0) },
+  salaries: [{ title: "Data Engineer", n: 18, median: 52000, currency: "GBP" }, { title: "Data Analyst", n: 11, median: 38000, currency: "GBP" },
+    { title: "Senior Data Engineer", n: 9, median: 64000, currency: "GBP" }, { title: "BI Developer", n: 6, median: 45000, currency: "GBP" },
+    { title: "Analytics Engineer", n: 4, median: 55000, currency: "GBP" }] } } });
+await save("admin-desk", await admin("/admin/desk"));
+await save("admin-desk-recruiter", await casey("/admin/desk"));
 
 // Theme and branding: the page as it opens, then the dashboard under another name in the Ocean palette, then back.
 await save("admin-theme", await admin("/admin/theme"));

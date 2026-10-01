@@ -18,7 +18,10 @@ its free models may keep what they are sent. This page, the sign-up form and the
 only until HermitShell collects it (at most 30 days); the operator's admin page there lists your name and email address,
 a stats page of counts (jobs found, buttons pressed, the employers and titles of jobs sent) and the jobs sent to you in
 the last 90 days (each advert's title, employer, place, salary, link, the details shown on its email card and the last
-button you pressed on it), never your notes, until HermitShell next reports that you have left. It also keeps a history of
+button you pressed on it), never your notes, until HermitShell next reports that you have left. A job that also suited
+you can show your match score on another job seeker's list, only to those who can sign in to your page, and an encrypted
+desk page counts the jobs sent to you and how far your applications got (with any placement fee shown only to the
+admins). It also keeps a history of
 what was done for you (changes to your profile, the requests and buttons you or the operator pressed with each job's title,
 and the reports that ran), never your notes, until you unsubscribe or are deleted. Your recruiter and the admins can
 keep their own notes and short tags about you there (for example how a call went), encrypted, until you unsubscribe or

@@ -107,6 +107,11 @@ STATUS_EVERY = 900
 # Each changed profile's stats are sent at most this often (the free plan allows 1,000 KV writes a day), and at
 # once when its report finishes.
 STATS_EVERY = 1800
+# The desk's totals (stats:desk) go up when they change, at most this often: at most 48 KV writes a day.
+DESK_EVERY = 1800
+# "Also suits" looks at jobs first seen in the last OTHERS_DAYS days that met the recruit's own email threshold.
+OTHERS_DAYS = 90
+_fits: dict[str, tuple[float, int, dict[str, int]]] = {}
 # The cron job runs every 5 minutes and the scheduler skips a run while the last one is still going, so each run
 # watches for dashboard changes until comfortably before the next (counted from when the run started).
 WATCH_SECONDS = 250
@@ -827,6 +832,10 @@ class Api:
         """A profile's stats page numbers; None removes them."""
         self.link.request("POST", "/api/stats", json_body={"u": pid, "stats": data})
 
+    def desk(self, data: dict) -> None:
+        """Every recruit's totals for the desk page; the Worker seals them, since they hold fees."""
+        self.link.request("POST", "/api/desk", json_body={"desk": data})
+
     def invite(self, note: str) -> dict:
         return self.call("POST", "/api/invite", json={"note": note}, retry=False)
 
@@ -1329,6 +1338,39 @@ def tracker_file(pid: str) -> Path:
     return STATE_DIR / "job_tracker.db" if pid == OWNER else profile_dir(pid) / "state" / "job_tracker.db"
 
 
+def shared_jobs(people: list[dict], now: float) -> dict[str, list[tuple[str, int]]]:
+    """{job key: [(profile id, fit), ...]} for the jobs that suit more than one recruit: first seen in the last
+    OTHERS_DAYS days with a fit at or above each one's own email threshold. Each tracker is read again only when
+    its file has changed, so one run reads each at most once."""
+    found: dict[str, list[tuple[str, int]]] = {}
+    for person in people:
+        pid, db = person["id"], tracker_file(person["id"])
+        try:
+            least = int(profile_getter(person)("JOB_SCANNER_MIN_SCORE", "5"))
+        except ValueError:
+            least = 5
+        try:
+            mtime = db.stat().st_mtime if db.is_file() else 0.0
+            cached = _fits.get(pid)
+            if not cached or cached[:2] != (mtime, least):
+                _fits[pid] = cached = (mtime, least, profile_stats.fits_index(db, now - OTHERS_DAYS * 86400, least))
+        except (sqlite3.Error, OSError) as exc:
+            log(f"Could not read the jobs of {pid} for Also suits: {exc.__class__.__name__}")
+            continue
+        for key, fit in cached[2].items():
+            found.setdefault(key, []).append((pid, fit))
+    for pid in [p for p in _fits if p not in {x["id"] for x in people}]:
+        _fits.pop(pid)
+    return {k: sorted(v, key=lambda e: (-e[1], e[0])) for k, v in found.items() if len(v) > 1}
+
+
+def others_for(pid: str, shared: dict[str, list[tuple[str, int]]]) -> dict[str, list[dict]]:
+    """The "Also suits" list of each of `pid`'s shared jobs: the other recruits, best fit first. The Worker shows
+    only those the person looking may see."""
+    return {key: [{"u": o, "fit": f} for o, f in fits if o != pid][:profile_stats.OTHERS_MAX]
+            for key, fits in shared.items() if any(o == pid for o, _ in fits)}
+
+
 def push_stats(api: Api, now_for: str = "") -> None:
     """Send each profile's stats when they have changed, at most every STATS_EVERY seconds per profile (at once
     for `now_for`), and remove those of deleted profiles."""
@@ -1338,6 +1380,7 @@ def push_stats(api: Api, now_for: str = "") -> None:
     tz, now = ZoneInfo(timezone_name()), time.time()
     people = [p for p in all_profiles() if not p.get("owner")]
     fx = None
+    shared = None
     ids = [p["id"] for p in people]
     for person in people:
         pid = person["id"]
@@ -1348,9 +1391,11 @@ def push_stats(api: Api, now_for: str = "") -> None:
         currency = job_settings.form_values(profile_getter(person))["currency"]
         if currency and fx is None:
             fx = money.rates(STATE_DIR, env("JOB_FX_URL", money.FX_URL))
+        if shared is None:
+            shared = shared_jobs(people, now)
         try:
             data = profile_stats.collect(tracker_file(pid), tz, now, private, currency, fx or {},
-                                         board=worker_link.pipeline_ready())
+                                         board=worker_link.pipeline_ready(), others=others_for(pid, shared))
         except (sqlite3.Error, OSError, ValueError) as exc:
             log(f"Could not read the stats of {pid}: {exc.__class__.__name__}")
             continue
@@ -1372,8 +1417,56 @@ def push_stats(api: Api, now_for: str = "") -> None:
     write_json(marker, sent)
 
 
+def desk_payload(people: list[dict], now: float) -> dict:
+    """Every recruit's desk line (profile_stats.desk) in their own currency, and the salaries by job title across
+    the desk, per currency, each from at least profile_stats.SALARY_MIN_N jobs."""
+    tz, fx = ZoneInfo(timezone_name()), None
+    recruits, pairs = {}, {}
+    for person in people:
+        pid = person["id"]
+        currency = job_settings.form_values(profile_getter(person))["currency"]
+        if currency and fx is None:
+            fx = money.rates(STATE_DIR, env("JOB_FX_URL", money.FX_URL))
+        try:
+            line = profile_stats.desk(tracker_file(pid), tz, now, currency, fx or {})
+        except (sqlite3.Error, OSError, ValueError) as exc:
+            log(f"Could not read the desk totals of {pid}: {exc.__class__.__name__}")
+            continue
+        recruits[pid] = line["ranges"]
+        if currency:
+            pairs.setdefault(currency, []).extend(line["salaries"])
+    salaries = [{**row, "currency": code} for code, jobs in pairs.items() for row in profile_stats.salary_titles(jobs)]
+    salaries.sort(key=lambda r: (-r["n"], r["title"], r["currency"]))
+    return {"v": 1, "recruits": recruits, "salaries": salaries[:12]}
+
+
+def push_desk(api: Api) -> None:
+    """Send the desk's totals when they have changed, at most every DESK_EVERY seconds, once the Worker has the
+    desk page."""
+    if not worker_link.desk_ready():
+        return
+    marker = PROFILES_DIR / ".desk.json"
+    last = read_json(marker, {})
+    last = last if isinstance(last, dict) else {}
+    now = time.time()
+    if now - last.get("at", 0) < DESK_EVERY:
+        return
+    data = desk_payload([p for p in all_profiles() if not p.get("owner")], now)
+    digest = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+    if last.get("digest") == digest:
+        write_json(marker, {"digest": digest, "at": now})
+        return
+    try:
+        api.desk(data)
+    except requests.RequestException as exc:
+        log(f"Could not send the desk totals to the Worker: {worker_link.reason(exc)}")
+        return
+    write_json(marker, {"digest": digest, "at": now})
+
+
 def push_status(api: Api, force: bool = False, stats_for: str = "") -> None:
     push_stats(api, stats_for)
+    push_desk(api)
     payload = status_payload()
     digest = hashlib.sha256(json.dumps(_stable(payload), sort_keys=True).encode()).hexdigest()
     marker = PROFILES_DIR / ".status"

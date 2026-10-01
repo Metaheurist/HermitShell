@@ -8,6 +8,20 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **The desk, Also suits, and salaries by job title.** A new **Desk** tab (`/admin/desk`) shows the jobs
+  sent, applied, interviews, offers and placed for 7 days to 12 months, as totals and as a card per
+  recruiter with each recruit's line, plus (admins only) the fees from placements per currency and the
+  desk's salaries by job title. Recruiters get it too, with only their own recruits and no fees.
+  `profiles.py` adds up the trackers (`profile_stats.desk`) and posts them to the Worker's new `/api/desk`
+  at most every 30 minutes and only when they changed; the Worker checks the shape and size and seals them
+  before storing (`stats:desk`). An opened job on **Jobs sent** lists who else it suits: up to 5 other
+  recruits it was a fit for in the last 90 days, with their scores, sent as profile ids only and shown only
+  for recruits the viewer can see. The stats page has a **Salaries by job title** card (the median of each
+  advert's lowest yearly figure for the commonest titles, once 3 give a salary), and the weekly summary's
+  Who is hiring card adds **Typical salaries this week**. The Worker protocol goes to 4, and HermitShell
+  sends the desk and Also suits only to a Worker that speaks it; `doctor.py` warns until the Worker is
+  redeployed.
+
 - **Interview prep packs.** A new `interview_prep` document: a PDF with facts about the employer from the
   advert only, the eight questions they are most likely to ask (each with why), answers in situation, task,
   action and result form built only from the job's CV evidence map (none when there is no map), and

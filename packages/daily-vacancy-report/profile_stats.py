@@ -56,6 +56,16 @@ MAX_ABOUT = 400
 MAX_SKILLS = 12
 MAX_GAPS = 6
 MAX_POOL = 200
+# Salaries by job title: the most common titles with a salary, each only once SALARY_MIN_N jobs have one, so a
+# single advert's salary is never shown on its own.
+SALARY_TITLES = 8
+SALARY_MIN_N = 3
+# "Also suits": other recruits a job sent here was rated a fit for, at most OTHERS_MAX per job.
+OTHERS_MAX = 5
+# The desk (stats:desk): per recruit, what happened in each range, and fees from placements.
+DESK_COUNTS = ("sent", "applied", "interview", "offer", "placed")
+DESK_SALARY_DAYS = 90
+_TITLE_NOISE = re.compile(r"\([^)]*\)|\[[^\]]*\]|\s+[-\u2013\u2014|,:]\s.*$")
 # The Worker refuses a stats upload over MAX_STATS_BYTES (stats.js); a little is kept back for the envelope.
 MAX_BYTES = 600 * 1024 - 1024
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]+")
@@ -86,6 +96,26 @@ def _empty(today: date) -> dict:
             "skills": []}
 
 
+def title_key(title) -> str:
+    """A job title as it is grouped for salaries: without bracketed parts or what follows " - " or " | ", in
+    lower case. Seniority is kept, since it moves the salary."""
+    text = _TITLE_NOISE.sub(" ", _clean(title, MAX_TITLE)).lower()
+    return " ".join(re.sub(r"[^\w+#. ]", " ", text).split())
+
+
+def salary_titles(jobs, limit: int = SALARY_TITLES, least: int = SALARY_MIN_N) -> list[dict]:
+    """[{title, n, median}] for the `limit` titles with the most salaries among (title, yearly salary) pairs, each
+    with at least `least` of them; the title shown is the commonest spelling of the group."""
+    groups: dict[str, list] = {}
+    for title, value in jobs:
+        key = title_key(title)
+        if key and isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+            groups.setdefault(key, []).append((_TITLE_NOISE.sub(" ", _clean(title, MAX_TITLE)).strip(), value))
+    ranked = sorted(((k, v) for k, v in groups.items() if len(v) >= least), key=lambda kv: (-len(kv[1]), kv[0]))
+    return [{"title": Counter(t for t, _ in v).most_common(1)[0][0], "n": len(v),
+             "median": int(statistics.median(x for _, x in v))} for _, v in ranked[:limit]]
+
+
 def _range(sent: list[dict], rated: list[dict]) -> dict:
     fit = [0] * 11
     for job in rated:
@@ -99,6 +129,7 @@ def _range(sent: list[dict], rated: list[dict]) -> dict:
         "modes": Counter(j["mode"] for j in sent if j["mode"]).most_common(4),
         "fit": fit,
         "salary": int(statistics.median(salaries)) if salaries else None,
+        "salary_titles": salary_titles((j["title"], j["year_low"]) for j in rated),
         "best": [{"title": j["title"], "employer": j["employer"], "fit": j["fit"], "day": j["day"]} for j in best],
     }
 
@@ -202,11 +233,13 @@ def _board(con: sqlite3.Connection, since: float, tz: ZoneInfo) -> list[dict]:
 
 
 def collect(db: Path, tz: ZoneInfo, now: float | None = None, private: tuple[str, ...] = (), currency: str = "",
-            rates: dict[str, float] | None = None, board: bool = False) -> dict:
+            rates: dict[str, float] | None = None, board: bool = False,
+            others: dict[str, list[dict]] | None = None) -> dict:
     """A profile's stats; a missing tracker gives empty stats. Only reads the database. `private` words (the
     profile's name and email) are removed from the job details. Salaries are in `currency` at `rates` (those
     that can't be converted are left out of the median); empty `currency` takes them as they are. `board` adds
-    the Pipeline board (a Worker older than worker_link.PIPELINE_PROTOCOL has nowhere to show it)."""
+    the Pipeline board (a Worker older than worker_link.PIPELINE_PROTOCOL has nowhere to show it). `others`
+    maps a job's key to the other recruits it suits ([{u, fit}], best first), shown as "Also suits"."""
     now = now or time.time()
     today = datetime.fromtimestamp(now, tz).date()
     first = today - timedelta(days=STATS_DAYS - 1)
@@ -287,7 +320,7 @@ def collect(db: Path, tz: ZoneInfo, now: float | None = None, private: tuple[str
         cutoff = today - timedelta(days=r - 1)
         stats["ranges"][str(r)] = _range([j for j in sent if j["d"] >= cutoff], [j for j in rated if j["d"] >= cutoff])
     stats["pipeline"].update(Counter(answers.values()))
-    stats["sent"] = _sent_list(sent, answers, today - timedelta(days=SENT_DAYS - 1), private)
+    stats["sent"] = _sent_list(sent, answers, today - timedelta(days=SENT_DAYS - 1), private, others or {})
     stats["skills"] = [k for k in dict.fromkeys(redact(_clean(k, MAX_NAME), private) for k in pool if isinstance(k, str))
                        if k and k != REMOVED]
     return fit(stats)
@@ -308,11 +341,13 @@ def fit(stats: dict, limit: int = MAX_BYTES) -> dict:
     return stats
 
 
-def _sent_list(sent: list[dict], answers: dict, cutoff: date, private: tuple[str, ...] = ()) -> list[dict]:
+def _sent_list(sent: list[dict], answers: dict, cutoff: date, private: tuple[str, ...] = (),
+               others: dict[str, list[dict]] | None = None) -> list[dict]:
     recent = sorted((j for j in sent if j["d"] >= cutoff), key=lambda j: -j["first_seen"])[:SENT_MAX]
     out = []
     for j in recent:
         r = j["row"]
+        also = (others or {}).get(r["key"]) or []
         out.append({"title": j["title"], "employer": j["employer"], "day": j["day"],
                     "fit": j["fit"] if isinstance(j["fit"], int) and 0 <= j["fit"] <= 10 else None,
                     "location": _detail(r["details"], "location", MAX_NAME), "mode": j["mode"],
@@ -320,8 +355,72 @@ def _sent_list(sent: list[dict], answers: dict, cutoff: date, private: tuple[str
                     or _detail(r["details"], "salary", 40),
                     "source": j["source"], "url": _url(r["url"]), "answer": answers.get(r["key"], ""),
                     "key": r["key"] if len(r["key"] or "") <= MAX_KEY and not _CONTROL.search(r["key"]) else "",
-                    "more": _more(r, private)})
+                    "more": _more(r, private), **({"others": also[:OTHERS_MAX]} if also else {})})
     return out
+
+
+def fits_index(db: Path, since: float, least: int) -> dict[str, int]:
+    """{job key: fit} for the tracker's jobs first seen since `since` with a fit of at least `least`, for the
+    "Also suits" index; a missing tracker gives {}."""
+    if not db.is_file():
+        return {}
+    con = sqlite3.connect(str(db), timeout=30)
+    try:
+        con.execute("PRAGMA query_only = ON")
+        rows = con.execute("SELECT key, fit FROM jobs WHERE first_seen >= ? AND fit >= ?", (since, least)).fetchall()
+    finally:
+        con.close()
+    return {k: f for k, f in rows if isinstance(k, str) and k and len(k) <= MAX_KEY and isinstance(f, int)
+            and 0 <= f <= 10}
+
+
+def desk(db: Path, tz: ZoneInfo, now: float | None = None, currency: str = "",
+         rates: dict[str, float] | None = None) -> dict:
+    """One recruit's line on the desk: for each range, the jobs sent and the jobs that reached Applied, Interview,
+    Offer and Placed (each job once), and the fees of those placed, by currency; and (title, salary in `currency`)
+    for the jobs rated in the last DESK_SALARY_DAYS days, for the desk's salaries. Only reads the database."""
+    now = now or time.time()
+    today = datetime.fromtimestamp(now, tz).date()
+    empty = {str(r): {**{c: 0 for c in DESK_COUNTS}, "fees": {}} for r in RANGES}
+    if not db.is_file():
+        return {"ranges": empty, "salaries": []}
+    start = datetime.combine(today - timedelta(days=max(RANGES) - 1), datetime.min.time(), tz).timestamp()
+    con = sqlite3.connect(str(db), timeout=30)
+    con.row_factory = sqlite3.Row
+    try:
+        con.execute("PRAGMA query_only = ON")
+        jobs = con.execute("SELECT key, first_seen, emailed, title, year_low, salary, details FROM jobs "
+                           "WHERE first_seen >= ?", (start,)).fetchall()
+        marks = ",".join("?" * (len(DESK_COUNTS) - 1))
+        columns = {r[1] for r in con.execute("PRAGMA table_info(events)")}
+        events = con.execute(f"SELECT key, action, at, {'meta' if 'meta' in columns else 'NULL AS meta'} FROM events "
+                             f"WHERE at >= ? AND action IN ({marks}) ORDER BY at", (start, *DESK_COUNTS[1:])).fetchall()
+    finally:
+        con.close()
+    out = empty
+    for r in RANGES:
+        cutoff = datetime.combine(today - timedelta(days=r - 1), datetime.min.time(), tz).timestamp()
+        line = out[str(r)]
+        line["sent"] = sum(1 for j in jobs if j["emailed"] and j["first_seen"] >= cutoff)
+        latest: dict[tuple[str, str], sqlite3.Row] = {}
+        for e in events:
+            if e["at"] >= cutoff:
+                latest[(e["action"], e["key"])] = e
+        for (action, _), e in latest.items():
+            line[action] += 1
+            if action == "placed" and e["meta"]:
+                try:
+                    meta = json.loads(e["meta"])
+                except ValueError:
+                    meta = {}
+                fee, code = (meta.get("fee"), meta.get("currency")) if isinstance(meta, dict) else (None, None)
+                code = money.currency_code(code)
+                if isinstance(fee, (int, float)) and not isinstance(fee, bool) and fee >= 0 and code:
+                    line["fees"][code] = round(line["fees"].get(code, 0) + fee, 2)
+    recent = datetime.combine(today - timedelta(days=DESK_SALARY_DAYS - 1), datetime.min.time(), tz).timestamp()
+    salaries = [(_clean(j["title"], MAX_TITLE), value) for j in jobs if j["first_seen"] >= recent
+                and (value := _year_low(j, currency, rates or {}))]
+    return {"ranges": out, "salaries": salaries}
 
 
 if __name__ == "__main__":

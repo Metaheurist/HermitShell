@@ -13,7 +13,7 @@ import { POLL_PATH, hubNonce } from "./hub.js";
 import { authorised, limitedBytes, safeEqual, hex } from "./lib.js";
 
 // 3: the Pipeline (interview, offer and placed answers, the stats' board, POST /admin/stage).
-export const PROTOCOL = 3;
+export const PROTOCOL = 4;
 export const SIGN_WINDOW_MS = 5 * 60 * 1000;
 // The largest signed body: a kept cover letter or CV (docs.js) with room to spare.
 export const MAX_SIGNED_BYTES = 2.5 * 1024 * 1024;

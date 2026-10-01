@@ -24,9 +24,11 @@ import requests
 
 import hermes_common as hc
 
-PROTOCOL = 3
+PROTOCOL = 4
 # The Worker version that has the Pipeline (interview, offer and placed, and the stats' board).
 PIPELINE_PROTOCOL = 3
+# The Worker version that has the desk (POST /api/desk and /admin/desk).
+DESK_PROTOCOL = 4
 SIGN_CONTEXT = b"hermitshell api v1"
 RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 ATTEMPTS = 3
@@ -83,6 +85,11 @@ def worker_protocol() -> dict:
 def pipeline_ready() -> bool:
     """Whether the Worker has the Pipeline, so interview buttons and the board can be sent to it."""
     return worker_protocol().get("protocol", 0) >= PIPELINE_PROTOCOL
+
+
+def desk_ready() -> bool:
+    """Whether the Worker has the desk, so its totals can be sent to it."""
+    return worker_protocol().get("protocol", 0) >= DESK_PROTOCOL
 
 
 def _remember_protocol(value: int) -> None:

@@ -20,7 +20,8 @@ import { STAGE_LABELS } from "./pipeline.js";
 import { esc, limitedForm, newId, page, redirect, rememberWeek, safeEqual, when } from "./lib.js";
 import { SEAL_ALG } from "./seal.js";
 import { SETTINGS_URL } from "./settings.js";
-import { splitStats, zonedToday } from "./stats.js";
+import { FIELDS, RANGES, splitStats, zonedToday } from "./stats.js";
+import { COUNTS as DESK_COUNTS, storeDesk } from "./desk.js";
 import { forgetRequests, requests } from "./tasks.js";
 
 export const DEMO_URL = "/admin/demo";
@@ -473,7 +474,9 @@ function statsFor(p, end, n) {
       Math.round(sent * rand() * 0.45), 1, pick(0.4), pick(0.25), pick(0.3), pick(0.16), pick(0.06), pick(0.05), pick(0.1), pick(0.05), pick(0.06),
       pick(0.04), pick(0.015), pick(0.008)];
   }
-  const sent = jobsFor(p, end);
+  const peers = PEOPLE.filter((x) => x.id !== p.id && x.employers.length);
+  const sent = jobsFor(p, end).map((j, i) => (i % 3 ? j
+    : { ...j, others: [peers[(n + i) % peers.length], peers[(n + i + 2) % peers.length]].map((x, k) => ({ u: x.id, fit: j.fit - 1 - k })) }));
   const board = [...sent.filter((j) => j.answer && j.answer !== "not_for_me").map((j) => ({ key: j.key, title: j.title, employer: j.employer,
     stage: j.answer, day: j.day })), ...EARLIER.filter((_, i) => i < Math.ceil(p.scale * 4)).map(([title, employer, stage, ago], i) => ({
     key: `https://jobs.example.com/demo/${p.id}/${900 + i}`, title: `${title}, ${p.titles[0]}`.slice(0, 90), employer, stage,
@@ -485,6 +488,9 @@ function statsFor(p, end, n) {
     modes: scaled([["Hybrid", 18], ["Remote", 9], ["On-site", 5]], k / 30),
     fit: [0, 1, 3, 6, 11, 19, 27, 31, 18, 7, 2].map((c) => Math.ceil(c * k * p.scale / 30)),
     salary: p.salary,
+    salary_titles: [[`Senior ${p.titles[0]}`, 5, 1.25], ...p.titles.map((t, i) => [t, 12 - i * 4, 1 - i * 0.08])]
+      .map(([title, c, pay]) => ({ title, n: Math.max(3, Math.ceil(c * k * p.scale / 30)), median: Math.round(p.salary * pay / 500) * 500 }))
+      .sort((a, b) => b.n - a.n),
     best: sent.slice(0, 3).map((j) => ({ title: j.title, employer: j.employer, fit: j.fit, day: j.day })),
   });
   const pipeline = Object.fromEntries(Object.entries({ interested: 9, good_match: 4, not_for_me: 12, applied: 6, heard_back: 3, rejected: 2,
@@ -581,6 +587,27 @@ async function put(env, key, value) {
   await env.FEEDBACK.put(key, JSON.stringify(value));
 }
 
+// A recruit's desk line from their made-up daily counts, as profile_stats.desk would give it, with a made-up fee
+// for each placement.
+function deskLine(stats, end) {
+  return Object.fromEntries(Object.keys(RANGES).map((r) => {
+    const from = isoDay(end - (Number(r) - 1) * DAY);
+    const line = Object.fromEntries(DESK_COUNTS.map((k) => [k, 0]));
+    for (const [day, row] of Object.entries(stats.days || {})) {
+      if (day >= from) for (const k of DESK_COUNTS) line[k] += Number(row[FIELDS.indexOf(k)]) || 0;
+    }
+    return [r, { ...line, fees: line.placed ? { GBP: line.placed * 8500 } : {} }];
+  }));
+}
+
+const DEMO_SALARIES = [
+  { title: "Data Engineer", n: 14, median: 52000, currency: "GBP" },
+  { title: "Senior Data Analyst", n: 9, median: 48000, currency: "GBP" },
+  { title: "Marketing Manager", n: 7, median: 41000, currency: "GBP" },
+  { title: "Software Engineer", n: 6, median: 55000, currency: "GBP" },
+  { title: "Product Designer", n: 4, median: 46000, currency: "GBP" },
+];
+
 async function seed(env) {
   const now = Date.now();
   const end = Date.parse(`${zonedToday(TZ, now)}T00:00:00Z`);
@@ -589,13 +616,16 @@ async function seed(env) {
   await put(env, "accounts", { admin: { roles: ["admin", "recruiter"] },
     users: RECRUITERS.map((r) => ({ ...r, hash: "0".repeat(64), salt: "0".repeat(32), iter: 30000, v: "demo" })) });
 
+  const desk = {};
   for (const [n, p] of PEOPLE.entries()) {
     if (p.noCv || !p.employers.length) continue;
     const { stats, sent } = splitStats(statsFor(p, end, n));
     await put(env, `stats:${p.id}`, stats);
     await put(env, `sent:${p.id}`, sent);
     await rememberWeek(env, p.id, stats, now);
+    desk[p.id] = deskLine(stats, end);
   }
+  if (env.JOB_FEEDBACK_SECRET) await storeDesk(env, { recruits: desk, salaries: DEMO_SALARIES });
 
   // Each recruit's history, in the entries record() writes, one KV value per month.
   const names = Object.fromEntries([["admin", ADMIN_NAME], ...RECRUITERS.map((r) => [r.id, r.name])]);

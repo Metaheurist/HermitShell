@@ -51,7 +51,7 @@ export const USERS_URL = "/admin/users";
 
 // Recruiters only have the Recruits tab: users and global settings are for admins.
 export function nav(active, admin = true) {
-  const tabs = [["profiles", "/admin", "Recruits"], ...(admin
+  const tabs = [["profiles", "/admin", "Recruits"], ["desk", "/admin/desk", "Desk"], ...(admin
     ? [["users", USERS_URL, "Users and roles"], ["settings", SETTINGS_URL, "Global settings"]] : [])];
   return `<nav class="tabs">${tabs.map(([id, href, label]) =>
     `<a href="${href}"${id === active ? ' class="on" aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;

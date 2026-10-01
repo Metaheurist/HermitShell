@@ -7,10 +7,11 @@
 // admin's is the ADMIN_PASSWORD secret, so they are shown how to change that). Admins see every recruit; a recruiter sees only their own pool, and every
 // route below checks that, not just the links on the page. Signed-in pages create invite links, show the recruits
 // HermitShell reports, and queue changes that HermitShell applies as soon as the live link tells it (settings pages:
-// settings.js; each recruit's stats page: stats.js; web search keys: keys.js; recruit search: search.js; the task
+// settings.js; each recruit's stats page: stats.js; the desk: desk.js; web search keys: keys.js; recruit search: search.js; the task
 // list: tasks.js; the live link: hub.js; demo mode, made-up data on every signed-in page: demo.js). Nothing here can
 // reach the HermitShell server: HermitShell connects out to /api/live and reads /api/queue with its API token.
 
+import { DESK_URL, MAX_DESK_BYTES, deskPage, readDesk, storeDesk, validDesk } from "./desk.js";
 import { DEMO_DONE, DEMO_URL, demoEnv, demoMode, demoRibbon, demoSection, demoToggle, saveDemo } from "./demo.js";
 import { HISTORY_URL, PIPELINE_URL, historyPage, listed, moveOwnerHistory, record, recordReported } from "./history.js";
 import { META_STAGES, STAGE_LABELS, STAGE_URL, pipelineBack, pipelinePage, requestStage, stageMeta } from "./pipeline.js";
@@ -913,6 +914,10 @@ async function signedInRoute(request, env, s, path) {
       demo: demoSection(s.demo, s.csrf, current.timezone, done === "demo_on" || done === "demo_off") });
   }
   const url = new URL(request.url);
+  if (path === DESK_URL && request.method === "GET") {
+    const [current, desk] = await Promise.all([status(env), readDesk(env)]);
+    return deskPage(current, desk, s.me, recruiters(s.acc, current, env), url.searchParams.get("r"));
+  }
   const u = url.searchParams.get("u") || "";
   if (path === "/admin/profile" && request.method === "GET") {
     const [current, queue, held, info] = await Promise.all([status(env), queued(env), requests(env), profileCvInfo(env, u)]);
@@ -946,8 +951,9 @@ async function signedInRoute(request, env, s, path) {
     const [stats, sent, docs, emailed, held, added] = await Promise.all([env.FEEDBACK.get(`stats:${u}`, "json"),
       env.FEEDBACK.get(`sent:${u}`, "json"), docIndex(env, u), emailedIndex(env, u), requests(env), addedSkills(env, u)]);
     const q = (k) => url.searchParams.get(k) || "";
+    const others = new Map((current.profiles || []).filter((p) => p.id !== u && canSee(s.me, p)).map((p) => [p.id, p.name || p.id]));
     return sentPage(current, stats, u, { range: q("r"), answer: q("a"), open: q("open"), done: q("done"), csrf: s.csrf,
-      sent: sentParts(sent).jobs, docs, emailed, pending: pendingDocs(current, held, u), added, here: url });
+      sent: sentParts(sent).jobs, docs, emailed, pending: pendingDocs(current, held, u), added, visible: others, here: url });
   }
   if (path === DOC_URL && request.method === "GET") return docDownload(request, env, s);
   if (path === DOC_URL && request.method === "POST") return docRequest(request, env, s);
@@ -1025,6 +1031,15 @@ export async function handleApi(request, env) {
     const { stats, sent } = splitStats(body.stats);
     await Promise.all([env.FEEDBACK.put(`stats:${u}`, JSON.stringify({ ...stats, updated: Date.now() })),
       env.FEEDBACK.put(`sent:${u}`, JSON.stringify(sent)), rememberWeek(env, u, stats)]);
+    return json({ saved: true });
+  }
+  // Every recruit's desk totals (profiles.py push_desk), kept sealed because they hold fees (desk.js).
+  if (url.pathname === "/api/desk" && request.method === "POST") {
+    const body = await limitedJson(request, MAX_DESK_BYTES);
+    if (body === null) return json({ error: "too large" }, 413);
+    if (!env.JOB_FEEDBACK_SECRET) return json({ error: "no sealing secret" }, 503);
+    if (!validDesk(body?.desk)) return json({ error: "invalid desk" }, 400);
+    await storeDesk(env, body.desk);
     return json({ saved: true });
   }
   // A cover letter or tailored CV HermitShell has made, kept encrypted for download (docs.js).

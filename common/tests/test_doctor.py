@@ -337,9 +337,9 @@ def test_settings_warnings_and_worker(home, monkeypatch):
 
 
 @pytest.mark.parametrize("theirs, status, says", [
-    (3, "ok", "speaks HermitShell's protocol (3), signed and sealed"),
-    (2, "warn", "the feedback Worker is older than HermitShell (protocol 2, not 3)"),
-    (4, "warn", "HermitShell is older than its feedback Worker (protocol 3, not 4)")])
+    (4, "ok", "speaks HermitShell's protocol (4), signed and sealed"),
+    (3, "warn", "the feedback Worker is older than HermitShell (protocol 3, not 4)"),
+    (5, "warn", "HermitShell is older than its feedback Worker (protocol 4, not 5)")])
 def test_the_worker_check_compares_protocols(home, monkeypatch, theirs, status, says):
     link = doctor.worker_link()
     monkeypatch.setenv("JOB_FEEDBACK_URL", "https://fb.example.workers.dev")
