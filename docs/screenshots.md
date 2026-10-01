@@ -345,6 +345,7 @@ buttons. On a phone everything is in one column.
 | **24 sent** | How many jobs were sent this week; opens [the list of those jobs](#the-jobs-sent-to-a-recruit) |
 | Recruiter + **Assign** (admins only) | The recruiter's initials and a list showing whose pool the recruit is in, or **?** and **Unassigned**. Pick another recruiter and **Assign** appears next to the list |
 | Pause / play button | Pauses or resumes that recruit's reports (hover says which) |
+| Tick box (left of the name) + bar | Ticking recruits brings up a bar under the list with how many are ticked and **Pause**, **Resume**, **Send jobs now** and, for admins, a recruiter list with **Assign**. Up to 25 at a time; the note after says how many were done and how many skipped (not yours, already paused or active, already that recruiter's, or asked for jobs in the last minute). Without `:has` support in the browser the bar is always shown |
 | Bin button (red, admins only) | Opens a window to confirm deleting the recruit. Tick **Delete their CV and history** and press **Delete** to remove their CV and history from your server; **Cancel** or &times; closes it |
 | **Recruits** / **Users and roles** / **Global settings** tabs | Switch between the recruits, [who can sign in](#users-and-roles) and the [settings shared by the whole tool](#global-settings). Recruiters only have **Recruits** |
 | Invite someone + recruiter list + **Create invite link** | Makes a one-time `/join` link; the note is only for you. Admins pick whose recruit the person becomes; a recruiter's invites join their own pool |
@@ -365,6 +366,8 @@ buttons. On a phone everything is in one column.
 </table>
 
 <img src="images/worker/admin-dashboard-tag.png" alt="The recruits list showing only the two recruits tagged shortlist" width="620">
+
+<img src="images/worker/admin-dashboard-bulk.png" alt="Two recruits ticked and the bar under the list: 2 ticked, Pause, Resume, Send jobs now and Assign" width="620">
 
 ### Users and roles
 

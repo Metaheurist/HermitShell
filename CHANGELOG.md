@@ -8,6 +8,13 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Several recruits at once.** A tick box on each row of the Recruits list brings up a bar with **Pause**,
+  **Resume**, **Send jobs now** and, for admins, **Assign**, for up to 25 recruits. It works without
+  scripts, checks each recruit as the single buttons do, skips the rest and says how many ("2 done, 1
+  skipped"), and is one queue item with a history line per recruit. HermitShell runs a bulk **Send jobs
+  now** as one background process that sends the reports in turn (`profiles.py report` now takes several
+  ids), not all at once.
+
 - **Notes and tags.** A recruit's page has a **Notes** box: notes for you and the other recruiters (up to
   1,000 characters, the newest 100 kept, deletable by their writer or an admin) and up to 8 tags. Tags show as
   pills on the Recruits list; pressing one lists only the recruits with it (`?tag=`), and the search finds

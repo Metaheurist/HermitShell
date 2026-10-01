@@ -1126,9 +1126,18 @@ def test_without_the_scheduler_the_report_time_waits_and_nothing_is_scheduled(ho
     assert sam["report"] == {"time": "09:00", "days": "daily", "schedule": "0 9 * * *", "job": False, "pending": True}
 
 
+def fake_popen(started, with_kwargs=False):
+    """Records the reports started; any other command (a hardware probe) is missing, as on a bare machine."""
+    def popen(cmd, **kwargs):
+        if "report" not in cmd:
+            raise FileNotFoundError(cmd[0])
+        started.append((cmd, kwargs) if with_kwargs else cmd)
+    return popen
+
+
 def test_send_now_starts_that_profiles_report_in_the_background(home, monkeypatch):
     started = []
-    monkeypatch.setattr(profiles.subprocess, "Popen", lambda cmd, **k: started.append((cmd, k)))
+    monkeypatch.setattr(profiles.subprocess, "Popen", fake_popen(started, with_kwargs=True))
     profiles.sync(FakeApi([signup()]))
     api = FakeApi([admin("send_now", "sam-lee-456789"), admin("send_now", "owner", 3)])
     report = profiles.sync(api)
@@ -1139,6 +1148,59 @@ def test_send_now_starts_that_profiles_report_in_the_background(home, monkeypatc
     profiles.write_json(profiles.scan_marker("sam-lee-456789"), {"pid": profiles.os.getpid(), "at": profiles.time.time()})
     profiles.sync(FakeApi([admin("send_now", "sam-lee-456789", 4)]))
     assert len(started) == 1
+
+
+def bulk(op, us, n=5, **extra):
+    return {"id": f"queue:{n}:b{n}", "type": "admin", "action": "bulk", "op": op, "us": us, **extra}
+
+
+def test_bulk_pause_resume_and_assign_apply_to_each_recruit(home):
+    profiles.sync(FakeApi([signup(), signup(id="queue:9:0a0a0a", name="Riley Chen", email="riley@example.com")]))
+    both = ["sam-lee-456789", "riley-chen-0a0a0a"]
+    profiles.sync(FakeApi([bulk("pause", both)]))
+    assert [profiles.load(p)["status"] for p in both] == ["paused", "paused"]
+    profiles.sync(FakeApi([bulk("assign", both, 6, recruiter="casey"), bulk("resume", both[:1], 7)]))
+    assert [profiles.load(p).get("recruiter") for p in both] == ["casey", "casey"]
+    assert [profiles.load(p)["status"] for p in both] == ["active", "paused"]
+
+
+def test_bulk_skips_the_owner_and_unknown_recruits_but_does_the_rest(home):
+    profiles.sync(FakeApi([signup()]))
+    api = FakeApi([bulk("pause", ["owner", "sam-lee-456789", "no-such-recruit", "../etc"])])
+    report = profiles.sync(api)
+    assert profiles.load("sam-lee-456789")["status"] == "paused"
+    assert report[-1].startswith("admin: rejected (3 of 4 skipped (owner: ")
+    assert api.statuses[-1]["problems"][-1]["what"] == "pause for 4 recruits"
+
+
+@pytest.mark.parametrize("item", [bulk("delete", ["sam-lee-456789"]), bulk("pause", "sam-lee-456789"), bulk("pause", []),
+                                  bulk("pause", [f"r-{i}" for i in range(profiles.MAX_BULK + 1)]),
+                                  bulk("bulk", ["sam-lee-456789"])])
+def test_bulk_rejects_other_actions_and_bad_lists(home, item):
+    profiles.sync(FakeApi([signup()]))
+    report = profiles.sync(FakeApi([item]))
+    assert report[-1] == "admin: rejected (invalid bulk action)"
+    assert profiles.load("sam-lee-456789")["status"] == "active"
+
+
+def test_bulk_send_now_runs_the_reports_in_turn_from_one_process(home, monkeypatch):
+    started = []
+    monkeypatch.setattr(profiles.subprocess, "Popen", fake_popen(started))
+    profiles.sync(FakeApi([signup(), signup(id="queue:9:0a0a0a", name="Riley Chen", email="riley@example.com"),
+                           signup(id="queue:9:0b0b0b", name="Jordan Patel", email="jordan@example.com")]))
+    (profiles.profile_dir("jordan-patel-0b0b0b") / "job_profile.md").unlink()
+    profiles.write_json(profiles.scan_marker("riley-chen-0a0a0a"), {"pid": profiles.os.getpid(), "at": profiles.time.time()})
+    report = profiles.sync(FakeApi([bulk("send_now", ["sam-lee-456789", "riley-chen-0a0a0a", "jordan-patel-0b0b0b"])]))
+    assert started == [[sys.executable, str(Path(profiles.__file__).resolve()), "report", "--now", "sam-lee-456789"]]
+    assert report[-1] == "admin: rejected (1 of 3 skipped (jordan-patel-0b0b0b: no CV yet))"
+
+
+def test_report_runs_several_profiles_in_turn(home, monkeypatch):
+    ran = []
+    monkeypatch.setattr(profiles, "run_report", lambda pid, now=False: ran.append((pid, now)) or (1 if pid == "b-2" else 0))
+    monkeypatch.setattr(profiles, "ensure_owner", lambda: None)
+    assert profiles.main(["report", "--now", "a-1", "b-2", "a-1", "c-3"]) == 1
+    assert ran == [("a-1", True), ("b-2", True), ("c-3", True)]
 
 
 def test_a_report_tells_the_dashboard_it_is_scanning_then_when_it_ran(home, monkeypatch):

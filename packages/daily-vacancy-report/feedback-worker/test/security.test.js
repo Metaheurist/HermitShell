@@ -247,7 +247,9 @@ describe("authentication", () => {
     expect((await send({ csrf: "0".repeat(64), action: "send_now", u: "sam-lee" })).status).toBe(403);
     for (const u of ["../owner", "Sam", "sam lee", "sam&u=owner", "a".repeat(41)]) {
       expect((await send({ csrf, action: "send_now", u })).status).toBe(400);
+      expect((await send({ csrf, action: "bulk", op: "send_now", u })).headers.get("Location")).toBe("/admin?done=bulk&n=0&m=1");
     }
+    expect((await send({ csrf: "0".repeat(64), action: "bulk", op: "send_now", u: "sam-lee" })).status).toBe(403);
     const page = await (await get("/admin/profile?u=sam-lee", env, { Cookie: cookie })).text();
     expect(page).not.toContain("<script>");
     expect(page).toContain('name="report_time" type="time" value=""');
@@ -1123,7 +1125,8 @@ describe("the admin is staff, not a recruit", () => {
     const { env, post } = await setup("203.0.113.91");
     for (const fields of [{ action: "profile", u: "owner", name: "Alex Morgan", email: "alex@example.com", roles: "Data analyst" },
       { action: "send_now", u: "owner" }, { action: "pause", u: "owner" }, { action: "resume", u: "owner" },
-      { action: "delete", u: "owner", confirm: "yes" }, { action: "assign", u: "owner", recruiter: "" }, { action: "set_key", u: "owner" }]) {
+      { action: "delete", u: "owner", confirm: "yes" }, { action: "assign", u: "owner", recruiter: "" }, { action: "set_key", u: "owner" },
+      ...["pause", "resume", "send_now", "assign"].map((op) => ({ action: "bulk", op, u: "owner", recruiter: "" }))]) {
       const res = await post("/admin/action", fields);
       expect(res.status, fields.action).not.toBe(200);
       expect(res.headers.get("Location") || "", fields.action).not.toMatch(/done=(queued|assigned|deleted)/);

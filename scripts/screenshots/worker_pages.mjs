@@ -302,6 +302,9 @@ await admin("/admin/notes", { method: "POST", form: { csrf, op: "add", u: "avery
 await admin("/admin/notes", { method: "POST", form: { csrf, op: "add", u: "avery-lane", note: "Interviewing with Contoso next week; keep Northwind roles warm." } });
 await save("admin-dashboard", await admin("/admin?done=queued"));
 await save("admin-dashboard-tag", await admin("/admin?tag=shortlist"));
+// Two recruits ticked, so the bulk bar under the list shows with its count.
+await save("admin-dashboard-bulk", new Response((await (await admin("/admin")).text())
+  .replace(/(value="(?:avery-lane|jordan-patel)" form="bulk")/g, "$1 checked")));
 await save("admin-profile-notes", new Response((await (await admin("/admin/profile?u=avery-lane")).text())
   .replace("</head>", "<style>main>:not(.eyebrow):not(h1):not(#notes):not(#notes~*),#cv,#cv~*{display:none!important}</style></head>")));
 // The Tasks modal, open, with its self-refreshing list inlined (opened as files, pages get no #tasks fragment).

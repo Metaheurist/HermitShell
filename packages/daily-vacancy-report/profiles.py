@@ -20,7 +20,7 @@ link), which tells it the moment anything is queued; without one the cron run po
     python3 profiles.py                        # sync, then keep the live link up (or poll until the next run); cron, every 5 min
     python3 profiles.py --once                 # sync once and exit
     python3 profiles.py listen                 # hold the live link (started in the background by the cron run)
-    python3 profiles.py report [--now] ID      # one profile's daily report (--now: email even if nothing is new)
+    python3 profiles.py report [--now] ID...   # profiles' daily reports, in turn (--now: email even if nothing is new)
     python3 profiles.py --list
     python3 profiles.py --invite "Sam from the meetup"
     python3 profiles.py --pause ID | --resume ID | --delete ID
@@ -95,6 +95,9 @@ API_KEYS = {"firecrawl": "FIRECRAWL_API_KEY", "firecrawl_backup": "FIRECRAWL_BAC
 ID_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 # A dashboard user's username (feedback-worker/src/users.js): whose pool a recruit is in.
 RECRUITER_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
+# What the dashboard can do to several ticked recruits at once (feedback-worker/src/admin.js), and how many.
+BULK_OPS = ("pause", "resume", "send_now", "assign")
+MAX_BULK = 25
 KEY_RE = re.compile(r"^[A-Za-z0-9_-]{8,120}$")
 EMAIL_RE = re.compile(r"[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+")
 HOST_RE = re.compile(r"^[A-Za-z0-9.-]{3,120}$")
@@ -1083,8 +1086,38 @@ def assign(profile: dict, recruiter: str) -> None:
     log(f"Profile {profile['id']} {'assigned to ' + recruiter if recruiter else 'unassigned'}")
 
 
+def bulk_action(item: dict, api=None) -> None:
+    """One queue item for up to MAX_BULK recruits ticked on the dashboard, each checked as its single action is.
+    Send jobs now runs their reports one after another in one background process, not all at once."""
+    op, us = item.get("op"), item.get("us")
+    if op not in BULK_OPS or not isinstance(us, list) or not 0 < len(us) <= MAX_BULK:
+        raise ProfileError("invalid bulk action")
+    pids = list(dict.fromkeys(str(u) for u in us))
+    skipped, starting = [], []
+    for pid in pids:
+        try:
+            if op != "send_now":
+                admin_action({"action": op, "u": pid, "recruiter": item.get("recruiter")}, api)
+                continue
+            profile = load(pid)
+            if not profile:
+                raise ProfileError(f"no profile {pid}")
+            if not has_cv(profile):
+                raise ProfileError("no CV yet")
+            starting.append(profile)
+        except ProfileError as exc:
+            skipped.append(f"{_text(pid, 40)}: {exc}")
+    if starting:
+        start_reports(starting)
+    log(f"Bulk {op} from the dashboard: {len(pids) - len(skipped)} done, {len(skipped)} skipped")
+    if skipped:
+        raise ProfileError(f"{len(skipped)} of {len(pids)} skipped ({skipped[0]})")
+
+
 def admin_action(item: dict, api=None) -> None:
     action, pid = item.get("action"), str(item.get("u") or "")
+    if action == "bulk":
+        return bulk_action(item, api)
     if action == "api_keys":
         return apply_api_keys(item)
     if action == "model_keys":
@@ -1145,8 +1178,12 @@ def recent_problems(max_age: float = 86400) -> list[dict]:
 
 def record_problem(item: dict, error: Exception) -> None:
     """A dashboard change that could not be applied, shown on /admin for a day."""
-    what = str(item.get("action") or item.get("type") or "change").replace("_", " ") \
-        + (f" for {item['u']}" if item.get("u") else "")
+    if item.get("action") == "bulk":
+        count = len(item["us"]) if isinstance(item.get("us"), list) else 0
+        what = f"{str(item.get('op') or 'change')[:20].replace('_', ' ')} for {count} recruits"
+    else:
+        what = str(item.get("action") or item.get("type") or "change").replace("_", " ") \
+            + (f" for {item['u']}" if item.get("u") else "")
     write_json(PROFILES_DIR / ".problems.json",
                recent_problems()[-4:] + [{"at": time.time(), "what": what, "error": str(error)[:200]}])
 
@@ -1833,17 +1870,27 @@ def start_report(profile: dict, spawn=None) -> None:
     """Send jobs now: the report runs in the background, so the live link keeps applying dashboard changes."""
     if not has_cv(profile):
         raise ProfileError("no CV yet: upload one on the dashboard first")
-    if scanning(profile["id"]):
-        log(f"The report for {profile['id']} is already running")
+    start_reports([profile], spawn)
+
+
+def start_reports(profiles: list[dict], spawn=None) -> None:
+    """Send jobs now for one or more recruits: one background process runs their reports in turn."""
+    pids = []
+    for profile in profiles:
+        if scanning(profile["id"]):
+            log(f"The report for {profile['id']} is already running")
+        else:
+            pids.append(profile["id"])
+    if not pids:
         return
     log_file = PROFILES_DIR / "runs.log"
     if log_file.is_file() and log_file.stat().st_size > 2_000_000:
         log_file.replace(log_file.with_suffix(".log.1"))
     with open(log_file, "ab") as out:
-        (spawn or subprocess.Popen)([sys.executable, str(Path(__file__).resolve()), "report", "--now", profile["id"]],
+        (spawn or subprocess.Popen)([sys.executable, str(Path(__file__).resolve()), "report", "--now", *pids],
                                     stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, cwd=SCRIPT_DIR,
                                     start_new_session=True)
-    log(f"Started the report for {profile['id']} from the dashboard")
+    log(f"Started the report{'s' if len(pids) > 1 else ''} for {', '.join(pids)} from the dashboard")
 
 
 # --------------------------------------------------------------------------- the dashboard's task list
@@ -2056,17 +2103,19 @@ def main(argv: list[str] | None = None) -> int:
         run_all(rest[0], rest[1:], after)
         return 0
     if argv[:1] == ["report"]:
-        ids = [a for a in argv[1:] if a != "--now"]
-        pid = ids[0] if ids else profile_from_cwd()
-        if not pid:
-            print("usage: profiles.py report [--now] ID (or run it from the profile's folder)")
+        ids = [a for a in argv[1:] if a != "--now"] or [profile_from_cwd()]
+        if not ids[0]:
+            print("usage: profiles.py report [--now] ID [ID...] (or run it from the profile's folder)")
             return 2
         ensure_owner()
-        try:
-            return run_report(pid, now="--now" in argv[1:])
-        except ProfileError as exc:
-            log(f"No report for {pid}: {exc}")
-            return 1
+        code = 0
+        for pid in dict.fromkeys(ids):
+            try:
+                code = max(code, run_report(pid, now="--now" in argv[1:]))
+            except ProfileError as exc:
+                log(f"No report for {pid}: {exc}")
+                code = max(code, 1)
+        return code
     hc.set_model_priority(waiting=True)
     if argv[:1] == ["listen"]:
         api = api_from_env()

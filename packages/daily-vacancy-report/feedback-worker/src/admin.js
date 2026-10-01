@@ -56,7 +56,10 @@ const INVITE_URL = "/admin/invite";
 // KV's shortest expiry: how long a second Send jobs for the same recruit is taken as the same press.
 const SEND_NOW_SECONDS = 60;
 // What a recruiter may do from the dashboard, and then only for their own recruits.
-const RECRUITER_ACTIONS = new Set(["invite", "revoke", "profile", "send_now", "pause", "resume"]);
+const RECRUITER_ACTIONS = new Set(["invite", "revoke", "profile", "send_now", "pause", "resume", "bulk"]);
+// What the bar under the recruits does to the ticked ones, and how many at once (profiles.py BULK_OPS, MAX_BULK).
+const BULK_OPS = new Set(["pause", "resume", "send_now", "assign"]);
+const MAX_BULK = 25;
 const DONE = {
   queued: "Saved. HermitShell applies it within seconds while it is connected.",
   saved: "Saved. The box above shows when HermitShell has applied it, within seconds while it is connected.",
@@ -73,6 +76,8 @@ const DONE = {
   cvmaking: "HermitShell is making their CV from the one uploaded. The CV button downloads it once it is ready, usually within a few minutes.",
   cvnone: "Upload a CV first: their CV is made from it.",
   cvgone: "Their CV is no longer kept. Generate makes a new one.",
+  bulknone: "Tick at least one recruit first.",
+  bulkmany: `Tick at most ${MAX_BULK} recruits at a time.`,
   ...SETTINGS_DONE,
   ...DEMO_DONE,
   ...NOTES_DONE,
@@ -192,7 +197,17 @@ async function status(env) {
 // queue costs one read rather than one of the free plan's 1,000 daily list operations.
 async function queued(env) {
   const flag = await env.FEEDBACK.get("flag:queue");
-  return flag ? flaggedItems(env, "queue:", "flag:queue", 50, flag) : [];
+  return flag ? perRecruit(await flaggedItems(env, "queue:", "flag:queue", 50, flag)) : [];
+}
+
+// A bulk change is one queue item for several recruits; the dashboard shows it as that change for each of them,
+// all with the bulk item's id, so cancelling one cancels the batch.
+function perRecruit(items) {
+  return items.flatMap((i) => {
+    if (i.type !== "admin" || i.action !== "bulk") return [i];
+    const { us, op, ...rest } = i;
+    return Array.isArray(us) && BULK_OPS.has(op) ? us.map((u) => ({ ...rest, action: op, u: String(u) })) : [];
+  });
 }
 
 function describe(items) {
@@ -352,12 +367,44 @@ function profileRow(p, csrf, tz, stats, { admin, third, inPool, busy = "", tags 
   const remove = admin ? binButton(`del-${p.id}`, `Delete ${p.name}`) : "";
   const cv = p.has_cv === false ? ' <span class="pill paused">no CV</span>' : "";
   const joined = p.created ? `<div class="muted" title="${esc(when(p.created, tz))}">Joined ${esc(when(p.created, tz).slice(0, 10))}</div>` : "";
-  return `<tr${inPool ? ' class="inpool"' : ""}><td><div class="who"><span class="avatar" aria-hidden="true">${esc(initials(p.name))}</span><div>
+  const pick = `<input type="checkbox" class="pick" name="u" value="${esc(p.id)}" form="bulk" aria-label="Tick ${esc(p.name)}">`;
+  return `<tr${inPool ? ' class="inpool"' : ""}><td><div class="who">${pick}<span class="avatar" aria-hidden="true">${esc(initials(p.name))}</span><div>
 <b>${esc(p.name)}</b>${cv}${tagPills(tags)}<div class="muted">${esc(p.email || "")}</div>${joined}
 <div class="rowlinks"><a class="small" href="/admin/profile?u=${esc(p.id)}">Manage</a>${statsLink(p, stats, tz)}</div></div></div></td>
 <td>${status}${whenTip(p.last_run, tz, "Last report")}${schedule(p)}</td>
 ${third === null ? "" : `<td>${third}</td>`}
 <td><div class="rowacts">${sendButton(p, csrf, {}, "Send jobs")}${toggleButton({ ...p, status: shown }, csrf)}${remove}</div></td></tr>`;
+}
+
+// The ticked rows' checkboxes belong to this form (form="bulk"), so it needs no script. Where the browser
+// supports :has it shows only once a row is ticked, with a count.
+const BULK_STYLE = `
+table.recruits{counter-reset:picked}table.recruits input.pick:checked{counter-increment:picked}
+input.pick{width:18px;height:18px;margin:0 2px 0 0;flex:none;accent-color:var(--brand);cursor:pointer}
+.bulkbar{position:sticky;bottom:12px;z-index:5;display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0;padding:10px 14px;
+border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:0 12px 30px -18px rgba(15,23,42,.5)}
+.bulkbar select{width:auto;min-width:0;max-width:170px;padding:6px 8px;font-size:13.5px}
+.bulkbar .count::before{content:counter(picked) " ticked"}.bulkbar .count{font-weight:700;margin-right:4px}
+@supports selector(:has(a)){.bulkbar{display:none}body:has(input.pick:checked) .bulkbar{display:flex}}
+@supports not selector(:has(a)){.bulkbar .count{display:none}}
+`;
+
+function bulkBar(s, recs) {
+  const options = [["", "Unassigned"], ...recs.map((r) => [r.id, r.name])]
+    .map(([id, name]) => `<option value="${esc(id)}">${esc(name)}</option>`).join("");
+  const assign = s.me.admin && recs.length ? `<select name="recruiter" aria-label="Recruiter for the ticked recruits">${options}</select>
+<button class="small quiet" name="op" value="assign">Assign</button>` : "";
+  return `<form id="bulk" method="post" action="/admin/action" class="bulkbar"><input type="hidden" name="csrf" value="${esc(s.csrf)}"><input type="hidden" name="action" value="bulk">
+<span class="count"></span><span class="muted">Up to ${MAX_BULK} at a time:</span>
+<button class="small quiet" name="op" value="pause">Pause</button><button class="small quiet" name="op" value="resume">Resume</button>
+<button class="small quiet" name="op" value="send_now">Send jobs now</button>${assign}</form>`;
+}
+
+// "N done, M skipped" after a bulk change, from the counts in the redirect.
+function bulkNote(url) {
+  const count = (name) => Math.max(0, Math.min(MAX_BULK, Math.floor(Number(url.searchParams.get(name))) || 0));
+  const [n, m] = [count("n"), count("m")];
+  return `${n} done, ${m} skipped.${n ? " HermitShell applies it within seconds while it is connected." : ""}`;
 }
 
 function deleteRecruitModal(p, csrf) {
@@ -397,7 +444,7 @@ async function dashboard(request, env, s) {
       ? `joins ${esc(byId.get(i.recruiter).name)}` : "no recruiter"}</td>` : ""}<td class="muted">expires ${esc(when(i.expires, current.timezone))}</td>
 <td>${button(s.csrf, "revoke", "Revoke", { invite: i.id })}</td></tr>`).join("");
   const code = url.searchParams.get("done");
-  const done = (code === "queued" || code === "assigned") && !quick.length ? APPLIED : DONE[code];
+  const done = code === "bulk" ? bulkNote(url) : (code === "queued" || code === "assigned") && !quick.length ? APPLIED : DONE[code];
   const q = searchQuery(url);
   const tag = tagQuery(url);
   const all = [...profiles.map((p, i) => ({ p, stats: stats[i], rec: admin ? recruiterOf(p, queue) : String(p.recruiter || ""),
@@ -419,7 +466,7 @@ async function dashboard(request, env, s) {
     || (all.length ? noMatch(q || tag) : `<tr><td colspan="4" class="muted">${admin ? "HermitShell has not reported any recruits yet."
       : "You have no recruits yet. The people you invite join your recruits, and an admin can assign others to you."}</td></tr>`);
   const deletes = admin ? shown.filter(({ p }) => !p.pending).map(({ p }) => deleteRecruitModal(p, s.csrf)).join("") : "";
-  return page("Recruits", `<style>${LINK_STYLE}${MODAL_STYLE}${CONFIRM_STYLE}${SEARCH_STYLE}${PENDING_STYLE}${TASKS_STYLE}${RECRUITER_STYLE}${NOTES_STYLE}</style>${nav("profiles", admin)}${done ? note(done) : ""}
+  return page("Recruits", `<style>${LINK_STYLE}${MODAL_STYLE}${CONFIRM_STYLE}${SEARCH_STYLE}${PENDING_STYLE}${TASKS_STYLE}${RECRUITER_STYLE}${NOTES_STYLE}${BULK_STYLE}</style>${nav("profiles", admin)}${done ? note(done) : ""}
 ${lastUpdate(current, waiting, presence, admin)}
 ${quick.length ? waitBar(quick.length === 1 ? "the change" : `${quick.length} changes`, refresh) : ""}
 ${admin ? `${problems(current)}${checklist(current)}` : ""}
@@ -427,6 +474,7 @@ ${all.length ? searchBar(q, shown.length, all.length, tasks) : tasks ? `<div cla
 ${tagFilter(tag, shown.length)}
 <table class="list stack recruits"><tr class="head"><th>Recruit</th><th>Status</th>${admin ? "<th>Recruiter</th>" : ""}<th></th></tr>
 ${rows}</table>
+${shown.some(({ p }) => !p.pending) ? bulkBar(s, recs) : ""}
 ${inviteForm(s, recs)}
 ${inviteRows ? `<table class="list">${inviteRows}</table>` : ""}
 `,
@@ -441,10 +489,11 @@ async function tasksAction(request, env, s) {
   }
   const [current, queue, held] = await Promise.all([status(env), queued(env), requests(env)]);
   const task = String(form.get("task") || "").slice(0, 200);
-  const row = taskRows(current, queue, held).find((t) => t.id === task);
+  const rows = taskRows(current, queue, held).filter((t) => t.id === task);
   const done = await cancelTask(env, task, current, queue);
-  const recruit = row?.u && row.u !== "owner" && !(current.profiles || []).some((p) => p.owner && p.id === row.u);
-  if (recruit && row.state !== "stopping" && done !== "gone") await record(env, row.u, "cancel", cancelNote(row), { by: displayName(s.me, current) });
+  const recruit = (row) => row.u && row.u !== "owner" && !(current.profiles || []).some((p) => p.owner && p.id === row.u);
+  const noted = done === "gone" ? [] : rows.filter((row) => recruit(row) && row.state !== "stopping");
+  await Promise.all(noted.map((row) => record(env, row.u, "cancel", cancelNote(row), { by: displayName(s.me, current) })));
   return redirect(`${TASKS_URL}?done=${done}`);
 }
 
@@ -589,6 +638,7 @@ async function action(request, env, s) {
   }
   if (act === "profile") return saveProfile(env, s, form, u);
   const by = { by: displayName(s.me, current) };
+  if (act === "bulk") return bulkAction(env, s, form, current, recs, by);
   if (act === "send_now") {
     // A second press within a minute (a double click, a reload) asks for the same scan, so it is not queued again.
     if (!(await env.FEEDBACK.get(`sendnow:${u}`))) {
@@ -632,6 +682,37 @@ async function action(request, env, s) {
     return page("Unknown action", "<p>Reload the admin page and try again.</p>", { status: 400 });
   }
   return redirect("/admin?done=queued");
+}
+
+const BULK_HISTORY = { send_now: ["send", "Asked for jobs now"], pause: ["pause", "Paused reports"], resume: ["resume", "Resumed reports"] };
+
+// One queue item for the ticked recruits the user may change. Skipped: anyone else, anyone already paused or
+// active as asked, already that recruiter's, or asked for jobs in the last minute.
+async function bulkAction(env, s, form, current, recs, by) {
+  const op = String(form.get("op") || "");
+  if (!BULK_OPS.has(op)) return page("Unknown action", "<p>Reload the admin page and try again.</p>", { status: 400 });
+  if (!s.me.admin && !RECRUITER_ACTIONS.has(op)) return page(...ADMINS_ONLY);
+  const picked = [...new Set(form.getAll("u").map(String))];
+  if (!picked.length) return redirect("/admin?done=bulknone");
+  if (picked.length > MAX_BULK) return redirect("/admin?done=bulkmany");
+  const recruiter = op === "assign" ? String(form.get("recruiter") || "") : "";
+  if (recruiter && !recs.some((r) => r.id === recruiter)) return redirect("/admin?done=badrecruiter");
+  let todo = picked.filter((u) => PROFILE_RE.test(u)).map((u) => visible(s, current, u)).filter((p) => p
+    && !(op === "pause" && p.status === "paused") && !(op === "resume" && p.status === "active")
+    && !(op === "assign" && String(p.recruiter || "") === recruiter));
+  if (op === "send_now") {
+    const recent = await Promise.all(todo.map((p) => env.FEEDBACK.get(`sendnow:${p.id}`)));
+    todo = todo.filter((_, i) => !recent[i]);
+    await Promise.all(todo.map((p) => env.FEEDBACK.put(`sendnow:${p.id}`, "1", { expirationTtl: SEND_NOW_SECONDS })));
+  }
+  const us = todo.map((p) => p.id);
+  if (us.length) {
+    await queueItem(env, { type: "admin", action: "bulk", op, us, ...(op === "assign" ? { recruiter } : {}) });
+    const to = recs.find((r) => r.id === recruiter);
+    const [kind, line] = BULK_HISTORY[op] || ["assign", to ? `Assigned to ${to.name}` : "Unassigned from their recruiter"];
+    await Promise.all(us.map((u) => record(env, u, kind, line, by)));
+  }
+  return redirect(`/admin?done=bulk&n=${us.length}&m=${picked.length - us.length}`);
 }
 
 // A new password changes the user's session version, which signs out their other sessions; this one gets a

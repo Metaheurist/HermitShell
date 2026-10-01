@@ -800,6 +800,28 @@ checking every 30 seconds (from HermitShell's status report only, with no KV lis
 minutes. A second press while a scan is running does nothing. A recruit without a CV has no button;
 HermitShell refuses the request and says so under **HermitShell could not apply**.
 
+#### Several recruits at once
+
+Each row on the Recruits list has a tick box. Ticking one or more brings up a bar under the list with how
+many are ticked and **Pause**, **Resume**, **Send jobs now** and, for admins, a recruiter list with
+**Assign**. The tick boxes belong to the bar's form, so it works without scripts; browsers without `:has`
+show the bar all the time.
+
+<img src="images/worker/admin-dashboard-bulk.png" alt="Two recruits ticked and the bar under the list" width="620">
+
+- Up to 25 recruits at a time. The Worker checks each one as the single button would: a recruiter only
+  changes their own recruits and cannot assign, and the main admin's row is never one. Anyone else is
+  skipped, as is anyone already paused or active as asked, already that recruiter's, or asked for jobs in
+  the last minute. The note afterwards says how many were done and how many skipped.
+- The batch is one queue item (`action: "bulk"`, the operation and the recruit ids), so it costs one queue
+  write; each recruit gets their own history line. KV writes: up to 2 + 2 per recruit (the queue item and
+  flag, then each history line and, for **Send jobs now**, the one-minute repeat guard).
+- HermitShell applies it per recruit with the same checks as the single action. **Send jobs now** runs
+  their reports one after another in one background process (`profiles.py report --now <id> <id>...`),
+  not all at once. Recruits it could not change are listed under **HermitShell could not apply**.
+- Until it is applied the batch shows as that change on each recruit's row, and as a task per recruit;
+  cancelling one of those tasks cancels the whole batch.
+
 #### Notes and tags
 
 The **Notes** box on a recruit's page keeps notes and tags for you and the other recruiters. A note is up
