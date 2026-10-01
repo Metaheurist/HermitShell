@@ -228,6 +228,8 @@ Full template: [`.env.example`](../.env.example).
 | `SMTP_USER` / `SMTP_PASSWORD` | none | SMTP login. For Gmail, use an [app password](api-keys.md#gmail-app-password) |
 | `SMTP_FROM` | `SMTP_USER` | Sender address |
 | `ALERT_EMAIL` | `SMTP_USER` | Recipient |
+| `HERMES_ALERTS` | `1` | [Admin alerts](#admin-alerts) by email. Also the **Admin alerts by email** switch under Features on Global settings |
+| `ALERT_CREDITS_BELOW_PCT` / `ALERT_DISK_BELOW_PCT` | `10` / `10` | Alert when a key has less than this percentage of its allowance left, or the disk less than this percentage free |
 | `FIRECRAWL_API_KEY` | none | Primary search and scrape provider |
 | `FIRECRAWL_BACKUP_KEYS` | none | Comma-separated extra Firecrawl keys for when credits run low |
 | `TAVILY_API_KEY` | none | Backup search and page extraction |
@@ -333,6 +335,26 @@ their profile by `profiles.py`; it runs `profile_report.py` from their profile f
 dashboard's **Daily report** box sets each recruit's time (the admin, as staff, has no report of
 their own), and **Send jobs now** runs a report at once
 ([feedback-worker.md](feedback-worker.md#send-jobs-now)).
+
+### Admin alerts
+
+The profiles check (`profiles.py`) also looks, at most every 15 minutes, for things you'd want to know
+about before a recruit does, and emails the admin (the owner's address, else `ALERT_EMAIL`):
+
+- a web search or cloud model key with less than `ALERT_CREDITS_BELOW_PCT` of its allowance left, as a
+  percentage, since providers count credits, requests or dollars (from the usage checks Global settings
+  shows, so none when `WEB_KEY_USAGE_MINUTES=0`);
+- a cloud model resting because it is out of credits or its key was rejected;
+- Ollama not answering for over 30 minutes, once it has answered before (or at once when there is no
+  cloud model to fall back on);
+- the last backup failed, or none has been made for 36 hours;
+- less than `ALERT_DISK_BELOW_PCT` of the disk free;
+- a feedback Worker on another protocol than HermitShell for over 30 minutes.
+
+Each alert is emailed when it starts and at most once a day while it lasts, then one "all clear" when it
+ends; everything found in one run goes into one email. Emails name providers and percentages, never a key.
+What is open is kept, encrypted, in `state/alerts.json`. Turn them off with `HERMES_ALERTS=0` or the
+switch under Features on Global settings, and send a test with `python3 alerts.py --test`.
 
 ## Data protection
 

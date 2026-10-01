@@ -107,4 +107,16 @@ describe("admin sign-in lock in the hub", () => {
     expect(keysWith(env, "lock:").sort()).toEqual(["lock:203.0.113.9", "lock:all"]);
     expect((await login(env, ADMIN.ADMIN_PASSWORD)).status).toBe(429);
   });
+
+  it("treats a hub answer that isn't a count as no hub, so sign-in still works", async () => {
+    const odd = { idFromName: (n) => n, get: () => ({ fetch: async () => Response.json({ sent: 1 }) }) };
+    expect(await hubLimit({ HUB: odd }, "test:x", 1, 60000)).toBeNull();
+    expect(await hubLimitClear({ HUB: odd }, "test:x")).toBeNull();
+    expect(await hubTokenPut({ HUB: odd }, H, "sam-lee", 60000)).toBeNull();
+    expect(await hubTokenSpend({ HUB: odd }, H)).toBeNull();
+    const env = testEnv({ ...ADMIN, HUB: odd });
+    expect((await login(env, ADMIN.ADMIN_PASSWORD)).status).toBe(303);
+    await login(env, "wrong");
+    expect(keysWith(env, "lock:").sort()).toEqual(["lock:203.0.113.9", "lock:all"]);
+  });
 });

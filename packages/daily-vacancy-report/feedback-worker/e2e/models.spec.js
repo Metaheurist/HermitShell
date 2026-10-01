@@ -56,6 +56,23 @@ test("an AI model key is added from its modal and queued for HermitShell, sealed
   expect(await (await sealing()).open(item.key, "key")).toBe("rc-e2e-featherless-0001");
 });
 
+test("a Features switch is turned off and queued for HermitShell as false, alone", async ({ page, request }) => {
+  await reportStatus(request);
+  await signIn(page);
+  await page.goto("/admin/settings");
+  const alerts = page.getByRole("checkbox", { name: /Admin alerts by email/ });
+  await expect(alerts).toBeChecked();
+  await alerts.uncheck();
+  await page.getByRole("button", { name: "Save features" }).click();
+  await expect(page).toHaveURL(/done=queued#features$/);
+  await expect(page.locator(".waitbar")).toContainText("the features");
+  await expect(alerts).not.toBeChecked();
+  const res = await hermitShellApi(request, "GET", "/api/queue?full=1");
+  const item = (await res.json()).items.findLast((i) => i.action === "features");
+  expect(item).toMatchObject({ type: "admin", action: "features", alerts: false });
+  expect(Object.keys(item).filter((k) => !["type", "action", "id", "at"].includes(k))).toEqual(["alerts"]);
+});
+
 test("a bad model name is refused with a message", async ({ page }) => {
   await signIn(page);
   await page.goto("/admin/settings#mkey-openrouter");

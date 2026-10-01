@@ -178,6 +178,7 @@ const STATUS = {
   server: { cpu: { model: "AMD Ryzen 7 5700G", cores: 16 }, load: 3.4, ram_mb: { total: 32768, available: 19000 },
     gpus: [{ name: "NVIDIA GeForce RTX 3060", vram_mb: 12288, free_mb: 7400 }], disk_mb: { total: 953000, free: 512000 } },
   problems: [],
+  features: { alerts: true },
   timezone: "Europe/London",
   tasks: [
     { id: "report:sam-lee", kind: "report", u: "sam-lee", state: "running", at: now - 4 * 60000, trigger: "schedule",
@@ -334,6 +335,9 @@ await save("admin-settings-models", new Response((await (await admin("/admin/set
 // The tokens each task used over the last week.
 await save("admin-settings-usage", new Response((await (await admin("/admin/settings")).text())
   .replace("</head>", "<style>main>:not(.eyebrow):not(h1):not(.usage){display:none!important}</style></head>")));
+// The on/off switches for optional features.
+await save("admin-settings-features", new Response((await (await admin("/admin/settings")).text())
+  .replace("</head>", "<style>main>:not(.eyebrow):not(h1):not(#features):not(#features+p):not(#features+p+form){display:none!important}</style></head>")));
 await save("admin-model-key-modal", await withOpenModal("/admin/settings", "mkey-openrouter"));
 // The server button's panel, as hovering over it shows it.
 await save("admin-server-panel", new Response((await (await admin("/admin")).text())

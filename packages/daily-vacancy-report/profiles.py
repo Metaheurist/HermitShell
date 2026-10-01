@@ -89,7 +89,7 @@ STAFF = "the admin is staff, not a recruit, and has no job search of their own"
 SMTP_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM")
 # Global settings, Features: the dashboard's name for each switch, its .env key and its default.
 # A switch is listed only once its feature exists, so the dashboard never offers one that does nothing.
-FEATURES: dict[str, tuple[str, bool]] = {}
+FEATURES: dict[str, tuple[str, bool]] = {"alerts": ("HERMES_ALERTS", True)}
 API_KEYS = {"firecrawl": "FIRECRAWL_API_KEY", "firecrawl_backup": "FIRECRAWL_BACKUP_KEYS",
             "tavily": "TAVILY_API_KEY", "scrapfly": "SCRAPFLY_API_KEY"}
 ID_RE = re.compile(r"^[a-z0-9-]{1,40}$")
@@ -2114,6 +2114,10 @@ def main(argv: list[str] | None = None) -> int:
     except ProfileError as exc:
         print(exc)
         return 1
+    started = time.monotonic()
+    if args.invite is None:
+        import alerts
+        alerts.maybe_run()
     api = api_from_env()
     if not api:
         log("JOB_FEEDBACK_URL and JOB_FEEDBACK_API_TOKEN are not set; profiles need the feedback Worker")
@@ -2123,7 +2127,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Invite link (single use, expires {datetime.fromtimestamp(invite['expires'] / 1000):%d %b %Y}):\n"
               f"{invite['link']}")
         return 0
-    started = time.monotonic()
     retire_own_keys()
     for line in sync(api, args.full):
         print(line)

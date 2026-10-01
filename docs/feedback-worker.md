@@ -681,6 +681,15 @@ turning from where they were rather than starting over.
 Passwords and keys typed into the page are deleted from KV after 2 days if HermitShell hasn't collected
 them.
 
+##### Features
+
+On/off switches for optional features, each shown once HermitShell has the feature and reports it:
+**Admin alerts by email** ([what they check](configuration.md#admin-alerts)). **Save features** queues
+the change like the other settings; HermitShell writes only these switches to its settings and ignores
+anything else in the request.
+
+<img src="images/worker/admin-settings-features.png" alt="The Features section of Global settings with the Admin alerts by email switch on" width="620">
+
 ##### Demo mode
 
 The **Demo mode** switch, at the foot of Global settings, fills every dashboard page with a made-up

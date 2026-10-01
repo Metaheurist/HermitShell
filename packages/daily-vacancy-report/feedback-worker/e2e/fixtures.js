@@ -53,6 +53,7 @@ export function hermitShellStatus({ samRecruiter = "" } = {}) {
       disk_mb: { total: 500000, free: 200000 } },
     problems: [],
     tasks: [],
+    features: { alerts: true },
   };
 }
 

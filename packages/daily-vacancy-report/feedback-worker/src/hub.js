@@ -50,25 +50,28 @@ export function hubBump(env, flag) {
 }
 
 // Attempts at `key` within the last `windowMs`: { ok, n }, where ok says another attempt is allowed (or, with
-// `hit`, that this counted one was within `max`). null when there is no hub to ask, so callers keep a fallback.
-export function hubLimit(env, key, max, windowMs, hit = false) {
-  return call(env, "/limit", { method: "POST", body: JSON.stringify({ key, max, window: windowMs, hit }) });
+// `hit`, that this counted one was within `max`). null when there is no hub to ask, or its answer isn't a count,
+// so callers keep a fallback.
+export async function hubLimit(env, key, max, windowMs, hit = false) {
+  const got = await call(env, "/limit", { method: "POST", body: JSON.stringify({ key, max, window: windowMs, hit }) });
+  return typeof got?.ok === "boolean" ? got : null;
 }
 
-export function hubLimitClear(env, key) {
-  return call(env, "/limit", { method: "POST", body: JSON.stringify({ key, clear: true }) });
+export async function hubLimitClear(env, key) {
+  const got = await call(env, "/limit", { method: "POST", body: JSON.stringify({ key, clear: true }) });
+  return got?.ok === true ? got : null;
 }
 
 // A one-time token, stored as the SHA-256 hex of the secret the user holds: put { h, u, ms } or spend { h }.
 // Spending returns the profile it was for once, then ""; null when there is no hub.
 export async function hubTokenPut(env, h, u, ms) {
   const got = await call(env, "/token", { method: "POST", body: JSON.stringify({ op: "put", h, u, ms }) });
-  return got ? got.ok === true : null;
+  return typeof got?.ok === "boolean" ? got.ok : null;
 }
 
 export async function hubTokenSpend(env, h) {
   const got = await call(env, "/token", { method: "POST", body: JSON.stringify({ op: "spend", h }) });
-  return got ? String(got.u || "") : null;
+  return typeof got?.u === "string" ? got.u : null;
 }
 
 // HermitShell polled instead of holding the link: still counts as a check-in.

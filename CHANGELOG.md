@@ -8,6 +8,15 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Admin alerts by email.** The profiles check (at most every 15 minutes) emails the admin when a web
+  search or cloud model key has less than `ALERT_CREDITS_BELOW_PCT` (10%) of its allowance left, a cloud model
+  is out of credits or its key was rejected, Ollama hasn't answered for over 30 minutes, the last backup failed
+  or none was made for 36 hours, the disk is under `ALERT_DISK_BELOW_PCT` (10%) free, or the Worker has been on
+  another protocol for over 30 minutes. Each alert is emailed once, again at most daily while it lasts, then
+  "all clear"; one email per run, naming providers and percentages but never a key. State is kept encrypted
+  in `state/alerts.json`. `HERMES_ALERTS=0`, or the new **Features** switch on Global settings, turns them off;
+  `python3 alerts.py --test` sends a test.
+
 - **A recruit's own CV.** A recruit's page has two buttons at the top right of the card. **Generate**
   (with the CV icon) asks HermitShell to lay out the CV they uploaded as a PDF, every role included and not
   tailored to a job, and spins until it is made. **CV** (with a download icon) only shows once one has been

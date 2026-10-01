@@ -468,6 +468,15 @@ older and how to update it ([why](feedback-worker.md#how-it-stays-safe)).
 | --- | --- |
 | **Model tokens used** | One row per task that asked a model anything in the last 7 days: requests today / over the week and any that failed, tokens in and out, tokens a request and the average time, with a bar for its share of the week's tokens. **~** marks counts estimated from the text ([more](feedback-worker.md#model-tokens-used)) |
 
+#### Features
+
+<img src="images/worker/admin-settings-features.png" alt="The Features section of Global settings with the Admin alerts by email switch on" width="620">
+
+| Control | What it does |
+| --- | --- |
+| Feature switches | One per optional feature HermitShell reports, with what it does. **Admin alerts by email** emails the admin when credits run low, a provider stops answering, a backup fails or the disk fills up, and again when it clears ([more](configuration.md#admin-alerts)) |
+| **Save features** | Queues the switches for HermitShell, which applies them within seconds while connected |
+
 #### Demo mode
 
 <img src="images/worker/admin-settings-demo.png" alt="Global settings with the demo mode switch on" width="620">

@@ -77,7 +77,7 @@ def home(tmp_path, monkeypatch):
                        "JOB_REGION_NAME": "Belfast", "JOB_FEEDBACK_URL": "https://fb.example.workers.dev",
                        "JOB_FEEDBACK_SECRET": "test-secret", "FIRECRAWL_API_KEY": "fc-envkey-longer0001",
                        "FIRECRAWL_BACKUP_KEYS": "fc-envkey-longer0002", "JOB_SCANNER_QUERIES": "owner query",
-                       "WEB_KEY_USAGE_MINUTES": "0"}.items():
+                       "WEB_KEY_USAGE_MINUTES": "0", "HERMES_ALERTS": "0"}.items():
         monkeypatch.setenv(key, value)
     for key in ("JOB_PROFILE_ID", "JOB_SCANNER_NIJOBS_KEYWORDS", "JOB_SEARCH_LOCATION"):
         monkeypatch.delenv(key, raising=False)
