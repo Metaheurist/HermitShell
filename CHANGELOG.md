@@ -1204,6 +1204,14 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Performance
 
+- **The dashboard no longer lags while Tasks (or any window) is open.** The dimmed backdrop behind a
+  window blurred the whole page, and the browser redrew that blur on every frame while the dashboard kept
+  animating underneath (the Tasks button's circle, scanning rows, a model download bar), which dropped it to
+  about 26 frames a second with stalls of over 80 ms. The backdrop is now a plain darker tint, everything
+  behind an open window stops animating until it closes (the window's own animations keep going), and the
+  bars in the task list shimmer by moving a layer instead of repainting their gradient, so a window holds
+  60 frames a second. Covered by `test/tasks.test.js` and a browser test in `e2e/models.spec.js` that the
+  page behind pauses, isn't blurred and starts again on closing.
 - Job rating prompts put the CV, feedback and rubric first and the listing last, so Ollama can
   reuse the cached prompt prefix between jobs.
 - Jobs whose page shows a salary below the minimum or a closing date in the past are dropped

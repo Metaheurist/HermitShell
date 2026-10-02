@@ -1027,8 +1027,10 @@ it is older than HermitShell; nothing else changes.
 The **Tasks** button next to the search (admins only) shows a loading circle while something is running
 and, in its corner, how many tasks there are. It opens a window listing everything HermitShell is doing or has
 waiting, whoever started it. Each running task has the same circle round its icon, and it keeps
-turning smoothly as the list refreshes. Where scripts run, the button's count follows the list each time
-it refreshes, so it clears as soon as the last task finishes rather than on the next page load:
+turning smoothly as the list refreshes. While this or any other window is open, the dashboard behind it
+is dimmed (not blurred) and stops animating, so the window stays smooth however busy the page is. Where
+scripts run, the button's count follows the list each time it refreshes, so it clears as soon as the last
+task finishes rather than on the next page load:
 
 <img src="images/worker/admin-tasks.png" alt="The Tasks window with a running report, a cover letter being written and requests waiting" width="720">
 

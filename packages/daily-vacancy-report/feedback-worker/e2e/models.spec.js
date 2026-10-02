@@ -133,6 +133,31 @@ test("a new server model is picked, then its download shows on the dashboard and
   await expect(page.locator(".mnotice.ok")).toContainText("qwen2.5:7b-instruct-q4_K_M is downloaded and is now the server model");
 });
 
+test("while Tasks is open the dashboard behind it pauses and is not blurred, and starts again once it closes", async ({ page, request }) => {
+  const status = hermitShellStatus();
+  const pull = { model: "qwen2.5:7b-instruct-q4_K_M", status: "downloading", done_mb: 1200, total_mb: 4700, started: Date.now() - 60000,
+    finished: null, error: "", switch: true, stopping: false };
+  await reportStatus(request, { ...status, llm: { ...status.llm, local: { ...status.llm.local, pull } },
+    tasks: [{ id: "model:pull", kind: "model", u: "", state: "running", at: pull.started, trigger: "dashboard", title: pull.model,
+      stage: "Downloading", done: 1200, total: 4700 }, { id: "report:owner", kind: "report", u: "owner", state: "running",
+      at: Date.now() - 30000, trigger: "schedule", stage: "Rating jobs", done: 12, total: 40 }] });
+  await signIn(page);
+  await page.goto("/admin");
+  const ring = page.locator(".tasksbtn.busy .tring");
+  const state = (loc, pseudo) => loc.evaluate((el, p) => getComputedStyle(el, p).animationPlayState, pseudo);
+  await expect.poll(() => state(ring, "::before")).toBe("running");
+  await page.locator(".tasksbtn").click();
+  await expect(page.locator("#tasks")).toBeVisible();
+  await expect.poll(() => state(ring, "::before")).toBe("paused");
+  expect(await page.locator("#tasks .scrim").evaluate((el) => getComputedStyle(el).backdropFilter)).toBe("none");
+  await expect.poll(() => state(page.locator("#tasks .sheeticon svg").first())).toBe("running");
+  const bar = page.frameLocator("iframe.tasksframe").locator(".task.k-report .bar i");
+  await expect(bar).toBeVisible();
+  expect(await bar.evaluate((el) => getComputedStyle(el, "::after").animationName)).toBe("tflow");
+  await page.goto("/admin#");
+  await expect.poll(() => state(ring, "::before")).toBe("running");
+});
+
 test("a bad model name is refused with a message", async ({ page }) => {
   await signIn(page);
   await page.goto("/admin/settings#mkey-openrouter");

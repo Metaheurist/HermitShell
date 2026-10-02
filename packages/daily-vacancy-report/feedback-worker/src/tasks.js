@@ -262,7 +262,7 @@ transition:transform .2s var(--ease),background .2s,box-shadow .2s}
 .tasksbtn.busy .tring::before{content:"";position:absolute;inset:0;border-radius:50%;
 background:conic-gradient(from 0deg,rgba(139,92,246,0) 0deg,rgba(139,92,246,.15) 90deg,var(--brand2) 250deg,var(--brand) 350deg,rgba(99,102,241,0) 360deg),#dfe2fb;
 -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2.5px));
-mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2.5px));animation:tspin 1s linear infinite}
+mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2.5px));animation:tspin 1s linear infinite;will-change:transform}
 .tcount{position:absolute;top:-7px;right:-7px;min-width:20px;height:20px;padding:0 6px;box-sizing:border-box;border-radius:99px;
 display:grid;place-items:center;font-size:11.5px;font-weight:800;color:#fff;background:linear-gradient(135deg,#f97316,#ef4444);
 border:2px solid #fff;box-shadow:0 4px 10px -4px rgba(239,68,68,.9);animation:tpop .35s var(--ease) both}
@@ -287,7 +287,7 @@ animation:tin .3s cubic-bezier(.2,.8,.2,1) both}
 mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2.5px))}
 .s-running .ticon::before{background:#e6e8fb}
 .s-running .ticon::after{background:conic-gradient(from 0deg,rgba(139,92,246,0) 0deg,rgba(139,92,246,.15) 90deg,#8b5cf6 250deg,#6366f1 350deg,rgba(99,102,241,0) 360deg);
-animation:tspin 1s linear infinite;animation-delay:var(--spin,0s)}
+animation:tspin 1s linear infinite;animation-delay:var(--spin,0s);will-change:transform}
 .s-waiting .ticon{color:#64748b;background:#f1f5f9}.s-waiting .ticon svg{animation:ttick 2s steps(8) infinite}
 .s-stopping .ticon{color:#b91c1c;background:#fee2e2}
 .tbody{flex:1;min-width:0}
@@ -298,8 +298,10 @@ animation:tspin 1s linear infinite;animation-delay:var(--spin,0s)}
 .ttitle{font-size:13px;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tsub{font-size:12.5px;color:#64748b;margin-top:1px}
 .bar{height:6px;margin-top:7px;border-radius:99px;background:#e9ecf5;overflow:hidden}
-.bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#6366f1,#8b5cf6,#6366f1) 0 0/200% 100%;
-animation:tflow 1.6s linear infinite;transition:width .6s}
+.bar i{position:relative;display:block;height:100%;border-radius:99px;overflow:hidden;background:linear-gradient(90deg,#6366f1,#8b5cf6);
+transition:width .6s}
+.bar i::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);
+transform:translateX(-100%);animation:tflow 1.6s linear infinite;will-change:transform}
 .bar.est i{opacity:.75}
 .bar.indet i{width:35%;animation:tslide 1.3s ease-in-out infinite}
 form{margin:0}
@@ -312,7 +314,7 @@ background:#fff;cursor:pointer;transition:background .15s}
 .tpaused{margin:10px 2px 0;font-size:12.5px;color:#64748b}.tpaused a{color:#4f46e5}
 @keyframes tspin{to{transform:rotate(360deg)}}
 @keyframes ttick{to{transform:rotate(360deg)}}
-@keyframes tflow{to{background-position:-200% 0}}
+@keyframes tflow{to{transform:translateX(100%)}}
 @keyframes tslide{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}
 @keyframes tin{from{opacity:0;transform:translateY(4px)}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}

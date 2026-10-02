@@ -60,6 +60,21 @@ describe("the Tasks button", () => {
     expect(res.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
   });
 
+  it("keeps the open modal smooth: no blur behind it, the page behind pauses, and its bars only move a layer", async () => {
+    const { get } = await setup([REPORT, LETTER]);
+    const page = await (await get()).text();
+    const css = await (await get(page.match(/<link rel="stylesheet" href="([^"]+)"/)[1])).text();
+    expect(page + css).not.toContain("backdrop-filter");
+    expect(css).toContain("body:has(.modal:target) *::after{animation-play-state:paused!important}");
+    expect(css).toContain("body:has(.modal:target) .modal:target *::after{animation-play-state:running!important}");
+    expect(page).toMatch(/\.tring::before\{[^}]*will-change:transform/);
+    const frame = await (await get("/admin/tasks")).text();
+    expect(frame).toMatch(/class="bar[ "]/);
+    expect(frame).toContain("@keyframes tflow{to{transform:translateX(100%)}}");
+    expect(frame).not.toContain("background-position");
+    expect(frame).toMatch(/\.s-running \.ticon::after\{[^}]*will-change:transform/);
+  });
+
   it("is there with no tasks and no profiles yet", async () => {
     const { get } = await setup([], []);
     const body = await (await get()).text();

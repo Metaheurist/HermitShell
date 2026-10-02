@@ -156,7 +156,7 @@ text-decoration:none;color:var(--brand-ink);background:var(--soft);border:1px da
 .addkey:hover{background:#e2e5ff;transform:translateY(-1px)}.addkey svg{width:16px;height:16px}
 .modal{display:none;position:fixed;inset:0;z-index:50;place-items:center;padding:16px}
 .modal:target{display:grid}
-.scrim{position:absolute;inset:0;background:rgba(15,23,42,.45);backdrop-filter:blur(3px);animation:fade .2s ease both}
+.scrim{position:absolute;inset:0;background:rgba(15,23,42,.55);animation:fade .2s ease both}
 .sheet{position:relative;width:100%;max-width:420px;max-height:calc(100vh - 32px);overflow:auto;box-sizing:border-box;background:#fff;
 border-radius:20px;padding:26px;box-shadow:0 30px 80px -20px rgba(15,23,42,.45);animation:modalin .28s var(--ease) both}
 .sheet h2{margin:12px 0 2px}.sheet form{margin:0}

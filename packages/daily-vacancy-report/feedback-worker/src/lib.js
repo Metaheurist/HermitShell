@@ -227,7 +227,10 @@ body::after{top:-420px;right:-400px;background:radial-gradient(closest-side,rgba
 animation-duration:32s;animation-direction:alternate-reverse}
 main{max-width:480px;margin:56px auto;background:rgba(255,255,255,.94);border:1px solid rgba(226,232,240,.9);border-radius:22px;padding:32px;
 box-shadow:0 1px 2px rgba(15,23,42,.04),0 18px 50px -18px rgba(30,27,75,.18)}
-body:has(.modal:target)::before,body:has(.modal:target)::after{animation-play-state:paused}
+body:has(.modal:target)::before,body:has(.modal:target)::after,body:has(.modal:target) *,body:has(.modal:target) *::before,
+body:has(.modal:target) *::after{animation-play-state:paused!important}
+body:has(.modal:target) .modal:target,body:has(.modal:target) .modal:target *,body:has(.modal:target) .modal:target *::before,
+body:has(.modal:target) .modal:target *::after{animation-play-state:running!important}
 main.wide{max-width:900px}
 main.full{max-width:min(1320px,calc(100vw - 48px))}
 .eyebrow{display:flex;align-items:center;gap:9px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:750;
