@@ -126,6 +126,7 @@ def test_signup_builds_a_profile_from_the_cv(home):
     assert welcome["to"] == "sam@example.com" and "Data Analyst" in welcome["html"]
     assert "a=unsubscribe" in welcome["html"] and f"u={pid}" in welcome["html"]
     assert "Unsubscribe</a> (deletes your profile and CV)" in welcome["html"] and ">Your data</a>" in welcome["html"]
+    assert "Your page" not in welcome["html"] and "/me" not in welcome["text"]
     assert owner_note["to"] == "owner@example.com" and "New recruit: Sam Lee" in owner_note["subject"]
     assert "Recruits" in owner_note["html"] and "Profiles" not in owner_note["html"]
     assert '/admin" style="color:#4f46e5">Manage recruits</a>' in owner_note["html"]
@@ -137,6 +138,23 @@ def test_signup_builds_a_profile_from_the_cv(home):
     assert profiles.os.environ["ALERT_EMAIL"] == "owner@example.com"
     ids = [p["id"] for p in api.statuses[-1]["profiles"]]
     assert ids == ["owner", pid]
+
+
+def test_the_welcome_email_links_their_own_page_only_while_it_is_on(home, monkeypatch):
+    _, sent = home
+    built = {"titles": ["Data Analyst"], "skills": [{"name": "SQL"}]}
+    recruit = {"id": "sam-lee", "name": "Sam Lee", "email": "sam@example.com"}
+    monkeypatch.setenv("HERMES_SELF_SERVICE", "0")
+    profiles.send_welcome(recruit, built, False)
+    assert "Your page" not in sent[-1]["html"] and "/me" not in sent[-1]["text"]
+    monkeypatch.setenv("HERMES_SELF_SERVICE", "1")
+    profiles.send_welcome(recruit, built, False)
+    welcome = sent[-1]
+    assert '<a href="https://fb.example.workers.dev/me" style="color:#64748b">Your page</a>' in welcome["html"]
+    assert "Your page (your jobs, documents and job search): https://fb.example.workers.dev/me\n" in welcome["text"]
+    monkeypatch.setenv("JOB_FEEDBACK_URL", "http://fb.example.workers.dev")
+    profiles.send_welcome(recruit, built, False)
+    assert "Your page" not in sent[-1]["html"]
 
 
 def test_the_new_recruit_email_is_sections_not_one_paragraph(home):

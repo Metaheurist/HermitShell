@@ -60,8 +60,8 @@ from job_extras import (below_min_salary, closing_date, combined_level, days_lef
                         parse_salary, prescreened_out, rating_failed, rating_profile, repost_key, second_look,
                         second_opinion, settle_second, trim_listing,
                         triage_titles)
-from job_tracker import (ACTIONS, Tracker, card_links, followup_actions, prompt_examples, skill_link, skills_text,
-                         sync_feedback, unsubscribe_link)
+from job_tracker import (ACTIONS, Tracker, card_links, followup_actions, own_page_link, prompt_examples, skill_link,
+                         skills_text, sync_feedback, unsubscribe_link)
 from job_weekly import (ICON_DIR, card_action_bar, build_weekly, closing_pill, followup_section, followup_text,
                         mini_buttons, rating_buttons, source_banner, unsubscribe_footer, weekly_when)
 
@@ -1052,7 +1052,7 @@ def build_html(top: list[dict], maybe: list[dict], stats: dict, summary: str, pr
   {empty}
   {followups}
   {report_footer(stats)}
-  {unsubscribe_footer(stats.get("unsubscribe", ""), not env("JOB_PROFILE_ID"))}
+  {unsubscribe_footer(stats.get("unsubscribe", ""), not env("JOB_PROFILE_ID"), stats.get("own_page", ""))}
 </td></tr>
 </table></td></tr></table></body></html>"""
 
@@ -1092,10 +1092,16 @@ def report_unsubscribe_link() -> str:
                             CFG.candidate if CFG.candidate != "the candidate" else "you", env("JOB_PROFILE_ID", "") or "")
 
 
+def report_own_page_link() -> str:
+    return own_page_link(env("JOB_FEEDBACK_URL", "") or "", env("JOB_PROFILE_ID", "") or "",
+                         hc.env_bool("HERMES_SELF_SERVICE", False))
+
+
 def send_weekly(tracker: Tracker, tz: ZoneInfo, dry_run: bool) -> int:
     now = time.time()
     subject, html_body, text = build_weekly(tracker.week(now - 7 * 86400), weekly_when(tz), CFG.title,
-                                            CFG.region or "Job radar", now, report_unsubscribe_link())
+                                            CFG.region or "Job radar", now, report_unsubscribe_link(),
+                                            report_own_page_link())
     hc.write_private(STATE_DIR / "job_scanner_weekly.html", html_body)
     if dry_run:
         print(f"{subject} [dry run, report at {STATE_DIR / 'job_scanner_weekly.html'}]")
@@ -1545,12 +1551,14 @@ def run(args: argparse.Namespace) -> int:
         "excluded_closed": excluded_closed, "reposts": reposts, "grouped": grouped, "verify_from": verify_from,
         "prescreened": prescreened,
         "feedback": bool(fb_url and fb_secret), "unsubscribe": report_unsubscribe_link(),
+        "own_page": report_own_page_link(),
         "sources": ", ".join(f"{name} {info['found']}" for name, info in health.items()) or "none",
         "web_usage": web.usage(), "cv_added": cv_added,
     }
     html_body = fitted_html(top, maybe, stats, summary, problems, followups_html)
     text_body = (f"Added to your CV: {', '.join(cv_added)}\n\n" if cv_added else "") + \
         build_text(results, summary, followup_text(followups)) + \
+        (f"\n\nYour page (your jobs, documents and job search): {stats['own_page']}" if stats["own_page"] else "") + \
         (f"\n\nUnsubscribe: {stats['unsubscribe']}" if stats["unsubscribe"] else "")
     hc.write_private(LAST_REPORT, preview_html(html_body))
     hc.write_private(LAST_RESULTS, json.dumps({"generated": when, "model": model, "summary": summary, "sources": health,

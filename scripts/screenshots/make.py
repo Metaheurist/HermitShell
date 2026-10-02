@@ -277,7 +277,9 @@ def render_emails(out: Path) -> dict[str, str]:
     profiles.load = lambda pid: next((p for p in people if p["id"] == pid), None)
     built = {"titles": ["Data Analyst", "BI Developer", "Analytics Engineer"],
              "skills": [{"name": s} for s in ["SQL", "Power BI", "Python", "Excel", "DAX", "Tableau", "Statistics"]]}
+    os.environ["HERMES_SELF_SERVICE"] = "1"
     profiles.send_welcome({"id": "sam-lee", "name": "Sam Lee", "email": "sam.lee@example.com"}, built, False)
+    del os.environ["HERMES_SELF_SERVICE"]
     pages["welcome"] = sent.pop()
     profiles.send_new_recruit({"id": "sam-lee", "name": "Sam Lee", "email": "sam.lee@example.com", "location": "Belfast",
                                "roles": "Data analyst or BI developer, hybrid"}, built, False)

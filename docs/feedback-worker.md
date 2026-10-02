@@ -1183,6 +1183,11 @@ With the **Recruits' own page (/me)** switch under Features on Global settings (
 default; it needs Worker and HermitShell protocol 6), each active recruit can sign in at `/me` with a link
 emailed to the address their reports go to. While it is off, every `/me` address is a 404.
 
+- **Finding it:** while the switch is on, a recruit's daily report, weekly roll-up and welcome email end with
+  a **Your page** link beside Unsubscribe. It is the plain `<JOB_FEEDBACK_URL>/me` address with nothing
+  added, so a forwarded email signs nobody in: the page still asks for the address and emails a sign-in
+  link. The main admin's own reports never show it, and nor does any email while the switch is off or
+  `JOB_FEEDBACK_URL` is not https.
 - **Asking for a link:** `/me` asks for the email address. Requests are counted in the hub (5 a minute per
   address range, an IPv6 /64 counting as one; 3 an hour per address, kept as a hash; 50 an hour in total)
   before anything is written to KV, so refused requests cost nothing from the 1,000 writes a day. Every

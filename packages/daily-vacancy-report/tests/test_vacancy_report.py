@@ -19,8 +19,8 @@ sys.path[:0] = [str(PACKAGE), str(PACKAGE.parents[1] / "common")]
 import job_tracker  # noqa: E402
 from job_extras import (below_min_salary, closing_date, combined_level, days_left,  # noqa: E402
                         group_agency_posts, parse_salary, rating_failed, repost_key)
-from job_tracker import (Tracker, action_link, card_links, prompt_examples, sign, skill_link,  # noqa: E402
-                         skills_text, sync_feedback, unsubscribe_link)
+from job_tracker import (Tracker, action_link, card_links, own_page_link, prompt_examples, sign,  # noqa: E402
+                         skill_link, skills_text, sync_feedback, unsubscribe_link)
 
 # The feedback Worker's test suite checks the same values (feedback-worker/test/worker.test.js).
 KNOWN_SIGNATURE = "bf5b2947e5f2b792d5a56680ef7d8ab8"
@@ -193,6 +193,39 @@ def test_report_footers_offer_unsubscribe():
     _, page, plain = build_weekly(data, "this week", "Job radar", "Weekly", time.time(), "https://x/f?j=profile-pause&u=")
     assert "Unsubscribe</a> (pauses your reports" in page and plain.endswith("Unsubscribe: https://x/f?j=profile-pause&u=")
     assert "&rarr;" not in page and "\u2192" not in page
+    assert "Your page" not in page and "Your page" not in plain
+
+
+def test_report_footers_link_a_recruits_own_page_while_it_is_on():
+    from job_weekly import build_weekly, unsubscribe_footer
+
+    assert own_page_link("https://x/", "sam-lee", True) == "https://x/me"
+    assert own_page_link("https://x", "sam-lee", False) == ""
+    assert own_page_link("https://x", "", True) == ""
+    assert own_page_link("http://x.example", "sam-lee", True) == ""
+    assert own_page_link("", "sam-lee", True) == ""
+    footer = unsubscribe_footer("https://x/f?j=profile&u=sam-lee", False, "https://x/me")
+    assert footer.index(">Your page</a>") < footer.index(">Unsubscribe</a>") and " &middot; " in footer
+    assert ">Your page</a>" in unsubscribe_footer("", False, "https://x/me")
+    data = {"jobs": [], "events": [], "runs": [], "applications": []}
+    _, page, plain = build_weekly(data, "this week", "Job radar", "Weekly", time.time(), "https://x/f?j=profile&u=sam-lee",
+                                  "https://x/me")
+    assert '<a href="https://x/me"' in page
+    assert "Your page (your jobs, documents and job search): https://x/me\n\nUnsubscribe: " in plain
+
+
+def test_the_daily_reports_own_page_link_follows_the_switch_and_the_profile(monkeypatch):
+    import job_scanner as js
+
+    monkeypatch.setenv("JOB_FEEDBACK_URL", "https://x")
+    monkeypatch.setenv("JOB_PROFILE_ID", "sam-lee")
+    monkeypatch.setenv("HERMES_SELF_SERVICE", "1")
+    assert js.report_own_page_link() == "https://x/me"
+    monkeypatch.setenv("HERMES_SELF_SERVICE", "0")
+    assert js.report_own_page_link() == ""
+    monkeypatch.setenv("HERMES_SELF_SERVICE", "1")
+    monkeypatch.delenv("JOB_PROFILE_ID")
+    assert js.report_own_page_link() == ""
 
 
 # --------------------------------------------------------------------------- tracker

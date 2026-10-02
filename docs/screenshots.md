@@ -300,7 +300,8 @@ deleted ([data protection](configuration.md#data-protection)).
 `/me`, off until the **Recruits' own page (/me)** switch is on (`HERMES_SELF_SERVICE=1`). A recruit asks for a
 sign-in link with the address their reports go to (every address gets the same answer), and opening the emailed
 link shows a **Sign in** button that works once, within 15 minutes
-([more](feedback-worker.md#recruits-own-page)).
+([more](feedback-worker.md#recruits-own-page)). While the switch is on, recruits' reports and welcome email end
+with a plain **Your page** link to `/me`.
 
 <table><tr><th>Asking for a link</th><th>The link opened</th></tr>
 <tr><td><img src="images/worker/me-ask.png" alt="The sign-in page: the email address reports go to and Email me a sign-in link" width="320"></td>

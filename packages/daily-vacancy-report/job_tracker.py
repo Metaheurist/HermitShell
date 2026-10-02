@@ -138,6 +138,13 @@ def unsubscribe_link(base_url: str, secret: str, name: str, profile: str = "") -
                  secret, profile)
 
 
+def own_page_link(base_url: str, profile: str, enabled: bool) -> str:
+    """Report footer link to a recruit's own page (/me), where they ask for a one-time sign-in link. It signs nobody
+    in, so a forwarded email gives nothing away. "" for the main admin, while the page is off or without https."""
+    base = secure_base(base_url)
+    return f"{base}/me" if enabled and profile and base else ""
+
+
 # --------------------------------------------------------------------------- store
 
 SCHEMA = """

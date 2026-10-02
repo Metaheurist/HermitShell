@@ -8,6 +8,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Your page link in recruits' emails.** While `HERMES_SELF_SERVICE` is on, a recruit's daily report, weekly
+  roll-up and welcome email end with a **Your page** link beside Unsubscribe (HTML and plain text). It is the
+  plain `<JOB_FEEDBACK_URL>/me` address with no token, so a forwarded email signs nobody in; the main admin's
+  reports, emails sent while the switch is off and non-https Worker addresses leave it out.
 - **Recruits' own page (`/me`).** With `HERMES_SELF_SERVICE=1` (or the **Recruits' own page (/me)** switch
   under Features, off by default; Worker and HermitShell protocol 6) an active recruit can ask for a sign-in
   link at `/me` and see **My jobs**, **My job search** (their job search and report time, saved as their own

@@ -1053,6 +1053,24 @@ def test_a_sign_in_link_is_built_from_this_servers_worker_address_only(monkeypat
     assert "<script>" not in html_body
 
 
+def test_the_your_page_link_in_emails_never_signs_anyone_in(monkeypatch):
+    import job_scanner
+    from job_weekly import unsubscribe_footer
+
+    monkeypatch.setenv("HERMES_SELF_SERVICE", "1")
+    monkeypatch.setenv("JOB_FEEDBACK_URL", "https://fb.example.workers.dev/")
+    monkeypatch.setenv("JOB_FEEDBACK_SECRET", "test-secret")
+    monkeypatch.setenv("JOB_PROFILE_ID", "alex-morgan")
+    link = job_scanner.report_own_page_link()
+    assert link == "https://fb.example.workers.dev/me"
+    footer = unsubscribe_footer("", False, link)
+    assert "?" not in footer and "test-secret" not in footer and "alex-morgan" not in footer
+    monkeypatch.setenv("JOB_FEEDBACK_URL", 'https://fb.example.workers.dev/"><script>')
+    assert "<script>" not in unsubscribe_footer("", False, job_scanner.report_own_page_link())
+    monkeypatch.setenv("JOB_FEEDBACK_URL", "http://fb.example.workers.dev")
+    assert job_scanner.report_own_page_link() == ""
+
+
 @pytest.mark.skipif(not NODE, reason="needs node for the Worker's apiauth.js")
 def test_the_worker_and_hermitshell_sign_identically():
     import secrets as pysecrets

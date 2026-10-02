@@ -61,7 +61,7 @@ import worker_link
 import worker_seal
 from hermes_common import EMAIL_HEAD, STATE_DIR, connect_model, email_header, env, load_env_file, log, ollama_chat
 from job_settings import slug, term_regex
-from job_tracker import Tracker, sync_feedback, unsubscribe_link
+from job_tracker import Tracker, own_page_link, sync_feedback, unsubscribe_link
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROFILES_DIR = Path(env("JOB_PROFILES_DIR") or STATE_DIR / "profiles")
@@ -736,12 +736,16 @@ def send_welcome(profile: dict, built: dict, updated: bool) -> None:
         f'<div style="font-size:15px;font-weight:700">How it works</div>{how}',
     ]
     privacy = f"{hc.env('JOB_FEEDBACK_URL', '').rstrip('/')}/privacy" if unsub else ""
+    page = own_page_link(env("JOB_FEEDBACK_URL", "") or "", profile["id"], features()["self_service"])
     footer = ("First report with the next daily run. Something wrong above? Reply to this email."
+              + (f'<br><a href="{html.escape(page)}" style="color:#64748b">Your page</a> (your jobs, documents and '
+                 "job search; it emails you a sign-in link)" if page else "")
               + (f'<br><a href="{html.escape(unsub)}" style="color:#64748b">Unsubscribe</a> (deletes your profile and CV)'
                  f' &middot; <a href="{html.escape(privacy)}" style="color:#64748b">Your data</a>' if unsub else ""))
     text = (f"{title}\n\nHermitShell will search for: {', '.join(built['titles'])}\n"
             f"Skills: {', '.join(s['name'] for s in built['skills'])}\n\n"
             "Your first report arrives with the next daily run."
+            + (f"\n\nYour page (your jobs, documents and job search): {page}" if page else "")
             + (f"\n\nUnsubscribe: {unsub}\nHow your data is handled: {privacy}" if unsub else ""))
     send(profile["email"], f"{FROM_NAME}: {title.lower() if updated else 'your profile is ready'}",
          _email(header, blocks, footer), text)
