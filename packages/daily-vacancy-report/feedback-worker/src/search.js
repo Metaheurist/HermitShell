@@ -1,16 +1,35 @@
 // Recruit search on the dashboard. Pages run no JavaScript, so the search button is a label for the field: a
-// click focuses it and :focus-within slides it open. Enter sends ?q= and the Worker lists only the recruits
-// whose name, email, id, status or place, or their recruiter's name or username, contain every word. A recruiter
-// the words point at is listed first, as a row of its own, followed by their recruits: "sam job" lists the
-// recruiter Sam Job and all of their recruits, "sam job riley" only Riley under Sam Job.
+// click focuses it and :focus-within slides it open, with a status dropdown beside it. Enter sends ?q= (and ?s=,
+// the status) and the Worker lists only the recruits whose name, email, id, place or tags, or their recruiter's
+// name or username, contain every word and who have that status. A recruiter the words point at is listed first,
+// as a row of its own, followed by their recruits: "sam job" lists the recruiter Sam Job and all of their
+// recruits, "sam job riley" only Riley under Sam Job. Picking a status sends the form by itself where scripts run;
+// without them a Show button appears once the pick differs from the one the page was sent with.
 
 import { esc } from "./lib.js";
 
 export const MAX_QUERY = 60;
 
+export const STATUSES = {
+  active: { label: "Active", match: (p) => !p.pending && p.status === "active" },
+  paused: { label: "Paused", match: (p) => !p.pending && p.status === "paused" },
+  scanning: { label: "Scanning now", match: (p) => !p.pending && Boolean(p.scanning) },
+  nocv: { label: "No CV", match: (p) => !p.pending && p.has_cv === false },
+  pending: { label: "Pending sign-up", match: (p) => Boolean(p.pending) },
+};
+
 export function searchQuery(url) {
   return String(url.searchParams.get("q") || "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim()
     .slice(0, MAX_QUERY);
+}
+
+export function statusQuery(url) {
+  const s = String(url.searchParams.get("s") || "");
+  return Object.hasOwn(STATUSES, s) ? s : "";
+}
+
+export function matchesStatus(p, s) {
+  return !s || STATUSES[s].match(p);
 }
 
 const words = (q) => q.toLowerCase().split(" ").filter(Boolean);
@@ -18,8 +37,7 @@ const words = (q) => q.toLowerCase().split(" ").filter(Boolean);
 // `recruiter` is the recruit's recruiter ({ name, username }), if they have one.
 export function matchesProfile(p, q, recruiter = null) {
   if (!q) return true;
-  const text = [p.name, p.email, p.id, p.status, p.details?.location,
-    p.scanning ? "scanning" : "", p.has_cv === false ? "no cv" : "", recruiter?.name, recruiter?.username, ...(p.tags || [])]
+  const text = [p.name, p.email, p.id, p.details?.location, recruiter?.name, recruiter?.username, ...(p.tags || [])]
     .map((v) => String(v || "")).join(" ").toLowerCase();
   return words(q).every((word) => text.includes(word));
 }
@@ -51,18 +69,24 @@ function initialsOf(name) {
 const LENS = `<svg class="lens" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
 <circle class="glass" cx="10.5" cy="10.5" r="6.5"/><path class="shine" d="M7.4 9.2a3.4 3.4 0 0 1 2.4-2.3" pathLength="1"/><path d="m15.4 15.4 4.6 4.6"/></svg>`;
 
-export function searchBar(q, shown, total, tools = "") {
-  const count = q ? `${shown} of ${total} recruit${total === 1 ? "" : "s"}` : `${total} recruit${total === 1 ? "" : "s"}`;
+export function searchBar(q, shown, total, tools = "", status = "") {
+  const narrowed = q || status;
+  const count = narrowed ? `${shown} of ${total} recruit${total === 1 ? "" : "s"}` : `${total} recruit${total === 1 ? "" : "s"}`;
+  const options = [["", "Any status"], ...Object.entries(STATUSES).map(([k, v]) => [k, v.label])]
+    .map(([k, label]) => `<option value="${k}"${k === status ? " selected" : ""}>${label}</option>`).join("");
   return `<div class="tabletools"><span class="count">${count}</span><div class="tools">${tools}
-<form class="search${q ? " open" : ""}" method="get" action="/admin" role="search">
+<form class="search${narrowed ? " open" : ""}" method="get" action="/admin" role="search">
+<select id="status-filter" name="s" aria-label="Status">${options}</select><button class="sgo">Show</button>
 <input id="profile-search" type="search" name="q" value="${esc(q)}" maxlength="${MAX_QUERY}" autocomplete="off"
-placeholder="Name, email, place, status or recruiter, then Enter" aria-label="Search recruits">
-${q ? '<a class="clear" href="/admin" aria-label="Clear the search">&times;</a>' : ""}
+placeholder="Name, email, place, recruiter or tag, then Enter" aria-label="Search recruits">
+${narrowed ? '<a class="clear" href="/admin" aria-label="Clear the search">&times;</a>' : ""}
 <label for="profile-search" class="searchbtn" title="Search recruits">${LENS}</label></form></div></div>`;
 }
 
-export function noMatch(q) {
-  return `<tr><td colspan="4"><div class="nomatch">${LENS}<div><b>No recruit matches &ldquo;${esc(q)}&rdquo;</b>
+export function noMatch(q, status = "") {
+  const what = [q && `&ldquo;${esc(q)}&rdquo;`, status && STATUSES[status] ? STATUSES[status].label.toLowerCase() : ""]
+    .filter(Boolean).join(" and ");
+  return `<tr><td colspan="4"><div class="nomatch">${LENS}<div><b>No recruit matches ${what}</b>
 <div class="muted"><a href="/admin">Show everyone</a></div></div></div></td></tr>`;
 }
 
@@ -77,6 +101,20 @@ width:360px;max-width:62vw;padding:0 18px;opacity:1;border-color:var(--line);bac
 form.search.open #profile-search{padding-right:42px}
 form.search:focus-within #profile-search{border-color:var(--brand);background:#fff;box-shadow:0 0 0 4px rgba(99,102,241,.15)}
 #profile-search::-webkit-search-cancel-button{display:none}
+#status-filter{width:0;min-width:0;max-width:none;height:40px;box-sizing:border-box;margin:0;padding:0;border-color:transparent;background:transparent;
+opacity:0;border-radius:13px;font-size:13.5px;font-weight:600;cursor:pointer;
+transition:width .35s var(--ease),padding .35s var(--ease),opacity .25s,border-color .2s,background .2s}
+form.search:focus-within #status-filter,form.search.open #status-filter,form.search:has(#profile-search:not(:placeholder-shown)) #status-filter{
+width:156px;padding:0 12px;opacity:1;border-color:var(--line);background:var(--field)}
+#status-filter:focus{border-color:var(--brand);background:#fff;box-shadow:0 0 0 4px rgba(99,102,241,.15)}
+form.search .sgo{display:none;flex:none;height:40px;margin:0;padding:0 14px;border-radius:13px;font-size:13.5px}
+@supports selector(:has(a)){form.search:has(#status-filter option:checked:not([selected])) .sgo{display:inline-block}}
+@supports not selector(:has(a)){form.search:focus-within .sgo,form.search.open .sgo{display:inline-block}}
+@media (max-width:640px){.tabletools{flex-wrap:wrap}.tabletools .tools{flex:1;min-width:0;flex-wrap:wrap;justify-content:flex-end}
+.tabletools:has(form.search:focus-within) .tools,.tabletools:has(form.search.open) .tools{flex-basis:100%}
+form.search:focus-within,form.search.open{flex:1 1 100%;min-width:0}
+form.search:focus-within #status-filter,form.search.open #status-filter{flex:none;width:118px}
+form.search:focus-within #profile-search,form.search.open #profile-search{flex:1 1 0;width:0;max-width:none}}
 .searchbtn{flex:none;margin:0;width:40px;height:40px;border-radius:13px;display:grid;place-items:center;cursor:pointer;
 color:var(--brand-ink);background:var(--soft);transition:transform .2s var(--ease),background .2s,color .2s,box-shadow .2s}
 .searchbtn:hover{transform:translateY(-1px) scale(1.06);background:#e2e5ff}

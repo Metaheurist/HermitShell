@@ -29,6 +29,70 @@ test("the search box narrows the recruits", async ({ page }) => {
   await expect(table.getByText("Jordan Patel", { exact: true })).toBeVisible();
 });
 
+test("the status dropdown beside the search lists only recruits with that status, with the words too", async ({ page }) => {
+  await signIn(page);
+  const status = page.getByRole("combobox", { name: "Status" });
+  await expect(status).toHaveCSS("opacity", "0");
+  await page.locator("label.searchbtn").click();
+  await expect(status).toHaveCSS("opacity", "1");
+  await status.selectOption("paused");
+  await expect(page).toHaveURL(/[?&]s=paused/);
+  const table = page.locator("table.recruits");
+  await expect(table.getByText("Jordan Patel", { exact: true })).toBeVisible();
+  await expect(table.getByText("Sam Lee", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".tabletools .count")).toHaveText("1 of 3 recruits");
+  await expect(status).toHaveValue("paused");
+  await expect(status).toBeVisible();
+
+  await status.selectOption("active");
+  await expect(page).toHaveURL(/[?&]s=active/);
+  await page.getByRole("searchbox", { name: "Search recruits" }).fill("york");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/s=active&q=york/);
+  await expect(table.getByText("Sam Lee", { exact: true })).toBeVisible();
+  await expect(table.getByText("Drew Harper", { exact: true })).toHaveCount(0);
+
+  await page.getByRole("searchbox", { name: "Search recruits" }).fill("paused");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("No recruit matches “paused” and active")).toBeVisible();
+  await page.getByRole("link", { name: "Clear the search" }).click();
+  await expect(table.getByText("Jordan Patel", { exact: true })).toBeVisible();
+  await expect(status).toHaveValue("");
+});
+
+test("on a phone the opened search and its status dropdown stay inside the screen", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page);
+  await page.goto("/admin?s=active");
+  const status = page.getByRole("combobox", { name: "Status" });
+  await expect(status).toHaveCSS("width", "118px");
+  const card = await page.locator("main").boundingBox();
+  for (const el of [page.locator("a.tasksbtn"), status, page.getByRole("searchbox", { name: "Search recruits" }), page.locator("label.searchbtn")]) {
+    const box = await el.boundingBox();
+    expect(box.x).toBeGreaterThanOrEqual(card.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(card.x + card.width);
+  }
+});
+
+test.describe("without JavaScript", () => {
+  test.use({ javaScriptEnabled: false });
+
+  test("Show appears once another status is picked and lists them", async ({ page }) => {
+    await signIn(page);
+    await page.locator("label.searchbtn").click();
+    const show = page.locator("form.search .sgo");
+    const status = page.getByRole("combobox", { name: "Status" });
+    await expect(show).toBeHidden();
+    await expect(status).toHaveCSS("width", "156px");
+    await status.selectOption("paused");
+    await expect(show).toBeVisible();
+    await show.click();
+    await expect(page).toHaveURL(/[?&]s=paused/);
+    await expect(page.locator("table.recruits").getByText("Sam Lee", { exact: true })).toHaveCount(0);
+    await expect(show).toBeHidden();
+  });
+});
+
 test("the dashboard tabs open Users and roles and Global settings", async ({ page }) => {
   await signIn(page);
   await page.locator("nav.tabs").getByRole("link", { name: "Users and roles" }).click();

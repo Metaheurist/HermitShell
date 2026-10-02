@@ -58,10 +58,14 @@ describe("pending sign-ups", () => {
     expect(body).toContain("/admin/profile?u=riley-chen-1a2b3c");
   });
 
-  it("can be found with the search, by name or as pending", async () => {
+  it("can be found with the search by name, or with Pending sign-up from the status dropdown", async () => {
     const { env, get } = await setup();
     await queueItem(env, SIGNUP);
-    expect(await get("?q=pending")).toContain('class="pendingrow"');
+    const pending = await get("?s=pending");
+    expect(pending).toContain('class="pendingrow"');
+    expect(pending).toContain('<span class="count">1 of ');
+    expect(await get("?q=pending")).not.toContain('class="pendingrow"');
+    expect(await get("?s=active")).not.toContain('class="pendingrow"');
     expect(await get("?q=riley")).toContain('class="pendingrow"');
     expect(await get("?q=alex")).not.toContain('class="pendingrow"');
   });

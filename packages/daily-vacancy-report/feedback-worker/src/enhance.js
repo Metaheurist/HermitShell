@@ -9,6 +9,7 @@
 //   follows by CSS). The picked file is shown from a blob: address, never uploaded until Save theme; one that is too
 //   big or not a picture is cleared at once with the reason.
 // - The Tasks button's count follows the task list each time that list reloads in its window.
+// - Picking a status beside the recruit search lists them at once, without pressing Show.
 import { fnv } from "./lib.js";
 
 const SOURCE = `(() => {
@@ -36,6 +37,11 @@ const SOURCE = `(() => {
       if (custom) custom.checked = true;
     }
     if (field.name === "name") form.querySelectorAll(".pvname").forEach((n) => { n.textContent = field.value.trim() || "HermitShell"; });
+  });
+
+  document.addEventListener("change", (e) => {
+    const field = e.target;
+    if (field instanceof HTMLSelectElement && field.id === "status-filter" && field.form) field.form.requestSubmit();
   });
 
   let markWas = null;

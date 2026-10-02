@@ -340,7 +340,7 @@ const tasksList = (await (await admin("/admin/tasks")).text()).replace(/<meta ht
 const withTasks = (await (await admin("/admin")).text()).replace("</head>", "<style>#tasks{display:grid}</style></head>")
   .replace('src="/admin/tasks" loading="lazy"', `srcdoc="${tasksList.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"`);
 await save("admin-tasks", new Response(withTasks));
-await save("admin-dashboard-search", await admin("/admin?q=york"));
+await save("admin-dashboard-search", await admin("/admin?s=active&q=york"));
 await save("admin-recruiter-search", await admin("/admin?q=casey"));
 await save("admin-recruiter-view", await casey("/admin"));
 await save("admin-signed-in", await casey("/admin"));

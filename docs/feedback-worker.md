@@ -471,9 +471,12 @@ settings** (the email server and web search keys the whole tool shares). Recruit
   (name, email, when and what they're looking for), while HermitShell reads their CV and sets them
   up. HermitShell reports the new recruit before it takes the sign-up off the queue, so the row
   turns into the recruit without the person dropping off the dashboard in between.
-- **Search**: the magnifying glass above the table slides out a search box (CSS only). Press Enter
-  and the page lists only the recruits whose name, email, id, place, status or recruiter contain
-  every word you typed (`/admin?q=`), with a count and **&times;** to show everyone again. Searching
+- **Search**: the magnifying glass above the table slides out a search box and a status dropdown
+  (CSS only). Press Enter and the page lists only the recruits whose name, email, id, place, tags or
+  recruiter contain every word you typed (`/admin?q=`), with a count and **&times;** to show everyone
+  again. Status isn't typed: pick **Active**, **Paused**, **Scanning now**, **No CV** or **Pending
+  sign-up** from the dropdown (`/admin?s=`) to list only those, on its own or with the words. Picking
+  one lists them at once; without JavaScript a **Show** button appears beside it instead. Searching
   a recruiter's name or username puts the recruiter at the top, followed by all of their recruits
   and then anyone else who matches; a recruiter and a person together (`casey jordan`) finds that
   person under their recruiter.

@@ -34,7 +34,7 @@ import { MODAL_STYLE } from "./keys.js";
 import { NOTICE_STYLE, SERVER_STYLE, pullNotice, serverBox } from "./models.js";
 import { needsSeal, sealInfo, sealItem, sealText } from "./seal.js";
 import { PALETTE_ICON, THEME_URL, readTheme, themePage, themeRequest } from "./theme.js";
-import { SEARCH_STYLE, matchesProfile, noMatch, recruiterHits, recruiterRow, searchBar, searchQuery } from "./search.js";
+import { SEARCH_STYLE, matchesProfile, matchesStatus, noMatch, recruiterHits, recruiterRow, searchBar, searchQuery, statusQuery } from "./search.js";
 import {
   CV_URL, DOC_NAMES, DOC_URL, REQUEST_KINDS, SKILL_URL, addedSkills, docIndex, emailedIndex, letterStyle, markEmailed, docResponse, pendingDocs, profileCvBusy,
   profileCvInfo, readDoc, readProfileCv, requestDoc, requestProfileCv, requestSkill, storeDoc, storeProfileCv, styleLabel, validJobKey,
@@ -463,10 +463,12 @@ async function dashboard(request, env, s) {
   const code = url.searchParams.get("done");
   const done = code === "bulk" ? bulkNote(url) : (code === "queued" || code === "assigned") && !quick.length ? APPLIED : DONE[code];
   const q = searchQuery(url);
+  const only = statusQuery(url);
   const tag = tagQuery(url);
   const all = [...profiles.map((p, i) => ({ p, stats: stats[i], rec: lead ? recruiterOf(p, queue) : String(p.recruiter || ""),
     tags: tagsOf[p.id] || [] })), ...signups.map((p) => ({ p, rec: p.recruiter, tags: [] }))];
-  const shown = all.filter(({ p, rec, tags }) => matchesProfile({ ...p, tags }, q, byId.get(rec)) && (!tag || tags.includes(tag)));
+  const shown = all.filter(({ p, rec, tags }) => matchesProfile({ ...p, tags }, q, byId.get(rec)) && matchesStatus(p, only)
+    && (!tag || tags.includes(tag)));
   const hits = lead ? recruiterHits(recs, q, new Set(shown.map((e) => e.rec).filter(Boolean))) : [];
   const row = (e, inPool) => {
     const third = lead ? recruiterCell(e.p, e.rec, recs, s.csrf, admin) : null;
@@ -480,7 +482,7 @@ async function dashboard(request, env, s) {
     return recruiterRow(r, all.filter((e) => e.rec === r.id).length) + theirs.map((e) => row(e, true)).join("");
   }).join("");
   const rows = grouped + shown.filter((e) => !listed.has(e)).map((e) => row(e, false)).join("")
-    || (all.length ? noMatch(q || tag) : `<tr><td colspan="4" class="muted">${admin ? "HermitShell has not reported any recruits yet."
+    || (all.length ? noMatch(q || (only ? "" : tag), only) : `<tr><td colspan="4" class="muted">${admin ? "HermitShell has not reported any recruits yet."
       : s.me.manager ? "Your team has no recruits yet. The people invited to your team join it, and an admin can assign others."
         : "You have no recruits yet. The people you invite join your recruits, and an admin can assign others to you."}</td></tr>`);
   const deletes = admin ? shown.filter(({ p }) => !p.pending).map(({ p }) => deleteRecruitModal(p, s.csrf)).join("") : "";
@@ -488,7 +490,7 @@ async function dashboard(request, env, s) {
 ${lastUpdate(current, waiting, presence, admin)}
 ${quick.length ? waitBar(quick.length === 1 ? "the change" : `${quick.length} changes`, refresh) : ""}
 ${admin ? `${pullNotice(current)}${problems(current)}${checklist(current)}` : ""}
-${all.length ? searchBar(q, shown.length, all.length, tasks) : tasks ? `<div class="tabletools"><span></span><div class="tools">${tasks}</div></div>` : ""}
+${all.length ? searchBar(q, shown.length, all.length, tasks, only) : tasks ? `<div class="tabletools"><span></span><div class="tools">${tasks}</div></div>` : ""}
 ${tagFilter(tag, shown.length)}
 <table class="list stack recruits"><tr class="head"><th>Recruit</th><th>Status</th>${lead ? "<th>Recruiter</th>" : ""}<th></th></tr>
 ${rows}</table>

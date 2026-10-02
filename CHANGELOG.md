@@ -900,6 +900,13 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Status has its own dropdown in the recruit search.** When the search slides open, a dropdown beside it
+  offers **Any status**, **Active**, **Paused**, **Scanning now**, **No CV** and **Pending sign-up**
+  (`/admin?s=`), alone or with the words typed. Status words are no longer matched from the search box, which
+  keeps names, emails, ids, places, tags and recruiters. Picking a status lists them at once where scripts run;
+  without them a **Show** button appears once a different status is picked. An unknown `s` is ignored and
+  never echoed. Covered by `test/search.test.js`, `test/pending.test.js` and `e2e/admin.spec.js` (with and
+  without JavaScript).
 - **Turn off on the demo ribbon turns demo mode off in one press.** It used to open Global settings, where the
   switch then had to be pressed; now it posts the switch itself (with the form's token, admins only) and goes
   back to the real recruits with "Demo mode is off". Covered in `test/demo.test.js` and `e2e/demo.spec.js`.

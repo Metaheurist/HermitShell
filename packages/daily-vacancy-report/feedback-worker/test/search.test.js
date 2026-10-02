@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import worker from "../src/index.js";
-import { MAX_QUERY, matchesProfile, searchQuery } from "../src/search.js";
+import { MAX_QUERY, matchesProfile, matchesStatus, searchQuery, statusQuery } from "../src/search.js";
 import { BASE, styled, testEnv } from "./helpers.js";
 
 const ADMIN = { ADMIN_PASSWORD: "correct horse battery" };
@@ -43,8 +43,7 @@ describe("profile search", () => {
     const get = await setup();
     expect(listed(await get("?q=sam"))).toEqual(["sam-lee"]);
     expect(listed(await get("?q=LEEDS"))).toEqual(["jordan-patel"]);
-    expect(listed(await get("?q=paused"))).toEqual(["jordan-patel"]);
-    expect(listed(await get("?q=active+lee"))).toEqual(["sam-lee"]);
+    expect(listed(await get("?q=sam+lee"))).toEqual(["sam-lee"]);
     expect(listed(await get("?q=contoso"))).toEqual(["jordan-patel"]);
     expect(listed(await get("?q=owner"))).toEqual([]);
     expect(listed(await get("?q=alex+morgan"))).toEqual([]);
@@ -54,6 +53,54 @@ describe("profile search", () => {
     expect(some).toContain('<form class="search open"');
     expect(some).toContain('value="example.com"');
     expect(some).toContain('<a class="clear" href="/admin"');
+  });
+
+  it("picks the status from a dropdown beside the search, not from the words typed", async () => {
+    const get = await setup();
+    const board = await get();
+    expect(board).toContain('<select id="status-filter" name="s" aria-label="Status"><option value="" selected>Any status</option>'
+      + '<option value="active">Active</option><option value="paused">Paused</option><option value="scanning">Scanning now</option>'
+      + '<option value="nocv">No CV</option><option value="pending">Pending sign-up</option></select><button class="sgo">Show</button>');
+    expect(board).toContain('placeholder="Name, email, place, recruiter or tag, then Enter"');
+    for (const word of ["paused", "active", "scanning", "no+cv"]) expect(listed(await get(`?q=${word}`))).toEqual([]);
+    expect(listed(await get("?s=paused"))).toEqual(["jordan-patel"]);
+    expect(listed(await get("?s=active"))).toEqual(["riley-chen", "sam-lee"]);
+    expect(listed(await get("?s=scanning"))).toEqual(["sam-lee"]);
+    expect(listed(await get("?s=nocv"))).toEqual(["jordan-patel"]);
+    expect(listed(await get("?s=pending"))).toEqual([]);
+    const both = await get("?s=active&q=york");
+    expect(listed(both)).toEqual(["sam-lee"]);
+    expect(both).toContain('<option value="active" selected>Active</option>');
+    expect(both).toContain('<form class="search open"');
+    expect(both).toContain('<span class="count">1 of 3 recruits</span>');
+    const alone = await get("?s=paused&q=");
+    expect(alone).toContain('<form class="search open"');
+    expect(alone).toContain('<a class="clear" href="/admin"');
+    const none = await get("?s=paused&q=york");
+    expect(listed(none)).toEqual([]);
+    expect(none).toContain("No recruit matches &ldquo;york&rdquo; and paused");
+    expect(await get("?s=pending")).toContain("No recruit matches pending sign-up");
+  });
+
+  it("ignores a status it doesn't know and never echoes it", async () => {
+    const get = await setup();
+    for (const s of ["bogus", "toString", "__proto__", "constructor", "<script>alert(1)</script>", "ACTIVE"]) {
+      const body = await get(`?s=${encodeURIComponent(s)}`);
+      expect(listed(body)).toEqual(["riley-chen", "sam-lee", "jordan-patel"]);
+      expect(body).toContain('<option value="" selected>Any status</option>');
+      expect(body).toContain('<form class="search" method="get"');
+      expect(body).not.toContain("<script>alert(1)</script>");
+    }
+    expect(statusQuery(new URL(`${BASE}/admin?s=nocv`))).toBe("nocv");
+    expect(statusQuery(new URL(`${BASE}/admin?s=hasOwnProperty`))).toBe("");
+  });
+
+  it("shows a pending sign-up under Pending sign-up only", () => {
+    const signup = { pending: true, id: "", name: "Riley Chen", email: "riley@example.com" };
+    expect(matchesStatus(signup, "pending")).toBe(true);
+    for (const s of ["active", "paused", "scanning", "nocv"]) expect(matchesStatus(signup, s)).toBe(false);
+    expect(matchesStatus(PROFILES[0], "pending")).toBe(false);
+    expect(matchesStatus(PROFILES[0], "")).toBe(true);
   });
 
   it("lists a recruiter first, followed by all of their recruits, when the search names the recruiter", async () => {
@@ -127,8 +174,11 @@ describe("profile search", () => {
     expect(searchQuery(new URL(`${BASE}/admin?q=${encodeURIComponent("  sam \n\t lee ")}`))).toBe("sam lee");
     expect(searchQuery(new URL(`${BASE}/admin?q=${"x".repeat(200)}`))).toHaveLength(MAX_QUERY);
     expect(searchQuery(new URL(`${BASE}/admin`))).toBe("");
-    expect(matchesProfile(PROFILES[2], "no cv")).toBe(true);
-    expect(matchesProfile(PROFILES[1], "scanning york")).toBe(true);
+    expect(matchesProfile(PROFILES[2], "no cv")).toBe(false);
+    expect(matchesProfile(PROFILES[1], "scanning york")).toBe(false);
+    expect(matchesProfile(PROFILES[2], "paused")).toBe(false);
+    expect(matchesProfile(PROFILES[1], "york")).toBe(true);
+    expect(matchesProfile({ ...PROFILES[1], tags: ["shortlist"] }, "shortlist")).toBe(true);
     expect(matchesProfile({ id: "x" }, "")).toBe(true);
     expect(matchesProfile({ id: "x" }, "y")).toBe(false);
     expect(matchesProfile(PROFILES[1], "tavily")).toBe(false);

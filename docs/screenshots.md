@@ -361,7 +361,7 @@ buttons. On a phone everything is in one column.
 | --- | --- |
 | Status line | **HermitShell is connected** (green dot) while its live link is up, so changes reach it within seconds, then when it last reported its profiles. Without the link: when HermitShell last checked in, with the time in your timezone (`HERMES_TIMEZONE`). Also says how many changes are still **Waiting for HermitShell**, which opens **Tasks** for an admin. While a pause, resume, delete, assignment or send of yours is waiting, a **Saving** bar shows under it, the row carries a tag such as **pausing&hellip;**, and the page updates by itself until it is applied. A warning appears above it if HermitShell hasn't checked in for 45 minutes |
 | **Tasks** (loading circle + number, admins only) | Opens the [task list](#tasks): everything HermitShell is doing or has waiting. The ring turns while something runs and the number in the corner says how many tasks there are |
-| Search (magnifying glass) | Slides out a search box. Type part of a name, email, place, status (**paused**, **scanning**, **no cv**) or recruiter and press Enter: only the recruits with every word are listed, with **1 of 3 recruits** above the table. Searching a recruiter lists them first, followed by all their recruits. **&times;** shows everyone again |
+| Search (magnifying glass) | Slides out a search box and a status dropdown. Type part of a name, email, place, tag or recruiter and press Enter: only the recruits with every word are listed, with **1 of 3 recruits** above the table. The dropdown (**Any status**, **Active**, **Paused**, **Scanning now**, **No CV**, **Pending sign-up**) narrows the list to that status, on its own or with the words; it applies as soon as it is picked (without JavaScript, press **Show**). Searching a recruiter lists them first, followed by all their recruits. **&times;** shows everyone again |
 | **pending** (orange) | Someone who has sent the invite form. They stay in the table, with when they signed up and what they're looking for, while HermitShell reads their CV, then the row becomes their profile |
 | Tag pills | The recruit's tags beside their name; pressing one lists only the recruits with it (**2 tagged**, **Show everyone**). Searching a tag finds them too |
 | Recruit, Status | Name, email and the date they joined, **no CV** when there is none yet; active or paused; **scanning now** while a report runs; when the last report ran (hover for the exact time) and the report time, **Daily at 08:00** or **Weekdays at 08:15** |
@@ -389,7 +389,7 @@ buttons. On a phone everything is in one column.
 <table>
 <tr><th>Searching for a recruit</th><th>Searching for a recruiter</th></tr>
 <tr>
-<td><img src="images/worker/admin-dashboard-search.png" alt="The recruits table searched for York" width="380"></td>
+<td><img src="images/worker/admin-dashboard-search.png" alt="The recruits table searched for York with Active picked in the status dropdown" width="380"></td>
 <td><img src="images/worker/admin-recruiter-search.png" alt="Searching a recruiter: the recruiter first, then their recruits" width="380"></td>
 </tr>
 </table>
