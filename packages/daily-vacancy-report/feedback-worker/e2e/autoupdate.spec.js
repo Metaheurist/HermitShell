@@ -33,7 +33,7 @@ test("a key added on Global settings shows as saving, then appears by itself onc
   await applyQueue(request, hermitShellStatus());
   await signIn(page);
   const row = await addTavilyKey(page);
-  await expect(page.locator(".waitbar")).toContainText("Waiting for HermitShell to pick up the web search keys. This page updates by itself.");
+  await expect(page.locator(".waitbar")).toContainText("Working on the web search keys… This page updates by itself.");
   await expect(row.locator(".savingtag")).toHaveText("saving…");
 
   const status = hermitShellStatus();

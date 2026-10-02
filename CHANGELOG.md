@@ -915,6 +915,14 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **One message per change.** Pressing Pause, Resume, Retire, Delete, Assign or **Send jobs**, a bulk
+  change, or saving a global setting showed a **Saved** note, a **Waiting for HermitShell: 1 change**
+  count and a **Saving** bar at once. Now only the bar shows (**Working on the change&hellip;** This page
+  updates by itself), then a single **Done. The page shows the change.** A bulk change still says how many
+  were skipped, a recruit's page leaves it to its status box, the status line counts only changes the
+  bar doesn't cover, and **Send jobs** reads "Looking for jobs now. The email arrives in about 10 to 20
+  minutes." Covered by `test/settings.test.js` ("says one thing per change").
+
 - **Plain, short wording for people who aren't technical.** Labels, hints and messages across the
   dashboard, a recruit's page, `/me`, the sign-up form, the pages behind email buttons and the welcome,
   goodbye and deleted emails now say what happens in everyday words, without terms like scan, queue,

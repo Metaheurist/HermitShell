@@ -55,7 +55,8 @@ describe("bulk actions", () => {
     const page = await admin.text("/admin?done=bulk&n=2&m=4");
     expect(page).toContain("2 done, 4 skipped.");
     expect(page.match(/pausing/g)?.length).toBeGreaterThanOrEqual(2);
-    expect(page).toContain("Waiting for HermitShell: 2 changes");
+    expect(page).toContain("Working on 2 changes&hellip;");
+    expect(page).not.toContain("Waiting for HermitShell:");
   });
 
   it("shows a checkbox on each recruit's row for the bar's form, and Assign only to admins", async () => {

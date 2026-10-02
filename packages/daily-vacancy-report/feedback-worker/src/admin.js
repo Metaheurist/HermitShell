@@ -473,11 +473,15 @@ function bulkRetireModal() {
     check: "Yes, retire them and email each one about their data", label: "Retire", icon: RETIRE_ICON });
 }
 
+// What a press says once it has queued a change. While the Saving bar shows, it says so instead, so a press shows one
+// message rather than three.
+const SAVING_CODES = new Set(["queued", "assigned", "retiring", "reactivating", "sending", "bulk"]);
+
 // "N done, M skipped" after a bulk change, from the counts in the redirect.
 function bulkNote(url) {
   const count = (name) => Math.max(0, Math.min(MAX_BULK, Math.floor(Number(url.searchParams.get(name))) || 0));
   const [n, m] = [count("n"), count("m")];
-  return `${n} done, ${m} skipped.${n ? " Changes take effect within seconds." : ""}`;
+  return `${n} done, ${m} skipped.`;
 }
 
 function deleteRecruitModal(p, csrf) {
@@ -513,7 +517,7 @@ async function dashboard(request, env, s) {
   const quick = mine.filter((i) => i.type === "admin" && Object.hasOwn(QUICK_ACTIONS, i.action));
   const refresh = waitRefresh(quick);
   const busy = new Map(quick.filter((i) => i.u).map((i) => [String(i.u), i.action]));
-  const waiting = describe(mine.filter((i) => !signups.some((p) => i.type === "signup" && p.email === String(i.email || ""))));
+  const waiting = describe(mine.filter((i) => !quick.includes(i) && !signups.some((p) => i.type === "signup" && p.email === String(i.email || ""))));
   const profiles = (current.profiles || []).filter((p) => canSee(s.me, p));
   const stats = await recentStats(env, profiles.map((p) => p.id));
   const inviteRows = invites.filter((i) => ownsRecruiter(s.me, String(i.recruiter || "")))
@@ -521,7 +525,8 @@ async function dashboard(request, env, s) {
       ? `joins ${esc(byId.get(i.recruiter).name)}` : "no recruiter"}</td>` : ""}<td class="muted">expires ${esc(when(i.expires, current.timezone))}</td>
 <td>${button(s.csrf, "revoke", "Revoke", { invite: i.id })}</td></tr>`).join("");
   const code = url.searchParams.get("done");
-  const done = code === "bulk" ? bulkNote(url) : (code === "queued" || code === "assigned") && !quick.length ? APPLIED : DONE[code];
+  const done = quick.length && SAVING_CODES.has(code) && !(code === "bulk" && Number(url.searchParams.get("m")) > 0) ? ""
+    : code === "bulk" ? bulkNote(url) : (code === "queued" || code === "assigned") ? APPLIED : DONE[code];
   const q = searchQuery(url);
   const only = statusQuery(url);
   const tag = tagQuery(url);
@@ -1024,7 +1029,7 @@ async function signedInRoute(request, env, s, path) {
     const url = new URL(request.url);
     const [current, queue] = await Promise.all([status(env), queued(env)]);
     const done = url.searchParams.get("done");
-    return settingsPage(current, s.csrf, { done: done === "queued" && !settingsWaiting(queue).length ? APPLIED : DONE[done] || "", queue, here: url,
+    return settingsPage(current, s.csrf, { done: done === "queued" ? (settingsWaiting(queue).length ? "" : APPLIED) : DONE[done] || "", queue, here: url,
       demo: demoSection(s.demo, s.csrf, current.timezone, done === "demo_on" || done === "demo_off") });
   }
   const url = new URL(request.url);
@@ -1042,7 +1047,7 @@ async function signedInRoute(request, env, s, path) {
     await indexTags(env, u, notes.tags);
     const done = url.searchParams.get("done");
     return profilePage(current, u, s.csrf,
-      { done: DONE[done] || "", queue, saving: ["saved", "cvqueued", "sending"].includes(done), cv: { info, busy: profileCvBusy(current, held, u) },
+      { done: done === "saved" || done === "sending" ? "" : DONE[done] || "", queue, saving: ["saved", "cvqueued", "sending"].includes(done), cv: { info, busy: profileCvBusy(current, held, u) },
         notes: notesSection(notes, u, s.csrf, s.me, current.timezone) });
   }
   if (path === NOTES_URL && request.method === "POST") return notesRequest(request, env, s);

@@ -683,5 +683,5 @@ export const SETTINGS_DONE = {
   cvmissing: "Upload a CV file or paste the CV (at least a few lines).",
   cvqueued: "CV uploaded. HermitShell reads it and updates the profile within about 10 minutes, then emails a summary.",
   badtime: "Choose a time for the daily report.",
-  sending: "Sending. HermitShell starts the scan within seconds while it is connected; the email follows when it finishes, usually in 10 to 20 minutes.",
+  sending: "Looking for jobs now. The email arrives in about 10 to 20 minutes.",
 };

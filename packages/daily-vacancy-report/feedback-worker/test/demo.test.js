@@ -438,10 +438,10 @@ describe("demo mode presses play out", () => {
     await admin.post("/admin/action", { action: "assign", u: "robin-shaw", recruiter: "casey" });
     await admin.post("/admin/action", { action: "delete", u: "taylor-reid", confirm: "yes" });
     await admin.post("/admin/action", { action: "send_now", u: "morgan-ellis" });
-    expect((await admin.get("/admin")).body).toContain("Saving.");
+    expect((await admin.get("/admin")).body).toContain("Working on 4 changes");
     later(WORK_MS.change + 1000);
     const body = (await admin.get("/admin")).body;
-    expect(body).not.toContain("Saving.");
+    expect(body).not.toContain("class=\"waitbar");
     expect(body).toContain('aria-label="Resume reports for Sam Lee"');
     const robin = body.slice(body.indexOf('aria-label="Recruiter for Robin Shaw"')).split("</select>")[0];
     expect(robin).toContain('<option value="casey" selected>');

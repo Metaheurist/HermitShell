@@ -738,8 +738,8 @@ and never holds a prompt, a reply or a key.
 <img src="images/worker/admin-settings-usage.png" alt="Model tokens used: job ratings, title screening, second opinions, summaries, cover letters and tailored CVs, each with requests, tokens in and out, tokens a request and time" width="720">
 
 Keys and passwords are stored on the HermitShell server (`state/dashboard.json`, mode 600) and shown only as their last four characters. Changes wait in KV and
-are applied by `profiles.py`, within seconds over the live link. Until then a **Saving** bar at the top
-says what is pending, the key or model being changed carries a **saving&hellip;** tag, a new model order
+are applied by `profiles.py`, within seconds over the live link. Until then a **Working on&hellip;** bar at the top
+says what is pending (it is the only message: no **Saved** note beside it), the key or model being changed carries a **saving&hellip;** tag, a new model order
 is shown picked, and the email server form shows what you saved rather than the old values. The page
 updates itself every 4 seconds for the first 45, then every 20, and once HermitShell has applied the
 change it shows it with **Done. The page shows the change.** After 5 minutes it stops and says HermitShell may be
@@ -1094,8 +1094,9 @@ Each cancel is written in that recruit's [history](#history) with who pressed it
 **Cancelled the tailored CV: Data Engineer at Northwind** or **Stopped the job report**. A
 cancelled global settings change or sign-up belongs to no recruit, so it is not kept.
 
-Recruiters don't get the button or the window, and `/admin/tasks` answers them with 403; the status line
-still tells them how many of their changes are **Waiting for HermitShell**.
+Recruiters don't get the button or the window, and `/admin/tasks` answers them with 403; their waiting
+changes still show, as the **Working on&hellip;** bar for a press on the dashboard and as **Waiting for
+HermitShell: N changes** in the status line for the rest.
 
 The window has no JavaScript: its list is a frame (`/admin/tasks`, only embeddable by the dashboard)
 that reloads every 5 seconds for 2 minutes, then every 15 seconds for 9 more, then stops; with

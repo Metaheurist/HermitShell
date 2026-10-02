@@ -134,7 +134,7 @@ describe("the server model's row and its Change window", () => {
     const { admin, act } = await setup();
     await act({ action: "model_local", model: SEVEN });
     const settings = await admin.get("/admin/settings?done=queued");
-    expect(settings).toContain("Waiting for HermitShell to pick up the server model");
+    expect(settings).toContain("Working on the server model");
     expect(row(settings)).toContain('<span class="savingtag">saving&hellip;</span>');
   });
 

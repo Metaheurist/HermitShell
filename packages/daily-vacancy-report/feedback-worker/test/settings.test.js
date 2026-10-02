@@ -210,8 +210,8 @@ describe("global settings page", () => {
     await act({ action: "test_email", to: "alex@example.com" });
     await act({ action: "pause", u: "sam-lee" });
     const { body } = await get("/admin/settings?done=queued");
-    expect(body).toContain("Saved. It takes effect within seconds.");
-    expect(body).toContain("Waiting for HermitShell to pick up the test email. This page updates by itself.");
+    expect(body).toContain("Working on the test email&hellip;</b> This page updates by itself.");
+    expect(body).not.toContain("Saved.");
     expect(body).not.toContain("sam-lee");
   });
 });
@@ -242,8 +242,8 @@ describe("pages that update themselves", () => {
     expect(waiting).toContain('<meta http-equiv="refresh" content="4;url=/admin/settings?done=queued&amp;w=1#keys">');
     expect((await get("/admin/settings?done=queued&w=1")).body).toContain('content="4;url=/admin/settings?done=queued&amp;w=2#keys"');
     expect(waiting).toContain('<body class="still">');
-    expect(waiting).toContain("Waiting for HermitShell to pick up the web search keys");
-    expect(waiting).toContain("Saved. It takes effect within seconds.");
+    expect(waiting).toContain("Working on the web search keys");
+    expect(waiting).not.toContain("Saved.");
     const keys = waiting.slice(waiting.indexOf('<h2 id="keys">'), waiting.indexOf('<h2 id="models">'));
     const tavily = keys.slice(keys.indexOf("cr-tavily"), keys.indexOf("cr-scrapfly"));
     expect(tavily).toContain('<span class="savingtag">saving&hellip;</span>');
@@ -284,7 +284,7 @@ describe("pages that update themselves", () => {
     const late = (await get("/admin/settings")).body;
     expect(refreshOf(late)).toBeNull();
     expect(late).not.toContain('<body class="still">');
-    expect(late).toContain("Still waiting for HermitShell</b> to pick up the test email. It may be offline or busy");
+    expect(late).toContain("Still working on the test email.</b> HermitShell may be offline or busy");
   });
 
   it("shows a pause on the dashboard at once and reloads until HermitShell applies it", async () => {
@@ -292,7 +292,7 @@ describe("pages that update themselves", () => {
     await act({ action: "pause", u: "sam-lee" });
     const body = (await get("/admin?done=queued")).body;
     expect(refreshOf(body)).toBe("4");
-    expect(body).toContain("Waiting for HermitShell to pick up the change. This page updates by itself.");
+    expect(body).toContain("Working on the change&hellip;</b> This page updates by itself.");
     const row = body.slice(body.indexOf("Sam &lt;b&gt;Lee"));
     expect(row).toMatch(/<span class="pill paused">paused<\/span> <span class="savingtag">pausing&hellip;<\/span>/);
     expect(row).toContain('aria-label="Resume reports for Sam &lt;b&gt;Lee&lt;/b&gt;"');
@@ -302,6 +302,24 @@ describe("pages that update themselves", () => {
     const after = (await get("/admin?done=queued")).body;
     expect(refreshOf(after)).toBeNull();
     expect(after).toContain(APPLIED);
+  });
+
+  it("says one thing per change: the working bar while it waits, then a single Done", async () => {
+    const { env, get, act } = await setup();
+    const notices = (body) => (body.match(/class="(note |waitbar)/g) || []).length;
+    for (const [action, done] of [["pause", "queued"], ["send_now", "sending"], ["retire", "retiring"]]) {
+      await act({ action, u: "sam-lee", ...(action === "retire" ? { confirm: "yes" } : {}) });
+      const body = (await get(`/admin?done=${done}`)).body;
+      expect(notices(body)).toBe(1);
+      expect(body).toContain('class="waitbar');
+      expect(body).not.toContain("Waiting for HermitShell:");
+      await clearQueue(env);
+    }
+    const after = (await get("/admin?done=queued")).body;
+    expect(notices(after)).toBe(1);
+    expect(after).toContain(APPLIED);
+    await act({ action: "test_email", to: "alex@example.com" });
+    expect(notices((await get("/admin/settings?done=queued")).body)).toBe(1);
   });
 
   it("doesn't reload for a sign-up or a CV, which take minutes and show their own progress", async () => {
@@ -507,7 +525,7 @@ describe("profile page", () => {
     const { body } = await get("/admin/profile?u=sam-lee&done=saved");
     expect(body).toContain('value="sam.lee@example.com"');
     expect(body).toContain(">Data Analyst</textarea>");
-    expect(body).toContain("The box above shows when it has taken effect");
+    expect(body).not.toContain('class="note');
     expect(body).toContain('<iframe class="saving" src="/admin/profile/status?u=sam-lee&amp;n=1"');
     expect((await get("/admin/profile?u=sam-lee")).body).toContain('src="/admin/profile/status?u=sam-lee"');
   });
@@ -691,7 +709,7 @@ describe("daily report and Send jobs now", () => {
     expect(dash).toContain('name="action" value="send_now"><input type="hidden" name="u" value="sam-lee">');
     const res = await act({ action: "send_now", u: "sam-lee" });
     expect(res.headers.get("Location")).toBe("/admin?done=sending");
-    expect((await get("/admin?done=sending")).body).toContain("HermitShell starts the scan within seconds");
+    expect((await get("/admin?done=sending")).body).toContain("Working on the change");
     const back = await act({ action: "send_now", u: "sam-lee", back: "profile" });
     expect(back.headers.get("Location")).toBe("/admin/profile?u=sam-lee&done=sending");
     // The second press came within a minute, so it is the same scan and is not queued again.

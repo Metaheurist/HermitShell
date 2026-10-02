@@ -211,7 +211,7 @@ describe("recruiter sign-in and what they can see", () => {
     const { env, admin, casey } = await setup();
     const mine = await queueItem(env, { type: "admin", action: "pause", u: "sam-lee" });
     const page = await casey.text("/admin");
-    expect(page).toContain("Waiting for HermitShell: 1 change.");
+    expect(page).toContain("Working on the change");
     for (const bit of ['class="tasksbtn', 'id="tasks"', 'href="#tasks"', "<iframe"]) expect(page).not.toContain(bit);
     expect((await casey.get("/admin")).headers.get("Content-Security-Policy")).not.toContain("frame-src");
     const res = await casey.send("/admin/tasks", { task: mine });
@@ -333,7 +333,7 @@ describe("a recruiter's dashboard updating itself", () => {
     expect(mine.match(/savingtag">pausing/g)).toHaveLength(1);
     const all = await admin.text("/admin");
     expect(all.match(/savingtag">pausing/g)).toHaveLength(2);
-    expect(all).toContain("Waiting for HermitShell to pick up 2 changes");
+    expect(all).toContain("Working on 2 changes");
   });
 
   it("shows the server commands in the stale warning to an admin only", async () => {
