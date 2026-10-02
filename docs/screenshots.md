@@ -397,23 +397,23 @@ buttons. On a phone everything is in one column.
 
 ### Users and roles
 
-`/admin/users`, admins only: the two roles and everyone who can sign in to the dashboard.
+`/admin/users`, admins and managers: the three roles and everyone who can sign in to the dashboard.
 
-<img src="images/worker/admin-users.png" alt="Users and roles: the Admin and Recruiter roles and the dashboard users" width="760">
+<img src="images/worker/admin-users.png" alt="Users and roles: the Admin, Manager and Recruiter roles and the dashboard users" width="760">
 
 | Control | What it does |
 | --- | --- |
-| Role cards | **Admin**: everything. **Recruiter**: only their own pool, the people they invite and the recruits assigned to them |
-| Users table | Each user's name, username, roles, how many recruits they have, and **short password** when their password is under 12 characters. The main admin (`ADMIN_USER`) is always first |
-| **Add user** | Opens a window for a name, username, password and roles |
-| **Edit** (pencil) | Changes the name and roles. On your own row it adds or removes your Recruiter role |
+| Role cards | **Admin**: everything. **Manager**: their team of recruiters and those recruiters' recruits, with the team's desk and fees, but no admin pages. **Recruiter**: only their own pool, the people they invite and the recruits assigned to them |
+| Users table | Each user's name, username, roles, the team a recruiter is in, how many recruits they have (or recruiters, for a manager), and **short password** when their password is under 12 characters. The main admin (`ADMIN_USER`) is always first |
+| **Add user** | Opens a window for a name, username, password, roles and, for a recruiter, their manager |
+| **Edit** (pencil) | Changes the name, roles and a recruiter's **Manager**. On your own row it adds or removes your Recruiter role |
 | **Reset password** (key) | Opens a window for a new password, typed twice. The user is signed out everywhere at once; tell them the new password yourself. On your own row the key opens **Change password** instead; not on the main admin's row |
 | Bin button (red) | Opens a window to confirm; tick the box and press **Delete** to sign the user out, delete their unused invites and leave their recruits unassigned |
 
 <table>
 <tr><th>Add user</th><th>A recruiter's view</th></tr>
 <tr>
-<td><img src="images/worker/admin-user-modal.png" alt="The Add a user window: name, username, password and roles" width="380"></td>
+<td><img src="images/worker/admin-user-modal.png" alt="The Add a user window: name, username, password, roles and a recruiter's manager" width="380"></td>
 <td><img src="images/worker/admin-recruiter-view.png" alt="A recruiter signed in: only their own recruits and invites" width="380"></td>
 </tr>
 <tr><th>Reset password</th><th>Change password (a recruiter)</th></tr>
@@ -426,6 +426,20 @@ buttons. On a phone everything is in one column.
 A recruiter sees only the **Recruits** tab, only their own recruits and invites, and no Recruiter
 column, delete buttons, checklist or settings. Opening anyone else's page answers **Recruit not
 found**; admin pages answer **Admins only**.
+
+A manager sees the **Recruits**, **Desk** and **Your team** tabs, all limited to their team: the
+recruiters in it and those recruiters' recruits. They can move a recruit between their recruiters,
+invite someone for one of them, set fees, and add, rename, reset and delete their team's recruiters
+(always with the Recruiter role). Other teams' recruits answer **Recruit not found**; the global
+settings, the server panel, tasks, notes export and deleting recruits stay with admins.
+
+<table>
+<tr><th>A manager's recruits</th><th>A manager's team</th></tr>
+<tr>
+<td><img src="images/worker/admin-manager-view.png" alt="A manager signed in: their team's recruits, a Recruiter column limited to the team and team-only invites" width="380"></td>
+<td><img src="images/worker/admin-manager-team.png" alt="The Your team page: the manager and the recruiters in their team, with Add a recruiter" width="380"></td>
+</tr>
+</table>
 
 <table>
 <tr><th>Right after setup: the checklist</th><th>Before HermitShell has reported</th><th>New invite link</th></tr>
@@ -585,7 +599,7 @@ at the top switch months; the oldest ends with the day they joined. It is kept u
 
 `/admin/pipeline?u=<id>`, the **Pipeline** tab: each job they answered, in the column of its latest
 answer (email buttons and moves made here). **Move** puts a job in another column; the card moves after
-HermitShell's next check-in. Admins can add a start date and fee to an offer or placement; the fee is
+HermitShell's next check-in. Admins and managers can add a start date and fee to an offer or placement; the fee is
 sealed for HermitShell and never shown on the board or to recruiters. Cards at Interview and Offer have
 an **Interview prep** button, then a **Prep pack** download once HermitShell has made it
 ([more](feedback-worker.md#pipeline)).
@@ -598,7 +612,7 @@ an **Interview prep** button, then a **Prep pack** download once HermitShell has
 
 | Part | What it shows |
 | --- | --- |
-| Tiles | Jobs sent, applied, interviews, offers and placed across every recruit, and (admins only) the fees from placements per currency |
+| Tiles | Jobs sent, applied, interviews, offers and placed across every recruit, and (admins and managers) the fees from placements per currency |
 | A card per recruiter | Their recruits, each with the same counts and a link to their page and jobs sent, and a total row. Recruits with no recruiter come last |
 | **Salaries by job title across the desk** | The median of each advert's lowest yearly figure over the last 90 days, across every recruit's jobs rated, for titles with at least 3 salaries |
 | **Updated** | When HermitShell last sent the desk (at most every 30 minutes, only when something changed) |
@@ -606,6 +620,10 @@ an **Interview prep** button, then a **Prep pack** download once HermitShell has
 A recruiter sees only their own recruits, with no fees ([more](feedback-worker.md#desk)):
 
 <img src="images/worker/admin-desk-recruiter.png" alt="A recruiter's desk with only their recruits and no fees" width="460">
+
+A manager sees their team's recruits, grouped by recruiter, with fees:
+
+<img src="images/worker/admin-desk-manager.png" alt="A manager's desk: their team's recruiters and recruits, with fees" width="460">
 
 ### A recruit's stats
 

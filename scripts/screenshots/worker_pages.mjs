@@ -293,11 +293,15 @@ const cookie = (login.headers.get("Set-Cookie") || "").split(";")[0];
 const admin = (path, options = {}) => call(path, { ...options, headers: { Cookie: cookie, ...(options.headers || {}) } });
 const dashboard = await (await admin("/admin")).text();
 const csrf = dashboard.match(/name="csrf" value="([^"]+)"/)[1];
-// Dashboard users: Casey Quinn recruits Sam Lee, Drew Harper is a second admin, and the main admin
-// (Alex Morgan) also has the Recruiter role, with Avery Lane and Jordan Patel in their pool.
+// Dashboard users: Casey Quinn recruits Sam Lee in Morgan Ellis's team, Drew Harper is a second admin, and the
+// main admin (Alex Morgan) also has the Recruiter role, with Avery Lane and Jordan Patel in their pool.
 await admin("/admin/users", { method: "POST", form: { csrf, op: "admin_roles", roles: "recruiter" } });
-await admin("/admin/users", { method: "POST", form: { csrf, op: "add", name: "Casey Quinn", username: "casey", password: "docs-recruiter-password", roles: "recruiter" } });
+await admin("/admin/users", { method: "POST", form: { csrf, op: "add", name: "Morgan Ellis", username: "morgan", password: "docs-manager-password", roles: "manager" } });
+await admin("/admin/users", { method: "POST", form: { csrf, op: "add", name: "Casey Quinn", username: "casey", password: "docs-recruiter-password", roles: "recruiter", manager: "morgan" } });
 await admin("/admin/users", { method: "POST", form: { csrf, op: "add", name: "Drew Harper", username: "drew", password: "docs-pw", roles: "admin" } });
+const morganLogin = await call("/admin/login", { method: "POST", form: { username: "morgan", password: "docs-manager-password" } });
+const morganCookie = (morganLogin.headers.get("Set-Cookie") || "").split(";")[0];
+const morgan = (path, options = {}) => call(path, { ...options, headers: { Cookie: morganCookie, ...(options.headers || {}) } });
 const caseyLogin = await call("/admin/login", { method: "POST", form: { username: "casey", password: "docs-recruiter-password" } });
 const caseyCookie = (caseyLogin.headers.get("Set-Cookie") || "").split(";")[0];
 const casey = (path, options = {}) => call(path, { ...options, headers: { Cookie: caseyCookie, ...(options.headers || {}) } });
@@ -329,6 +333,8 @@ await save("admin-recruiter-search", await admin("/admin?q=casey"));
 await save("admin-recruiter-view", await casey("/admin"));
 await save("admin-signed-in", await casey("/admin"));
 await save("admin-users", await admin("/admin/users"));
+await save("admin-manager-view", await morgan("/admin"));
+await save("admin-manager-team", await morgan("/admin/users"));
 // Opened as files, pages cannot be given the fragment that opens a modal, so it is opened with a style.
 const withOpenModal = async (path, id, as = admin) => new Response((await (await as(path)).text()).replace("</head>", `<style>#${id}{display:grid}</style></head>`));
 await save("admin-user-modal", await withOpenModal("/admin/users", "user-new"));
@@ -466,6 +472,7 @@ await call("/api/desk", { method: "POST", headers: { Authorization: `Bearer ${TO
     { title: "Analytics Engineer", n: 4, median: 55000, currency: "GBP" }] } } });
 await save("admin-desk", await admin("/admin/desk"));
 await save("admin-desk-recruiter", await casey("/admin/desk"));
+await save("admin-desk-manager", await morgan("/admin/desk"));
 
 // Theme and branding: the page as it opens, then the dashboard under another name in the Ocean palette, then back.
 await save("admin-theme", await admin("/admin/theme"));

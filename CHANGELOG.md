@@ -8,6 +8,14 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Manager role.** A dashboard user with the **Manager** role looks after a team: the recruiters an
+  admin puts in it (the new **Manager** pick when adding or editing a recruiter) or that the manager
+  adds, and those recruiters' recruits. Managers see the team's recruits, desk and fees, set fees, move
+  recruits between their recruiters, invite people for them, and add, rename, reset the password of and
+  delete their team's recruiters from the **Your team** tab (always with the Recruiter role only). They
+  never see other teams, admins, the global settings, the server panel or tasks, and cannot export or
+  delete notes or delete recruits. Demoting or deleting a manager empties their team; a manager who is
+  also a recruiter takes over the recruits of a recruiter they delete.
 - **Your page link in recruits' emails.** While `HERMES_SELF_SERVICE` is on, a recruit's daily report, weekly
   roll-up and welcome email end with a **Your page** link beside Unsubscribe (HTML and plain text). It is the
   plain `<JOB_FEEDBACK_URL>/me` address with no token, so a forwarded email signs nobody in; the main admin's

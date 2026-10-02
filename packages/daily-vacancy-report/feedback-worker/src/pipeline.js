@@ -1,8 +1,8 @@
 // A recruit's Pipeline (/admin/pipeline): where each application stands, in columns, from the board HermitShell
 // sends with the jobs sent (profile_stats._board, kept in "sent:<id>"). Moving a job posts to /admin/stage, which
 // stores the move as the matching email answer would be; HermitShell collects it within about 5 minutes and the
-// board shows it after its next stats upload. Placement details (start date, fee) are for admins only: the fee is
-// sealed for HermitShell before it is stored, and neither the board nor the stats bring it back.
+// board shows it after its next stats upload. Placement details (start date, fee) are for admins and managers
+// only: the fee is sealed for HermitShell before it is stored, and neither the board nor the stats bring it back.
 
 import { CURRENCIES, currencyCode } from "./currency.js";
 import { DOC_URL, PREP, docIcon, jobHash, validJobKey } from "./docs.js";
@@ -67,7 +67,7 @@ function moveForm(pid, c, h, ctx) {
   const placement = ctx.admin ? `<details class="pdet"><summary>Start date and fee (offer or placed)</summary>
 <label>Start date<input type="date" name="start"></label><label>Fee<input name="fee" inputmode="decimal" maxlength="12" placeholder="0.00"></label>
 <label>Currency<select name="currency">${CURRENCIES.map(([code]) => `<option${code === currency ? " selected" : ""}>${code}</option>`).join("")}</select></label>
-<small>Only admins see these. The fee is sealed for HermitShell and not shown on the dashboard.</small></details>` : "";
+<small>Only admins and managers see these. The fee is sealed for HermitShell and not shown on the dashboard.</small></details>` : "";
   return `<form method="post" action="${STAGE_URL}" class="pmove"><input type="hidden" name="csrf" value="${esc(ctx.csrf)}">
 <input type="hidden" name="u" value="${esc(pid)}"><input type="hidden" name="j" value="${esc(c.key)}">
 <label class="sr" for="st-${h}">Move to</label><select id="st-${h}" name="a">${options}</select><button>Move</button>${placement}</form>`;

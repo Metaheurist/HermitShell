@@ -590,6 +590,48 @@ describe("AI models and the server panel", () => {
     expect(valuesWith(env, "queue:").filter((i) => i.action === "backup_now")).toEqual([]);
   });
 
+  it("never lets a manager raise anyone's role, take another team's recruiter, see the server or queue a key", async () => {
+    const env = testEnv({ ADMIN_PASSWORD: "correct horse battery" });
+    const form = (path, fields, headers = {}) => {
+      const body = new URLSearchParams();
+      for (const [k, v] of Object.entries(fields)) for (const one of [v].flat()) body.append(k, one);
+      return new Request(`${BASE}${path}`, { method: "POST", body, headers });
+    };
+    await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: { Authorization: "Bearer api-token" },
+      body: JSON.stringify({ profiles: [], server: { cpu: { model: "Secret CPU", cores: 4 } } }) }), env);
+    const signIn = async (username, password) => {
+      const res = await worker.fetch(form("/admin/login", { username, password }, { "CF-Connecting-IP": "203.0.113.9" }), env);
+      const cookie = (res.headers.get("Set-Cookie") || "").split(";")[0];
+      const page = await (await worker.fetch(new Request(`${BASE}/admin`, { headers: { Cookie: cookie } }), env)).text();
+      return { cookie, page, csrf: page.match(/name="csrf" value="([0-9a-f]+)"/)[1] };
+    };
+    const admin = await signIn("admin", "correct horse battery");
+    const add = (fields) => worker.fetch(form("/admin/users", { csrf: admin.csrf, op: "add", password: "user-password-1", ...fields }, { Cookie: admin.cookie }), env);
+    await add({ name: HOSTILE, username: "morgan", roles: "manager" });
+    await add({ name: "Riley Chen", username: "riley", roles: "recruiter" });
+    const morgan = await signIn("morgan", "user-password-1");
+    const as = (fields) => worker.fetch(form("/admin/users", { csrf: morgan.csrf, ...fields }, { Cookie: morgan.cookie }), env);
+    await as({ op: "add", name: "Jamie Walsh", username: "jamie", password: "user-password-1", roles: ["admin", "manager"], manager: "" });
+    await as({ op: "edit", id: "morgan", name: "Morgan", roles: ["admin"] });
+    await as({ op: "edit", id: "riley", name: "Riley Chen", roles: "recruiter", manager: "morgan" });
+    await as({ op: "admin_roles", roles: "recruiter" });
+    const users = JSON.parse(env.FEEDBACK.store.get("accounts")).users;
+    expect(Object.fromEntries(users.map((u) => [u.id, [u.roles.join(), u.manager]]))).toEqual({
+      morgan: ["manager", ""], riley: ["recruiter", ""], jamie: ["recruiter", "morgan"] });
+    expect(JSON.parse(env.FEEDBACK.store.get("accounts")).admin.roles).toEqual(["admin"]);
+    expect(morgan.page).not.toContain("Secret CPU");
+    for (const page of [morgan.page, await (await worker.fetch(new Request(`${BASE}/admin/users`, { headers: { Cookie: admin.cookie } }), env)).text()]) {
+      expect(page).not.toContain("<script>alert(1)");
+      expect(page).not.toContain("onerror=alert(2)>");
+    }
+    for (const action of ["model_key", "api_key", "backup_now"]) {
+      const res = await worker.fetch(form("/admin/action", { csrf: morgan.csrf, action, provider: "openrouter", key: "test-openrouter-key" },
+        { Cookie: morgan.cookie }), env);
+      expect(res.status).toBe(403);
+    }
+    expect(valuesWith(env, "queue:")).toEqual([]);
+  });
+
   it("escapes and checks the backup fields HermitShell reports", async () => {
     const { serverBox } = await import("../src/models.js");
     const html = serverBox({ backup: { at: HOSTILE, size: -1, kept: 1e9, error: HOSTILE, failed_at: Date.now() - 60000, encrypted: HOSTILE } },

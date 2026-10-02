@@ -1,14 +1,14 @@
 // The desk (/admin/desk): what each recruiter's recruits have done in the last 7 days, 30 days, 90 days or 12
 // months, and the salaries by job title across the desk. HermitShell sends every recruit's totals in one upload
 // (profiles.py push_desk; POST /api/desk), at most every 30 minutes, and it is kept sealed as "stats:desk" because
-// it holds placement fees. Admins see every recruiter's recruits and the fees; a recruiter sees only their own
-// recruits and never a fee: fees are taken out before the page is drawn.
+// it holds placement fees. Admins see every recruiter's recruits and the fees, a manager their team's recruits and
+// fees; a recruiter sees only their own recruits and never a fee: fees are taken out before the page is drawn.
 
 import { currencyCode, currencySymbol } from "./currency.js";
 import { PROFILE_RE, ago, esc, page } from "./lib.js";
 import { nav } from "./settings.js";
 import { DEFAULT_RANGE, RANGES, SALARY_MIN_N, SENT_URL, STATS_URL, salaryList } from "./stats.js";
-import { canSee, recruiterOf } from "./users.js";
+import { canSee, navFor, oversees, recruiterOf } from "./users.js";
 import { getSealedJson, putSealedJson } from "./vault.js";
 
 export const DESK_URL = "/admin/desk";
@@ -56,7 +56,7 @@ export async function readDesk(env) {
   return validDesk(desk) ? desk : null;
 }
 
-// What `me` may see of the desk: only the recruits they can see, and no fees unless they are an admin.
+// What `me` may see of the desk: only the recruits they can see, and no fees unless they are an admin or a manager.
 export function forViewer(desk, me, profiles) {
   if (!desk) return null;
   const seen = new Set(profiles.filter((p) => canSee(me, p)).map((p) => p.id));
@@ -64,7 +64,7 @@ export function forViewer(desk, me, profiles) {
   for (const [u, ranges] of Object.entries(desk.recruits)) {
     if (!seen.has(u)) continue;
     recruits[u] = Object.fromEntries(Object.entries(ranges).map(([r, l]) =>
-      [r, me.admin ? l : Object.fromEntries(COUNTS.map((k) => [k, l[k]]))]));
+      [r, oversees(me) ? l : Object.fromEntries(COUNTS.map((k) => [k, l[k]]))]));
   }
   return { recruits, salaries: desk.salaries || [], updated: desk.updated };
 }
@@ -119,23 +119,25 @@ export function deskPage(status, desk, me, people, rangeParam) {
     String(names.get(a) || a).localeCompare(String(names.get(b) || b)));
   const line = (p) => view?.recruits[p.id]?.[String(range)] || null;
   const all = total(mine.map(line));
-  const head = `<tr><th scope="col">Recruit</th>${COUNTS.map((k) => `<th scope="col">${LABELS[k]}</th>`).join("")}${me.admin ? '<th scope="col">Fees</th>' : ""}</tr>`;
+  const fees = oversees(me);
+  const head = `<tr><th scope="col">Recruit</th>${COUNTS.map((k) => `<th scope="col">${LABELS[k]}</th>`).join("")}${fees ? '<th scope="col">Fees</th>' : ""}</tr>`;
   const sections = order.map((id) => {
     const group = groups.get(id).sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
     const label = id ? names.get(id) || "A removed recruiter" : "No recruiter";
     const rows = group.map((p) => `<tr><th scope="row"><a href="${STATS_URL}?u=${esc(p.id)}&amp;r=${range}">${esc(p.name || p.id)}</a>
-<a class="small" href="${SENT_URL}?u=${esc(p.id)}">Jobs sent</a></th>${cells(line(p), me.admin)}</tr>`).join("");
+<a class="small" href="${SENT_URL}?u=${esc(p.id)}">Jobs sent</a></th>${cells(line(p), fees)}</tr>`).join("");
     return `<section class="card deskgroup"><h3>${esc(label)}<span>${group.length} recruit${group.length === 1 ? "" : "s"}</span></h3>
 <div class="tablewrap"><table class="desk"><thead>${head}</thead><tbody>${rows}</tbody>
-<tfoot><tr><th scope="row">Total</th>${cells(total(group.map(line)), me.admin)}</tr></tfoot></table></div></section>`;
+<tfoot><tr><th scope="row">Total</th>${cells(total(group.map(line)), fees)}</tr></tfoot></table></div></section>`;
   }).join("");
-  const tiles = [...COUNTS.map((k) => [LABELS[k], String(all[k])]), ...(me.admin ? [["Fees from placements", money(all.fees)]] : [])]
+  const tiles = [...COUNTS.map((k) => [LABELS[k], String(all[k])]), ...(fees ? [["Fees from placements", money(all.fees)]] : [])]
     .map(([label, value]) => `<div class="dtile"><b>${value}</b><span>${esc(label)}</span></div>`).join("");
   const updated = view?.updated ? `<span class="muted">Updated ${esc(ago(view.updated))}</span>` : "";
   const waiting = !view ? '<p class="note ok" role="status">HermitShell sends the desk within 30 minutes of its next check-in once it runs this version. Until then every number shows as a dash.</p>' : "";
-  const empty = mine.length ? "" : `<p class="muted">${me.admin ? "No recruits yet." : "You have no recruits yet."}</p>`;
-  const scope = me.admin ? "Every recruiter's recruits, grouped by recruiter. Fees are the placements' fees, by currency." : "Your recruits only.";
-  return page("Desk", `<style>${DESK_STYLE}</style>${nav("desk", me.admin)}${waiting}
+  const empty = mine.length ? "" : `<p class="muted">${me.admin ? "No recruits yet." : me.manager ? "Your team has no recruits yet." : "You have no recruits yet."}</p>`;
+  const scope = me.admin ? "Every recruiter's recruits, grouped by recruiter. Fees are the placements' fees, by currency."
+    : me.manager ? "Your team's recruits, grouped by recruiter. Fees are the placements' fees, by currency." : "Your recruits only.";
+  return page("Desk", `<style>${DESK_STYLE}</style>${nav("desk", navFor(me))}${waiting}
 <div class="statbar">${rangeTabs(range)}${updated}</div>
 <p class="muted small">${scope} Sent counts the jobs emailed; Applied to Placed count each job once, in the period it reached that stage.</p>
 <div class="dtiles">${tiles}</div>${empty}${sections}

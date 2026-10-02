@@ -47,7 +47,7 @@ import {
 } from "./notes.js";
 import {
   ADMIN_ID, KEY_ICON, PASSWORD_URL, ROLES, USERS_DONE, USERS_STYLE, USER_RE, accounts, canSee, changeOwnPassword, checkUser, displayName, initials,
-  passwordModal, recruiterOf, recruiters, signOutUser, signedIn, userAction, usersPage,
+  navFor, oversees, ownsRecruiter, passwordModal, recruiterOf, recruiters, recruitersFor, signOutUser, signedIn, userAction, usersPage,
 } from "./users.js";
 
 const SESSION_SECONDS = 12 * 3600;
@@ -61,8 +61,11 @@ const INVITE_URL = "/admin/invite";
 const SEND_NOW_SECONDS = 60;
 // Back up now pressed again this soon is not queued again (maintenance.py BACKUP_NOW_GAP refuses it too).
 const BACKUP_NOW_SECONDS = 10 * 60;
-// What a recruiter may do from the dashboard, and then only for their own recruits.
+// What a recruiter may do from the dashboard, and then only for their own recruits; a manager also assigns, within
+// their team.
 const RECRUITER_ACTIONS = new Set(["invite", "revoke", "profile", "send_now", "pause", "resume", "bulk"]);
+const MANAGER_ACTIONS = new Set([...RECRUITER_ACTIONS, "assign"]);
+const mayDo = (me, act) => me.admin || (me.manager ? MANAGER_ACTIONS : RECRUITER_ACTIONS).has(act);
 // What the bar under the recruits does to the ticked ones, and how many at once (profiles.py BULK_OPS, MAX_BULK).
 const BULK_OPS = new Set(["pause", "resume", "send_now", "assign"]);
 const MAX_BULK = 25;
@@ -93,6 +96,7 @@ const DONE = {
 };
 const NOT_FOUND = ["Recruit not found", '<p>HermitShell has not reported this recruit. <a href="/admin">Back to recruits</a></p>', { status: 404 }];
 const ADMINS_ONLY = ["Admins only", '<p>Only an admin can open this page. <a href="/admin">Back to recruits</a></p>', { status: 403 }];
+const LEADS_ONLY = ["Admins and managers only", '<p>Only an admin or a manager can open this page. <a href="/admin">Back to recruits</a></p>', { status: 403 }];
 
 // The main admin's sessions are signed with an epoch that signing out bumps; a user's with their own version,
 // which a new password, deletion or signing out changes. Either way old cookies stop working.
@@ -245,11 +249,12 @@ function pendingSignups(items, profiles) {
       details: { location: String(i.location || "") } }));
 }
 
-// A recruiter's view of the queue: only what concerns their own recruits and the people they invited.
+// A recruiter's or manager's view of the queue: only what concerns the recruits they see and the people invited
+// to them.
 function mineOnly(s, current, queue) {
   if (s.me.admin) return queue;
   const mine = new Set((current.profiles || []).filter((p) => canSee(s.me, p)).map((p) => p.id));
-  return queue.filter((i) => (i.type === "signup" ? i.recruiter === s.me.id : mine.has(String(i.u || ""))));
+  return queue.filter((i) => (i.type === "signup" ? ownsRecruiter(s.me, String(i.recruiter || "")) : mine.has(String(i.u || ""))));
 }
 
 // One save for a profile's details and job search: only the fields changed since the form opened are queued,
@@ -338,15 +343,15 @@ table.recruits th:first-child{width:34%}
 `;
 
 // The recruiter's initials and a list to pick another; Assign shows once the pick changes (where the browser
-// supports :has, otherwise always).
-function recruiterCell(p, rec, recs, csrf) {
+// supports :has, otherwise always). Only an admin can leave a recruit with nobody.
+function recruiterCell(p, rec, recs, csrf, admin = true) {
   const r = recs.find((x) => x.id === rec);
   const face = `<span class="avatar rec sm${r ? "" : " none"}" aria-hidden="true">${r ? esc(initials(r.name)) : "?"}</span>`;
   if (p.pending || !recs.length) {
     const add = !p.pending && !recs.length ? ` <a class="small" href="${USERS_URL}">Add a recruiter</a>` : "";
     return `<div class="recpick">${face}<span class="${r ? "" : "muted"}">${r ? esc(r.name) : "Unassigned"}</span>${add}</div>`;
   }
-  const options = [["", "Unassigned"], ...recs.map((x) => [x.id, x.name])].map(([id, name]) =>
+  const options = [...(admin ? [["", "Unassigned"]] : []), ...recs.map((x) => [x.id, x.name])].map(([id, name]) =>
     `<option value="${esc(id)}"${id === (r ? rec : "") ? " selected" : ""}>${esc(name)}</option>`).join("");
   return `<form method="post" action="/admin/action" class="assign">
 <input type="hidden" name="csrf" value="${esc(csrf)}"><input type="hidden" name="action" value="assign"><input type="hidden" name="u" value="${esc(p.id)}">
@@ -397,9 +402,9 @@ border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:0 12p
 `;
 
 function bulkBar(s, recs) {
-  const options = [["", "Unassigned"], ...recs.map((r) => [r.id, r.name])]
+  const options = [...(s.me.admin ? [["", "Unassigned"]] : []), ...recs.map((r) => [r.id, r.name])]
     .map(([id, name]) => `<option value="${esc(id)}">${esc(name)}</option>`).join("");
-  const assign = s.me.admin && recs.length ? `<select name="recruiter" aria-label="Recruiter for the ticked recruits">${options}</select>
+  const assign = oversees(s.me) && recs.length ? `<select name="recruiter" aria-label="Recruiter for the ticked recruits">${options}</select>
 <button class="small quiet" name="op" value="assign">Assign</button>` : "";
   return `<form id="bulk" method="post" action="/admin/action" class="bulkbar"><input type="hidden" name="csrf" value="${esc(s.csrf)}"><input type="hidden" name="action" value="bulk">
 <span class="count"></span><span class="muted">Up to ${MAX_BULK} at a time:</span>
@@ -421,24 +426,28 @@ function deleteRecruitModal(p, csrf) {
 }
 
 function inviteForm(s, recs) {
-  const assign = s.me.admin && recs.length
-    ? `<select name="recruiter" aria-label="Whose recruit they become" style="width:auto;flex:none">${[["", "Nobody's recruit"], ...recs.map((r) => [r.id, `${r.name}'s recruit`])]
+  if (s.me.manager && !recs.length) {
+    return `<h2 id="invite">Invite someone</h2><p class="muted">Invites join a recruiter in your team. <a href="${USERS_URL}#user-new">Add a recruiter</a> first.</p>`;
+  }
+  const assign = oversees(s.me) && recs.length
+    ? `<select name="recruiter" aria-label="Whose recruit they become" style="width:auto;flex:none">${[...(s.me.admin ? [["", "Nobody's recruit"]] : []), ...recs.map((r) => [r.id, `${r.name}'s recruit`])]
       .map(([id, label]) => `<option value="${esc(id)}"${id === (s.me.recruiter ? s.me.id : "") ? " selected" : ""}>${esc(label)}</option>`).join("")}</select>` : "";
   return `<h2 id="invite">Invite someone</h2>
 <form method="post" action="/admin/action" class="inline"><input type="hidden" name="csrf" value="${esc(s.csrf)}"><input type="hidden" name="action" value="invite">
 <input name="note" maxlength="80" placeholder="Who it is for (only you see this)">${assign}<button class="small">Create invite link</button></form>
-<p class="muted">Each link works once and expires after 7 days.${s.me.admin ? " The person joins the recruiter picked here." : " The person joins your recruits."}</p>`;
+<p class="muted">Each link works once and expires after 7 days.${oversees(s.me) ? " The person joins the recruiter picked here." : " The person joins your recruits."}</p>`;
 }
 
 async function dashboard(request, env, s) {
   const url = new URL(request.url);
   const admin = s.me.admin;
+  const lead = oversees(s.me);
   const [current, invites, queue, presence, held, tagsOf] = await Promise.all([
     status(env), openInvites(env), queued(env), hubPresence(env), requests(env), tagIndex(env)]);
-  const recs = recruiters(s.acc, current, env);
+  const recs = recruitersFor(s.me, s.acc, current, env);
   const byId = new Map(recs.map((r) => [r.id, r]));
   const tasks = admin ? tasksButton(taskRows(current, queue, held).length) : "";
-  const signups = pendingSignups(queue, current.profiles || []).filter((p) => admin || p.recruiter === s.me.id);
+  const signups = pendingSignups(queue, current.profiles || []).filter((p) => ownsRecruiter(s.me, p.recruiter));
   const mine = mineOnly(s, current, queue);
   const quick = mine.filter((i) => i.type === "admin" && Object.hasOwn(QUICK_ACTIONS, i.action));
   const refresh = waitRefresh(quick);
@@ -446,20 +455,20 @@ async function dashboard(request, env, s) {
   const waiting = describe(mine.filter((i) => !signups.some((p) => i.type === "signup" && p.email === String(i.email || ""))));
   const profiles = (current.profiles || []).filter((p) => canSee(s.me, p));
   const stats = await recentStats(env, profiles.map((p) => p.id));
-  const inviteRows = invites.filter((i) => admin || i.recruiter === s.me.id)
-    .map((i) => `<tr><td>${esc(i.note || "No note")}</td>${admin ? `<td class="muted">${i.recruiter && byId.get(i.recruiter)
+  const inviteRows = invites.filter((i) => ownsRecruiter(s.me, String(i.recruiter || "")))
+    .map((i) => `<tr><td>${esc(i.note || "No note")}</td>${lead ? `<td class="muted">${i.recruiter && byId.get(i.recruiter)
       ? `joins ${esc(byId.get(i.recruiter).name)}` : "no recruiter"}</td>` : ""}<td class="muted">expires ${esc(when(i.expires, current.timezone))}</td>
 <td>${button(s.csrf, "revoke", "Revoke", { invite: i.id })}</td></tr>`).join("");
   const code = url.searchParams.get("done");
   const done = code === "bulk" ? bulkNote(url) : (code === "queued" || code === "assigned") && !quick.length ? APPLIED : DONE[code];
   const q = searchQuery(url);
   const tag = tagQuery(url);
-  const all = [...profiles.map((p, i) => ({ p, stats: stats[i], rec: admin ? recruiterOf(p, queue) : String(p.recruiter || ""),
+  const all = [...profiles.map((p, i) => ({ p, stats: stats[i], rec: lead ? recruiterOf(p, queue) : String(p.recruiter || ""),
     tags: tagsOf[p.id] || [] })), ...signups.map((p) => ({ p, rec: p.recruiter, tags: [] }))];
   const shown = all.filter(({ p, rec, tags }) => matchesProfile({ ...p, tags }, q, byId.get(rec)) && (!tag || tags.includes(tag)));
-  const hits = admin ? recruiterHits(recs, q, new Set(shown.map((e) => e.rec).filter(Boolean))) : [];
+  const hits = lead ? recruiterHits(recs, q, new Set(shown.map((e) => e.rec).filter(Boolean))) : [];
   const row = (e, inPool) => {
-    const third = admin ? recruiterCell(e.p, e.rec, recs, s.csrf) : null;
+    const third = lead ? recruiterCell(e.p, e.rec, recs, s.csrf, admin) : null;
     return e.p.pending ? pendingRow(e.p, current.timezone, presence.live, third)
       : profileRow(e.p, s.csrf, current.timezone, e.stats, { admin, third, inPool, busy: busy.get(e.p.id), tags: e.tags });
   };
@@ -471,15 +480,16 @@ async function dashboard(request, env, s) {
   }).join("");
   const rows = grouped + shown.filter((e) => !listed.has(e)).map((e) => row(e, false)).join("")
     || (all.length ? noMatch(q || tag) : `<tr><td colspan="4" class="muted">${admin ? "HermitShell has not reported any recruits yet."
-      : "You have no recruits yet. The people you invite join your recruits, and an admin can assign others to you."}</td></tr>`);
+      : s.me.manager ? "Your team has no recruits yet. The people invited to your team join it, and an admin can assign others."
+        : "You have no recruits yet. The people you invite join your recruits, and an admin can assign others to you."}</td></tr>`);
   const deletes = admin ? shown.filter(({ p }) => !p.pending).map(({ p }) => deleteRecruitModal(p, s.csrf)).join("") : "";
-  return page("Recruits", `<style>${LINK_STYLE}${MODAL_STYLE}${CONFIRM_STYLE}${SEARCH_STYLE}${PENDING_STYLE}${TASKS_STYLE}${RECRUITER_STYLE}${NOTES_STYLE}${BULK_STYLE}</style>${nav("profiles", admin)}${done ? note(done) : ""}
+  return page("Recruits", `<style>${LINK_STYLE}${MODAL_STYLE}${CONFIRM_STYLE}${SEARCH_STYLE}${PENDING_STYLE}${TASKS_STYLE}${RECRUITER_STYLE}${NOTES_STYLE}${BULK_STYLE}</style>${nav("profiles", navFor(s.me))}${done ? note(done) : ""}
 ${lastUpdate(current, waiting, presence, admin)}
 ${quick.length ? waitBar(quick.length === 1 ? "the change" : `${quick.length} changes`, refresh) : ""}
 ${admin ? `${problems(current)}${checklist(current)}` : ""}
 ${all.length ? searchBar(q, shown.length, all.length, tasks) : tasks ? `<div class="tabletools"><span></span><div class="tools">${tasks}</div></div>` : ""}
 ${tagFilter(tag, shown.length)}
-<table class="list stack recruits"><tr class="head"><th>Recruit</th><th>Status</th>${admin ? "<th>Recruiter</th>" : ""}<th></th></tr>
+<table class="list stack recruits"><tr class="head"><th>Recruit</th><th>Status</th>${lead ? "<th>Recruiter</th>" : ""}<th></th></tr>
 ${rows}</table>
 ${shown.some(({ p }) => !p.pending) ? bulkBar(s, recs) : ""}
 ${inviteForm(s, recs)}
@@ -568,7 +578,8 @@ async function skillRequest(request, env, s) {
   return redirect(sentBack(u, form.get("back"), h.slice(0, 16), "skill"));
 }
 
-// A job moved on the Pipeline (admins, and a recruiter for their own pool). Only admins may give a fee.
+// A job moved on the Pipeline (admins, a manager for their team, a recruiter for their own pool). Only admins and
+// managers may give a fee.
 async function stageRequest(request, env, s) {
   const form = await limitedForm(request, 8192);
   if (!form || !safeEqual(String(form.get("csrf") || ""), s.csrf)) {
@@ -578,10 +589,10 @@ async function stageRequest(request, env, s) {
   if (!PROFILE_RE.test(u)) return page("Unknown recruit", "<p>Reload the admin page and try again.</p>", { status: 400 });
   const current = await status(env);
   if (!allowed(s, current, u)) return page(...NOT_FOUND);
-  if (!s.me.admin && ["fee", "currency"].some((k) => String(form.get(k) || "").trim())) {
-    return page("Admins only", "<p>Only an admin can set a fee. <a href=\"/admin\">Back to recruits</a></p>", { status: 403 });
+  if (!oversees(s.me) && ["fee", "currency"].some((k) => String(form.get(k) || "").trim())) {
+    return page("Admins and managers only", "<p>Only an admin or a manager can set a fee. <a href=\"/admin\">Back to recruits</a></p>", { status: 403 });
   }
-  const meta = META_STAGES.includes(stage) && s.me.admin ? stageMeta(form) : {};
+  const meta = META_STAGES.includes(stage) && oversees(s.me) ? stageMeta(form) : {};
   if (!validJobKey(j) || !Object.hasOwn(STAGE_LABELS, stage) || !meta) return redirect(pipelineBack(u, "stagebad"));
   if (meta.fee != null) {
     const info = sealInfo(current);
@@ -655,23 +666,25 @@ async function action(request, env, s) {
   if (!safeEqual(String(form.get("csrf") || ""), s.csrf)) return page("Expired form", "<p>Reload the admin page and try again.</p>", { status: 403 });
   const act = String(form.get("action") || "");
   const u = String(form.get("u") || "");
-  if (!s.me.admin && !RECRUITER_ACTIONS.has(act)) return page(...ADMINS_ONLY);
+  if (!mayDo(s.me, act)) return page(...ADMINS_ONLY);
   if (["assign", "pause", "resume", "delete", "send_now"].includes(act) && !PROFILE_RE.test(u)) {
     return page("Unknown recruit", "<p>Reload the admin page and try again.</p>", { status: 400 });
   }
   const current = await status(env);
   if (["pause", "resume", "send_now", "profile", "delete"].includes(act) && !allowed(s, current, u)) return page(...NOT_FOUND);
-  const recs = recruiters(s.acc, current, env);
+  if (act === "assign" && !s.me.admin && !allowed(s, current, u)) return page(...NOT_FOUND);
+  const recs = recruitersFor(s.me, s.acc, current, env);
   if (act === "invite") {
-    const chosen = s.me.admin ? String(form.get("recruiter") ?? (s.me.recruiter ? s.me.id : "")) : s.me.id;
-    if (chosen && !recs.some((r) => r.id === chosen)) return redirect("/admin?done=badrecruiter");
+    const chosen = s.me.admin ? String(form.get("recruiter") ?? (s.me.recruiter ? s.me.id : ""))
+      : s.me.manager ? String(form.get("recruiter") || "") : s.me.id;
+    if ((chosen || !s.me.admin) && !recs.some((r) => r.id === chosen)) return redirect("/admin?done=badrecruiter");
     const invite = await createInvite(env, form.get("note") || "", chosen);
     return redirect(`${INVITE_URL}?i=${invite.id}`);
   }
   if (act === "revoke") {
     const id = String(form.get("invite") || "").replace(/[^0-9a-f]/g, "");
     const invite = id ? await env.FEEDBACK.get(`invite:${id}`, "json") : null;
-    if (invite && (s.me.admin || invite.recruiter === s.me.id)) await env.FEEDBACK.delete(`invite:${id}`);
+    if (invite && ownsRecruiter(s.me, String(invite.recruiter || ""))) await env.FEEDBACK.delete(`invite:${id}`);
     return redirect("/admin?done=revoked");
   }
   if (act === "profile") return saveProfile(env, s, form, u);
@@ -689,7 +702,7 @@ async function action(request, env, s) {
   if (act === "assign") {
     const recruiter = String(form.get("recruiter") || "");
     const p = (current.profiles || []).find((x) => x.id === u);
-    if (!p || p.owner || (recruiter && !recs.some((r) => r.id === recruiter))) return redirect("/admin?done=badrecruiter");
+    if (!p || p.owner || ((recruiter || !s.me.admin) && !recs.some((r) => r.id === recruiter))) return redirect("/admin?done=badrecruiter");
     await queueItem(env, { type: "admin", action: "assign", u, recruiter });
     const to = recs.find((r) => r.id === recruiter);
     await record(env, u, "assign", to ? `Assigned to ${to.name}` : "Unassigned from their recruiter", by);
@@ -736,12 +749,12 @@ const BULK_HISTORY = { send_now: ["send", "Asked for jobs now"], pause: ["pause"
 async function bulkAction(env, s, form, current, recs, by) {
   const op = String(form.get("op") || "");
   if (!BULK_OPS.has(op)) return page("Unknown action", "<p>Reload the admin page and try again.</p>", { status: 400 });
-  if (!s.me.admin && !RECRUITER_ACTIONS.has(op)) return page(...ADMINS_ONLY);
+  if (!mayDo(s.me, op)) return page(...ADMINS_ONLY);
   const picked = [...new Set(form.getAll("u").map(String))];
   if (!picked.length) return redirect("/admin?done=bulknone");
   if (picked.length > MAX_BULK) return redirect("/admin?done=bulkmany");
   const recruiter = op === "assign" ? String(form.get("recruiter") || "") : "";
-  if (recruiter && !recs.some((r) => r.id === recruiter)) return redirect("/admin?done=badrecruiter");
+  if (op === "assign" && (recruiter || !s.me.admin) && !recs.some((r) => r.id === recruiter)) return redirect("/admin?done=badrecruiter");
   let todo = picked.filter((u) => PROFILE_RE.test(u)).map((u) => visible(s, current, u)).filter((p) => p
     && !(op === "pause" && p.status === "paused") && !(op === "resume" && p.status === "active")
     && !(op === "assign" && String(p.recruiter || "") === recruiter));
@@ -775,7 +788,7 @@ async function passwordRequest(request, env, s) {
 }
 
 async function usersRequest(request, env, s) {
-  if (!s.me.admin) return page(...ADMINS_ONLY);
+  if (!oversees(s.me)) return page(...LEADS_ONLY);
   if (request.method === "POST") {
     const form = await limitedForm(request, 8192);
     if (!form || !safeEqual(String(form.get("csrf") || ""), s.csrf)) {
@@ -827,6 +840,7 @@ const ME_STYLE = `
 border-radius:14px;box-shadow:0 8px 24px -12px rgba(15,23,42,.25)}
 .mecard .avatar{width:34px;height:34px;border-radius:11px;font-size:13px}
 .mecard .avatar.rec{background:linear-gradient(135deg,#2dd4bf,#0891b2);box-shadow:0 6px 14px -8px rgba(8,145,178,.9)}
+.mecard .avatar.mgr{background:linear-gradient(135deg,#fbbf24,#ea580c);box-shadow:0 6px 14px -8px rgba(234,88,12,.9)}
 .mename{display:flex;flex-direction:column;line-height:1.25}.mename b{font-size:13.5px;color:var(--ink)}
 .mename small{font-size:11.5px;color:var(--muted);font-weight:600}
 .mebtns{display:flex;gap:6px}.mebtns form{margin:0}
@@ -857,7 +871,7 @@ function signedInBox(s, current) {
   const roles = s.me.roles.map((r) => ROLES[r].label).join(", ");
   const label = `Signed in as ${name} (${roles.toLowerCase()})`;
   return `<style>${ME_STYLE}${s.me.admin ? SERVER_STYLE : ""}</style><div class="me" role="region" aria-label="${esc(label)}">
-<div class="mecard" title="${esc(label)}"><span class="avatar${s.me.admin ? "" : " rec"}" aria-hidden="true">${esc(initials(name))}</span><span class="mename"><b>${esc(name)}</b><small>${esc(roles)}</small></span></div>
+<div class="mecard" title="${esc(label)}"><span class="avatar${s.me.admin ? "" : s.me.manager ? " mgr" : " rec"}" aria-hidden="true">${esc(initials(name))}</span><span class="mename"><b>${esc(name)}</b><small>${esc(roles)}</small></span></div>
 <div class="mebtns">${s.me.admin ? `${serverBox(current, s.csrf)}<a class="mebtn" href="${THEME_URL}" title="Theme and branding" aria-label="Theme and branding">${PALETTE_ICON}</a>` : ""}<a class="mebtn" href="/admin#password" title="Change password" aria-label="Change password">${KEY_ICON}</a><form method="post" action="/admin/logout"><button class="mebtn">${LOGOUT_ICON}Sign out</button></form></div></div>`;
 }
 
@@ -866,7 +880,7 @@ function signedInBox(s, current) {
 async function invitePage(request, env, s) {
   const id = new URL(request.url).searchParams.get("i") || "";
   const invite = /^[0-9a-f]{32}$/.test(id) ? await env.FEEDBACK.get(`invite:${id}`, "json") : null;
-  if (!invite || invite.expires <= Date.now() || (!s.me.admin && invite.recruiter !== s.me.id)) {
+  if (!invite || invite.expires <= Date.now() || !ownsRecruiter(s.me, String(invite.recruiter || ""))) {
     return page("Invite not found", "<p>This invite has been used, revoked or has expired.</p><p><a href=\"/admin\">Back to recruits</a></p>", { status: 404 });
   }
   const current = await status(env);
@@ -972,7 +986,7 @@ async function signedInRoute(request, env, s, path) {
     const current = await status(env);
     if (!allowed(s, current, u)) return page(...NOT_FOUND);
     const [sent, docs, held] = await Promise.all([env.FEEDBACK.get(`sent:${u}`, "json"), docIndex(env, u), requests(env)]);
-    return pipelinePage(current, sentParts(sent).board, u, { csrf: s.csrf, admin: s.me.admin, done: url.searchParams.get("done") || "",
+    return pipelinePage(current, sentParts(sent).board, u, { csrf: s.csrf, admin: oversees(s.me), done: url.searchParams.get("done") || "",
       docs, pending: pendingDocs(current, held, u) });
   }
   if (path === STATUS_URL && request.method === "GET") {

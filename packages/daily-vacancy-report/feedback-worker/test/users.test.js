@@ -163,7 +163,7 @@ describe("recruiter sign-in and what they can see", () => {
     for (const path of ["/admin/settings", "/admin/users", "/admin/tasks"]) {
       const res = await casey.get(path);
       expect(res.status).toBe(403);
-      expect(await res.text()).toContain("Only an admin can open this page.");
+      expect(await res.text()).toMatch(path === "/admin/users" ? "Only an admin or a manager can open this page." : "Only an admin can open this page.");
     }
     expect((await casey.send("/admin/users", { op: "add", name: "Riley Chen", username: "riley", password: "good password", roles: "admin" })).status).toBe(403);
     for (const fields of [{ action: "delete", u: "sam-lee", confirm: "yes" }, { action: "assign", u: "jordan-patel", recruiter: "casey" },

@@ -477,25 +477,28 @@ settings** (the email server and web search keys the whole tool shares). Recruit
   a recruiter's name or username puts the recruiter at the top, followed by all of their recruits
   and then anyone else who matches; a recruiter and a person together (`casey jordan`) finds that
   person under their recruiter.
-- **Recruiter** (admins only): the recruiter's initials and a list showing whose pool each recruit
-  is in (**?** and **Unassigned** when nobody's). Pick someone else and an **Assign** button appears
-  next to the list. The change is shown at once and HermitShell records it within seconds.
+- **Recruiter** (admins and managers): the recruiter's initials and a list showing whose pool each
+  recruit is in (**?** and **Unassigned** when nobody's). Pick someone else and an **Assign** button
+  appears next to the list. The change is shown at once and HermitShell records it within seconds. A
+  manager's list holds only their team's recruiters (and themselves, when they recruit too), and
+  has no **Unassigned**: only an admin can leave a recruit with nobody.
 - **Invites**: create, see and revoke unused links. An admin picks whose recruit the person
-  becomes (their own, when they have the Recruiter role); a recruiter's invites always join their
-  own pool.
+  becomes (their own, when they have the Recruiter role), a manager picks a recruiter in their
+  team, and a recruiter's invites always join their own pool.
 
 <img src="images/worker/admin-recruiter-search.png" alt="Searching a recruiter: the recruiter first, then their recruits" width="720">
 
 #### Users and roles
 
-`/admin/users`, admins only. The main admin signs in with `ADMIN_USER` and the `ADMIN_PASSWORD`
-secret, as before, and always has the Admin role. Everyone else gets an account here.
+`/admin/users`, admins and managers. The main admin signs in with `ADMIN_USER` and the
+`ADMIN_PASSWORD` secret, as before, and always has the Admin role. Everyone else gets an account here.
 
-<img src="images/worker/admin-users.png" alt="Users and roles: the two roles and the dashboard users" width="720">
+<img src="images/worker/admin-users.png" alt="Users and roles: the three roles and the dashboard users" width="720">
 
 | Role | What they can do |
 |---|---|
 | **Admin** | Everything: every recruit, assigning recruits, users and roles, global settings and deleting recruits |
+| **Manager** | Their team: the recruiters an admin puts in it or they add, and those recruiters' recruits. Everything a recruiter can do for those recruits, plus moving recruits between the team's recruiters, inviting people to any of them, adding, renaming, resetting and deleting the team's recruiters, the team's desk with fees and setting fees on the Pipeline. Never other teams, unassigned recruits, admins or other managers, the task list, the server, the theme, exporting notes, deleting recruits or the settings |
 | **Recruiter** | Their own pool only: the people they invite and the recruits assigned to them. They manage those recruits' details, CVs and daily reports, send jobs now, pause or resume them and see their stats and jobs sent, but never see anyone else, the task list or the settings |
 
 - **Add user** opens a window for a name, a username (2 to 32 lower-case letters, numbers, `-` or
@@ -503,7 +506,9 @@ secret, as before, and always has the Admin role. Everyone else gets an account 
   **short password** on the list.
 - Each row's actions are icon buttons, with their name when you point at them: the pencil,
   the key and the red bin.
-- **Edit** (the pencil) changes a user's name and roles.
+- **Edit** (the pencil) changes a user's name and roles, and for a recruiter with no other role,
+  their **Manager**: the team they are in. The list shows "in Morgan Ellis's team" under their
+  roles, and how many recruiters each manager has.
 - **Reset password** (the key button) opens a window for a new password, typed twice. The user is
   signed out everywhere at once and signs in with the new password; it isn't emailed, so tell them
   yourself. It isn't offered for the main admin's account; on your own row the key opens
@@ -514,10 +519,23 @@ secret, as before, and always has the Admin role. Everyone else gets an account 
 - The main admin's own **Edit** window adds or removes the Recruiter role for you, so people you
   invite can join your own pool.
 
+A team lives on the recruiter accounts, in the Worker's KV with the rest of the users; HermitShell
+only sees which recruiter each recruit has. Only a recruiter-only account can be in a team, and only
+under a user with the Manager role and not Admin, so taking a manager's role away or deleting them
+empties their team at once, and giving a team member another role takes them out of it.
+
+A manager's **Your team** tab is this page cut down to them and their team. **Add a recruiter**
+always makes a recruiter in their team, whatever roles the form carries; **Edit** changes only the
+name; the key and the bin work as for an admin, but only on their team. Deleting a recruiter moves
+their recruits to the manager when the manager recruits too, and otherwise leaves them unassigned,
+where only an admin sees them. Anything aimed at someone outside the team answers "Managers can
+change only the recruiters in their own team."
+
 Passwords are stored in the Worker's KV only as a salted PBKDF2-SHA256 hash of an HMAC under
 `JOB_FEEDBACK_SECRET`, so the KV value alone can't be guessed against. Every route checks who is
 signed in: a recruiter who opens another recruit's page, stats, jobs sent or documents gets
-"Recruit not found", and admin pages or actions answer "Admins only". Each user signs out on their
+"Recruit not found", and so does a manager for anyone outside their team; admin pages or actions
+answer "Admins only", and Users and roles answers a recruiter "Admins and managers only". Each user signs out on their
 own; the main admin's **Sign out** still signs out every main-admin session.
 
 #### Changing your own password
@@ -558,6 +576,14 @@ the new password. That signs everyone out, every dashboard user included.
 <img src="images/worker/admin-password-modal.png" alt="A recruiter's Change password window: current password and the new one twice" width="380">
 
 <img src="images/worker/admin-recruiter-view.png" alt="A recruiter's view: only their own recruits and their invites" width="720">
+
+<table>
+<tr><th>A manager's recruits</th><th>A manager's team</th></tr>
+<tr>
+<td><img src="images/worker/admin-manager-view.png" alt="A manager signed in: their team's recruits, a Recruiter column limited to the team and team-only invites" width="380"></td>
+<td><img src="images/worker/admin-manager-team.png" alt="The Your team page: the manager and the recruiters in their team, with Add a recruiter" width="380"></td>
+</tr>
+</table>
 
 HermitShell keeps each recruit's recruiter in their `profile.json`. From the server:
 
@@ -889,7 +915,7 @@ stage, and a **Move to** menu.
   after HermitShell's next stats upload; the page says so. The same move for the same job in the same
   minute is one event, so a double click does nothing extra. Each move is written in the
   [history](#history), for example **Moved to Interview: Data Engineer at Northwind**.
-- **Start date and fee** (admins only) go with an **Offer** or **Placed** move. The start date must
+- **Start date and fee** (admins, and managers for their team) go with an **Offer** or **Placed** move. The start date must
   be within two years, the fee a number from 0 to 1,000,000 with at most two decimals, and the
   currency one of the profile currencies. The fee is sealed for HermitShell before it is stored, the
   same way as API keys, so KV only holds ciphertext until HermitShell collects it. Recruiters don't get
@@ -919,7 +945,7 @@ them back to the Worker. Only their totals do, sealed, for the [desk](#desk).
 
 The **Desk** tab (`/admin/desk`) is the whole desk on one page for the last **7 days**, **30 days**,
 **90 days** or **12 months**: tiles for jobs sent, applied, interviews, offers and placed (and, for
-admins, the fees from placements, summed per currency), then one card per recruiter listing their
+admins and managers, the fees from placements, summed per currency), then one card per recruiter listing their
 recruits with the same counts and a total row. Recruits without a recruiter come last. Each name opens
 the recruit's page, and **Jobs sent** their list. Below is **Salaries by job title across the desk**:
 the median of each advert's lowest yearly figure over the last 90 days, across every recruit's jobs
@@ -931,6 +957,8 @@ rated, in each recruit's own currency, for titles with at least 3 salaries.
   reached that stage in the period, however often it was moved (a job that went from Applied to Placed
   counts in each).
   Fees come only from **Placed** moves.
+- **Managers** see their team's recruits, grouped by recruiter, with the fees; the page says **Your
+  team's recruits, grouped by recruiter.**
 - **Recruiters** get the tab too, with only their own recruits and no fees column or fees tile; the page
   says **Your recruits only.**
 - **Where it comes from**: `profiles.py` adds up every recruit's tracker (`profile_stats.desk`) and
@@ -943,8 +971,9 @@ HermitShell only sends the desk, and the [Also suits](#jobs-sent) list, once the
 protocol 4 or later. Until you redeploy the Worker, `doctor.py` and the Global settings page warn that
 it is older than HermitShell; nothing else changes.
 
-<table><tr><th>A recruiter's desk</th></tr>
-<tr><td><img src="images/worker/admin-desk-recruiter.png" alt="A recruiter's desk with only their recruits and no fees" width="480"></td></tr></table>
+<table><tr><th>A recruiter's desk</th><th>A manager's desk</th></tr>
+<tr><td><img src="images/worker/admin-desk-recruiter.png" alt="A recruiter's desk with only their recruits and no fees" width="480"></td>
+<td><img src="images/worker/admin-desk-manager.png" alt="A manager's desk: their team's recruiters and recruits, with fees" width="480"></td></tr></table>
 
 #### Tasks
 
