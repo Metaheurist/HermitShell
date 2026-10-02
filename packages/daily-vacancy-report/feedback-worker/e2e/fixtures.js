@@ -48,7 +48,11 @@ export function hermitShellStatus({ samRecruiter = "" } = {}) {
       bazaarlink: { source: "none", hint: "" }, featherless: { source: "none", hint: "" }, huggingface: { source: "none", hint: "" },
     },
     llm: { order: "cloud", cloud: ["openrouter"], local: { model: "qwen3:4b-instruct-2507-q4_K_M", suggested: "qwen3:4b-instruct-2507-q4_K_M",
-      where: "8192 context, on the CPU" }, last: { provider: "openrouter", model: "openrouter/free", at: Date.now() - 120000 } },
+      where: "8192 context, on the CPU", source: "env", override: "", online: true, pull: null, choices: [
+        { model: "qwen2.5:7b-instruct-q4_K_M", about: "Reliable skills, contact details and JSON", mb: 4700, gpu: 0, fits: true, speed: "steady", installed: false, recommended: false },
+        { model: "qwen3:4b-instruct-2507-q4_K_M", about: "The default", mb: 2500, gpu: 0, fits: true, speed: "quick", installed: true, recommended: true },
+        { model: "qwen3:30b-a3b-instruct-2507-q4_K_M", about: "The best answers", mb: 18600, gpu: 0, fits: false, speed: "quick", installed: false, recommended: false },
+      ] }, last: { provider: "openrouter", model: "openrouter/free", at: Date.now() - 120000 } },
     server: { cpu: { model: "Contoso Server CPU", cores: 8 }, load: 1.2, ram_mb: { total: 16384, available: 9000 }, gpus: [],
       disk_mb: { total: 500000, free: 200000 } },
     problems: [],

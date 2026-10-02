@@ -55,6 +55,7 @@ import job_settings
 import key_usage
 import llm_providers
 import llm_usage
+import model_pull
 import money
 import profile_stats
 import worker_link
@@ -1036,6 +1037,30 @@ def apply_model_keys(item: dict) -> None:
     log(f"Model settings updated from the dashboard: {', '.join(sorted(updates))}")
 
 
+def apply_local_model(item: dict, spawn=None) -> None:
+    """The server model picked under Global settings: "" goes back to .env's OLLAMA_MODEL (else the one that fits
+    the machine), a model Ollama has is used at once, and any other is downloaded first (model_pull.py), refused
+    when it is too big for this machine."""
+    model = item.get("model")
+    if model == "":
+        update_dashboard_env({"OLLAMA_MODEL": None})
+        log("Server model back to the default from the dashboard")
+        return
+    if not isinstance(model, str) or not model_pull.NAME_RE.match(model):
+        raise ProfileError("invalid model name")
+    found = model_pull.ollama()
+    if not found:
+        raise ProfileError("no Ollama server answers, so the server model can't be changed")
+    if any(model_pull.same(model, str(m.get("name", ""))) for m in found[1]):
+        update_dashboard_env({"OLLAMA_MODEL": model})
+        log(f"Server model set to {model} from the dashboard")
+        return
+    listed = next((c for c in autofit.choices(found[1]) if c["model"] == model), None)
+    if listed and not listed["fits"]:
+        raise ProfileError(f"{model} needs more memory than this machine has")
+    model_pull.start(model, spawn=spawn)
+
+
 def apply_email(item: dict) -> None:
     if item.get("clear"):
         update_dashboard_env(dict.fromkeys(SMTP_KEYS))
@@ -1189,6 +1214,11 @@ def admin_action(item: dict, api=None) -> None:
         return apply_api_keys(item)
     if action == "model_keys":
         return apply_model_keys(item)
+    if action == "local_model":
+        return apply_local_model(item)
+    if action == "cancel" and item.get("task") == model_pull.TASK_ID:
+        log(model_pull.cancel())
+        return None
     if action == "email":
         return apply_email(item)
     if action == "features":
@@ -1344,13 +1374,19 @@ def models_info(every: int) -> dict:
 
 def llm_info() -> dict:
     """Which models answer, in order: the cloud providers with a key and the local Ollama (its model, the one
-    that fits this machine and where it ran last), plus the model that answered last."""
+    that fits this machine, where it ran last, where the model was set, the models to choose from and a download
+    under way), plus the model that answered last."""
     cfg = hc.model_config()
     suggested = hc.suggested_model()
     summary = llm_providers.summary()
+    found = model_pull.ollama()
+    source = "dashboard" if dashboard_env().get("OLLAMA_MODEL") else "env" if cfg["model"] else "auto"
     return {"order": summary["order"], "cloud": llm_providers.configured(),
             "local": {"model": env("JOB_SCANNER_MODEL") or cfg["model"] or suggested, "suggested": suggested,
-                      **autofit.known(hc.ollama_hosts(cfg))},
+                      **autofit.known(hc.ollama_hosts(cfg)), "source": source,
+                      "override": "JOB_SCANNER_MODEL" if env("JOB_SCANNER_MODEL") else "",
+                      "online": found is not None, "choices": autofit.choices(found[1] if found else []),
+                      "pull": model_pull.info()},
             "last": summary["last"]}
 
 
@@ -1377,7 +1413,11 @@ def _stable(payload: dict) -> dict:
     stable = {k: v for k, v in payload.items() if k not in ("server", "usage")}
     if isinstance(payload.get("llm"), dict):
         llm = payload["llm"]
-        stable["llm"] = {k: v for k, v in llm.items() if k not in ("last", "local")} | {"local": llm["local"].get("model")}
+        local = llm["local"]
+        pull = local.get("pull") or {}
+        stable["llm"] = {k: v for k, v in llm.items() if k not in ("last", "local")} | {"local": [
+            local.get("model"), local.get("source"), [c.get("installed") for c in local.get("choices") or []],
+            pull.get("model"), pull.get("status")]}
     if isinstance(payload.get("models"), dict):
         stable["models"] = {n: {k: v for k, v in m.items() if k not in ("today", "failed", "last_ok")}
                             for n, m in payload["models"].items()}
@@ -2136,8 +2176,9 @@ def letter_tasks(pid: str) -> list[dict]:
 
 def tasks() -> list[dict]:
     """Everything HermitShell is doing or has waiting: running reports (scheduled or from Send jobs now) and cover
-    letter and tailored CV requests. The Worker adds what it still holds itself (its queue and uncollected requests)."""
-    found: list[dict] = []
+    letter and tailored CV requests, and a server model downloading. The Worker adds what it still holds itself (its
+    queue and uncollected requests)."""
+    found: list[dict] = [t] if (t := model_pull.task()) else []
     for profile in all_profiles():
         if profile.get("owner"):
             continue

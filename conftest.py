@@ -29,6 +29,13 @@ def _plain_requests(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_ollama(monkeypatch):
+    """The dashboard's status asks Ollama which models it has; tests that want an Ollama fake one themselves."""
+    if "model_pull" in sys.modules:
+        monkeypatch.setattr(sys.modules["model_pull"], "ollama", lambda: None)
+
+
+@pytest.fixture(autouse=True)
 def _no_retry_waits(monkeypatch):
     """worker_link retries a dropped connection after 1 and 2 seconds; tests don't wait for them."""
     if "worker_link" in sys.modules:

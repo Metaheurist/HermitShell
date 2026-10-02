@@ -8,6 +8,20 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Pick the server model, and watch it download.** **Change** on Global settings' **Server model** row
+  opens a window listing Qwen3 30B-A3B, Qwen2.5 14B and 7B, Qwen2.5-Coder 7B, Llama 3.1 8B, the 4B default,
+  Qwen2.5 1.5B and any other model the server's Ollama has, each with its size, whether it would run on the
+  GPU or the CPU and how quick it would be there, and **recommended**, **downloaded** and **in use** tags; a
+  model too big for the machine can't be picked, and **Another Ollama model** takes any `name:tag`. The row
+  now says where the model comes from (**set here**, **from .env** or **fits this machine**) and when
+  `JOB_SCANNER_MODEL` overrides it. The pick reaches HermitShell as a `local_model` admin item: a model Ollama
+  has is saved at once as `OLLAMA_MODEL` in `state/dashboard.json` (the one Ollama setting the dashboard may
+  set, and it wins over `.env`), and any other is downloaded first by the new `model_pull.py`, which checks
+  the free disk space, streams Ollama's progress to `state/model_pull.json` and switches only once Ollama
+  lists the model. The admin dashboard shows the download with a progress bar and a link to **Tasks**, where
+  **Server model download** can be stopped, then a green notice for a day when it is ready (or why it failed,
+  with the old model still running). Names are checked against Ollama's name format on both sides, and
+  managers and recruiters can neither pick a model nor stop the download.
 - **Manager role.** A dashboard user with the **Manager** role looks after a team: the recruiters an
   admin puts in it (the new **Manager** pick when adding or editing a recruiter) or that the manager
   adds, and those recruiters' recruits. Managers see the team's recruits, desk and fees, set fees, move
@@ -868,6 +882,11 @@ using [Semantic Versioning](https://semver.org/).
   uploading your own CV and job search. **Jobs sent** addresses every list to the recruit by first name.
 
 ### Changed
+
+- **Autofit recommends 7B and 14B models on GPUs.** Between the 4B default and the 30B, a GPU with 8 GB
+  of memory now gets `qwen2.5:7b-instruct-q4_K_M` and one with 12 GB `qwen2.5:14b-instruct-q4_K_M`. A
+  machine without a GPU stays on the 4B until it has 48 GB of RAM, since the bigger dense models are much
+  slower on a CPU alone.
 
 - **Stats animations play once, when the page loads.** Hovering a job no longer redraws its fit-score ring, and
   hovering a stat card no longer sets its icon looping again.

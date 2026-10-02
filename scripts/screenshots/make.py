@@ -411,13 +411,14 @@ def main() -> int:
                                                   "admin-manager", "admin-delete", "admin-password", "admin-theme",
                                                   "admin-pipeline", "admin-desk")) else
                     1000 if html.stem.startswith(("admin-profile", "admin-settings", "admin-stats", "admin-sent",
-                                                  "admin-global-key", "admin-history", "admin-model-key", "me-jobs",
+                                                  "admin-global-key", "admin-history", "admin-model-", "me-jobs",
                                                   "me-search", "me-docs")) else
                     760 if html.stem == "privacy" else 600,
                     # A modal covers the whole window, so the page cannot be trimmed to its content.
                     720 if html.stem in ("admin-global-key-modal", "admin-user-modal", "admin-delete-modal",
-                                         "admin-user-reset-modal", "admin-password-modal", "admin-tasks") else
-                    860 if html.stem == "admin-model-key-modal" else
+                                         "admin-user-reset-modal", "admin-password-modal", "admin-tasks",
+                                         "admin-tasks-model-download") else
+                    860 if html.stem in ("admin-model-key-modal", "admin-model-picker") else
                     # A wide window, where the signed-in box sits beside the card; only the top is kept.
                     240 if html.stem == "admin-signed-in" else
                     860 if html.stem == "admin-server-panel" else

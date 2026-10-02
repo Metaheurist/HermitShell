@@ -503,10 +503,31 @@ older and how to update it ([why](feedback-worker.md#how-it-stays-safe)).
 | --- | --- |
 | AI model API keys | One row per cloud provider (OpenRouter, BazaarLink, Featherless, Hugging Face) with its icon: **set here** or **from .env**, the start and end of the key, what is left, the model and whether it is **ready**, how many requests it answered today or why it is **resting** (out of credits, daily limit reached, key rejected). Pressed, it opens the key's usage like a web search key. Without a key, what the provider offers and **get a key** |
 | **Add key** / **Change** | Opens a window to pick the provider, paste its key and, optionally, a model; blank keeps the current key or model |
-| **Server model** | The model the server's Ollama runs, where it last ran, the model that suits the machine when that differs, and whether it is asked first or is the fallback |
+| **Server model** | The model the server's Ollama runs, where it comes from (**set here**, **from .env** or **fits this machine**), where it last ran, the model that suits the machine when that differs, and whether it is asked first or is the fallback |
+| **Change** (Server model) | Opens the window below to pick another server model |
 | **Cloud first** / **Server first** + **Save order** | Cloud first asks the providers with a key in turn and the server model when none has a key or credits left; Server first uses the cloud only when the server model doesn't answer |
 
 <img src="images/worker/admin-model-key-modal.png" alt="The AI model key window: OpenRouter, BazaarLink, Featherless or Hugging Face, the API key and an optional model" width="420">
+
+<img src="images/worker/admin-model-picker.png" alt="The Server model window: Default, the recommended Qwen2.5 14B, the downloaded and in-use 4B, the 30B that is too big, other models with their size, where they run and how quick they are, and Another Ollama model" width="520">
+
+| Control | What it does |
+| --- | --- |
+| **Default** | Goes back to `.env`'s `OLLAMA_MODEL`, else the model that fits the machine |
+| Model choices | Each model with its size, whether it runs on the GPU or the CPU and how quick it is on this machine, and **recommended**, **downloaded** or **in use**. Too big for the machine, or not downloaded while Ollama is offline, it can't be picked |
+| **Another Ollama model** + name | Any model from the Ollama library, by `name:tag` |
+| **Use this model** | Queues the pick: a downloaded model is used within seconds, any other is downloaded first ([more](feedback-worker.md#ai-models)) |
+
+<img src="images/worker/admin-dashboard-model-download.png" alt="The admin dashboard with a notice: Downloading the new server model, a progress bar at 47%, 4.1 of 8.6 GB, Follow it in Tasks" width="620">
+
+While a new server model downloads, the admin dashboard shows how far it has got with **Follow it in Tasks**,
+where **Server model download** has a **Stop** button:
+
+<img src="images/worker/admin-tasks-model-download.png" alt="Tasks with Server model download: 4.1 of 8.6 GB, with Stop" width="520">
+
+When it is ready, the notice turns green for a day:
+
+<img src="images/worker/admin-dashboard-model-ready.png" alt="The admin dashboard with a green notice: the new server model is downloaded and is now the server model" width="620">
 
 <img src="images/worker/admin-settings-usage.png" alt="Model tokens used: each task's requests, tokens in and out, tokens a request and time over the last 7 days" width="620">
 

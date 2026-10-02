@@ -624,12 +624,42 @@ describe("AI models and the server panel", () => {
       expect(page).not.toContain("<script>alert(1)");
       expect(page).not.toContain("onerror=alert(2)>");
     }
-    for (const action of ["model_key", "api_key", "backup_now"]) {
-      const res = await worker.fetch(form("/admin/action", { csrf: morgan.csrf, action, provider: "openrouter", key: "test-openrouter-key" },
-        { Cookie: morgan.cookie }), env);
+    for (const action of ["model_key", "api_key", "backup_now", "model_local"]) {
+      const res = await worker.fetch(form("/admin/action", { csrf: morgan.csrf, action, provider: "openrouter", key: "test-openrouter-key",
+        model: "qwen3:8b" }, { Cookie: morgan.cookie }), env);
       expect(res.status).toBe(403);
     }
+    const stop = await worker.fetch(form("/admin/tasks", { csrf: morgan.csrf, task: "model:pull" }, { Cookie: morgan.cookie }), env);
+    expect(stop.status).toBe(403);
     expect(valuesWith(env, "queue:")).toEqual([]);
+  });
+
+  it("only queues the server model as a plain Ollama name, and shows what HermitShell reports about it escaped", async () => {
+    const env = testEnv({ ADMIN_PASSWORD: "correct horse battery" });
+    const local = { model: "qwen3:4b", source: "env", online: true, choices: [{ model: "qwen3:4b", about: HOSTILE, installed: true }],
+      pull: { model: "qwen3:8b", status: "failed", error: HOSTILE, finished: Date.now() } };
+    await worker.fetch(new Request(`${BASE}/api/status`, { method: "POST", headers: { Authorization: "Bearer api-token" },
+      body: JSON.stringify({ profiles: [], llm: { order: "cloud", cloud: [], local } }) }), env);
+    const res = await worker.fetch(new Request(`${BASE}/admin/login`, { method: "POST", body: new URLSearchParams({ username: "admin",
+      password: "correct horse battery" }), headers: { "CF-Connecting-IP": "203.0.113.9" } }), env);
+    const cookie = (res.headers.get("Set-Cookie") || "").split(";")[0];
+    const page = async (path) => (await get(path, env, { Cookie: cookie })).text();
+    const dash = await page("/admin");
+    const csrf = dash.match(/name="csrf" value="([0-9a-f]+)"/)[1];
+    for (const html of [dash, await page("/admin/settings")]) {
+      expect(html).not.toContain("<script>alert(1)");
+      expect(html).not.toContain("onerror=alert(2)>");
+    }
+    for (const model of [HOSTILE, "qwen3:8b\nOLLAMA_HOST=http://evil.example", "qwen3:8b; curl evil.example", "--insecure", "../../../etc/passwd",
+      "http://evil.example/model", " "]) {
+      for (const fields of [{ model }, { model: "custom", custom: model }]) {
+        const queued = await worker.fetch(new Request(`${BASE}/admin/action`, { method: "POST", headers: { Cookie: cookie },
+          body: new URLSearchParams({ csrf, action: "model_local", ...fields }) }), env);
+        expect([fields, queued.headers.get("Location")]).toEqual([fields, model === " " && !fields.custom ? "/admin/settings?done=queued#models"
+          : "/admin/settings?done=badlocal#models"]);
+      }
+    }
+    expect(valuesWith(env, "queue:").map((i) => i.model)).toEqual([""]);
   });
 
   it("escapes and checks the backup fields HermitShell reports", async () => {

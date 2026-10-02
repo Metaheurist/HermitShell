@@ -4,7 +4,8 @@
 // loading="lazy", so a closed modal does not load it. Every task can be cancelled there:
 // - what the Worker still holds (queued dashboard changes, sign-ups, unsubscribes, and cover letter, tailored CV and
 //   job email requests HermitShell has not collected yet) is deleted at once;
-// - what HermitShell has (a running report, a request it has collected) is stopped by a "cancel" queue item.
+// - what HermitShell has (a running report, a request it has collected, a server model downloading) is stopped by a
+//   "cancel" queue item.
 
 import { queueItem } from "./join.js";
 import { SECURITY_HEADERS, ago, deleteAndUnflag, esc, eventFlag, eventPrefix, when } from "./lib.js";
@@ -18,7 +19,9 @@ export const REQUEST_ACTIONS = ["cover_letter", "tailored_cv", "send_job", "prof
 const MAX_REQUESTS = 50;
 const QUEUE_ID = /^queue:\d{1,16}:[0-9a-f]{8,64}$/;
 const EVENT_ID = /^event:[a-z0-9_-]{1,40}:[A-Za-z0-9:_-]{1,120}$/;
-const SERVER_ID = /^report:([a-z0-9-]{1,40})$|^letter:([a-z0-9-]{1,40}):event:[a-z0-9_-]{1,40}:[A-Za-z0-9:_-]{1,120}$/;
+const SERVER_ID = /^report:([a-z0-9-]{1,40})$|^letter:([a-z0-9-]{1,40}):event:[a-z0-9_-]{1,40}:[A-Za-z0-9:_-]{1,120}$|^model:pull$/;
+// A server model downloading (model_pull.py): one at a time, for the whole server rather than a recruit.
+const MODEL_TASK = "model:pull";
 const CV_KEY = /^cvfile:[0-9a-f]{32}$/;
 // The open list refreshes every 5 seconds, then every 15, then stops: each refresh can list the KV queue.
 const FAST = 24;
@@ -52,13 +55,13 @@ export async function requests(env) {
 const ADMIN_LABELS = {
   send_now: "Send jobs now", pause: "Pause reports", resume: "Resume reports", delete: "Delete recruit",
   assign: "Assign to a recruiter", profile: "Recruit changes", cv: "New CV",
-  api_keys: "Global API keys", model_keys: "AI model settings", email: "Email settings", test_email: "Test email",
+  api_keys: "Global API keys", model_keys: "AI model settings", local_model: "Server model", email: "Email settings", test_email: "Test email",
   backup_now: "Back up now",
 };
 const KIND_LABELS = {
   report: "Daily report", cover_letter: "Cover letter", tailored_cv: "Tailored CV", send_job: "Job email", profile_cv: "CV",
   interview_prep: "Interview prep", signup: "Sign-up",
-  unsubscribe: "Unsubscribe",
+  unsubscribe: "Unsubscribe", model: "Server model download",
 };
 const TRIGGERS = { schedule: "scheduled", dashboard: "from the dashboard", email: "email button", signup: "sign-up form", link: "unsubscribe link" };
 
@@ -79,7 +82,8 @@ export function taskRows(status, queue, held) {
   const stopping = new Set(queue.filter((i) => i.type === "admin" && i.action === "cancel").map((i) => i.task));
   const server = (Array.isArray(status.tasks) ? status.tasks : []).filter((t) => t && SERVER_ID.test(String(t.id)));
   const rows = server.map((t) => ({
-    id: t.id, kind: KIND_LABELS[t.kind] ? t.kind : "report", who: who(t.u), u: String(t.u || ownerId), at: Number(t.at) || 0,
+    id: t.id, kind: t.id === MODEL_TASK ? "model" : KIND_LABELS[t.kind] && t.kind !== "model" ? t.kind : "report",
+    who: t.id === MODEL_TASK ? "Server" : who(t.u), u: t.id === MODEL_TASK ? ownerId : String(t.u || ownerId), at: Number(t.at) || 0,
     state: stopping.has(t.id) || t.state === "stopping" ? "stopping" : t.state === "running" ? "running" : "waiting",
     trigger: TRIGGERS[t.trigger] ? t.trigger : "schedule", title: t.kind === "report" ? "" : [t.title, t.employer].filter(Boolean).join(" at "),
     stage: String(t.stage || ""), done: Number(t.done) || 0, total: Number(t.total) || 0, expected: Number(t.expected) || 0,
@@ -126,7 +130,7 @@ export async function cancelTask(env, id, status, queue) {
   const match = SERVER_ID.exec(id);
   if (!match || !(status.tasks || []).some((t) => t?.id === id)) return "gone";
   if (!queue.some((i) => i.type === "admin" && i.action === "cancel" && i.task === id)) {
-    await queueItem(env, { type: "admin", action: "cancel", u: match[1] || match[2], task: id });
+    await queueItem(env, { type: "admin", action: "cancel", u: match[1] || match[2] || "", task: id });
   }
   return "stopping";
 }
@@ -148,6 +152,7 @@ const ICONS = {
   change: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
   clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
   done: '<circle cx="12" cy="12" r="8.5"/><path d="m8 12.5 2.7 2.7L16.5 9.5"/>',
+  model: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v7M9 12.5l3 3 3-3M8.5 18.5h7"/>',
 };
 
 function icon(name, cls = "") {
@@ -185,6 +190,11 @@ function progress(t) {
 function detail(t) {
   const since = t.at ? ago(t.at) : "";
   if (t.state === "stopping") return "Stopping&hellip;";
+  if (t.state === "running" && t.kind === "model") {
+    const gb = (mb) => (mb / 1024).toFixed(1);
+    const amount = t.total ? ` &middot; ${gb(t.done)} of ${gb(t.total)} GB` : "";
+    return `Downloading${amount}${since ? ` &middot; started ${esc(since)}` : ""}`;
+  }
   if (t.state === "running") {
     const stage = t.kind === "report" ? esc(t.stage || "Starting") : t.kind === "tailored_cv" ? "Tailoring the CV"
       : t.kind === "profile_cv" ? "Laying out the CV" : t.kind === "send_job" ? "Sending the email"

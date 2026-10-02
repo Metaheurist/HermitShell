@@ -107,10 +107,12 @@ _DASHBOARD_PREFIXES = ("ALERT_", "BAZAARLINK_", "COVER_LETTER_", "FEATHERLESS_",
 _DASHBOARD_DENIED = re.compile(r"^JOB_FEEDBACK_|_(FILE|DIR|PATH)$|^JOB_PROFILE_ID$|^JOB_FX_")
 # The on/off switches under Global settings, Features: named one by one, as their prefixes cover more than this.
 DASHBOARD_SWITCHES = frozenset({"HERMES_ALERTS", "INTERVIEW_PREP_AUTO", "DOC_WORD_COPIES", "HERMES_SELF_SERVICE"})
+# The server model picked under Global settings; the rest of OLLAMA_ (the hosts the server talks to) stays in .env.
+DASHBOARD_NAMED = frozenset({"OLLAMA_MODEL"})
 
 
 def dashboard_key_allowed(key: str) -> bool:
-    if key in DASHBOARD_SWITCHES:
+    if key in DASHBOARD_SWITCHES or key in DASHBOARD_NAMED:
         return True
     return bool(_ENV_KEY_RE.match(key)) and key.startswith(_DASHBOARD_PREFIXES) and not _DASHBOARD_DENIED.search(key)
 

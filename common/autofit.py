@@ -19,8 +19,9 @@ The watchdog steps down after out-of-memory errors or when RAM runs low (a leane
 then the CPU only) and back up one step at a time once requests have gone well for half an hour. What it learns is
 kept in state/autofit.json. HERMES_AUTOFIT=off sends requests exactly as the scripts ask.
 
-- The model: with no OLLAMA_MODEL set, suggested_model() picks the largest of a small, the default and a large
-  model that fits the GPU or RAM, which doctor.py downloads and the scripts prefer.
+- The model: with no OLLAMA_MODEL set, suggested_model() picks the largest of a small, the default, two dense models
+  that need a GPU and a large one that fits the GPU or RAM, which doctor.py downloads and the scripts prefer.
+  choices() is the wider list the Global settings page offers, each with where it would run on this machine.
 
     python3 autofit.py               what it knows about this machine and what it would do now
     python3 autofit.py --json
@@ -193,11 +194,27 @@ def hardware(now: float | None = None) -> dict:
 
 # The model to download for the local Ollama when none is configured, largest first: (model, download MB, enough
 # when one GPU has this much VRAM, or when the machine has this much RAM). The mixture-of-experts model reads only a
-# few billion weights per token, so it stays quick on a CPU with the RAM to hold it.
+# few billion weights per token, so it stays quick on a CPU with the RAM to hold it; the dense 7B and 14B models are
+# only suggested when they fit a GPU, as they are slow on a CPU alone.
+NEVER = 1 << 40
 SIZES = (
     ("qwen3:30b-a3b-instruct-2507-q4_K_M", 18600, 24000, 48000),
+    ("qwen2.5:14b-instruct-q4_K_M", 9000, 12000, NEVER),
+    ("qwen2.5:7b-instruct-q4_K_M", 4700, 8000, NEVER),
     (hc.DEFAULT_MODEL, 2500, 4000, 6000),
     ("qwen2.5:1.5b-instruct", 990, 0, 0),
+)
+
+# The server models the Global settings page offers, best answers first: (model, download MB, MB read for each token,
+# what it is good at). The mixture-of-experts model reads about 3B of its 30B weights per token.
+CHOICES = (
+    ("qwen3:30b-a3b-instruct-2507-q4_K_M", 18600, 2000, "The best answers; quick on a CPU with 32 GB of RAM or more"),
+    ("qwen2.5:14b-instruct-q4_K_M", 9000, 9000, "Very accurate on long CVs and adverts; slow without a big GPU"),
+    ("qwen2.5:7b-instruct-q4_K_M", 4700, 4700, "Reliable skills, contact details and JSON; a big step up from 4B"),
+    ("qwen2.5-coder:7b-instruct", 4700, 4700, "Strongest on technical CVs and structured answers"),
+    ("llama3.1:8b-instruct-q4_K_M", 4900, 4900, "A general-purpose alternative to the Qwen models"),
+    (hc.DEFAULT_MODEL, 2500, 2500, "The default: quick, and good enough for most CVs"),
+    ("qwen2.5:1.5b-instruct", 990, 990, "For small machines; weaker ratings"),
 )
 
 
@@ -215,7 +232,31 @@ def suggested_model(hw: dict | None = None) -> str:
 
 
 def download_mb(model: str) -> int:
-    return next((mb for name, mb, _, _ in SIZES if name == model), 0)
+    return next((mb for name, mb, *_ in (*SIZES, *CHOICES) if name == model), 0)
+
+
+def fit(mb: int, read_mb: int, hw: dict) -> dict:
+    """Where a model of `mb` would run on this machine: the share on the GPU, whether it fits the memory at all,
+    and how quick it is likely to be (from the MB read for each token that stay on the CPU)."""
+    vram = max((g["vram_mb"] for g in hw["gpus"]), default=0)
+    ram = hw["ram_mb"]["total"]
+    need = round(mb * 1.15) + 600
+    gpu = max(0.0, min(1.0, (vram - GPU_RESERVE_MB) / need)) if vram > GPU_RESERVE_MB else 0.0
+    cpu_mb = read_mb * (1 - gpu)
+    return {"gpu": round(gpu * 100), "fits": not (ram or vram) or need <= ram * 0.85 + vram * 0.9,
+            "speed": "quick" if cpu_mb < 3000 else "steady" if cpu_mb < 6000 else "slow"}
+
+
+def choices(installed: list[dict] | None = None, hw: dict | None = None) -> list[dict]:
+    """The server models to choose from: CHOICES, then other models Ollama already has (`installed`, from its
+    /api/tags), each with its size, where it would run here and whether it is downloaded."""
+    hw = hardware() if hw is None else hw
+    have = {str(m.get("name", "")): _num(m.get("size"), 0, 1 << 50) >> 20 for m in installed or [] if isinstance(m, dict)}
+    suggested = suggested_model(hw)
+    rows = [{"model": name, "about": about, "mb": mb, **fit(mb, read, hw)} for name, mb, read, about in CHOICES]
+    rows += [{"model": name, "about": "Already on the server", "mb": mb, **fit(mb, mb, hw)}
+             for name, mb in have.items() if name and name not in {r["model"] for r in rows}][:12]
+    return [r | {"installed": r["model"] in have, "recommended": r["model"] == suggested} for r in rows]
 
 
 def memory_low(hw: dict) -> bool:

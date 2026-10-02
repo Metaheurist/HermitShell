@@ -166,8 +166,17 @@ const STATUS = {
         usage: { used: null, limit: null, left: null, plan: "Free", resets: "", unit: "plan" } }] },
   },
   llm: { order: "cloud", cloud: ["openrouter", "huggingface"],
-    local: { model: "qwen3:4b-instruct-2507-q4_K_M", suggested: "qwen3:4b-instruct-2507-q4_K_M", where: "8192 context, on the GPU",
-      level: "normal", seconds: 14.2 },
+    local: { model: "qwen3:4b-instruct-2507-q4_K_M", suggested: "qwen2.5:14b-instruct-q4_K_M", where: "8192 context, on the GPU",
+      level: "normal", seconds: 14.2, source: "env", override: "", online: true, pull: null, choices: [
+        { model: "qwen3:30b-a3b-instruct-2507-q4_K_M", about: "The best answers; quick on a CPU with 32 GB of RAM or more", mb: 18600, gpu: 51, fits: true, speed: "quick", installed: false, recommended: false },
+        { model: "qwen2.5:14b-instruct-q4_K_M", about: "Very accurate on long CVs and adverts; slow without a big GPU", mb: 9000, gpu: 100, fits: true, speed: "quick", installed: false, recommended: true },
+        { model: "qwen2.5:7b-instruct-q4_K_M", about: "Reliable skills, contact details and JSON; a big step up from 4B", mb: 4700, gpu: 100, fits: true, speed: "quick", installed: false, recommended: false },
+        { model: "qwen2.5-coder:7b-instruct", about: "Strongest on technical CVs and structured answers", mb: 4700, gpu: 100, fits: true, speed: "quick", installed: false, recommended: false },
+        { model: "llama3.1:8b-instruct-q4_K_M", about: "A general-purpose alternative to the Qwen models", mb: 4900, gpu: 100, fits: true, speed: "quick", installed: false, recommended: false },
+        { model: "qwen3:4b-instruct-2507-q4_K_M", about: "The default: quick, and good enough for most CVs", mb: 2500, gpu: 100, fits: true, speed: "quick", installed: true, recommended: false },
+        { model: "qwen2.5:1.5b-instruct", about: "For small machines; weaker ratings", mb: 990, gpu: 100, fits: true, speed: "quick", installed: false, recommended: false },
+        { model: "llama3:8b-instruct-q4_K_M", about: "Already on the server", mb: 4445, gpu: 100, fits: true, speed: "quick", installed: true, recommended: false },
+      ] },
     last: { provider: "openrouter", model: "meta-llama/llama-3.3-70b-instruct:free", at: now - 6 * 60000 } },
   usage: { days: 7, since: new Date(now - 6 * day).toISOString().slice(0, 10), tasks: [
     { task: "triage", today: { calls: 6, failed: 0, in: 5400, out: 1900, avg_ms: 2100, estimated: 0 }, period: { calls: 41, failed: 0, in: 37800, out: 13100, avg_ms: 2300, estimated: 0 } },
@@ -368,6 +377,23 @@ await save("admin-settings-usage", new Response((await (await admin("/admin/sett
 await save("admin-settings-features", new Response((await (await admin("/admin/settings")).text())
   .replace("</head>", "<style>main>:not(.eyebrow):not(h1):not(#features):not(#features+p):not(#features+p+form){display:none!important}</style></head>")));
 await save("admin-model-key-modal", await withOpenModal("/admin/settings", "mkey-openrouter"));
+await save("admin-model-picker", await withOpenModal("/admin/settings", "mlocal"));
+// A server model picked that isn't downloaded yet: the notice on the admin's Recruits page, its task with a progress
+// bar, and the notice once it is ready.
+const pulling = { model: "qwen2.5:14b-instruct-q4_K_M", status: "downloading", done_mb: 4150, total_mb: 8780, started: now - 6 * 60000,
+  finished: null, error: "", switch: true, stopping: false };
+const withPull = (pull, tasks = STATUS.tasks) => ({ ...STATUS, llm: { ...STATUS.llm, local: { ...STATUS.llm.local, pull } }, tasks });
+await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: withPull(pulling, [
+  { id: "model:pull", kind: "model", u: "", state: "running", at: pulling.started, trigger: "dashboard", title: pulling.model,
+    stage: "Downloading", done: pulling.done_mb, total: pulling.total_mb }, ...STATUS.tasks]) });
+await save("admin-dashboard-model-download", await admin("/admin"));
+const pullTasks = (await (await admin("/admin/tasks")).text()).replace(/<meta http-equiv="refresh"[^>]*>/, "");
+await save("admin-tasks-model-download", new Response((await (await admin("/admin")).text()).replace("</head>", "<style>#tasks{display:grid}</style></head>")
+  .replace('src="/admin/tasks" loading="lazy"', `srcdoc="${pullTasks.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"`)));
+await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: withPull({ ...pulling, status: "ready",
+  done_mb: pulling.total_mb, finished: now - 2 * 60000 }) });
+await save("admin-dashboard-model-ready", await admin("/admin"));
+await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: STATUS });
 // The server button's panel, as hovering over it shows it.
 await save("admin-server-panel", new Response((await (await admin("/admin")).text())
   .replace("</head>", "<style>.me .srv .srvpanel{display:block}</style></head>")));

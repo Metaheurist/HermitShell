@@ -10,7 +10,7 @@ import { PROTOCOL } from "./apiauth.js";
 import { sealInfo, sealItem } from "./seal.js";
 import { BACK_TO_RECRUITS, CSP, SECURITY_HEADERS, ago, esc, limitedForm, note, page, redirect, reloadTo, safeEqual, waitBar, waitRefresh, when, PROFILE_RE, hidden } from "./lib.js";
 import { KEY_STYLE, MODAL_STYLE, PROVIDERS, keyModals, keysSection } from "./keys.js";
-import { MODEL_KEY_RE, MODEL_PROVIDERS, MODEL_RE, MODEL_STYLE, modelModals, modelsSection, usageSection } from "./models.js";
+import { MODEL_KEY_RE, MODEL_PROVIDERS, MODEL_RE, MODEL_STYLE, OLLAMA_RE, localModal, modelModals, modelsSection, usageSection } from "./models.js";
 import { LINK_STYLE, STATS_URL, icon } from "./stats.js";
 import { profileTabs } from "./history.js";
 import { DOC_STYLE, PROFILE_CV_STYLE, profileCvButtons } from "./docs.js";
@@ -136,8 +136,8 @@ function pendingEmail(email, queue) {
 }
 
 const WAITING_LABELS = { email: "the email server", test_email: "the test email", api_keys: "the web search keys", model_keys: "the AI model settings",
-  features: "the features" };
-const WAITING_SECTIONS = { email: "email", test_email: "email", api_keys: "keys", model_keys: "models", features: "features" };
+  local_model: "the server model", features: "the features" };
+const WAITING_SECTIONS = { email: "email", test_email: "email", api_keys: "keys", model_keys: "models", local_model: "models", features: "features" };
 
 // Global settings, Features: switch name (profiles.py FEATURES), label, explanation and default.
 export const FEATURES = [
@@ -193,7 +193,8 @@ function savingKeys(waiting) {
 function savingModels(waiting) {
   const models = waiting.filter((i) => i.action === "model_keys");
   return { providers: new Set(models.map((i) => String(i.provider || "")).filter(Boolean)),
-    order: models.map((i) => i.order).filter((o) => o === "cloud" || o === "local").at(-1) || "" };
+    order: models.map((i) => i.order).filter((o) => o === "cloud" || o === "local").at(-1) || "",
+    local: waiting.some((i) => i.action === "local_model") };
 }
 
 // `here` is the page's address, so a reload keeps the section of the change it is waiting for.
@@ -211,7 +212,7 @@ ${keysSection(status, csrf, savingKeys(waiting))}
 ${modelsSection(status, csrf, savingModels(waiting))}
 ${usageSection(status)}
 ${featuresSection(pendingFeatures(status, queue), csrf)}
-${demo}`, { wide: true, before: keyModals(csrf) + modelModals(csrf), refresh, refreshTo });
+${demo}`, { wide: true, before: keyModals(csrf) + modelModals(csrf) + localModal(status, csrf), refresh, refreshTo });
 }
 
 // ------------------------------------------------------------------------- one profile's page
@@ -613,6 +614,11 @@ export function settingsItem(act, form) {
     const order = String(form.get("order") || "");
     return ["cloud", "local"].includes(order) ? { item: { type: "admin", action: "model_keys", order } } : { error: "badmodel" };
   }
+  if (act === "model_local") {
+    const picked = String(form.get("model") ?? "").trim();
+    const model = picked === "custom" ? String(form.get("custom") || "").trim() : picked;
+    return (model === "" && picked !== "custom") || OLLAMA_RE.test(model) ? { item: { type: "admin", action: "local_model", model } } : { error: "badlocal" };
+  }
   return null;
 }
 
@@ -647,6 +653,7 @@ export async function cvUpload(request, env, s, allow = async () => true, record
 export const SETTINGS_DONE = {
   bademail: "Check the email settings: the server, port, username and addresses must be valid.",
   badmodel: "Choose a provider and paste its API key or a model name (letters, numbers and . _ : / @ + -).",
+  badlocal: "Pick a server model, or type an Ollama model name such as mistral:7b (letters, numbers and . _ - / :).",
   nokey: "Not saved: HermitShell hasn't sent the key that keeps passwords and API keys encrypted until it collects them. Save again once it is connected and up to date.",
   baddetails: "A name and a valid email address are needed.",
   profile: "Unknown recruit. Reload the admin page and try again.",

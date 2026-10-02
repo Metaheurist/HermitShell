@@ -1,5 +1,6 @@
 // The AI models: the cloud model keys on the Global settings page (OpenRouter, BazaarLink, Featherless and Hugging
-// Face, for servers that can't run a model themselves), the server model's row (Ollama) and which is asked first, and the
+// Face, for servers that can't run a model themselves), the server model's row (Ollama) with its Change window (the
+// models HermitShell offers, downloaded first when needed, model_pull.py) and which is asked first, and the
 // admin's server button beside Sign out, whose panel (shown on hover or focus, since pages run no JavaScript) has
 // the machine's CPU, memory, GPUs and disk and the model that answers. Everything comes from HermitShell's status
 // (llm_providers.py, key_usage.py, autofit.py) and is checked field by field before it is shown; keys only ever
@@ -58,17 +59,121 @@ function modelRow(name, info, m, csrf, saving = false) {
 ${keyList(rows)}</details>`;
 }
 
-function localRow(llm) {
+// ------------------------------------------------------------------------- the server model (Ollama)
+
+// Ollama names as model_pull.py's NAME_RE takes them: name[/namespace[/repo]][:tag].
+export const OLLAMA_RE = /^(?=.{1,120}$)[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*){0,2}(?::[A-Za-z0-9][A-Za-z0-9._-]*)?$/;
+export const LOCAL_MODAL = "mlocal";
+const ollamaName = (v) => (typeof v === "string" && OLLAMA_RE.test(v) ? v : "");
+const SPEEDS = { quick: "quick", steady: "steady", slow: "slow" };
+const PULL_STATES = ["downloading", "ready", "failed", "cancelled"];
+
+// The models HermitShell offers (autofit.choices), checked field by field; [] from an older HermitShell.
+export function localChoices(local) {
+  return (Array.isArray(local.choices) ? local.choices : []).slice(0, 24).map(obj).filter((c) => ollamaName(c.model)).map((c) => ({
+    model: c.model, about: text(c.about, 120), mb: whole(c.mb, 1 << 22) ?? 0, gpu: whole(c.gpu, 100) ?? 0, fits: c.fits !== false,
+    speed: SPEEDS[c.speed] || "", installed: c.installed === true, recommended: c.recommended === true,
+  }));
+}
+
+// A download under way or finished in the last day (model_pull.info), or null.
+export function localPull(status) {
+  const p = obj(obj(obj(status).llm).local).pull;
+  if (!p || typeof p !== "object" || !ollamaName(p.model) || !PULL_STATES.includes(p.status)) return null;
+  return { model: p.model, status: p.status, done: whole(p.done_mb, 1 << 22) ?? 0, total: whole(p.total_mb, 1 << 22) ?? 0,
+    started: whole(p.started, 1e14), finished: whole(p.finished, 1e14), error: text(p.error, 200),
+    switch: p.switch !== false, stopping: p.stopping === true };
+}
+
+const gbOf = (mb) => `${(mb / 1024).toFixed(1)} GB`;
+
+export function pullPct(p) {
+  return p.total ? Math.min(100, Math.round((100 * p.done) / p.total)) : 0;
+}
+
+// One line on a download: how far it has got, or how it ended.
+export function pullText(p) {
+  const name = `<code class="mname">${esc(p.model)}</code>`;
+  if (p.status === "downloading") {
+    const amount = p.total ? `${pullPct(p)}% &middot; ${gbOf(p.done)} of ${gbOf(p.total)}` : "starting";
+    return `${p.stopping ? "Stopping the download of" : "Downloading"} ${name}: ${amount}`;
+  }
+  if (p.status === "ready") return `${name} is downloaded${p.switch ? " and is now the server model" : ""}`;
+  if (p.status === "failed") return `Could not download ${name}${p.error ? `: ${esc(p.error)}` : ""}`;
+  return `The download of ${name} was stopped`;
+}
+
+function pullBar(p) {
+  if (p.status !== "downloading") return "";
+  const pct = pullPct(p);
+  return `<div class="mpull${p.total ? "" : " indet"}" role="progressbar" aria-label="Download" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${p.total ? pct : 35}%"></i></div>`;
+}
+
+// The admin dashboard's notice: a download under way (with its bar and where to follow it), or how the last one ended.
+export function pullNotice(status) {
+  const p = localPull(status);
+  if (!p || p.status === "cancelled") return "";
+  const tone = p.status === "failed" ? " bad" : p.status === "ready" ? " ok" : "";
+  const follow = p.status === "downloading" ? ' <a href="#tasks">Follow it in Tasks</a>.'
+    : p.status === "failed" ? ' <a href="/admin/settings#models">Model settings</a>.' : "";
+  return `<div class="mnotice${tone}" role="status">${logo("ollama")}<div><b>Server model</b> ${pullText(p)}.${follow}${pullBar(p)}</div></div>`;
+}
+
+const SOURCES = { dashboard: "set here", env: "from .env", auto: "fits this machine" };
+
+function localRow(llm, csrf, saving = "") {
   const local = obj(llm.local);
   const model = modelName(local.model);
   const suggested = modelName(local.suggested);
   const where = text(local.where);
+  const choices = localChoices(local);
+  const pull = localPull({ llm });
+  const source = SOURCES[local.source] || "";
   const facts = [where ? `last ran at ${esc(where)}` : "not used yet",
-    suggested && suggested !== model ? `this machine suits <code class="mname">${esc(suggested)}</code>` : ""].filter(Boolean).join(" &middot; ");
+    suggested && suggested !== model ? `this machine suits <code class="mname">${esc(suggested)}</code>` : "",
+    local.override === "JOB_SCANNER_MODEL" ? "<code>JOB_SCANNER_MODEL</code> in .env picks the reports&rsquo; model" : ""].filter(Boolean).join(" &middot; ");
+  const change = choices.length ? `<div class="cractions"><a class="small" href="#${LOCAL_MODAL}">Change</a></div>` : "";
   return `<div class="keyrow cr-ollama"><span class="crlogo">${logo("ollama")}</span><div class="keyinfo">
-<b>Server model</b> <span class="crtag env">${llm.order === "local" ? "asked first" : "fallback"}</span>
+<b>Server model</b> <span class="crtag env">${llm.order === "local" ? "asked first" : "fallback"}</span>${source ? ` <span class="crtag${local.source === "dashboard" ? "" : " env"}">${source}</span>` : ""}${saving ? ` ${savingTag()}` : ""}
 ${model ? `<code class="keyhint">${esc(model)}</code>` : '<div class="muted">No model yet</div>'}
-<div class="muted small">${facts}</div></div></div>`;
+<div class="muted small">${facts}</div>${pull ? `<div class="mpullrow small">${pullText(pull)}${pullBar(pull)}</div>` : ""}</div>${change}</div>`;
+}
+
+function choiceRow(c, current, inUse, offline) {
+  const tags = [c.recommended ? '<em class="crtag">recommended</em>' : "", c.installed ? '<em class="crtag env">downloaded</em>' : "",
+    c.model === inUse ? '<em class="crtag env">in use</em>' : ""].filter(Boolean).join(" ");
+  const where = !c.fits ? "needs more memory than this machine has"
+    : [c.gpu >= 98 ? "fits the GPU" : c.gpu > 0 ? `${c.gpu}% on the GPU, the rest on the CPU` : "on the CPU", c.speed ? `${c.speed} here` : ""].filter(Boolean).join(", ");
+  const size = c.mb ? `${c.installed ? "" : "download "}${gbOf(c.mb)}` : "";
+  const off = !c.fits || (offline && !c.installed);
+  return `<label class="crchoice mchoice${off ? " off" : ""}"><input type="radio" name="model" value="${esc(c.model)}"${c.model === current ? " checked" : ""}${off ? " disabled" : ""}>
+<span><i class="mtext"><b><code class="mname">${esc(c.model)}</code></b> ${tags}<small>${esc(c.about)}</small><small>${[size, where].filter(Boolean).join(" &middot; ")}</small></i></span></label>`;
+}
+
+// The Change window: the default, every model HermitShell offers and any other Ollama name.
+export function localModal(status, csrf) {
+  const local = obj(obj(status.llm).local);
+  const choices = localChoices(local);
+  if (!choices.length) return "";
+  const current = local.source === "dashboard" ? modelName(local.model) : "";
+  const offline = local.online === false;
+  const custom = current && !choices.some((c) => c.model === current) ? current : "";
+  return `<div class="modal" id="${LOCAL_MODAL}" role="dialog" aria-modal="true" aria-labelledby="${LOCAL_MODAL}-h">
+<a class="scrim" href="#_" aria-label="Close" tabindex="-1"></a>
+<div class="sheet msheet"><a class="x" href="#_" aria-label="Close">&times;</a>
+<div class="sheeticon">${logo("ollama")}</div>
+<h2 id="${LOCAL_MODAL}-h">Server model</h2><p class="muted">The model Ollama runs on this server for ratings, letters and CVs. A model
+that isn&rsquo;t downloaded yet is downloaded first, with its progress under Tasks; HermitShell switches to it once it is ready
+and keeps the current one until then.${offline ? " <b>Ollama isn&rsquo;t answering</b>, so only downloaded models can be picked." : ""}</p>
+<form method="post" action="/admin/action"><input type="hidden" name="csrf" value="${esc(csrf)}"><input type="hidden" name="action" value="model_local">
+<div class="mchoices"><label class="crchoice mchoice"><input type="radio" name="model" value=""${current ? "" : " checked"}>
+<span><i class="mtext"><b>Default</b><small>OLLAMA_MODEL from .env, else the recommended model</small></i></span></label>
+${choices.map((c) => choiceRow(c, current, modelName(local.model), offline)).join("")}
+<label class="crchoice mchoice"><input type="radio" name="model" value="custom"${custom ? " checked" : ""}${offline ? " disabled" : ""}>
+<span><i class="mtext"><b>Another Ollama model</b><small>Any name from the Ollama library, such as <code>mistral:7b</code></small></i></span></label></div>
+<label for="${LOCAL_MODAL}-c">Other model name <span class="muted">(for Another Ollama model)</span></label>
+<input id="${LOCAL_MODAL}-c" name="custom" autocomplete="off" maxlength="120" value="${esc(custom)}" placeholder="name:tag">
+<button>Use this model</button></form></div></div>`;
 }
 
 function orderForm(llm, csrf, pending = "") {
@@ -81,15 +186,15 @@ function orderForm(llm, csrf, pending = "") {
 <button class="small">Save order</button>${pending ? ` ${savingTag()}` : ""}</form>`;
 }
 
-// `saving` is { providers, order }: the model keys and the order with a change waiting for HermitShell.
-export function modelsSection(status, csrf, saving = { providers: new Set(), order: "" }) {
+// `saving` is { providers, order, local }: the model keys, the order and the server model with a change waiting for HermitShell.
+export function modelsSection(status, csrf, saving = { providers: new Set(), order: "", local: false }) {
   const models = obj(status.models);
   const llm = obj(status.llm);
   return `<h2 id="models">AI model API keys</h2>
 <p class="muted">For servers that can&rsquo;t run a model themselves. HermitShell asks the providers with a key in this order, and the
 server model when none has a key or credits left. They are sent each recruit&rsquo;s CV and the adverts it is compared with,
 and free models may keep what they are sent.</p>
-<div class="keyrows">${Object.entries(MODEL_PROVIDERS).map(([name, info]) => modelRow(name, info, obj(models[name]), csrf, saving.providers.has(name))).join("")}${localRow(llm)}</div>
+<div class="keyrows">${Object.entries(MODEL_PROVIDERS).map(([name, info]) => modelRow(name, info, obj(models[name]), csrf, saving.providers.has(name))).join("")}${localRow(llm, csrf, saving.local)}</div>
 ${orderForm(llm, csrf, saving.order)}`;
 }
 
@@ -185,6 +290,33 @@ code.mname{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;co
 .utable th:first-child{text-align:left;min-width:150px}.utable tbody th{font-weight:650}
 .ubar{height:4px;margin-top:5px;border-radius:99px;background:#eef0f7;overflow:hidden;max-width:160px}
 .ubar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#6366f1,#8b5cf6);transform-origin:left;animation:fill .6s var(--ease) both}
+.mpullrow{margin-top:6px;color:var(--ink)}
+.mpull{height:6px;margin-top:6px;border-radius:99px;background:#e9ecf5;overflow:hidden;max-width:360px}
+.mpull i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#6366f1,#8b5cf6,#6366f1) 0 0/200% 100%;animation:mflow 1.6s linear infinite}
+.mpull.indet i{animation:mslide 1.3s ease-in-out infinite}
+.sheet.msheet{max-width:620px;overflow-x:hidden}
+.mchoices{display:grid;gap:8px;margin:12px 0;max-height:min(52vh,460px);overflow:hidden auto;padding:3px}
+.mchoice{position:relative;display:block}.mchoice span{align-items:flex-start;padding:10px 12px}
+.mchoice b{display:inline-block;margin:0 4px 2px 0}.mchoice code.mname{word-break:break-all}
+.mchoice small{display:block;font-size:12px;color:var(--muted);font-weight:500;margin-top:2px}
+.mchoice em.crtag{font-style:normal;font-size:10.5px;display:inline-block;margin:0 2px 2px 0;vertical-align:1px}
+.mchoice .crtag.env{color:var(--brand-ink);background:var(--soft)}
+.mchoice.off{opacity:.55}.mchoice.off span{cursor:not-allowed}
+@keyframes mflow{to{background-position:-200% 0}}@keyframes mslide{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}
+`;
+
+// The admin dashboard's server model notice.
+export const NOTICE_STYLE = `
+.mnotice{display:flex;gap:12px;align-items:flex-start;margin:10px 0 14px;padding:12px 14px;border:1px solid #c7d2fe;border-radius:14px;
+background:linear-gradient(135deg,#eef2ff,#f5f3ff);font-size:13.5px}
+.mnotice>svg{flex:none;width:20px;height:20px;margin-top:1px;color:var(--brand)}.mnotice>div{flex:1;min-width:0}
+.mnotice.ok{border-color:#bbf7d0;background:#f0fdf4}.mnotice.ok>svg{color:#059669}
+.mnotice.bad{border-color:#fecaca;background:#fef2f2}.mnotice.bad>svg{color:#dc2626}
+.mnotice .mpull{height:6px;margin-top:8px;border-radius:99px;background:#e0e4f5;overflow:hidden}
+.mnotice .mpull i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#6366f1,#8b5cf6,#6366f1) 0 0/200% 100%;animation:mflow 1.6s linear infinite}
+.mnotice .mpull.indet i{animation:mslide 1.3s ease-in-out infinite}
+.mnotice code.mname{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink);background:#fff;border-radius:6px;padding:1px 5px}
+@keyframes mflow{to{background-position:-200% 0}}@keyframes mslide{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}
 `;
 
 // ------------------------------------------------------------------------- the admin's server panel
@@ -233,7 +365,8 @@ function modelFacts(status) {
     if (name === "ollama") {
       const model = modelName(local.model);
       const where = text(local.where);
-      return `<li>${logo("ollama")}<span><b>Server model</b> <code class="mname">${esc(model || "no model")}</code>${where ? `<small>${esc(where)}</small>` : ""}</span></li>`;
+      const pull = localPull(status);
+      return `<li>${logo("ollama")}<span><b>Server model</b> <code class="mname">${esc(model || "no model")}</code>${where ? `<small>${esc(where)}</small>` : ""}${pull?.status === "downloading" ? `<small>${pullText(pull)}</small>` : ""}</span></li>`;
     }
     const m = obj(models[name]);
     return `<li class="cr-${name}">${logo(name)}<span><b>${esc(MODEL_PROVIDERS[name].label)}</b> <code class="mname">${esc(modelName(m.model) || MODEL_PROVIDERS[name].model)}</code><small>${state(m)}</small></span></li>`;

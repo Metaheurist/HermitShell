@@ -118,11 +118,16 @@ Unless `OLLAMA_MODEL` is set, `doctor.py --fix` downloads the model that fits th
 | Machine | Model | Download |
 | --- | --- | --- |
 | A GPU with 24 GB, or 48 GB of RAM | `qwen3:30b-a3b-instruct-2507-q4_K_M` (a mixture of experts, quick on a CPU for its size) | about 18.6 GB |
+| A GPU with 12 GB | `qwen2.5:14b-instruct-q4_K_M` | about 9 GB |
+| A GPU with 8 GB | `qwen2.5:7b-instruct-q4_K_M` | about 4.7 GB |
 | A GPU with 4 GB, or 6 GB of RAM | `qwen3:4b-instruct-2507-q4_K_M` (the default) | about 2.5 GB |
 | Less | `qwen2.5:1.5b-instruct` | about 1 GB |
 
 The scripts prefer that model when Ollama has it, and otherwise use whichever of the others it has.
-`HERMES_AUTOFIT=off` always picks the default.
+`HERMES_AUTOFIT=off` always picks the default. To run another one (such as `qwen2.5-coder:7b-instruct`
+for technical CVs), pick it under Global settings > **Server model** > **Change**: the server downloads
+it, shows the progress on the admin dashboard and switches once it is ready
+([more](feedback-worker.md#ai-models)).
 
 ## Cloud models
 

@@ -27,7 +27,7 @@ Resolution order:
 
 | Setting | Order |
 | --- | --- |
-| Model | `JOB_SCANNER_MODEL` (or `COVER_LETTER_MODEL`) → `OLLAMA_MODEL` → the model that fits the machine ([autofit](#autofit-gpu-cpu-and-context-chosen-for-you)) → `qwen3:4b-instruct-2507-q4_K_M` |
+| Model | `JOB_SCANNER_MODEL` (or `COVER_LETTER_MODEL`) → the server model picked on the dashboard → `OLLAMA_MODEL` → the model that fits the machine ([autofit](#autofit-gpu-cpu-and-context-chosen-for-you)) → `qwen3:4b-instruct-2507-q4_K_M` |
 | Host | `OLLAMA_HOST` → `OLLAMA_FALLBACK_HOST` (`http://localhost:11434`) → `http://ollama:11434` (a container named `ollama`) → `http://host.docker.internal:11434` (Ollama on the Docker host) |
 | Context | `OLLAMA_NUM_CTX` for `OLLAMA_MODEL`, else chosen by [autofit](#autofit-gpu-cpu-and-context-chosen-for-you) |
 
@@ -79,9 +79,17 @@ the GPU, the rest on the CPU`, and warns when a machine with a GPU runs the mode
 
 - **The model that fits.** With no `OLLAMA_MODEL`, autofit picks the model to download from the
   GPU's memory or the machine's RAM: `qwen2.5:1.5b-instruct` below 6 GB of RAM and 4 GB of VRAM, the
-  default `qwen3:4b-instruct-2507-q4_K_M` up to 48 GB of RAM or 24 GB of VRAM, and
-  `qwen3:30b-a3b-instruct-2507-q4_K_M` (a mixture of experts, quick on a CPU for its size) above.
+  default `qwen3:4b-instruct-2507-q4_K_M` with either, `qwen2.5:7b-instruct-q4_K_M` with 8 GB of VRAM,
+  `qwen2.5:14b-instruct-q4_K_M` with 12 GB of VRAM, and `qwen3:30b-a3b-instruct-2507-q4_K_M`
+  (a mixture of experts, quick on a CPU for its size) with 24 GB of VRAM or 48 GB of RAM. The 7B and
+  14B need a GPU: on a CPU alone they are slower than the 4B for little gain, so a machine without one
+  stays on the 4B until it has 48 GB of RAM.
   `doctor.py --fix` downloads it and the scripts prefer it; see [Ollama](api-keys.md#ollama).
+- **Picking another model.** Global settings > **Server model** > **Change** lists these and a few
+  others with how each would run on this machine, and downloads the one picked
+  ([how it looks](feedback-worker.md#ai-models)). The pick is saved as `OLLAMA_MODEL` in
+  `state/dashboard.json`, which wins over `.env`; **Default** removes it. On the server,
+  `python3 model_pull.py NAME` downloads a model the same way, and `--keep` downloads it without switching.
 
 ### Cloud models
 

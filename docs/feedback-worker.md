@@ -674,7 +674,8 @@ HermitShell asks the providers with a key in turn and uses the server model when
 credits left. A provider that runs out of credits or hits its daily limit rests until the next day
 (UTC), a rejected key for six hours and a rate limit for as long as it asks. The **Server model** row
 shows the model it runs, where it last ran and, when it differs, the model that suits the machine
-([how it's picked](configuration.md#autofit-gpu-cpu-and-context-chosen-for-you)). **Cloud first**
+([how it's picked](configuration.md#autofit-gpu-cpu-and-context-chosen-for-you)), tagged **set here**,
+**from .env** or **fits this machine** for where the model comes from. **Cloud first**
 or **Server first** sets which is asked first; with **Server first** the cloud is only used when
 the server model (its own Ollama) doesn't answer. Cloud models are sent each recruit's CV and the adverts it is compared with,
 and free models may keep what they are sent, which the [privacy notice](#privacy-notice) says.
@@ -683,6 +684,32 @@ and free models may keep what they are sent, which the [privacy notice](#privacy
 <img src="images/worker/admin-settings-models.png" alt="The AI model API keys section: OpenRouter opened to its key's usage, BazaarLink, Featherless, Hugging Face, the server model and the order" width="720">
 
 <img src="images/worker/admin-model-key-modal.png" alt="The AI model key window: pick the provider, paste the key and an optional model" width="420">
+
+**Change** on the **Server model** row opens a window to switch away from the recommended model.
+It lists Qwen3 30B-A3B, Qwen2.5 14B and 7B, Qwen2.5-Coder 7B, Llama 3.1 8B, the 4B default and
+Qwen2.5 1.5B, plus any other model the server's Ollama already has, each with its download size,
+whether it would run on the GPU or the CPU and how quick it would be on this machine, and tags for
+**recommended**, **downloaded** and **in use**. A model too big for the machine's memory can't be
+picked, and while Ollama is offline only models already downloaded can. **Default** goes back to
+`.env`'s `OLLAMA_MODEL`, or the model that fits the machine; **Another Ollama model** takes any name
+from the Ollama library (such as `mistral:7b`). `JOB_SCANNER_MODEL` in `.env` still wins over the pick, and the row says so.
+
+<img src="images/worker/admin-model-picker.png" alt="The Server model window: the recommended Qwen2.5 14B, the downloaded and in-use 4B, the 30B that is too big for the machine, and other models with their size, where they run and how quick they are" width="560">
+
+A model the server already has is used within seconds. Any other is downloaded first by
+`model_pull.py` in the background, which checks there is room on the disk (the model plus 2 GB)
+and switches to the model only once Ollama lists it. While it downloads, the admin dashboard shows
+a notice with a progress bar, the gigabytes done and a link to **Tasks**, where the download is listed
+as **Server model download** with a **Stop** button. When it is ready the notice turns green
+(**is downloaded and is now the server model**) for a day; a failed download says why and links back
+to the model settings. A failed or stopped download leaves the old model running. Managers and
+recruiters see neither the notice nor the task.
+
+<img src="images/worker/admin-dashboard-model-download.png" alt="The admin dashboard with a notice: Downloading the new server model, a progress bar at 47%, 4.1 of 8.6 GB, Follow it in Tasks" width="720">
+
+<img src="images/worker/admin-tasks-model-download.png" alt="Tasks with Server model download: 4.1 of 8.6 GB, with Stop" width="560">
+
+<img src="images/worker/admin-dashboard-model-ready.png" alt="The admin dashboard with a green notice: the new server model is downloaded and is now the server model" width="720">
 
 ##### Model tokens used
 

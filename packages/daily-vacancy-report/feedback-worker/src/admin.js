@@ -30,7 +30,7 @@ import {
 } from "./settings.js";
 import { CONFIRM_STYLE, binButton, deleteModal } from "./confirm.js";
 import { MODAL_STYLE } from "./keys.js";
-import { SERVER_STYLE, serverBox } from "./models.js";
+import { NOTICE_STYLE, SERVER_STYLE, pullNotice, serverBox } from "./models.js";
 import { needsSeal, sealInfo, sealItem, sealText } from "./seal.js";
 import { PALETTE_ICON, THEME_URL, readTheme, themePage, themeRequest } from "./theme.js";
 import { SEARCH_STYLE, matchesProfile, noMatch, recruiterHits, recruiterRow, searchBar, searchQuery } from "./search.js";
@@ -483,10 +483,10 @@ async function dashboard(request, env, s) {
       : s.me.manager ? "Your team has no recruits yet. The people invited to your team join it, and an admin can assign others."
         : "You have no recruits yet. The people you invite join your recruits, and an admin can assign others to you."}</td></tr>`);
   const deletes = admin ? shown.filter(({ p }) => !p.pending).map(({ p }) => deleteRecruitModal(p, s.csrf)).join("") : "";
-  return page("Recruits", `<style>${LINK_STYLE}${MODAL_STYLE}${CONFIRM_STYLE}${SEARCH_STYLE}${PENDING_STYLE}${TASKS_STYLE}${RECRUITER_STYLE}${NOTES_STYLE}${BULK_STYLE}</style>${nav("profiles", navFor(s.me))}${done ? note(done) : ""}
+  return page("Recruits", `<style>${LINK_STYLE}${MODAL_STYLE}${CONFIRM_STYLE}${SEARCH_STYLE}${PENDING_STYLE}${TASKS_STYLE}${RECRUITER_STYLE}${NOTES_STYLE}${BULK_STYLE}${admin ? NOTICE_STYLE : ""}</style>${nav("profiles", navFor(s.me))}${done ? note(done) : ""}
 ${lastUpdate(current, waiting, presence, admin)}
 ${quick.length ? waitBar(quick.length === 1 ? "the change" : `${quick.length} changes`, refresh) : ""}
-${admin ? `${problems(current)}${checklist(current)}` : ""}
+${admin ? `${pullNotice(current)}${problems(current)}${checklist(current)}` : ""}
 ${all.length ? searchBar(q, shown.length, all.length, tasks) : tasks ? `<div class="tabletools"><span></span><div class="tools">${tasks}</div></div>` : ""}
 ${tagFilter(tag, shown.length)}
 <table class="list stack recruits"><tr class="head"><th>Recruit</th><th>Status</th>${lead ? "<th>Recruiter</th>" : ""}<th></th></tr>

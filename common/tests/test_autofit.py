@@ -339,7 +339,10 @@ def _machine(ram, *vram):
     (_machine(4000, 2048), "qwen2.5:1.5b-instruct"),
     (_machine(4000, 4096), hc.DEFAULT_MODEL),
     (_machine(16000), hc.DEFAULT_MODEL),
-    (_machine(32000, 12288), hc.DEFAULT_MODEL),
+    (_machine(32000, 12288), "qwen2.5:14b-instruct-q4_K_M"),
+    (_machine(16000, 8192), "qwen2.5:7b-instruct-q4_K_M"),
+    (_machine(32000, 6144), hc.DEFAULT_MODEL),
+    (_machine(40000), hc.DEFAULT_MODEL),
     (_machine(64000), "qwen3:30b-a3b-instruct-2507-q4_K_M"),
     (_machine(16000, 8192, 24576), "qwen3:30b-a3b-instruct-2507-q4_K_M"),
     (_machine(0), hc.DEFAULT_MODEL),
@@ -352,6 +355,36 @@ def test_the_suggested_model_is_the_default_when_autofit_is_off(fit, monkeypatch
     monkeypatch.setenv("HERMES_AUTOFIT", "off")
     assert autofit.suggested_model(_machine(4000)) == hc.DEFAULT_MODEL
     assert autofit.download_mb(hc.DEFAULT_MODEL) == 2500 and autofit.download_mb("other:1b") == 0
+    assert autofit.download_mb("qwen2.5-coder:7b-instruct") == 4700
+
+
+def test_fit_says_where_a_model_runs_and_how_quick(fit):
+    assert autofit.fit(4700, 4700, _machine(24000, 12288)) == {"gpu": 100, "fits": True, "speed": "quick"}
+    split = autofit.fit(4700, 4700, _machine(24000, 4096))
+    assert 40 < split["gpu"] < 60 and split["fits"] and split["speed"] == "quick"
+    assert autofit.fit(9000, 9000, _machine(24000)) == {"gpu": 0, "fits": True, "speed": "slow"}
+    assert autofit.fit(4700, 4700, _machine(24000))["speed"] == "steady"
+    # The mixture-of-experts model reads few weights per token, but must still fit the memory.
+    assert autofit.fit(18600, 2000, _machine(64000))["speed"] == "quick"
+    assert autofit.fit(18600, 2000, _machine(24000))["fits"] is False
+    assert autofit.fit(990, 990, _machine(0))["fits"] is True
+
+
+def test_choices_list_the_catalogue_then_what_ollama_has(fit):
+    installed = [{"name": "qwen3:8b", "size": 5_200 << 20}, {"name": hc.DEFAULT_MODEL, "size": 2_500 << 20},
+                 {"name": "llama3.1:8b-instruct-q4_K_M", "size": 4_900 << 20}, "junk"]
+    rows = autofit.choices(installed, _machine(24000, 4096))
+    names = [r["model"] for r in rows]
+    assert names[:len(autofit.CHOICES)] == [c[0] for c in autofit.CHOICES] and names[-1] == "qwen3:8b"
+    by = {r["model"]: r for r in rows}
+    assert by[hc.DEFAULT_MODEL]["installed"] and by[hc.DEFAULT_MODEL]["recommended"]
+    assert by["llama3.1:8b-instruct-q4_K_M"]["installed"] and not by["qwen2.5:7b-instruct-q4_K_M"]["installed"]
+    assert by["qwen3:8b"] == {"model": "qwen3:8b", "about": "Already on the server", "mb": 5200, "installed": True,
+                              "recommended": False, **autofit.fit(5200, 5200, _machine(24000, 4096))}
+    assert by["qwen3:30b-a3b-instruct-2507-q4_K_M"]["fits"] is True
+    assert autofit.choices([], _machine(16000, 4096))[0]["fits"] is False
+    assert sum(r["recommended"] for r in rows) == 1
+    assert len(autofit.choices([{"name": f"m{i}:1b"} for i in range(30)], _machine(4000))) == len(autofit.CHOICES) + 12
 
 
 def test_calibrate_learns_each_standard_size(fit):
