@@ -12,7 +12,7 @@
 // reach the HermitShell server: HermitShell connects out to /api/live and reads /api/queue with its API token.
 
 import { DESK_URL, MAX_DESK_BYTES, deskPage, readDesk, storeDesk, validDesk } from "./desk.js";
-import { DEMO_DONE, DEMO_URL, demoEnv, demoMode, demoRibbon, demoSection, demoToggle, saveDemo } from "./demo.js";
+import { DEMO_DONE, DEMO_URL, demoEnv, demoMe, demoMode, demoRibbon, demoSection, demoToggle, saveDemo } from "./demo.js";
 import { HISTORY_URL, PIPELINE_URL, historyPage, listed, moveOwnerHistory, record, recordReported } from "./history.js";
 import { META_STAGES, STAGE_LABELS, STAGE_URL, pipelineBack, pipelinePage, requestStage, stageMeta } from "./pipeline.js";
 import { hasCheckedIn } from "./apiauth.js";
@@ -824,7 +824,8 @@ export async function handleAdmin(request, env, ctx) {
   if (path === THEME_URL) return withSignedIn(await themeRoute(request, env, s), env, { ...s, demo }, path, request.method);
   if (!demo) return withSignedIn(await signedInRoute(request, env, s, path), env, s, path, request.method);
   const pretend = await demoEnv(env);
-  const seen = { ...s, acc: await accounts(pretend), demo };
+  const acc = await accounts(pretend);
+  const seen = { ...s, acc, me: demoMe(s.me, acc), demo };
   const res = await withSignedIn(await signedInRoute(request, pretend, seen, path), pretend, seen, path, request.method);
   await saveDemo(env, pretend);
   return res;

@@ -754,9 +754,17 @@ anything else in the request.
 
 The **Demo mode** switch, at the foot of Global settings, fills every dashboard page with a made-up
 recruitment desk instead of the real one, so HermitShell can be shown to someone without showing
-anyone's data. It has fictional recruits (active, paused, scanning, without a CV and waiting to be set
-up), recruiters, invites, tasks, a cover letter to download, and months of stats, jobs sent and history.
-Only admins can switch it, and it applies to everyone signed in until an admin turns it off, with the
+anyone's data. It is a busy desk, to show HermitShell under load: 35 fictional recruits (active, paused,
+several scanning at once, without a CV and waiting to be set up), two managers with their teams (one also
+recruits), recruiters in and out of a team, sign-ups, invites, a full Tasks list (reports rating jobs,
+letters, tailored CVs and prep packs waiting, the server model downloading), a cover letter to download,
+months of stats, jobs sent and history, the Features switches, the server's model picker with a model
+downloading, and backups on Cloudflare (a week of nightly copies and a month of weekly ones on
+[Backups](#backups-on-cloudflare), each downloading as made-up bytes). The names are made up from the
+same short list of first names and surnames, and every email address is at one of the reserved `example` domains. A manager or
+recruiter signed in sees the desk as a made-up manager or recruiter like them (as the made-up account
+with their username only when it has the same roles and isn't an admin), so they see a team or a pool
+and never a page their own role can't open. Only admins can switch it, and it applies to everyone signed in until an admin turns it off, with the
 switch (which says since when it has been on) or the **Turn off** link on the ribbon at the foot of each
 page. The switch is a plain form, so it works without scripts, and screen readers hear it as a switch
 that is on or off.
@@ -765,11 +773,18 @@ that is on or off.
 
 <img src="images/worker/admin-dashboard-demo.png" alt="The recruits list in demo mode: made-up recruits, recruiters and invites, and the demo mode ribbon" width="720">
 
+<img src="images/worker/admin-users-demo.png" alt="Users in demo mode: two made-up managers with their teams, recruiters in and out of a team, and the admin" width="720">
+
+<img src="images/worker/admin-tasks-demo.png" alt="Tasks in demo mode under load: several job reports at once, letters, a tailored CV and an interview prep pack waiting, and the server model downloading" width="720">
+
 Every press works as it would, and a pretend HermitShell plays its part a few seconds later, on the
 made-up data only: **Generate** on a cover letter or tailored CV shows **Being made&hellip;** and then a
 made-up PDF to download, **Send** turns into **Emailed**, a missing skill goes from **adding** to
 **added**, and pausing, resuming, assigning, deleting, **Send now** (a short pretend scan) and stopping
-tasks show on the dashboard as HermitShell would apply them. What it did is kept for two hours in one
+tasks show on the dashboard as HermitShell would apply them. **Save features** turns the switches,
+picking a server model switches to it at once if it is downloaded or shows it downloading in Tasks
+(where **Stop** leaves the model as it was) until it is ready, and **Back up now** adds a copy to the
+backups on Cloudflare. What it did is kept for two hours in one
 `demo:state` entry, cleared whenever the switch is turned on or off. Settings, keys, CVs and users can be
 saved but are not kept past that page, nothing typed into them goes into `demo:state`, nothing is queued
 and nothing reaches HermitShell. Changing your own password is still real. The Worker's API, the buttons

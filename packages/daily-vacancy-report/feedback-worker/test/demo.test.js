@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { WORK_MS } from "../src/demo.js";
+import { PULL_MS, WORK_MS } from "../src/demo.js";
 import { jobHash } from "../src/docs.js";
 import worker from "../src/index.js";
 import { BASE, memoryHub, sealingKeys, testEnv } from "./helpers.js";
@@ -173,6 +173,88 @@ describe("demo mode pages", () => {
   });
 });
 
+describe("demo mode's desk under load", () => {
+  it("has 35 recruits, two managers with their teams, more recruiters, sign-ups and invites", async () => {
+    const { admin } = await setup();
+    await demoOn(admin);
+    const dashboard = (await admin.get("/admin")).body;
+    expect(new Set(dashboard.match(/aria-label="Recruiter for (?!the ticked)[^"]+"/g)).size).toBe(35);
+    expect(dashboard.match(/scanning now/g).length).toBeGreaterThanOrEqual(4);
+    for (const note of ["Engineering open evening", "Graduate scheme, cyber security"]) expect(dashboard).toContain(note);
+    const users = (await admin.get("/admin/users")).body;
+    for (const name of ["Jamie Chen", "Robin Ellis", "Riley Morgan", "Sam Patel", "Avery Reid", "Jordan Lane", "Taylor Shaw"]) expect(users).toContain(name);
+    expect(users.match(/<b>3<\/b> <span class="muted">recruiters in their team/g)).toHaveLength(1);
+    expect(users.match(/<b>2<\/b> <span class="muted">recruiters in their team/g)).toHaveLength(1);
+    expect(users.match(/in Jamie Chen.{1,6}s team/g)).toHaveLength(3);
+    const desk = (await admin.get("/admin/desk")).body;
+    for (const name of ["Riley Morgan", "Avery Reid", "Taylor Shaw"]) expect(desk).toContain(name);
+    const tasks = (await admin.get("/admin/tasks")).body;
+    for (const words of ["Server model download", "Interview prep", "Rating jobs", "Searching job sites"]) expect(tasks).toContain(words);
+  });
+
+  it("names only made-up people, from the same first names and surnames, at example addresses", async () => {
+    const { admin } = await setup();
+    await demoOn(admin);
+    const first = new Set(["Alex", "Sam", "Jordan", "Riley", "Casey", "Drew", "Morgan", "Taylor", "Jamie", "Robin", "Avery"]);
+    const last = new Set(["Morgan", "Lee", "Patel", "Chen", "Quinn", "Harper", "Ellis", "Reid", "Walsh", "Shaw", "Lane"]);
+    const dashboard = (await admin.get("/admin")).body;
+    const names = [...dashboard.matchAll(/aria-label="Recruiter for (?!the ticked)([^"]+)"/g)].map((m) => m[1]);
+    expect(new Set(names).size).toBe(names.length);
+    for (const name of names) {
+      const [a, b, more] = name.split(" ");
+      expect(first.has(a) && last.has(b) && more === undefined, name).toBe(true);
+    }
+    for (const email of dashboard.match(/[a-z0-9.]+@[a-z0-9.-]+/g)) expect(email, email).toMatch(/@example\.(com|net|org)$/);
+  });
+
+  it("shows a real manager a made-up team and a real recruiter a made-up pool, never the admin pages", async () => {
+    const { env, admin } = await setup();
+    await admin.post("/admin/users", { op: "add", name: "Real Manager", username: "boss", password: "a-long-manager-password", roles: "manager" });
+    await admin.post("/admin/users", { op: "add", name: "Real Solo Recruiter", username: "solo", password: "a-long-recruiter-password", roles: "recruiter" });
+    const boss = await signIn(env, "boss", "a-long-manager-password");
+    const solo = await signIn(env, "solo", "a-long-recruiter-password");
+    await demoOn(admin);
+    const team = (await boss.get("/admin")).body;
+    for (const name of ["Sam Lee", "Morgan Ellis", "Taylor Reid"]) expect(team).toContain(name);
+    for (const name of ["Jamie Walsh", "Avery Lane", "Real Recruit"]) expect(team).not.toContain(name);
+    expect(team).toContain("Real Manager");
+    const users = (await boss.get("/admin/users")).body;
+    for (const name of ["Casey Quinn", "Riley Morgan", "Sam Patel"]) expect(users).toContain(name);
+    for (const name of ["Avery Reid", "Drew Harper"]) expect(users).not.toContain(name);
+    expect((await boss.get("/admin/settings")).res.status).toBe(403);
+    expect((await boss.get("/admin/backups")).res.status).toBe(403);
+    const pool = (await solo.get("/admin")).body;
+    expect(pool).toContain("Sam Lee");
+    for (const name of ["Jamie Walsh", "Riley Morgan", "Real Recruit"]) expect(pool).not.toContain(name);
+    expect((await solo.get("/admin/desk")).body).not.toContain("fees");
+  });
+});
+
+describe("demo mode's newer features", () => {
+  it("shows the features, the server model downloading and the backups on Cloudflare", async () => {
+    const { admin } = await setup();
+    await demoOn(admin);
+    const settings = (await admin.get("/admin/settings")).body;
+    for (const label of ["Admin alerts by email", "Interview prep packs on Interview", "Word copies of letters and CVs"]) expect(settings).toContain(label);
+    expect(settings).toContain('id="mlocal"');
+    expect(settings).toContain('value="qwen3:30b-a3b-instruct-2507-q4_K_M"');
+    expect(settings).toMatch(/Downloading <code class="mname">qwen3:30b-a3b-instruct-2507-q4_K_M<\/code>: \d+%/);
+    const dashboard = (await admin.get("/admin")).body;
+    expect(dashboard).toContain("Follow it in Tasks");
+    expect(dashboard).toMatch(/On Cloudflare too: last sent [^<]+ &middot; 11 kept/);
+    const page = (await admin.get("/admin/backups")).body;
+    expect(page).toContain("11 kept");
+    const names = [...page.matchAll(/href="\/admin\/backups\?name=(hermitshell-\d{8}-\d{6}\.tar\.gz\.enc)"/g)].map((m) => m[1]);
+    expect(names).toHaveLength(11);
+    const { res } = await admin.get(`/admin/backups?name=${names[0]}`);
+    expect(res.headers.get("Content-Disposition")).toBe(`attachment; filename="${names[0]}"`);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect(bytes.length).toBe(Number(res.headers.get("Content-Length")));
+    expect(bytes.length).toBeGreaterThan(6_000_000);
+    expect(new TextDecoder().decode(bytes.slice(0, 40))).toBe("HSEAL1 HermitShell demo mode: made-up by");
+  });
+});
+
 describe("demo mode keeps real data apart", () => {
   it("keeps only the demo's own state, with nothing typed into it, and never tells HermitShell", async () => {
     const { env, admin } = await setup();
@@ -226,6 +308,39 @@ describe("demo mode keeps real data apart", () => {
     expect((await admin.get("/admin")).body).not.toContain("New Real");
     await demoOff(admin);
     expect((await admin.get("/admin")).body).toContain("New Real");
+  });
+
+  it("never gives a real user a role they don't have, even with a made-up account's username", async () => {
+    const { env, admin } = await setup();
+    await admin.post("/admin/users", { op: "add", name: "Real Drew", username: "drew", password: "a-long-recruiter-password", roles: "recruiter" });
+    await admin.post("/admin/users", { op: "add", name: "Real Taylor", username: "taylor-shaw", password: "a-long-manager-password", roles: "manager" });
+    const drew = await signIn(env, "drew", "a-long-recruiter-password");
+    const taylor = await signIn(env, "taylor-shaw", "a-long-manager-password");
+    await demoOn(admin);
+    for (const path of ["/admin/settings", "/admin/backups", "/admin/tasks", "/admin/theme"]) expect((await drew.get(path)).res.status, path).toBe(403);
+    const pool = (await drew.get("/admin")).body;
+    expect(pool).toContain("Sam Lee");
+    expect(pool).not.toContain('aria-label="Recruiter for');
+    expect((await drew.get("/admin/users")).res.status).toBe(403);
+    const team = (await taylor.get("/admin/users")).body;
+    for (const name of ["Casey Quinn", "Riley Morgan", "Sam Patel"]) expect(team).toContain(name);
+    expect((await taylor.get("/admin/settings")).res.status).toBe(403);
+    expect((await drew.post("/admin/demo", { on: "0" })).status).toBe(403);
+    expect((await admin.get("/admin")).body).toContain("Jamie Walsh");
+  });
+
+  it("cleans a hand-made model pick, features and backup before showing them", async () => {
+    const { env, admin } = await setup();
+    await demoOn(admin);
+    await env.FEEDBACK.put("demo:state", JSON.stringify({ v: 1, keys: {}, patch: {
+      local: { model: "<script>alert(1)</script>", at: Date.now(), current: '"><img src=x onerror=alert(1)>', source: "dashboard", have: ["<b>x</b>", 7] },
+      features: { alerts: "<b>on</b>", prep_auto: false, nope: true }, backup: "<i>soon</i>" } }));
+    for (const path of ["/admin", "/admin/settings", "/admin/tasks", "/admin/backups"]) {
+      const { res, body } = await admin.get(path);
+      expect(res.status, path).toBe(200);
+      for (const bad of ["<script>alert(1)", "<img src=x", "<b>x</b>", "<b>on</b>", "<i>soon</i>", "alert(1)"]) expect(body, `${path} ${bad}`).not.toContain(bad);
+    }
+    expect((await admin.get("/admin/settings")).body).toMatch(/name="prep_auto" value="1">/);
   });
 
   it("still changes a user's own password for real", async () => {
@@ -327,6 +442,41 @@ describe("demo mode presses play out", () => {
     await demoOn(admin);
     expect(env.FEEDBACK.store.has("demo:state")).toBe(false);
     expect((await admin.get("/admin")).body).toContain("Taylor Reid");
+  });
+
+  it("plays out a feature switched, a server model picked, a download stopped and Back up now", async () => {
+    const { admin } = await demoAdmin();
+    const shown = ["alerts", "prep_auto", "word_copies", "self_service"];
+    await admin.post("/admin/action", { action: "features", shown, alerts: "1" });
+    await admin.post("/admin/action", { action: "model_local", model: "llama3.1:8b-instruct-q4_K_M" });
+    await admin.post("/admin/action", { action: "backup_now" });
+    expect((await admin.get("/admin/settings")).body).toContain("Saving");
+    later(WORK_MS.change + 1000);
+    let settings = (await admin.get("/admin/settings")).body;
+    expect(settings).toMatch(/name="alerts" value="1" checked/);
+    expect(settings).toMatch(/name="prep_auto" value="1">/);
+    expect(settings).toContain('<code class="keyhint">llama3.1:8b-instruct-q4_K_M</code>');
+    const dashboard = (await admin.get("/admin")).body;
+    expect(dashboard).toMatch(/On Cloudflare too: last sent (just now|\d+ seconds? ago) &middot; 12 kept/);
+    expect((await admin.get("/admin/backups")).body).toContain("12 kept");
+
+    await admin.post("/admin/action", { action: "model_local", model: "qwen2.5:7b-instruct-q4_K_M" });
+    later(WORK_MS.change + 1000);
+    expect((await admin.get("/admin")).body).toMatch(/Downloading <code class="mname">qwen2.5:7b-instruct-q4_K_M<\/code>: \d+%/);
+    later(PULL_MS);
+    const ready = (await admin.get("/admin")).body;
+    expect(ready).toContain('<code class="mname">qwen2.5:7b-instruct-q4_K_M</code> is downloaded and is now the server model');
+    expect((await admin.get("/admin/tasks")).body).not.toContain("Server model download");
+
+    await admin.post("/admin/action", { action: "model_local", model: "qwen2.5:1.5b-instruct" });
+    later(WORK_MS.change + 1000);
+    expect((await admin.get("/admin/tasks")).body).toContain("Server model download");
+    await admin.post("/admin/tasks", { task: "model:pull" });
+    later(WORK_MS.change + 1000);
+    settings = (await admin.get("/admin/settings")).body;
+    expect(settings).toContain('<code class="keyhint">qwen2.5:7b-instruct-q4_K_M</code>');
+    expect(settings).toContain("The download of");
+    expect((await admin.get("/admin/tasks")).body).not.toContain("Server model download");
   });
 
   it("ignores a hand-made state with keys outside the demo's own", async () => {

@@ -900,6 +900,17 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Demo mode shows a busy desk, with every newer feature.** It now has 35 made-up recruits (several
+  scanning at once, some paused, some new without a CV), two managers with their teams (one also recruits),
+  recruiters in and out of a team, three sign-ups, five invites and a full Tasks list. The newer features are
+  shown too: the Features switches, the server model picker with a model downloading, and backups on Cloudflare
+  (a week of nightly and a month of weekly copies on **Backups on Cloudflare**, downloading as made-up bytes).
+  **Save features**, picking a server model (downloaded at once, or downloading in Tasks until ready, where
+  **Stop** keeps the old model) and **Back up now** play out like the other presses. A real manager or recruiter
+  now sees the desk as a made-up manager or recruiter like them, so they see a team or a pool rather than an
+  empty list. The names are made up from the same short list of first names and surnames. The made-up desk is
+  built in about half the time it took before, to stay within a Worker's CPU limit with five times the recruits.
+  Covered by new tests in the Worker's `test/demo.test.js` and more pages in `e2e/demo.spec.js`'s phone check.
 - **Theme and branding's reset button says Reset to default** instead of "Reset to HermitShell's look";
   it still puts back HermitShell's own palette, name, logo and look.
 - **Autofit recommends 7B and 14B models on GPUs.** Between the 4B default and the 30B, a GPU with 8 GB
@@ -1209,6 +1220,11 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **Demo mode never gives a role.** A signed-in user stands in for a made-up account with their username only
+  when it has the same roles and isn't an admin, so a recruiter whose username matched the made-up admin can't
+  open admin pages in demo mode. A stored demo state's model names must be Ollama names, and a made-up backup
+  part must be one of its parts. Tested in `test/demo.test.js`, with a hand-made state of markup and a recruiter
+  sharing the made-up admin's username.
 - **`profile_stats.py` prints counts only.** Run by hand, it printed a recruit's whole stats as JSON, including
   the jobs sent with their titles, employers, salaries, advert links and card details. It now prints a table of
   counts (today, 7 days and every day kept), the Pipeline and how many jobs were sent, so the output is safe to

@@ -1,6 +1,7 @@
-// Demo mode (Global settings): every signed-in page shows a made-up recruitment desk (recruits, recruiters, stats,
-// jobs sent, history, tasks, invites, settings and a kept cover letter) instead of the real one, so HermitShell can
-// be shown to someone without showing anyone's data. The pages get an in-memory KV seeded with fictional data and a
+// Demo mode (Global settings): every signed-in page shows a made-up recruitment desk (35 recruits, recruiters in two
+// managers' teams, stats, the desk, jobs sent, history, tasks, invites, settings and features, a server model
+// downloading, backups on Cloudflare and a kept cover letter) instead of the real one, so HermitShell can be shown to
+// someone without showing anyone's data. The pages get an in-memory KV seeded with fictional data and a
 // live link that answers "connected" but reaches nothing, so whatever is pressed while it is on never reaches the
 // real data, the queue or HermitShell. The API, email buttons, sign-up and privacy pages never see demo data, and
 // reports carry on as normal.
@@ -8,21 +9,25 @@
 // Presses still play out, as they would for real: a pretend HermitShell (pretendWork) takes what they queued a few
 // seconds later, so a letter or tailored CV asked for is "being made" and then ready to download (a made-up PDF), a job
 // emailed shows as sent, an added skill as counted, and a pause, assignment, scan or recruit change shows on the
-// dashboard. What the demo needs to remember for that is kept in one KV value, "demo:state", for two hours and
-// cleared when the switch is pressed: only the demo's own keys (requests, kept documents, marks, history, invites and
-// the plain dashboard changes) and what the pretend HermitShell did. Nothing typed into settings, CVs, users or
-// passwords is kept there, and the switch itself is "demo:mode".
+// dashboard, as do a feature switched, a server model picked (downloaded first when it isn't yet) and Back up now.
+// What the demo needs to remember for that is kept in one KV value, "demo:state", for two hours and cleared when the
+// switch is pressed: only the demo's own keys (requests, kept documents, marks, history, invites and the plain
+// dashboard changes) and what the pretend HermitShell did. Nothing typed into settings, CVs, users or passwords is
+// kept there, and the switch itself is "demo:mode".
 
 import { PROTOCOL } from "./apiauth.js";
+import { BACKUP_PART_BYTES } from "./backups.js";
 import { DOC_KINDS, PROFILE_CV, jobHash, markEmailed, storeDoc, storeProfileCv } from "./docs.js";
 import { historyKey } from "./history.js";
+import { OLLAMA_RE } from "./models.js";
 import { STAGE_LABELS } from "./pipeline.js";
-import { esc, limitedForm, newId, page, redirect, rememberWeek, safeEqual, when } from "./lib.js";
+import { WEEKS_KEY, WEEK_KEEP_DAYS, esc, limitedForm, newId, page, redirect, safeEqual, when } from "./lib.js";
 import { SEAL_ALG } from "./seal.js";
-import { SETTINGS_URL } from "./settings.js";
+import { FEATURES, SETTINGS_URL } from "./settings.js";
 import { FIELDS, RANGES, splitStats, zonedToday } from "./stats.js";
 import { COUNTS as DESK_COUNTS, storeDesk } from "./desk.js";
 import { forgetRequests, requests } from "./tasks.js";
+import { signedIn } from "./users.js";
 
 export const DEMO_URL = "/admin/demo";
 const DEMO_KEY = "demo:mode";
@@ -34,7 +39,11 @@ export const WORK_MS = { send_job: 6000, cover_letter: 12000, tailored_cv: 14000
   scan: 25000 };
 // The demo's own keys worth remembering between pages. Queue items are only kept for the plain dashboard changes.
 const KEPT = /^(event:[a-z0-9_-]{1,40}:dash-|tasks:requests$|docs?:|cvpdf(info)?:|emailed:|skilladd:|history:|invite:|queue:|flag:queue$)/;
-const KEPT_CHANGES = new Set(["pause", "resume", "assign", "send_now", "delete", "cancel", "profile"]);
+const KEPT_CHANGES = new Set(["pause", "resume", "assign", "send_now", "delete", "cancel", "profile", "features", "local_model", "backup_now"]);
+// A server model picked in demo mode takes this long to "download"; the one already downloading starts again this often.
+export const PULL_MS = 90 * 1000;
+const PULL_CYCLE = 40 * 60000;
+const MODEL_TASK = "model:pull";
 const TZ = "Europe/London";
 const DAY = 86400000;
 const HOUR = 3600000;
@@ -102,9 +111,10 @@ function demoSwitch(demo, csrf, tz, moved) {
 // page shown straight after the switch was pressed.
 export function demoSection(demo, csrf, tz, moved = false) {
   return `<h2 id="demo">Demo mode</h2>
-<p class="muted">Shows a made-up recruitment desk on every dashboard page instead of the real one: recruits, recruiters,
-stats, jobs sent, history, tasks and settings, all fictional. Use it to show HermitShell to someone without showing
-anyone's data. While it is on, what is pressed on the dashboard plays out on the made-up data, a pretend HermitShell
+<p class="muted">Shows a made-up recruitment desk on every dashboard page instead of the real one: 35 recruits, managers
+with their teams, recruiters, sign-ups, stats, jobs sent, history, tasks, features, the server model and backups, all
+fictional. Managers and recruiters see a made-up team or pool like their own. Use it to show HermitShell to someone
+without showing anyone's data. While it is on, what is pressed on the dashboard plays out on the made-up data, a pretend HermitShell
 answering within seconds, and never reaches HermitShell or the real data. It applies to everyone signed in, and starts
 afresh each time it is turned on. Reports, email buttons and sign-ups carry on as normal.</p>
 ${demoSwitch(demo, csrf, tz, moved)}`;
@@ -153,10 +163,67 @@ function memoryKV(entries) {
   };
 }
 
-const DEMO_HUB = {
-  idFromName: (name) => name,
-  get: () => ({ fetch: async (url) => Response.json(String(url).endsWith("/presence") ? { live: true, seen: Date.now() } : { sent: 0 }) }),
-};
+// The made-up desk's copies on Cloudflare: last night's and the six before, the newest of the four weeks before that,
+// and one from Back up now when it was pressed (`extra`).
+const BACKUP_BYTES = 6_300_000;
+const backupStamp = (ms) => new Date(ms).toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
+
+export function demoBackups(now, extra = null) {
+  let night = Date.parse(`${isoDay(now)}T02:15:00Z`);
+  if (night + 60000 > now) night -= DAY;
+  const times = [...Array(7).keys()].map((d) => night - d * DAY).concat([1, 2, 3, 4].map((w) => night - (6 + 7 * w) * DAY));
+  if (Number.isFinite(extra) && extra <= now) times.push(extra);
+  return times.sort((a, b) => b - a).map((at, i) => {
+    const size = BACKUP_BYTES - i * 41_000;
+    return { name: `hermitshell-${backupStamp(at)}.tar.gz.enc`, parts: Math.ceil(size / BACKUP_PART_BYTES), sha: "0".repeat(64), size, at: at + 40000 };
+  });
+}
+
+// Made-up bytes for a demo copy's part: they start like an encrypted backup and are copied from one block, so a
+// download costs next to no CPU.
+let filler = null;
+function demoPart(b, i) {
+  if (!Number.isInteger(i) || i < 0 || i >= b.parts) return null;
+  const n = Math.min(BACKUP_PART_BYTES, b.size - i * BACKUP_PART_BYTES);
+  if (!(n > 0)) return null;
+  if (!filler) {
+    filler = new Uint8Array(4096);
+    const rand = random(97);
+    for (let k = 0; k < filler.length; k++) filler[k] = Math.floor(rand() * 256);
+  }
+  const out = new Uint8Array(n);
+  for (let at = 0; at < n; at += filler.length) out.set(filler.subarray(0, Math.min(filler.length, n - at)), at);
+  if (i === 0) out.set(new TextEncoder().encode("HSEAL1 HermitShell demo mode: made-up bytes, not a backup.\n").subarray(0, n));
+  return out;
+}
+
+// The live link answers "connected" and reaches nothing; the backups vault answers with the made-up copies.
+function demoHub(state = null) {
+  return {
+    idFromName: (name) => name,
+    get: () => ({ fetch: async (url) => {
+      const u = new URL(String(url));
+      if (u.pathname === "/presence") return Response.json({ live: true, seen: Date.now() });
+      if (!u.pathname.startsWith("/backup/")) return Response.json({ sent: 0 });
+      const backups = demoBackups(Date.now(), state?.patch.backup);
+      if (u.pathname === "/backup/list") return Response.json({ backups, used: backups.reduce((n, b) => n + b.size, 0) });
+      const b = backups.find((x) => x.name === u.searchParams.get("name"));
+      const part = b && u.pathname === "/backup/get" ? demoPart(b, Number(u.searchParams.get("i"))) : null;
+      return part ? new Response(part, { headers: { "Content-Type": "application/octet-stream" } }) : Response.json({ error: "not found" }, { status: 404 });
+    } }),
+  };
+}
+
+// Who a signed-in user is on the made-up desk: an admin as they are; anyone else as the made-up account with their
+// username if it has the same roles and isn't an admin, else as a made-up manager or recruiter like them, so every
+// role sees a team or a pool and nobody gains a role. Their own name stays.
+export function demoMe(me, acc) {
+  if (me.admin) return me;
+  const own = signedIn(me.id, acc);
+  const same = own && !own.admin && own.manager === me.manager && own.recruiter === me.recruiter;
+  const stand = same ? own : signedIn(me.manager ? (me.recruiter ? "robin-ellis" : "jamie-chen") : "casey", acc);
+  return stand ? { ...stand, name: me.name } : me;
+}
 
 let seeded = null;
 const states = new WeakMap();
@@ -166,7 +233,7 @@ const states = new WeakMap();
 export async function demoEnv(env, now = Date.now()) {
   if (!seeded || seeded.secret !== env.JOB_FEEDBACK_SECRET || now - seeded.at > RESEED_MS) {
     const kv = memoryKV([]);
-    await seed({ ...env, FEEDBACK: kv, HUB: DEMO_HUB });
+    await seed({ ...env, FEEDBACK: kv, HUB: demoHub() });
     seeded = { secret: env.JOB_FEEDBACK_SECRET, at: now, entries: [...kv.store], keys: new Set(kv.store.keys()) };
   }
   const kv = memoryKV(seeded.entries);
@@ -175,7 +242,7 @@ export async function demoEnv(env, now = Date.now()) {
     if (value === null) kv.store.delete(key);
     else kv.store.set(key, typeof value.s === "string" ? value.s : fromBase64(value.b));
   }
-  const pretend = { ...env, FEEDBACK: kv, HUB: DEMO_HUB };
+  const pretend = { ...env, FEEDBACK: kv, HUB: demoHub(state) };
   await pretendWork(pretend, state, now);
   applyPatch(kv, state.patch, now);
   states.set(pretend, state);
@@ -214,8 +281,31 @@ function keptChange(value) {
   }
 }
 
-const emptyPatch = () => ({ profiles: {}, skills: {}, stages: {}, cancelled: [] });
 const isObject = (v) => v && typeof v === "object" && !Array.isArray(v);
+const FEATURE_NAMES = FEATURES.map(([n]) => n);
+const switches = (v) => Object.fromEntries(FEATURE_NAMES.filter((n) => typeof v?.[n] === "boolean").map((n) => [n, v[n]]));
+
+// The server model picks: the last one ({ model, "" for the default, at, stopped }), the model in use after the ones
+// before it (`current`, with its `source`) and those downloaded in demo mode (`have`).
+const modelText = (v) => v === "" || (typeof v === "string" && OLLAMA_RE.test(v));
+
+function localPick(v) {
+  if (!isObject(v)) return null;
+  const pick = {};
+  if (modelText(v.model) && Number.isFinite(v.at)) Object.assign(pick, { model: v.model, at: v.at });
+  if (Number.isFinite(v.stopped)) pick.stopped = v.stopped;
+  if (modelText(v.current) && ["dashboard", "auto"].includes(v.source)) Object.assign(pick, { current: v.current, source: v.source });
+  if (Array.isArray(v.have)) pick.have = v.have.filter(modelText).slice(-10);
+  return Object.keys(pick).length ? pick : null;
+}
+
+// What the last pick left by `now`: the model it switched to, or null while it downloads or once it was stopped.
+function pickDone(pick, now) {
+  if (!modelText(pick?.model)) return null;
+  const model = pick.model || DEMO_SUGGESTED;
+  const had = (pick.have || []).includes(model) || DEMO_CHOICES.some((c) => c.model === model && c.installed);
+  return had || (now - pick.at >= PULL_MS && !(pick.stopped >= pick.at)) ? { model, source: pick.model ? "dashboard" : "auto" } : null;
+}
 
 async function loadState(env) {
   const got = await env.FEEDBACK.get(STATE_KEY, "json");
@@ -225,7 +315,8 @@ async function loadState(env) {
   }
   const patch = isObject(got?.patch) ? got.patch : {};
   return { keys, dirty: false, patch: { profiles: isObject(patch.profiles) ? patch.profiles : {}, skills: isObject(patch.skills) ? patch.skills : {},
-    stages: isObject(patch.stages) ? patch.stages : {}, cancelled: Array.isArray(patch.cancelled) ? patch.cancelled.filter((t) => typeof t === "string") : [] } };
+    stages: isObject(patch.stages) ? patch.stages : {}, cancelled: Array.isArray(patch.cancelled) ? patch.cancelled.filter((t) => typeof t === "string") : [],
+    features: switches(patch.features), local: localPick(patch.local), backup: Number.isFinite(patch.backup) ? patch.backup : null } };
 }
 
 function toBase64(buffer) {
@@ -304,10 +395,52 @@ function applyChange(patch, item, now) {
   else if (item.action === "send_now") Object.assign(mine(), { scan: now, stopped: false });
   else if (item.action === "profile") {
     for (const part of ["details", "job", "report"]) if (isObject(item[part])) mine()[part] = { ...mine()[part], ...item[part] };
+  } else if (item.action === "features") {
+    patch.features = { ...patch.features, ...switches(item) };
+  } else if (item.action === "local_model" && typeof item.model === "string") {
+    const before = patch.local || {};
+    const done = pickDone(before, now);
+    const kept = done ? { current: done.model, source: done.source } : before.current ? { current: before.current, source: before.source } : {};
+    patch.local = { model: item.model.slice(0, 120), at: now, ...kept, have: [...new Set([...(before.have || []), ...(done ? [done.model] : [])])].slice(-10) };
+  } else if (item.action === "backup_now") {
+    patch.backup = now;
   } else if (item.action === "cancel" && typeof item.task === "string") {
-    patch.cancelled = [...new Set([...patch.cancelled, item.task])].slice(-50);
+    if (item.task === MODEL_TASK) patch.local = { ...patch.local, stopped: now };
+    else patch.cancelled = [...new Set([...patch.cancelled, item.task])].slice(-50);
     if (item.task === `report:${u}`) Object.assign(mine(), { stopped: true, scan: 0 });
   }
+}
+
+// The server model as HermitShell would report it: one picked here switches at once when it is downloaded, else after
+// a pretend download; without a pick, the machine's suggested model is downloading. Stopping either ends it.
+function localNow(local, pick, now) {
+  const choice = (m) => local.choices.find((c) => c.model === m);
+  for (const model of pick?.have || []) if (choice(model)) choice(model).installed = true;
+  if (pick?.current) Object.assign(local, { model: pick.current, source: pick.source });
+  let pull = null;
+  if (typeof pick?.model === "string") {
+    const target = pick.model || local.suggested;
+    const c = choice(target);
+    const total = c?.mb || 4700;
+    const had = Boolean(c?.installed);
+    const done = had || now - pick.at >= PULL_MS;
+    if (!had && pick.stopped >= pick.at) pull = { model: target, status: "cancelled", done_mb: 0, total_mb: total, started: pick.at, finished: pick.stopped };
+    else if (!done) pull = { model: target, status: "downloading", done_mb: Math.round((total * (now - pick.at)) / PULL_MS), total_mb: total, started: pick.at };
+    else {
+      Object.assign(local, { model: target, source: pick.model ? "dashboard" : "auto" });
+      if (c) c.installed = true;
+      if (!had) pull = { model: target, status: "ready", done_mb: total, total_mb: total, started: pick.at, finished: pick.at + PULL_MS };
+    }
+  } else if (!pick?.stopped) {
+    const into = now % PULL_CYCLE;
+    const total = choice(local.suggested)?.mb || 4700;
+    pull = { model: local.suggested, status: "downloading", done_mb: Math.round(total * (0.08 + (0.9 * into) / PULL_CYCLE)), total_mb: total,
+      started: now - into - 60000 };
+  }
+  local.pull = pull && { ...pull, switch: true };
+  return pull?.status === "downloading"
+    ? { id: MODEL_TASK, kind: "model", u: "", state: "running", at: pull.started, trigger: "dashboard", done: pull.done_mb, total: pull.total_mb }
+    : null;
 }
 
 // Lay the pretend HermitShell's changes over the made-up desk, as its next check-in would report them.
@@ -334,8 +467,14 @@ function applyPatch(kv, patch, now) {
     return next;
   });
   const left = new Set(current.profiles.map((p) => p.id));
+  const download = localNow(current.llm.local, patch.local, now);
   current.tasks = [...(current.tasks || []).filter((t) => !patch.cancelled.includes(t.id) && left.has(t.u)
-    && !(t.kind === "report" && (patch.profiles[t.u]?.stopped || scans.some((s) => s.u === t.u)))), ...scans];
+    && !(t.kind === "report" && (patch.profiles[t.u]?.stopped || scans.some((s) => s.u === t.u)))), ...scans, ...(download ? [download] : [])];
+  current.features = { ...current.features, ...patch.features };
+  if (Number.isFinite(patch.backup)) {
+    current.backup = { ...current.backup, at: patch.backup,
+      offsite: { ...current.backup.offsite, at: patch.backup + 40000, kept: demoBackups(now, patch.backup).length } };
+  }
   kv.store.set("status:profiles", JSON.stringify(current));
   for (const [u, added] of Object.entries(patch.skills)) {
     const stats = kv.store.get(`stats:${u}`);
@@ -375,13 +514,21 @@ function demoDoc(r, event, name = "The recruit") {
 // ------------------------------------------------------------------------- the made-up desk
 
 const ADMIN_NAME = "Alex Morgan";
-const RECRUITERS = [
-  { id: "casey", name: "Casey Quinn", roles: ["recruiter"] },
+// The staff: a second admin, two managers (Robin Ellis recruits too) with their teams, and a recruiter in no team.
+const STAFF = [
   { id: "drew", name: "Drew Harper", roles: ["admin", "recruiter"] },
+  { id: "jamie-chen", name: "Jamie Chen", roles: ["manager"] },
+  { id: "casey", name: "Casey Quinn", roles: ["recruiter"], manager: "jamie-chen" },
+  { id: "riley-morgan", name: "Riley Morgan", roles: ["recruiter"], manager: "jamie-chen" },
+  { id: "sam-patel", name: "Sam Patel", roles: ["recruiter"], manager: "jamie-chen" },
+  { id: "robin-ellis", name: "Robin Ellis", roles: ["manager", "recruiter"] },
+  { id: "avery-reid", name: "Avery Reid", roles: ["recruiter"], manager: "robin-ellis" },
+  { id: "jordan-lane", name: "Jordan Lane", roles: ["recruiter"], manager: "robin-ellis" },
+  { id: "taylor-shaw", name: "Taylor Shaw", roles: ["recruiter"] },
 ];
 
 // Each recruit: who they are, their search, and the jobs HermitShell found them.
-const PEOPLE = [
+const FIRST_PEOPLE = [
   { id: "avery-lane", name: "Avery Lane", email: "avery.lane@example.com", place: "Belfast", recruiter: "drew", age: 75, time: "07:30",
     titles: ["Automation Engineer", "AI Engineer", "Python Developer"], employers: ["Northwind Traders", "Contoso", "Fabrikam", "Proseware", "Litware"],
     places: ["Belfast", "Lisburn", "Remote (UK)"], salary: 55000, skills: ["Python", "Power Automate", "SQL", "Azure", "REST APIs", "Docker"],
@@ -409,6 +556,64 @@ const PEOPLE = [
     titles: ["HR Business Partner"], employers: [], places: ["Ballymena", "Antrim"], salary: 40000, skills: [], gaps: [], scale: 0 },
 ];
 
+// The rest of the desk, so it looks as it does under load: the same made-up first names and surnames paired up
+// differently, each looking for one of these kinds of job, spread over every recruiter's pool.
+const KINDS = [
+  { titles: ["Data Engineer", "Analytics Engineer"], salary: 52000, skills: ["Python", "SQL", "Airflow", "Spark", "AWS"], gaps: ["Snowflake", "dbt"] },
+  { titles: ["Marketing Executive", "Content Manager"], salary: 31000, skills: ["SEO", "Google Ads", "HubSpot", "Copywriting"], gaps: ["GA4", "Marketo"] },
+  { titles: ["Project Manager", "Programme Coordinator"], salary: 47000, skills: ["PRINCE2", "Agile", "Jira", "Stakeholder management"], gaps: ["PMP", "MSP"] },
+  { titles: ["Cyber Security Analyst", "SOC Analyst"], salary: 50000, skills: ["SIEM", "Splunk", "Incident response", "ISO 27001"], gaps: ["CISSP", "Microsoft Sentinel"] },
+  { titles: ["Quantity Surveyor", "Cost Manager"], salary: 44000, skills: ["NRM", "CostX", "Contract administration", "Estimating"], gaps: ["NEC4"] },
+  { titles: ["Payroll Administrator", "Payroll Officer"], salary: 27000, skills: ["Sage Payroll", "Excel", "HMRC RTI", "Pensions"], gaps: ["CIPP"] },
+  { titles: ["DevOps Engineer", "Platform Engineer"], salary: 58000, skills: ["Linux", "Terraform", "Kubernetes", "CI/CD", "Azure"], gaps: ["Go", "Helm"] },
+  { titles: ["Graphic Designer", "Brand Designer"], salary: 29000, skills: ["Figma", "Adobe Creative Suite", "Branding", "Typography"], gaps: ["Motion graphics"] },
+  { titles: ["Operations Manager", "Logistics Manager"], salary: 50000, skills: ["Lean", "Logistics", "P&L", "People management"], gaps: ["Six Sigma"] },
+  { titles: ["Paralegal", "Legal Assistant"], salary: 26000, skills: ["Conveyancing", "Case management", "Legal research"], gaps: ["Litigation support"] },
+  { titles: ["Electrical Engineer", "Controls Engineer"], salary: 46000, skills: ["AutoCAD Electrical", "PLC", "BS 7671", "Commissioning"], gaps: ["SCADA"] },
+  { titles: ["Customer Service Team Leader", "Contact Centre Supervisor"], salary: 28000, skills: ["Coaching", "Zendesk", "KPIs", "Complaints handling"],
+    gaps: ["Workforce planning"] },
+];
+const TOWNS = [["Belfast", "Lisburn"], ["Bangor", "Newtownards"], ["Newry", "Banbridge"], ["Derry~Londonderry", "Limavady"], ["Omagh", "Enniskillen"],
+  ["Coleraine", "Ballymoney"], ["Armagh", "Dungannon"], ["Antrim", "Newtownabbey"], ["Ballymena", "Larne"], ["Craigavon", "Portadown"]];
+const FIRST_NAMES = ["Alex", "Sam", "Jordan", "Riley", "Casey", "Drew", "Morgan", "Taylor", "Jamie", "Robin", "Avery"];
+const SURNAMES = ["Morgan", "Lee", "Patel", "Chen", "Quinn", "Harper", "Ellis", "Reid", "Walsh", "Shaw", "Lane"];
+const COMPANIES = ["Northwind Traders", "Contoso", "Fabrikam", "Proseware", "Litware"];
+const POOLS = ["casey", "riley-morgan", "sam-patel", "robin-ellis", "avery-reid", "jordan-lane", "taylor-shaw", "drew", "admin"];
+const MORE_PEOPLE = 28;
+
+// Names no one has yet: not staff, a recruit above or the seeded sign-up.
+function freshNames(count) {
+  const taken = new Set([ADMIN_NAME, "Riley Chen", ...STAFF.map((s) => s.name), ...FIRST_PEOPLE.map((p) => p.name)]);
+  const names = [];
+  for (let shift = 1; shift < SURNAMES.length; shift++) {
+    for (const [i, first] of FIRST_NAMES.entries()) {
+      const name = `${first} ${SURNAMES[(i + shift * 3) % SURNAMES.length]}`;
+      if (!taken.has(name) && first !== name.split(" ")[1] && names.length < count) names.push(name);
+    }
+  }
+  return names;
+}
+
+const NAMES = freshNames(MORE_PEOPLE + 2);
+
+function morePerson(name, k) {
+  const kind = KINDS[k % KINDS.length];
+  const [town, near] = TOWNS[(k * 7) % TOWNS.length];
+  const [first, last] = name.split(" ");
+  const fresh = k % 13 === 7;
+  return {
+    id: `${first}-${last}`.toLowerCase(), name, email: `${first}.${last}@example.${["com", "net", "org"][k % 3]}`.toLowerCase(), place: town,
+    recruiter: POOLS[k % POOLS.length], age: fresh ? 1 : 10 + ((k * 23) % 80), time: `0${7 + (k % 3)}:${["00", "15", "30", "45"][(k >> 1) % 4]}`,
+    ...(k % 9 === 4 ? { status: "paused" } : {}), ...(k % 8 === 3 ? { scanning: true } : {}), ...(fresh ? { noCv: true } : {}),
+    titles: kind.titles, employers: fresh ? [] : [...COMPANIES.slice(k % 5), ...COMPANIES.slice(0, k % 5)],
+    places: k % 4 === 1 ? [town, near, "Remote (UK)"] : [town, near], salary: Math.round((kind.salary * (0.9 + (k % 5) * 0.05)) / 500) * 500,
+    skills: fresh ? [] : kind.skills, gaps: fresh ? [] : kind.gaps, scale: fresh ? 0 : 0.4 + ((k * 37) % 55) / 100,
+  };
+}
+
+const PEOPLE = [...FIRST_PEOPLE, ...NAMES.slice(0, MORE_PEOPLE).map(morePerson)];
+const teamOf = (recruiter) => STAFF.find((s) => s.id === recruiter)?.manager || "";
+
 const SOURCES = ["nijobs.com", "uk.indeed.com", "web search", "reed.co.uk", "cv-library.co.uk"];
 const MODES = ["Hybrid", "Remote", "On-site"];
 const LEVELS = ["Senior ", "", "", "Lead ", "", "Graduate ", "", "", "Senior "];
@@ -432,7 +637,19 @@ const pounds = (n) => `\u00a3${Math.round(n).toLocaleString("en-GB")}`;
 // A paused recruit's jobs stop when their reports did.
 const pausedFor = (p) => (p.status === "paused" ? 6 : 0);
 
+// The same every time for the same person and day, so each is worked out once; nothing changes them afterwards.
+const jobsMade = new Map();
+
 function jobsFor(p, end) {
+  const key = `${p.id}:${end}`;
+  if (!jobsMade.has(key)) {
+    if (jobsMade.size > 4 * PEOPLE.length) jobsMade.clear();
+    jobsMade.set(key, makeJobs(p, end));
+  }
+  return jobsMade.get(key);
+}
+
+function makeJobs(p, end) {
   return FITS.map((fit, i) => {
     const title = `${LEVELS[i]}${p.titles[i % p.titles.length]}`;
     const employer = p.employers[i % p.employers.length];
@@ -461,8 +678,9 @@ function statsFor(p, end, n) {
   const days = {};
   for (let i = p.age - 1; i >= 0; i--) {
     const at = end - i * DAY;
+    const day = isoDay(at);
     if (i < pausedFor(p)) {
-      days[isoDay(at)] = new Array(19).fill(0);
+      days[day] = new Array(19).fill(0);
       continue;
     }
     const weekend = [0, 6].includes(new Date(at).getUTCDay());
@@ -470,7 +688,7 @@ function statsFor(p, end, n) {
     const rated = Math.round((weekend ? 5 : 13) * p.scale * growth * (0.6 + rand() * 0.8));
     const sent = Math.round(rated * (0.35 + rand() * 0.25));
     const pick = (chance) => (rand() < chance ? 1 + (rand() < chance / 3 ? 1 : 0) : 0);
-    days[isoDay(at)] = [Math.round(rated * (7 + rand() * 5)), rated, sent, Math.round(sent * (6.3 + rand() * 1.6)), sent,
+    days[day] = [Math.round(rated * (7 + rand() * 5)), rated, sent, Math.round(sent * (6.3 + rand() * 1.6)), sent,
       Math.round(sent * rand() * 0.45), 1, pick(0.4), pick(0.25), pick(0.3), pick(0.16), pick(0.06), pick(0.05), pick(0.1), pick(0.05), pick(0.06),
       pick(0.04), pick(0.015), pick(0.008)];
   }
@@ -497,7 +715,7 @@ function statsFor(p, end, n) {
     interview: 2, offer: 1, placed: 1 }).map(([k, v]) => [k, Math.max(1, Math.round(v * p.scale))]));
   return { v: 1, today: isoDay(end), since: isoDay(end - (p.age - 1) * DAY), days,
     ranges: { 7: range(7), 30: range(30), 90: range(90), 365: range(365) }, pipeline, sent, board,
-    ...(p.added ? { skills: p.added } : {}), updated: Date.now() };
+    ...(p.added ? { skills: p.added } : {}) };
 }
 
 function profileOf(p, now) {
@@ -516,6 +734,7 @@ function profileOf(p, now) {
 }
 
 function statusOf(now) {
+  const copies = demoBackups(now);
   return {
     protocol: PROTOCOL, seal: { alg: SEAL_ALG, kid: "", spki: DEMO_SPKI },
     // The main admin is staff: HermitShell reports them only so the dashboard can name them.
@@ -543,9 +762,9 @@ function statusOf(now) {
           usage: { used: null, limit: null, left: null, plan: "Free", resets: "", unit: "plan" } }] },
     },
     llm: { order: "local", cloud: ["openrouter", "huggingface"],
-      local: { model: "qwen3:30b-a3b-instruct-2507-q4_K_M", suggested: "qwen3:30b-a3b-instruct-2507-q4_K_M", where: "16384 context, on the GPU",
-        level: "normal", seconds: 9.8 },
-      last: { provider: "ollama", model: "qwen3:30b-a3b-instruct-2507-q4_K_M", at: now - 3 * 60000 } },
+      local: { model: "qwen2.5:14b-instruct-q4_K_M", suggested: DEMO_SUGGESTED, where: "16384 context, on the GPU",
+        level: "normal", seconds: 7.6, source: "dashboard", override: "", online: true, pull: null, choices: DEMO_CHOICES.map((c) => ({ ...c })) },
+      last: { provider: "ollama", model: "qwen2.5:14b-instruct-q4_K_M", at: now - 3 * 60000 } },
     usage: { days: 7, since: isoDay(now - 6 * DAY), tasks: [
       { task: "triage", today: { calls: 6, failed: 0, in: 5400, out: 1900, avg_ms: 2100, estimated: 0 }, period: { calls: 41, failed: 0, in: 37800, out: 13100, avg_ms: 2300, estimated: 0 } },
       { task: "rating", today: { calls: 64, failed: 1, in: 131000, out: 20500, avg_ms: 4200, estimated: 0 }, period: { calls: 402, failed: 3, in: 820000, out: 129000, avg_ms: 4400, estimated: 12 } },
@@ -556,15 +775,34 @@ function statusOf(now) {
     ] },
     server: { cpu: { model: "AMD Ryzen 9 7950X", cores: 32 }, load: 4.1, ram_mb: { total: 65536, available: 38000 },
       gpus: [{ name: "NVIDIA GeForce RTX 4090", vram_mb: 24576, free_mb: 6100 }], disk_mb: { total: 1907000, free: 1210000 } },
-    backup: { at: now - 5 * 3600000, size: 18_400_000, kept: 14, error: "", failed_at: null, encrypted: true },
+    backup: { at: copies[0].at - 40000, size: BACKUP_BYTES, kept: 14, error: "", failed_at: null, encrypted: true,
+      offsite: { on: true, why: "", at: copies[0].at, kept: copies.length, error: "", failed_at: null } },
+    features: { alerts: true, prep_auto: true, word_copies: false, self_service: true },
     tasks: [
-      { id: "report:jamie-walsh", kind: "report", u: "jamie-walsh", state: "running", at: now - 3 * 60000, trigger: "schedule",
-        stage: "Rating jobs", done: 17, total: 26, expected: 12 * 60000 },
+      ...PEOPLE.filter((p) => p.scanning).map((p, i) => ({ id: `report:${p.id}`, kind: "report", u: p.id, state: "running", at: now - (3 + 2 * i) * 60000,
+        trigger: i % 2 ? "dashboard" : "schedule", stage: REPORT_STAGES[i % REPORT_STAGES.length], done: 17 - 4 * (i % 3), total: 26 + i, expected: 12 * 60000 })),
       { id: "letter:avery-lane:event:avery-lane:demo0a1b2c3d4e5f60718293a4b5c6d7e8f9:0a1b2c3d4e5f", kind: "cover_letter", u: "avery-lane", state: "running",
         at: now - 70000, trigger: "email", title: "AI Engineer", employer: "Contoso", retry: false },
+      ...PEOPLE.filter((p) => p.employers.length && p.status !== "paused").slice(8, 12).map((p, i) => ({
+        id: `letter:${p.id}:event:${p.id}:demo${String(i).repeat(32)}:${String(i).repeat(12)}`, kind: ["tailored_cv", "cover_letter", "interview_prep", "send_job"][i],
+        u: p.id, state: "waiting", at: now - (50 - 10 * i) * 1000, trigger: i % 2 ? "dashboard" : "email", title: p.titles[0], employer: p.employers[0],
+        retry: i === 3 })),
     ],
   };
 }
+
+const REPORT_STAGES = ["Rating jobs", "Searching job sites", "Checking the best matches", "Rating jobs"];
+// What the made-up server's Ollama could run: an RTX 4090 with 24 GB and 64 GB of RAM.
+const DEMO_SUGGESTED = "qwen3:30b-a3b-instruct-2507-q4_K_M";
+const DEMO_CHOICES = [
+  { model: "qwen3:30b-a3b-instruct-2507-q4_K_M", about: "The best answers; quick on a CPU with 32 GB of RAM or more", mb: 18600, gpu: 100, fits: true, speed: "quick", installed: false, recommended: true },
+  { model: "qwen2.5:14b-instruct-q4_K_M", about: "Very accurate on long CVs and adverts; slow without a big GPU", mb: 9000, gpu: 100, fits: true, speed: "quick", installed: true, recommended: false },
+  { model: "qwen2.5:7b-instruct-q4_K_M", about: "Reliable skills, contact details and JSON; a big step up from 4B", mb: 4700, gpu: 100, fits: true, speed: "quick", installed: false, recommended: false },
+  { model: "qwen2.5-coder:7b-instruct", about: "Strongest on technical CVs and structured answers", mb: 4700, gpu: 100, fits: true, speed: "quick", installed: false, recommended: false },
+  { model: "llama3.1:8b-instruct-q4_K_M", about: "A general-purpose alternative to the Qwen models", mb: 4900, gpu: 100, fits: true, speed: "quick", installed: true, recommended: false },
+  { model: "qwen3:4b-instruct-2507-q4_K_M", about: "The default: quick, and good enough for most CVs", mb: 2500, gpu: 100, fits: true, speed: "quick", installed: true, recommended: false },
+  { model: "qwen2.5:1.5b-instruct", about: "For small machines; weaker ratings", mb: 990, gpu: 100, fits: true, speed: "quick", installed: false, recommended: false },
+];
 
 // A one-page PDF of plain text lines, for the kept cover letter.
 function textPdf(lines) {
@@ -589,13 +827,16 @@ async function put(env, key, value) {
 
 // A recruit's desk line from their made-up daily counts, as profile_stats.desk would give it, with a made-up fee
 // for each placement.
+const DESK_AT = DESK_COUNTS.map((k) => FIELDS.indexOf(k));
+
 function deskLine(stats, end) {
-  return Object.fromEntries(Object.keys(RANGES).map((r) => {
-    const from = isoDay(end - (Number(r) - 1) * DAY);
-    const line = Object.fromEntries(DESK_COUNTS.map((k) => [k, 0]));
-    for (const [day, row] of Object.entries(stats.days || {})) {
-      if (day >= from) for (const k of DESK_COUNTS) line[k] += Number(row[FIELDS.indexOf(k)]) || 0;
-    }
+  const ranges = Object.keys(RANGES).map((r) => [r, isoDay(end - (Number(r) - 1) * DAY), DESK_COUNTS.map(() => 0)]);
+  for (const [day, row] of Object.entries(stats.days || {})) {
+    const counts = DESK_AT.map((i) => Number(row[i]) || 0);
+    for (const [, from, sums] of ranges) if (day >= from) counts.forEach((c, i) => (sums[i] += c));
+  }
+  return Object.fromEntries(ranges.map(([r, , sums]) => {
+    const line = Object.fromEntries(DESK_COUNTS.map((k, i) => [k, sums[i]]));
     return [r, { ...line, fees: line.placed ? { GBP: line.placed * 8500 } : {} }];
   }));
 }
@@ -606,7 +847,33 @@ const DEMO_SALARIES = [
   { title: "Marketing Manager", n: 7, median: 41000, currency: "GBP" },
   { title: "Software Engineer", n: 6, median: 55000, currency: "GBP" },
   { title: "Product Designer", n: 4, median: 46000, currency: "GBP" },
+  { title: "DevOps Engineer", n: 11, median: 60000, currency: "GBP" },
+  { title: "Cyber Security Analyst", n: 8, median: 51000, currency: "GBP" },
+  { title: "Project Manager", n: 12, median: 47500, currency: "GBP" },
+  { title: "Quantity Surveyor", n: 6, median: 45000, currency: "GBP" },
+  { title: "Payroll Officer", n: 5, median: 28500, currency: "GBP" },
 ];
+
+// What depends only on the day (each recruit's stats, jobs sent, desk line and sparkline days), worked out once a day
+// rather than at every reseed.
+let dayCache = null;
+
+function dayParts(end) {
+  if (dayCache?.end === end) return dayCache;
+  const parts = [];
+  const desk = {};
+  const weeks = {};
+  const weekFrom = isoDay(end - WEEK_KEEP_DAYS * DAY);
+  for (const [n, p] of PEOPLE.entries()) {
+    if (p.noCv || !p.employers.length) continue;
+    const { stats, sent } = splitStats(statsFor(p, end, n));
+    parts.push({ p, stats, sent });
+    weeks[p.id] = { days: Object.fromEntries(Object.entries(stats.days).filter(([d]) => d >= weekFrom)) };
+    desk[p.id] = deskLine(stats, end);
+  }
+  dayCache = { end, parts, desk, weeks };
+  return dayCache;
+}
 
 async function seed(env) {
   const now = Date.now();
@@ -614,21 +881,19 @@ async function seed(env) {
   const status = statusOf(now);
   await put(env, "status:profiles", status);
   await put(env, "accounts", { admin: { roles: ["admin", "recruiter"] },
-    users: RECRUITERS.map((r) => ({ ...r, hash: "0".repeat(64), salt: "0".repeat(32), iter: 30000, v: "demo" })) });
+    users: STAFF.map((r) => ({ ...r, hash: "0".repeat(64), salt: "0".repeat(32), iter: 30000, v: "demo" })) });
 
-  const desk = {};
-  for (const [n, p] of PEOPLE.entries()) {
-    if (p.noCv || !p.employers.length) continue;
-    const { stats, sent } = splitStats(statsFor(p, end, n));
-    await put(env, `stats:${p.id}`, stats);
+  const { parts, desk, weeks } = dayParts(end);
+  for (const { p, stats, sent } of parts) {
+    await put(env, `stats:${p.id}`, { ...stats, updated: now - (p.status === "paused" ? 6 * DAY : 4 * HOUR) });
     await put(env, `sent:${p.id}`, sent);
-    await rememberWeek(env, p.id, stats, now);
-    desk[p.id] = deskLine(stats, end);
   }
+  // The sparklines' key in one write, as rememberWeek would leave it after each recruit's stats.
+  await put(env, WEEKS_KEY, weeks);
   if (env.JOB_FEEDBACK_SECRET) await storeDesk(env, { recruits: desk, salaries: DEMO_SALARIES });
 
   // Each recruit's history, in the entries record() writes, one KV value per month.
-  const names = Object.fromEntries([["admin", ADMIN_NAME], ...RECRUITERS.map((r) => [r.id, r.name])]);
+  const names = Object.fromEntries([["admin", ADMIN_NAME], ...STAFF.map((r) => [r.id, r.name])]);
   const months = new Map();
   const log = (pid, k, t, at, { by = "", via = "dashboard", h = "" } = {}) => {
     const key = historyKey(pid, at);
@@ -636,7 +901,8 @@ async function seed(env) {
   };
   for (const p of PEOPLE) {
     const created = now - p.age * DAY;
-    log(p.id, "assign", `Assigned to ${names[p.recruiter]}`, created + HOUR, { by: ADMIN_NAME });
+    // A team's recruits were handed out by its manager.
+    log(p.id, "assign", `Assigned to ${names[p.recruiter]}`, created + HOUR, { by: names[teamOf(p.recruiter)] || ADMIN_NAME });
     if (!p.noCv) log(p.id, "cv_read", "Read the new CV and rebuilt the skills jobs are rated against", created + 2 * HOUR, { via: "hermitshell" });
     if (p.age > 8) log(p.id, "job", "Changed Job titles and Towns", now - 8 * DAY - 3 * HOUR, { by: names[p.recruiter] || ADMIN_NAME });
     for (let d = Math.min(p.age - 1, 10); d >= 1 && !p.noCv; d--) {
@@ -656,17 +922,27 @@ async function seed(env) {
     { by: names[PEOPLE[0].recruiter], h: await jobHash(first.key) });
   for (const [key, entries] of months) await put(env, key, entries);
 
-  const signup = `queue:${now - 20 * 60000}:${newId()}`;
-  await put(env, signup, { id: signup, at: now - 20 * 60000, type: "signup", name: "Riley Chen", email: "riley.chen@example.com", location: "Belfast",
-    roles: "Marketing executive or content manager, hybrid", recruiter: "casey", consent: true });
-  await env.FEEDBACK.put("flag:queue", signup);
-  for (const [note, recruiter, daysLeft] of [["Careers fair, marketing graduate", "casey", 6], ["Referral from Jamie Walsh", "drew", 3]]) {
+  const [late1, late2] = NAMES.slice(MORE_PEOPLE);
+  const signups = [["Riley Chen", 20, "Belfast", "Marketing executive or content manager, hybrid", "casey"],
+    [late1, 9, "Bangor", "Junior data analyst, remote or Belfast", "avery-reid"], [late2, 3, "Newry", "Site manager in construction", ""]];
+  for (const [name, minutes, location, roles, recruiter] of signups) {
+    const id = `queue:${now - minutes * 60000}:${newId()}`;
+    await put(env, id, { id, at: now - minutes * 60000, type: "signup", name, email: `${name.replace(" ", ".").toLowerCase()}@example.com`, location, roles,
+      recruiter, consent: true });
+    await env.FEEDBACK.put("flag:queue", id);
+  }
+  for (const [note, recruiter, daysLeft] of [["Careers fair, marketing graduate", "casey", 6], ["Referral from Jamie Walsh", "drew", 3],
+    ["Engineering open evening", "jordan-lane", 5], ["LinkedIn reply, payroll", "sam-patel", 2], ["Graduate scheme, cyber security", "robin-ellis", 7]]) {
     const id = newId();
     await put(env, `invite:${id}`, { id, note, created: now - (7 - daysLeft) * DAY, expires: now + daysLeft * DAY, recruiter });
   }
-  const sam = jobsFor(PEOPLE[1], end)[4];
-  await put(env, "tasks:requests", [{ id: "event:sam-lee:demo-tailored-cv", a: "tailored_cv", n: `${sam.title} at ${sam.employer}`, u: "sam-lee",
-    at: now - 40000, j: sam.key }]);
+  const asked = [[PEOPLE[1], 4, "tailored_cv", 40000], ...PEOPLE.filter((p) => p.employers.length && p.status !== "paused").slice(14, 17)
+    .map((p, i) => [p, i + 1, ["cover_letter", "interview_prep", "tailored_cv"][i], 90000 + 60000 * i])];
+  await put(env, "tasks:requests", asked.map(([p, i, a, ago]) => {
+    const job = jobsFor(p, end)[i];
+    return { id: p.id === "sam-lee" ? "event:sam-lee:demo-tailored-cv" : `event:${p.id}:demo-${a.replace("_", "-")}`, a, n: `${job.title} at ${job.employer}`,
+      u: p.id, at: now - ago, j: job.key };
+  }));
 
   const letter = textPdf([
     "Cover letter (demo)", "", "Avery Lane, Belfast", "", `Dear Hiring Manager at ${first.employer},`, "",

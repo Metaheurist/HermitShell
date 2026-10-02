@@ -73,8 +73,9 @@ One HermitShell server can run the daily reports for a whole desk of candidates:
 - **Grows with the desk.** Every candidate's requests share one queue (anyone waiting is served
   first), spread over every GPU or Ollama server you add, with cloud models to take the overflow.
   The model is sized to the machine, from a small server to a GPU box.
-- **Show it without showing anyone.** Demo mode fills the dashboard with a made-up desk of
-  candidates, stats and history; presses play out on it without reaching anyone, and daily reports carry on
+- **Show it without showing anyone.** Demo mode fills the dashboard with a busy made-up desk (35
+  candidates, managers with their teams, recruiters, tasks, stats, history, the server model and backups);
+  presses play out on it without reaching anyone, and daily reports carry on
   ([demo mode](docs/feedback-worker.md#demo-mode)).
 
 ## Quick start

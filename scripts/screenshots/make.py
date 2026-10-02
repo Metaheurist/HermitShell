@@ -417,7 +417,7 @@ def main() -> int:
                     # A modal covers the whole window, so the page cannot be trimmed to its content.
                     720 if html.stem in ("admin-global-key-modal", "admin-user-modal", "admin-delete-modal",
                                          "admin-user-reset-modal", "admin-password-modal", "admin-tasks",
-                                         "admin-tasks-model-download") else
+                                         "admin-tasks-model-download", "admin-tasks-demo") else
                     860 if html.stem in ("admin-model-key-modal", "admin-model-picker") else
                     # A wide window, where the signed-in box sits beside the card; only the top is kept.
                     240 if html.stem == "admin-signed-in" else

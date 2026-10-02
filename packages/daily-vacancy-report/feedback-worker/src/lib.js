@@ -509,7 +509,7 @@ async function deletePrefix(env, prefix) {
 // recruit. Rewritten only when a recruit's days change; profiles.py sends stats one recruit at a time, so two updates
 // never race. A recruit missing from it (stats sent before it existed) is read from "stats:<id>".
 export const WEEKS_KEY = "statsweeks";
-const WEEK_KEEP_DAYS = 9;
+export const WEEK_KEEP_DAYS = 9;
 
 export async function rememberWeek(env, profile, stats, now = Date.now()) {
   const all = (await env.FEEDBACK.get(WEEKS_KEY, "json")) || {};

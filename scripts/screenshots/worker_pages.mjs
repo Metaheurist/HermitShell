@@ -544,6 +544,10 @@ await save("admin-dashboard-demo", await ribbonAtFoot(await admin("/admin")));
 await save("admin-settings-demo", await ribbonAtFoot(await admin("/admin/settings?done=demo_on"),
   "main>:not(.eyebrow):not(h1):not(.note):not(#demo):not(#demo~*){display:none!important}"));
 await save("admin-stats-demo", await ribbonAtFoot(await admin("/admin/stats?u=jamie-walsh")));
+await save("admin-users-demo", await ribbonAtFoot(await admin("/admin/users")));
+const demoTasks = (await (await admin("/admin/tasks")).text()).replace(/<meta http-equiv="refresh"[^>]*>/, "");
+await save("admin-tasks-demo", new Response((await (await admin("/admin")).text()).replace("</head>", "<style>#tasks{display:grid}</style></head>")
+  .replace('src="/admin/tasks" loading="lazy"', `srcdoc="${demoTasks.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"`)));
 // Presses played out by the pretend HermitShell: a letter asked for and a skill added a while ago (made and
 // counted), then a tailored CV asked for just now (being made).
 const DEMO_JOB = "https://jobs.example.com/demo/avery-lane/1001";
