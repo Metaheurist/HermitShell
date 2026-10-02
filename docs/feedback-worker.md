@@ -994,23 +994,49 @@ them back to the Worker. Only their totals do, sealed, for the [desk](#desk).
 #### Desk
 
 The **Desk** tab (`/admin/desk`) is the whole desk on one page for the last **7 days**, **30 days**,
-**90 days** or **12 months**: tiles for jobs sent, applied, interviews, offers and placed (and, for
-admins and managers, the fees from placements, summed per currency), then one card per recruiter listing their
-recruits with the same counts and a total row. Recruits without a recruiter come last. Each name opens
-the recruit's page, and **Jobs sent** their list. Below is **Salaries by job title across the desk**:
-the median of each advert's lowest yearly figure over the last 90 days, across every recruit's jobs
-rated, in each recruit's own currency, for titles with at least 3 salaries.
+**90 days** or **12 months**, laid out so a big desk stays easy to read:
 
-<img src="images/worker/admin-desk.png" alt="The Desk page: totals tiles, a card per recruiter with each recruit's sent, applied, interviews, offers, placed and fees, and the salaries by job title" width="720">
+- **The funnel**: jobs sent, applied, interviews, offers and placed, each with how many of the stage
+  before got that far (**4.4% of sent**, **30% of applied** and so on), and for admins and managers the
+  fees from placements, summed per currency.
+- **Teams** (admins, once there is a manager): a card per manager's team, in its own colour, with how
+  many recruiters and recruits it has, its interviews, offers and placements and its fees, and
+  **No team** for recruiters outside one. Pressing a card shows only that team on the whole page
+  (`?team=`); **Show every team** goes back.
+- **Recruiters** (admins and managers): one line per recruiter, ranked by placements (then offers,
+  interviews, applied and sent), with their initials in their team's colour, a team tag, how many
+  recruits they have and each count. The top three get gold, silver and bronze ranks and the best
+  figure in each column is green. Pressing a column heading ranks by it (`?sort=`), and recruiters with
+  no recruits yet still show, at the bottom. Recruits without a recruiter come last, unranked.
+- **Recruits by recruiter**: a group per recruiter, whose heading keeps their interviews, offers,
+  placements and fees in view and says how many recruits had no activity. Past three recruiters the
+  groups start folded; pressing a recruiter in the ranking opens theirs (`?rec=`). Inside, recruits
+  come furthest along first, each tagged with the furthest stage a job reached (**Placed**, **Offer**,
+  **Interviewing**, **Applied**, **Jobs sent**, **No activity** or **No data yet**), and quiet ones are
+  greyed. Each name opens the recruit's page, and **Jobs sent** their list.
+- **Salaries by job title across the desk**: the median of each advert's lowest yearly figure over the
+  last 90 days, across every recruit's jobs rated, in each recruit's own currency, for titles with at
+  least 3 salaries.
+
+<img src="images/worker/admin-desk.png" alt="The Desk page: the funnel with conversion rates, the recruiters ranked and each recruiter's recruits with their furthest stage, and the salaries by job title" width="720">
+
+In demo mode the desk carries 35 recruits across two managers' teams and the recruiters outside them,
+which is what it looks like at scale, and with one team picked and a recruiter opened:
+
+<img src="images/worker/admin-desk-demo.png" alt="The desk under load: the funnel, three team cards, nine recruiters ranked with team tags and medals, and folded groups per recruiter" width="720">
+
+<img src="images/worker/admin-desk-demo-team.png" alt="One team on its own: its recruiters ranked and a recruiter opened, with each recruit's furthest stage" width="720">
 
 - **Counting**: Sent counts the jobs emailed in the period; Applied to Placed count each job once if it
   reached that stage in the period, however often it was moved (a job that went from Applied to Placed
   counts in each).
   Fees come only from **Placed** moves.
-- **Managers** see their team's recruits, grouped by recruiter, with the fees; the page says **Your
-  team's recruits, grouped by recruiter.**
-- **Recruiters** get the tab too, with only their own recruits and no fees column or fees tile; the page
-  says **Your recruits only.**
+- **Managers** see their team's recruits, with their recruiters ranked and the fees, but no team cards
+  (`?team=` is ignored for them); the page says **Your team's recruits, grouped by recruiter.**
+- **Recruiters** get the tab too: the funnel and their own recruits, open, with no ranking, teams, fees
+  column or fees tile; the page says **Your recruits only.**
+- `?team=`, `?sort=` and `?rec=` only pick from the teams, columns and recruiters on the page; anything
+  else is ignored and never shown back.
 - **Where it comes from**: `profiles.py` adds up every recruit's tracker (`profile_stats.desk`) and
   sends the result (`POST /api/desk`) at most every 30 minutes and only when it has changed, so a
   quiet desk costs no KV writes. The Worker seals it before it is stored (`stats:desk`, like API keys),

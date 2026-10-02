@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import worker from "../src/index.js";
 import { DESK_KEY, deskPage, forViewer, validDesk } from "../src/desk.js";
 import { splitStats, validStats } from "../src/stats.js";
+import { teams } from "../src/users.js";
 import { jobHash } from "../src/docs.js";
 import { BASE, testEnv } from "./helpers.js";
 
@@ -93,11 +94,13 @@ describe("the desk page", () => {
     const { env, admin } = await setup();
     const html = await page(env, admin, "/admin/desk?r=7");
     expect(html).toContain('aria-current="page">Desk</a>');
-    const casey = html.split("Casey Quinn")[1].split("</section>")[0];
+    const casey = html.split('id="rec-casey"')[1].split("</details>")[0];
+    expect(casey).toContain("Casey Quinn");
     expect(casey).toContain("Sam Lee");
     expect(casey).not.toContain("Jordan");
     expect(casey).toContain("\u00a312,345");
-    const none = html.split("No recruiter")[1].split("</section>")[0];
+    const none = html.split('id="rec-none"')[1].split("</details>")[0];
+    expect(none).toContain("No recruiter");
     expect(none).toContain("Jordan &lt;Patel&gt;");
     expect(none).toContain("\u20ac6,790");
     expect(html).not.toContain("99,999");
@@ -145,6 +148,126 @@ describe("the desk page", () => {
       return performance.now() - start;
     });
     expect(Math.min(...times)).toBeLessThan(10);
+  });
+});
+
+describe("the desk at scale", () => {
+  const L = (counts, fees = {}) => ({ 30: { sent: 0, applied: 0, interview: 0, offer: 0, placed: 0, ...counts, fees } });
+  const people = [{ id: "casey", name: "Casey Quinn" }, { id: "riley", name: "Riley Chen" }, { id: "drew", name: "Drew Harper" },
+    { id: "jamie", name: "Jamie Walsh" }, { id: "robin", name: "Robin Shaw" }];
+  const org = { managers: new Map([["morgan", "Morgan Ellis"]]), leads: new Map([["casey", "morgan"], ["riley", "morgan"]]) };
+  const profiles = [
+    { id: "sam-lee", name: "Sam Lee", recruiter: "casey" }, { id: "jordan-patel", name: "Jordan Patel", recruiter: "casey" },
+    { id: "avery-lane", name: "Avery Lane", recruiter: "riley" }, { id: "taylor-reid", name: "Taylor Reid", recruiter: "drew" },
+    { id: "alex-chen", name: "Alex Chen", recruiter: "drew" }, { id: "morgan-lee", name: "Morgan Lee", recruiter: "jamie" },
+    { id: "casey-lane", name: "Casey Lane", recruiter: "" },
+  ];
+  const desk = { updated: 1, salaries: [], recruits: {
+    "sam-lee": L({ sent: 40, applied: 6, interview: 3, offer: 2, placed: 2 }, { GBP: 9000 }), "jordan-patel": L({}),
+    "avery-lane": L({ sent: 20, applied: 3, interview: 1, offer: 1 }), "taylor-reid": L({ sent: 30, applied: 4, interview: 2 }),
+    "morgan-lee": L({ sent: 10, applied: 1 }), "casey-lane": L({ sent: 5 }) } };
+  const ADMIN_ME = { id: "admin", admin: true };
+  const draw = (me = ADMIN_ME, opts = {}) => deskPage({ profiles }, desk, me, people, "30", { org, ...opts }).text();
+  const boardOf = (html) => html.split('class="desk board"')[1].split("</table>")[0];
+  const order = (text, names) => names.map((n) => text.indexOf(n));
+  const ascending = (xs) => xs.every((x, i) => x >= 0 && (i === 0 || x > xs[i - 1]));
+
+  it("ranks the recruiters by placements, highlights the best figures, and re-ranks by the column pressed", async () => {
+    const board = boardOf(await draw());
+    expect(ascending(order(board, ["Casey Quinn", "Riley Chen", "Drew Harper", "Jamie Walsh", "Robin Shaw", "No recruiter"]))).toBe(true);
+    expect(board).toMatch(/<span class="rk r1">1<\/span><\/td><th scope="row"><span class="who"><span class="davatar"[^>]*>CQ<\/span>/);
+    expect(board).toContain('<th scope="col" aria-sort="descending" class="sorted"><a href="/admin/desk?r=30">Placed</a></th>');
+    expect(board).toContain('<td class="top">2</td>');
+    expect(board).toContain('<a href="/admin/desk?r=30&amp;rec=casey#rec-casey">Casey Quinn</a>');
+    expect(board).toMatch(/<span>Robin Shaw<\/span><\/span><\/th>\n<td>0<\/td>/);
+    expect(board).toContain('<tr class="quiet"><td class="rank"></td>');
+    const byName = boardOf(await draw(ADMIN_ME, { sort: "name" }));
+    expect(ascending(order(byName, ["Casey Quinn", "Drew Harper", "Jamie Walsh", "Riley Chen", "Robin Shaw"]))).toBe(true);
+    expect(byName).not.toContain('class="rk r1"');
+    expect(byName).toContain('aria-sort="ascending" class="sorted"><a href="/admin/desk?r=30&amp;sort=name">Recruiter</a>');
+    const bySent = boardOf(await draw(ADMIN_ME, { sort: "sent" }));
+    expect(ascending(order(bySent, ["Casey Quinn", "Drew Harper", "Riley Chen", "Jamie Walsh"]))).toBe(true);
+    expect(boardOf(await draw(ADMIN_ME, { sort: "toString" }))).toContain('aria-sort="descending" class="sorted"><a href="/admin/desk?r=30">Placed</a>');
+  });
+
+  it("shows an admin the teams, each a filter, and the team of every recruiter", async () => {
+    const html = await draw();
+    expect(html.match(/<a class="teamcard/g)).toHaveLength(2);
+    expect(html).toContain("<b>Morgan Ellis&rsquo;s team</b>\n<small>2 recruiters &middot; 3 recruits</small>");
+    expect(html).toContain("<b>No team</b>\n<small>3 recruiters &middot; 4 recruits</small>");
+    expect(html).toContain('href="/admin/desk?r=30&amp;team=morgan"');
+    expect(boardOf(html)).toContain('class="teamchip" style="--team:#6366f1">Morgan Ellis&rsquo;s team</span>');
+    const theirs = await draw(ADMIN_ME, { team: "morgan" });
+    expect(theirs).toContain('<a class="teamcard on" href="/admin/desk?r=30"');
+    expect(theirs).toContain("Showing <b>Morgan Ellis&rsquo;s team</b>");
+    expect(boardOf(theirs)).toContain("Casey Quinn");
+    for (const other of ["Drew Harper", "Jamie Walsh", "Robin Shaw", "No recruiter"]) expect(boardOf(theirs)).not.toContain(other);
+    for (const other of ["Taylor Reid", "Casey Lane"]) expect(theirs).not.toContain(other);
+    expect(theirs).toContain("<b>2</b><span>Placed</span>");
+    const lone = await draw(ADMIN_ME, { team: "none" });
+    expect(boardOf(lone)).not.toContain("Casey Quinn");
+    expect(boardOf(lone)).toContain("No recruiter");
+    const bogus = await draw(ADMIN_ME, { team: "<script>x</script>" });
+    expect(bogus).not.toContain("<script>x");
+    expect(bogus).not.toContain("Showing <b>");
+  });
+
+  it("gives a manager their own team only, with no team cards, whatever ?team= says", async () => {
+    const morgan = { id: "morgan", manager: true, team: ["casey", "riley"] };
+    for (const team of ["", "none", "morgan"]) {
+      const html = await draw(morgan, { team });
+      expect(html).not.toContain('class="teamcard');
+      expect(html).not.toContain("Showing <b>");
+      expect(boardOf(html)).toContain("Riley Chen");
+      for (const other of ["Drew Harper", "Jamie Walsh", "Taylor Reid", "Casey Lane", "No recruiter"]) expect(html).not.toContain(other);
+      expect(html).toContain("\u00a39,000");
+    }
+  });
+
+  it("lists each recruiter's recruits furthest along first, folds the groups away at scale and opens the one asked for", async () => {
+    const html = await draw();
+    expect(html).toContain('<details class="deskgroup" id="rec-casey"><summary>');
+    expect(html).toContain('<h2 class="dh">Recruits by recruiter<span>press a recruiter to open their recruits</span></h2>');
+    const casey = html.split('id="rec-casey"')[1].split("</details>")[0];
+    expect(ascending(order(casey, ["Sam Lee", "Jordan Patel"]))).toBe(true);
+    expect(casey).toContain('<span class="stage st-placed">Placed</span>');
+    expect(casey).toMatch(/<tr class="quiet"><th scope="row"><a href="\/admin\/stats\?u=jordan-patel[^"]*">Jordan Patel<\/a>/);
+    expect(casey).toContain('<span class="stage st-idle">No activity</span>');
+    expect(casey).toContain("2 recruits &middot; 1 with no activity");
+    const drew = (await draw(ADMIN_ME, { rec: "drew" })).split('id="rec-drew"')[1].split("</details>")[0];
+    expect(drew.startsWith(" open>")).toBe(true);
+    expect(ascending(order(drew, ["Taylor Reid", "Alex Chen"]))).toBe(true);
+    expect(drew).toContain('<span class="stage st-interview">Interviewing</span>');
+    expect(drew).toContain('<span class="stage st-none">No data yet</span>');
+    expect(await draw(ADMIN_ME, { team: "morgan" })).toContain('<details class="deskgroup" id="rec-casey" open>');
+  });
+
+  it("shows a recruiter just their recruits, open, with no ranking, teams or fees", async () => {
+    const html = await draw({ id: "casey" });
+    for (const absent of ['class="desk board"', 'class="teamcard', "Recruits by recruiter", "Fees", "9,000", "Riley Chen", 'class="teamchip"']) {
+      expect(html).not.toContain(absent);
+    }
+    expect(html).toContain('<details class="deskgroup" id="rec-casey" open>');
+    expect(html).toContain("<b>40</b><span>Sent</span><em>jobs emailed</em>");
+    expect(html).toContain("<b>6</b><span>Applied</span><em>15% of sent</em>");
+  });
+
+  it("works out each recruiter's team from the accounts", async () => {
+    const acc = { users: [
+      { id: "morgan", name: "Morgan Ellis", roles: ["manager"] }, { id: "lee", name: "Sam Lee", roles: ["manager", "recruiter"] },
+      { id: "casey", name: "Casey Quinn", roles: ["recruiter"], manager: "morgan" }, { id: "riley", name: "Riley Chen", roles: ["recruiter"], manager: "" },
+      { id: "boss", name: "Avery Lane", roles: ["admin", "manager"] }, { id: "drew", name: "Drew Harper", roles: ["recruiter"], manager: "gone" },
+    ] };
+    const { managers, leads } = teams(acc);
+    expect([...managers]).toEqual([["morgan", "Morgan Ellis"], ["lee", "Sam Lee"]]);
+    expect([...leads]).toEqual([["lee", "lee"], ["casey", "morgan"]]);
+  });
+
+  it("never echoes what ?team=, ?sort= or ?rec= say", async () => {
+    const { env, admin } = await setup();
+    const html = await page(env, admin, `/admin/desk?r=30&team=${encodeURIComponent('"><script>a</script>')}&sort=${encodeURIComponent("<img src=x>")}&rec=${encodeURIComponent('"><b>x')}`);
+    for (const bad of ["<script>a", "<img src=x>", '"><b>x']) expect(html).not.toContain(bad);
+    expect(html).toContain('aria-sort="descending" class="sorted"');
   });
 });
 

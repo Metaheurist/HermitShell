@@ -148,6 +148,40 @@ test("a waiting page updates in place, and holds off while something is being ty
   expect(await page.evaluate(() => window.stayed)).toBe(true);
 });
 
+test("the desk under load ranks the recruiters, filters to a team and opens a recruiter's recruits", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/admin/settings");
+  await page.getByRole("switch", { name: "Demo mode" }).press("Enter");
+  await expect(page).toHaveURL(/done=demo_on#demo$/);
+  await page.goto("/admin/desk");
+  const board = page.locator("table.board tbody tr");
+  expect(await board.count()).toBeGreaterThanOrEqual(9);
+  await expect(board.first().locator(".rk.r1")).toBeVisible();
+  await expect(page.locator("a.teamcard")).toHaveCount(3);
+  const groups = page.locator("details.deskgroup");
+  expect(await groups.count()).toBeGreaterThan(3);
+  expect(await page.locator("details.deskgroup[open]").count()).toBe(0);
+
+  await page.locator("a.teamcard", { hasText: "Jamie Chen" }).click();
+  await expect(page).toHaveURL(/team=jamie-chen/);
+  await expect(page.locator(".showing")).toContainText("Jamie Chen\u2019s team");
+  for (const name of ["Casey Quinn", "Riley Morgan", "Sam Patel"]) await expect(page.locator("table.board").getByRole("link", { name })).toBeVisible();
+  await expect(page.locator("table.board")).not.toContainText("Drew Harper");
+
+  await page.locator("table.board").getByRole("link", { name: "Casey Quinn" }).click();
+  await expect(page).toHaveURL(/rec=casey#rec-casey$/);
+  const casey = page.locator("details#rec-casey");
+  await expect(casey).toHaveAttribute("open", "");
+  await expect(casey.locator("tbody tr").first().locator(".stage")).not.toHaveText(/No activity|No data yet/);
+
+  await page.locator("table.board thead").getByRole("link", { name: "Sent" }).click();
+  await expect(page).toHaveURL(/sort=sent/);
+  await expect(page.locator("table.board thead th.sorted")).toHaveText("Sent");
+  await page.locator(".showing").getByRole("link", { name: "Show every team" }).click();
+  await expect(page).not.toHaveURL(/team=/);
+  await expect(page.locator("table.board")).toContainText("Drew Harper");
+});
+
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 

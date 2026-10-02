@@ -545,6 +545,10 @@ await save("admin-settings-demo", await ribbonAtFoot(await admin("/admin/setting
   "main>:not(.eyebrow):not(h1):not(.note):not(#demo):not(#demo~*){display:none!important}"));
 await save("admin-stats-demo", await ribbonAtFoot(await admin("/admin/stats?u=jamie-walsh")));
 await save("admin-users-demo", await ribbonAtFoot(await admin("/admin/users")));
+// The desk at scale: the teams, the recruiters ranked and every recruiter's group folded; then one team, a recruiter opened.
+await save("admin-desk-demo", await ribbonAtFoot(await admin("/admin/desk")));
+await save("admin-desk-demo-team", await ribbonAtFoot(await admin("/admin/desk?team=jamie-chen&rec=casey"),
+  "section.card:last-of-type,#rec-sam-patel{display:none!important}"));
 const demoTasks = (await (await admin("/admin/tasks")).text()).replace(/<meta http-equiv="refresh"[^>]*>/, "");
 await save("admin-tasks-demo", new Response((await (await admin("/admin")).text()).replace("</head>", "<style>#tasks{display:grid}</style></head>")
   .replace('src="/admin/tasks" loading="lazy"', `srcdoc="${demoTasks.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"`)));

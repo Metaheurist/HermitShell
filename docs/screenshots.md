@@ -634,16 +634,24 @@ an **Interview prep** button, then a **Prep pack** download once HermitShell has
 
 ### The desk
 
-<img src="images/worker/admin-desk.png" alt="The Desk page: totals tiles, a card per recruiter with each recruit's sent, applied, interviews, offers, placed and fees, and the salaries by job title" width="620">
+<img src="images/worker/admin-desk.png" alt="The Desk page: the funnel with conversion rates, the recruiters ranked and each recruiter's recruits with their furthest stage, and the salaries by job title" width="620">
 
 `/admin/desk`, the **Desk** tab: the whole desk for 7 days, 30 days, 90 days or 12 months.
 
 | Part | What it shows |
 | --- | --- |
-| Tiles | Jobs sent, applied, interviews, offers and placed across every recruit, and (admins and managers) the fees from placements per currency |
-| A card per recruiter | Their recruits, each with the same counts and a link to their page and jobs sent, and a total row. Recruits with no recruiter come last |
+| Funnel | Jobs sent, applied, interviews, offers and placed across every recruit, each with the share of the stage before that got that far, and (admins and managers) the fees from placements per currency |
+| **Teams** | Admins, once there is a manager: a card per team in its own colour (recruiters, recruits, interviews, offers, placed, fees) and **No team**. Pressing one shows only that team; **Show every team** goes back |
+| **Recruiters** | Admins and managers: one ranked line per recruiter with their team tag, recruits and counts. Gold, silver and bronze for the top three, the best figure per column in green, and each heading ranks by that column |
+| **Recruits by recruiter** | A group per recruiter with their totals in its heading. Past three recruiters the groups start folded; pressing a recruiter in the ranking opens theirs. Recruits come furthest along first, tagged **Placed**, **Offer**, **Interviewing**, **Applied**, **Jobs sent**, **No activity** or **No data yet**, with a total row. Recruits with no recruiter come last |
 | **Salaries by job title across the desk** | The median of each advert's lowest yearly figure over the last 90 days, across every recruit's jobs rated, for titles with at least 3 salaries |
 | **Updated** | When HermitShell last sent the desk (at most every 30 minutes, only when something changed) |
+
+The desk under load in demo mode (35 recruits, two managers' teams), then one team picked with a recruiter opened:
+
+<img src="images/worker/admin-desk-demo.png" alt="The desk under load: the funnel, three team cards, nine recruiters ranked with team tags and medals, and folded groups per recruiter" width="620">
+
+<img src="images/worker/admin-desk-demo-team.png" alt="One team on its own: its recruiters ranked and a recruiter opened, with each recruit's furthest stage" width="620">
 
 A recruiter sees only their own recruits, with no fees ([more](feedback-worker.md#desk)):
 

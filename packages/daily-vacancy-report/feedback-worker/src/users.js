@@ -144,6 +144,18 @@ export function recruiters(acc, status, env) {
   ];
 }
 
+// The teams, for the desk: `managers` maps each manager's id to their name, `leads` each recruiter in a team to
+// their manager's id (a manager who recruits leads their own team). Recruiters in no team are not in `leads`.
+export function teams(acc) {
+  const managers = new Map(acc.users.filter((u) => u.roles.includes("manager") && !u.roles.includes("admin")).map((u) => [u.id, u.name]));
+  const leads = new Map();
+  for (const u of acc.users) {
+    if (u.manager && managers.has(u.manager)) leads.set(u.id, u.manager);
+    else if (managers.has(u.id) && u.roles.includes("recruiter")) leads.set(u.id, u.id);
+  }
+  return { managers, leads };
+}
+
 // The recruiters `me` may give recruits and invites to: everyone for an admin, a manager's team (and themselves).
 export function recruitersFor(me, acc, status, env) {
   const all = recruiters(acc, status, env);

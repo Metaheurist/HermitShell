@@ -48,7 +48,7 @@ import {
 } from "./notes.js";
 import {
   ADMIN_ID, KEY_ICON, PASSWORD_URL, ROLES, USERS_DONE, USERS_STYLE, USER_RE, accounts, canSee, changeOwnPassword, checkUser, displayName, initials,
-  navFor, oversees, ownsRecruiter, passwordModal, recruiterOf, recruiters, recruitersFor, signOutUser, signedIn, userAction, usersPage,
+  navFor, oversees, ownsRecruiter, passwordModal, recruiterOf, recruiters, recruitersFor, signOutUser, signedIn, teams, userAction, usersPage,
 } from "./users.js";
 
 const SESSION_SECONDS = 12 * 3600;
@@ -937,7 +937,9 @@ async function signedInRoute(request, env, s, path) {
   const url = new URL(request.url);
   if (path === DESK_URL && request.method === "GET") {
     const [current, desk] = await Promise.all([status(env), readDesk(env)]);
-    return deskPage(current, desk, s.me, recruiters(s.acc, current, env), url.searchParams.get("r"));
+    const q = (k) => String(url.searchParams.get(k) || "").slice(0, 40);
+    return deskPage(current, desk, s.me, recruiters(s.acc, current, env), url.searchParams.get("r"),
+      { team: q("team"), sort: q("sort"), rec: q("rec"), org: teams(s.acc) });
   }
   const u = url.searchParams.get("u") || "";
   if (path === "/admin/profile" && request.method === "GET") {

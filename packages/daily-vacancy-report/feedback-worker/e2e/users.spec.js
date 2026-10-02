@@ -79,10 +79,10 @@ test("an admin's desk shows every recruiter's recruits and the fees from placeme
   await sendDesk(request);
   await signIn(page);
   await page.goto("/admin/desk?r=30");
-  const riley = page.locator("section.deskgroup", { hasText: RECRUITER.name });
+  const riley = page.locator("details.deskgroup", { hasText: RECRUITER.name });
   await expect(riley.getByRole("link", { name: "Sam Lee" })).toBeVisible();
   await expect(riley.locator("tfoot")).toContainText("\u00a34,500");
-  await expect(page.locator("section.deskgroup", { hasText: "No recruiter" }).getByRole("link", { name: "Jordan Patel" })).toBeVisible();
+  await expect(page.locator("details.deskgroup", { hasText: "No recruiter" }).getByRole("link", { name: "Jordan Patel" })).toBeVisible();
   await expect(page.getByText("Data Engineer")).toBeVisible();
 });
 
@@ -114,7 +114,7 @@ test("a manager looks after their team's recruits and fees, and nothing else", a
   await expect(table.getByText("Jordan Patel", { exact: true })).toHaveCount(0);
   await expect(theirs.getByLabel("Recruiter for Sam Lee")).toHaveValue(RECRUITER.username);
   await theirs.goto("/admin/desk?r=30");
-  await expect(theirs.locator("section.deskgroup", { hasText: RECRUITER.name }).locator("tfoot")).toContainText("\u00a34,500");
+  await expect(theirs.locator("details.deskgroup", { hasText: RECRUITER.name }).locator("tfoot")).toContainText("\u00a34,500");
   await expect(theirs.getByText("Jordan Patel")).toHaveCount(0);
   await theirs.goto("/admin/users");
   await expect(theirs.getByRole("heading", { name: "You and your team" })).toBeVisible();

@@ -900,6 +900,17 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The Desk reads at a glance as the desk grows.** The totals are a funnel with how many of each stage got
+  to the next. Admins get a card per manager's team (and **No team**) that filters the whole page to it
+  (`?team=`). Admins and managers get the recruiters ranked by placements, with gold, silver and bronze for
+  the top three, team tags in each team's colour, the best figure per column in green and every heading
+  sortable (`?sort=`); recruiters with no recruits still show. Each recruiter's recruits sit in a group whose
+  heading keeps their totals in view; past three recruiters the groups start folded and pressing a recruiter
+  in the ranking opens theirs (`?rec=`). Recruits come furthest along first, each tagged with the furthest
+  stage reached, and quiet ones are greyed. Recruiters keep a simple view of their own recruits with no fees.
+  Unknown `team`, `sort` and `rec` values are ignored and never echoed. New `teams()` in `src/users.js`;
+  covered by `test/desk.test.js` and `e2e/demo.spec.js`, with new `admin-desk-demo` and
+  `admin-desk-demo-team` screenshots.
 - **Status has its own dropdown in the recruit search.** When the search slides open, a dropdown beside it
   offers **Any status**, **Active**, **Paused**, **Scanning now**, **No CV** and **Pending sign-up**
   (`/admin?s=`), alone or with the words typed. Status words are no longer matched from the search box, which
