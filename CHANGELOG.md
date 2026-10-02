@@ -1190,6 +1190,12 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **`profile_stats.py` prints counts only.** Run by hand, it printed a recruit's whole stats as JSON, including
+  the jobs sent with their titles, employers, salaries, advert links and card details. It now prints a table of
+  counts (today, 7 days and every day kept), the Pipeline and how many jobs were sent, so the output is safe to
+  paste into a log (CodeQL `py/clear-text-logging-sensitive-data`). `letter_docx.py`'s pattern for the
+  characters XML forbids is now a raw string, so its ranges read as written (`py/overly-large-range`); a test
+  checks it removes exactly those characters.
 - **Code scanning findings fixed.** The job finder's saved report, results and weekly roll-up
   (`state/job_scanner_last.html`, `.json`, `job_scanner_weekly.html`) are written like CVs and letters:
   owner only, and encrypted when `HERMES_DATA_KEY` is set (`maintenance.py --decrypt` opens them). Logs no

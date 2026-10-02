@@ -77,6 +77,14 @@ def test_hostile_text_comes_back_as_plain_text(hostile):
     assert "\x01" not in text and "\ud800" not in text
 
 
+def test_clean_removes_exactly_what_xml_forbids():
+    forbidden = {*range(0x00, 0x09), 0x0B, 0x0C, *range(0x0E, 0x20), *range(0xD800, 0xE000), 0xFFFE, 0xFFFF}
+    kept = [c for c in range(0x10000) if c not in forbidden]
+    assert all(letter_docx.clean(chr(c)) == "" for c in forbidden)
+    assert letter_docx.clean("".join(map(chr, kept))) == "".join(map(chr, kept))
+    assert letter_docx.clean("\U0001f600 tab\tline\nreturn\r") == "\U0001f600 tab\tline\nreturn\r"
+
+
 def test_line_breaks_in_a_paragraph_are_breaks_not_new_elements():
     root = ElementTree.fromstring(parts(letter(["one\ntwo"]))["word/document.xml"])  # nosec B314
     assert sum(1 for el in root.iter() if el.tag.endswith("}br")) == 1

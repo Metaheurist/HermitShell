@@ -61,6 +61,28 @@ def test_counts_each_day_in_the_owners_timezone(tmp_path):
     assert stats["pipeline"]["applied"] == 0
 
 
+def test_the_terminal_summary_has_counts_and_no_job_details(tmp_path):
+    with tracker(tmp_path) as t:
+        t.upsert_job("a", job("Data Engineer", 9, employer="Northwind", year_low=50000), True, NOW)
+        t.upsert_job("b", job("Sales Lead", 4, employer="Contoso"), True, NOW - 3 * DAY)
+        t.upsert_job("c", job("Analyst", 6, employer="Fabrikam"), True, NOW - 20 * DAY)
+        t.add_event("e1", "a", "applied", "call me on 07700 900123", NOW)
+    stats = profile_stats.collect(tmp_path / "job_tracker.db", LONDON, NOW, private=("Alex Morgan",), board=True)
+    text = profile_stats.summary(stats)
+    rows = {line.split()[0]: line.split()[1:] for line in text.splitlines()[1:] if line.split()[0] in profile_stats.FIELDS}
+    assert list(rows) == list(profile_stats.FIELDS)
+    assert rows["sent"] == ["1", "2", "3"] and rows["applied"] == ["1", "1", "1"]
+    assert "pipeline: interested 0" in text and "applied 1" in text and "jobs sent (last 90 days): 3" in text
+    for detail in ("Data Engineer", "Northwind", "Contoso", "Fabrikam", "50000", "secret-link", "07700", "Alex"):
+        assert detail not in text
+
+
+def test_the_terminal_summary_of_a_missing_tracker_is_all_zeros(tmp_path):
+    text = profile_stats.summary(profile_stats.collect(tmp_path / "none.db", LONDON, NOW))
+    assert "jobs sent (last 90 days): 0" in text
+    assert all(n == "0" for line in text.splitlines()[1:-2] for n in line.split()[1:])
+
+
 def test_ranges_and_history_stop_at_their_cutoffs(tmp_path):
     with tracker(tmp_path) as t:
         t.upsert_job("new", job("Recent", 8, employer="Fabrikam"), True, NOW - 2 * DAY)

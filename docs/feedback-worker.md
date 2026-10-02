@@ -1091,7 +1091,9 @@ together with the [Pipeline](#pipeline) board).
 Email addresses, phone numbers and the recruit's name and email are removed from that text first.
 A deleted recruit's stats are removed with them. The page is drawn on the Worker as plain SVG and CSS,
 without JavaScript, and its icons and charts animate in unless your system asks for reduced motion.
-`python3 profile_stats.py state/profiles/<id>/state/job_tracker.db` prints a recruit's numbers on the server.
+`python3 profile_stats.py state/profiles/<id>/state/job_tracker.db` prints a recruit's counts on the server
+(each one today, over 7 days and over every day kept, the Pipeline and how many jobs were sent), never job titles,
+employers, links or salaries.
 
 #### Jobs sent
 

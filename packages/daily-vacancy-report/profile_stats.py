@@ -10,7 +10,7 @@ HermitShell counts as on the CV. profiles.py sends it to the feedback Worker, wh
 charts and the dashboard's list of jobs sent. Notes typed on the buttons' confirmation pages and the listing text
 are not included, and email addresses, phone numbers and the profile's name and email are removed from the rest.
 
-    python3 profile_stats.py [DB]     # print the stats of a tracker (default: the owner's)
+    python3 profile_stats.py [DB]     # print the counts of a tracker (default: the owner's), never job details
 """
 from __future__ import annotations
 
@@ -423,10 +423,31 @@ def desk(db: Path, tz: ZoneInfo, now: float | None = None, currency: str = "",
     return {"ranges": out, "salaries": salaries}
 
 
+def summary(stats: dict) -> str:
+    """The counts in `stats` as a table for the terminal: each field today, over the last 7 days and over every
+    day kept, then the Pipeline and how many jobs were sent. Titles, employers, links, salaries and skills are
+    left out, so it is safe to paste into a log or an issue."""
+    days = stats.get("days") or {}
+    today = date.fromisoformat(stats["today"])
+    week = {(today - timedelta(days=n)).isoformat() for n in range(7)}
+
+    def total(i: int, keep) -> float:
+        return sum(float(row[i]) for d, row in days.items() if keep(d) and i < len(row))
+
+    lines = [f"{'':14}{'today':>8}{'7 days':>9}{'all':>9}"]
+    for i, name in enumerate(FIELDS):
+        counts = (total(i, lambda d: d == stats["today"]), total(i, week.__contains__), total(i, lambda d: True))
+        lines.append(f"{name:14}" + "".join(f"{n:>{w}g}" for n, w in zip(counts, (8, 9, 9))))
+    pipeline = stats.get("pipeline") or {}
+    lines.append("pipeline: " + ", ".join(f"{s} {int(pipeline.get(s, 0))}" for s in STATUSES))
+    lines.append(f"jobs sent (last {SENT_DAYS} days): {len(stats.get('sent') or [])}")
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import hermes_common as hc
     import profiles
     hc.load_env_file()
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else hc.STATE_DIR / "job_tracker.db"
-    print(json.dumps(collect(path, ZoneInfo(profiles.timezone_name())), indent=1))
+    print(summary(collect(path, ZoneInfo(profiles.timezone_name()))))

@@ -19,7 +19,7 @@ INK, MUTED, ACCENT, LINE = "0F172A", "475569", "4F46E5", "D9DDE8"
 PAGE_W, PAGE_H, MARGIN_X, MARGIN_TOP, MARGIN_BOTTOM = 11906, 16838, 1280, 1200, 1280
 TEXT_W = PAGE_W - 2 * MARGIN_X
 _STAMP = (1980, 1, 1, 0, 0, 0)
-_NOT_XML = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+_NOT_XML = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
 _W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 
