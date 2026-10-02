@@ -166,6 +166,19 @@ Sent by `profiles.py` when you use [recruits](feedback-worker.md#recruits-and-th
 - **Goodbye** is the last email a recruit gets: it confirms that their profile, CV and
   history are deleted and their name and email removed from the logs.
 
+<table>
+<tr><th>Retired (with the keep or delete link)</th><th>Kept, as they chose</th><th>Deleted, backups included</th></tr>
+<tr>
+<td><img src="images/emails/retired.png" alt="Retired email: no more reports, kept until a date unless they choose, and a Keep or delete my data button" width="300"></td>
+<td><img src="images/emails/retire-kept.png" alt="Profile kept email: kept for 12 months, until the date, then deleted" width="300"></td>
+<td><img src="images/emails/retire-deleted.png" alt="Data deleted email: profile, CV, history and every backup" width="300"></td>
+</tr>
+</table>
+
+- **Retiring** ([more](feedback-worker.md#retiring-a-recruit)): the retired email links to the page where
+  they keep their profile for 6, 12 or 24 months or delete it; the other two confirm their choice, or the
+  deletion once the time is up.
+
 ## Test emails
 
 <table>
@@ -245,6 +258,13 @@ After **Confirm**:
 
 For a recruit it deletes the profile, CV and history. The link in a report you got before your own
 job search moved to a recruit only pauses that recruit.
+
+### Retired: keep or delete
+
+<img src="images/worker/confirm-retire.png" alt="A retired recruit's page: keep for 6, 12 or 24 months or delete everything now" width="300">
+
+The link in a retired recruit's email. Nothing changes until they press **Confirm my choice**
+([more](feedback-worker.md#retiring-a-recruit)).
 
 ### Link problems
 
@@ -396,7 +416,20 @@ buttons. On a phone everything is in one column.
 
 <img src="images/worker/admin-dashboard-tag.png" alt="The recruits list showing only the two recruits tagged shortlist" width="620">
 
-<img src="images/worker/admin-dashboard-bulk.png" alt="Two recruits ticked and the bar under the list: 2 ticked, Pause, Resume, Send jobs now and Assign" width="620">
+<img src="images/worker/admin-dashboard-bulk.png" alt="Two recruits ticked and the bar under the list: 2 ticked, Pause, Resume, Send jobs now, Assign and a red Retire button" width="620">
+
+<table>
+<tr><th>Retiring the ticked recruits</th><th>Retired recruits, under Retired</th></tr>
+<tr>
+<td><img src="images/worker/admin-dashboard-bulk-retire.png" alt="The confirm window from the bar's red Retire button, with its tick box" width="380"></td>
+<td><img src="images/worker/admin-dashboard-retired.png" alt="The list with Retired picked: a retired recruit, when they were retired and until when their data is kept" width="380"></td>
+</tr>
+<tr><th>Retire, at the bottom of a recruit's page</th><th>Its confirm window</th></tr>
+<tr>
+<td><img src="images/worker/admin-profile-retire.png" alt="The Retire section at the bottom of a recruit's page with a red Retire button" width="380"></td>
+<td><img src="images/worker/admin-profile-retire-modal.png" alt="Retire Avery Lane? The confirm window with its tick box" width="380"></td>
+</tr>
+</table>
 
 ### Users and roles
 

@@ -60,7 +60,7 @@ describe("profile search", () => {
     const board = await get();
     expect(board).toContain('<select id="status-filter" name="s" aria-label="Status"><option value="" selected>Any status</option>'
       + '<option value="active">Active</option><option value="paused">Paused</option><option value="scanning">Scanning now</option>'
-      + '<option value="nocv">No CV</option><option value="pending">Pending sign-up</option></select><button class="sgo">Show</button>');
+      + '<option value="nocv">No CV</option><option value="pending">Pending sign-up</option><option value="retired">Retired</option></select><button class="sgo">Show</button>');
     expect(board).toContain('placeholder="Name, email, place, recruiter or tag, then Enter"');
     for (const word of ["paused", "active", "scanning", "no+cv"]) expect(listed(await get(`?q=${word}`))).toEqual([]);
     expect(listed(await get("?s=paused"))).toEqual(["jordan-patel"]);

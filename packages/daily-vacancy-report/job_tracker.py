@@ -138,6 +138,13 @@ def unsubscribe_link(base_url: str, secret: str, name: str, profile: str = "") -
                  secret, profile)
 
 
+def retire_link(base_url: str, secret: str, name: str, profile: str) -> str:
+    """The retired email's link: the recruit keeps their data for a while or has it deleted, backups included."""
+    if not (secure_base(base_url) and secret and profile):
+        return ""
+    return _link(base_url, {"j": "profile", "a": "retire", "n": name[:120]}, secret, profile)
+
+
 def own_page_link(base_url: str, profile: str, enabled: bool) -> str:
     """Report footer link to a recruit's own page (/me), where they ask for a one-time sign-in link. It signs nobody
     in, so a forwarded email gives nothing away. "" for the main admin, while the page is off or without https."""

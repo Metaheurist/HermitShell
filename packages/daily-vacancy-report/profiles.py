@@ -12,7 +12,9 @@ tailored CVs and weekly roll-up; the unsubscribe link in its reports deletes it.
 scheduled job (vacancy-report-<id>, running profile_report.py), kept in step with the profile by this script;
 the dashboard sets its time and can send any profile's report at once. Each profile's stats (profile_stats.py)
 go to the Worker when they change, for the dashboard's stats page.
-Dashboard changes (email server, API keys, job search settings, new CVs, pause, resume, delete) arrive the
+A retired recruit (from the dashboard) gets no reports and chooses by email how long their profile is kept for a
+return, or has it deleted at once, backups included; see retire().
+Dashboard changes (email server, API keys, job search settings, new CVs, pause, resume, retire, delete) arrive the
 same way; passwords and keys stay in the Worker only until this script collects them. The Worker never
 reaches this server: a background listener started by the cron run holds a WebSocket out to the Worker (the live
 link), which tells it the moment anything is queued; without one the cron run polls the Worker instead.
@@ -62,7 +64,7 @@ import worker_link
 import worker_seal
 from hermes_common import EMAIL_HEAD, STATE_DIR, connect_model, email_header, env, load_env_file, log, ollama_chat
 from job_settings import slug, term_regex
-from job_tracker import Tracker, own_page_link, sync_feedback, unsubscribe_link
+from job_tracker import Tracker, own_page_link, retire_link, sync_feedback, unsubscribe_link
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROFILES_DIR = Path(env("JOB_PROFILES_DIR") or STATE_DIR / "profiles")
@@ -104,8 +106,14 @@ ID_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 # A dashboard user's username (feedback-worker/src/users.js): whose pool a recruit is in.
 RECRUITER_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 # What the dashboard can do to several ticked recruits at once (feedback-worker/src/admin.js), and how many.
-BULK_OPS = ("pause", "resume", "send_now", "assign")
+BULK_OPS = ("pause", "resume", "send_now", "assign", "retire")
 MAX_BULK = 25
+# A retired recruit gets no reports and is emailed a link (feedback-worker/src/index.js, action "retire") to keep their
+# profile for one of RETIRE_KEEP_MONTHS, for an easy return, or to have it deleted now with every backup's copy. Without
+# an answer it is kept for HERMES_RETIRE_KEEP_MONTHS (default 6), then deleted the same way by the nightly maintenance.
+RETIRE_KEEP_MONTHS = (6, 12, 24)
+RETIRE_DEFAULT_MONTHS = 6
+MONTH = 365.25 / 12 * 86400
 KEY_RE = re.compile(r"^[A-Za-z0-9_-]{8,120}$")
 EMAIL_RE = re.compile(r"[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+")
 HOST_RE = re.compile(r"^[A-Za-z0-9.-]{3,120}$")
@@ -853,6 +861,10 @@ class Api:
         """Every recruit's totals for the desk page; the Worker seals them, since they hold fees."""
         self.link.request("POST", "/api/desk", json_body={"desk": data})
 
+    def forget(self, pid: str) -> None:
+        """Drops what the Worker keeps of a deleted profile (its history, notes, stats, documents and answers)."""
+        self.link.request("POST", "/api/forget", json_body={"u": pid})
+
     def invite(self, note: str) -> dict:
         return self.call("POST", "/api/invite", json={"note": note}, retry=False)
 
@@ -868,12 +880,18 @@ def api_from_env() -> Api | None:
 # --------------------------------------------------------------------------- queue items
 
 def set_status(pid: str, status: str) -> None:
+    """Pause or resume a profile; resuming a retired one brings it back, with its retirement and keep date gone."""
     profile = load(pid)
     if not profile:
         raise ProfileError(f"no profile {pid}")
+    if profile.get("status") == "retired" and status != "active":
+        raise ProfileError("retired: reactivate them first")
+    back = profile.get("status") == "retired"
+    for key in ("retired_at", "keep_until", "keep_months"):
+        profile.pop(key, None)
     profile["status"] = status
     save(profile)
-    log(f"Profile {pid} {status}")
+    log(f"Profile {pid} {'reactivated' if back else status}")
 
 
 def log_files() -> list[Path]:
@@ -885,13 +903,18 @@ def log_files() -> list[Path]:
     return [f for f in found + runs if f.is_file() and not f.is_symlink()]
 
 
+def scrub_pattern(terms: list[str]) -> re.Pattern | None:
+    """What scrub_logs replaces: each term of 4 or more characters, any run of spaces in it matching any other."""
+    words = sorted({" ".join(str(t).split()) for t in terms if len(" ".join(str(t).split())) >= 4}, key=len, reverse=True)
+    return re.compile("|".join(r"\s+".join(map(re.escape, w.split())) for w in words), re.I) if words else None
+
+
 def scrub_logs(terms: list[str], max_bytes: int = 50 * 1024 * 1024) -> int:
     """Replace a deleted person's email, name and profile id with [deleted] in log files; returns files changed.
     Files are rewritten in place so a process still appending to one keeps writing to the same file."""
-    words = sorted({" ".join(str(t).split()) for t in terms if len(" ".join(str(t).split())) >= 4}, key=len, reverse=True)
-    if not words:
+    rx = scrub_pattern(terms)
+    if rx is None:
         return 0
-    rx = re.compile("|".join(r"\s+".join(map(re.escape, w.split())) for w in words), re.I)
     changed = 0
     for path in log_files():
         try:
@@ -951,6 +974,138 @@ def unsubscribe(pid: str, reason: str = "") -> None:
     notify(lambda: send_owner(f"{profile['name']} unsubscribed",
                               [f"{profile['name']} used the unsubscribe link.", note]
                               + ([f"Their feedback: {reason}"] if reason else [])))
+
+
+# --------------------------------------------------------------------------- retiring
+
+def retire_default_months() -> int:
+    return max(1, min(36, hc.env_int("HERMES_RETIRE_KEEP_MONTHS", RETIRE_DEFAULT_MONTHS)))
+
+
+def _date(ts: float) -> str:
+    return datetime.fromtimestamp(ts, ZoneInfo(env("HERMES_TIMEZONE", "UTC") or "UTC")).strftime("%d %B %Y").lstrip("0")
+
+
+def _button(href: str, label: str, colour: str = "#4f46e5") -> str:
+    return (f'<a href="{html.escape(href)}" style="display:inline-block;background:{colour};color:#ffffff;border-radius:10px;'
+            f'padding:11px 20px;margin:6px 0;font-size:14px;font-weight:600;text-decoration:none">{html.escape(label)}</a>')
+
+
+def _para(text: str) -> str:
+    return f'<p style="margin:0 0 10px;font-size:14px;line-height:21px;color:#334155">{html.escape(text)}</p>'
+
+
+def retire(profile: dict, now: float | None = None) -> None:
+    """Stops a recruit's reports and emails them the link to choose how long their profile is kept for a return, or
+    to delete it now with every backup's copy. Until they choose it is kept for retire_default_months()."""
+    if profile.get("status") == "retired":
+        raise ProfileError("already retired")
+    now = time.time() if now is None else now
+    profile.update({"status": "retired", "retired_at": now, "keep_until": now + retire_default_months() * MONTH})
+    profile.pop("keep_months", None)
+    save(profile)
+    log(f"Profile {profile['id']} retired")
+    notify(lambda: send_retired(profile))
+
+
+def send_retired(profile: dict) -> None:
+    first = profile["name"].split()[0]
+    link = retire_link(env("JOB_FEEDBACK_URL", "") or "", env("JOB_FEEDBACK_SECRET", "") or "", profile["name"], profile["id"])
+    until = _date(profile["keep_until"])
+    header = email_header(FROM_NAME, _today(), f"Your account is retired, {first}",
+                          "No more job reports. What should happen to your data?",
+                          [("0", "More reports"), (until, "Kept until, unless you choose")])
+    lines = ["Your recruiter has retired your HermitShell account, so you won't get any more job reports.",
+             "HermitShell can keep your profile, your CV, the jobs it found for you and your answers, so that if you look "
+             "for work again your recruiter picks up where you left off, with your employability profile ready. Or it "
+             "can delete all of it now, including the copies in its backups."]
+    after = (f"If you don't choose, it is kept until {until} and then deleted, backups included. "
+             + ("The link works for 90 days; after that, reply to this email." if link else "Reply to this email to choose."))
+    body = "".join(map(_para, lines)) + (_button(link, "Keep or delete my data") if link else "") + _para(after)
+    text = "\n\n".join([f"Your account is retired, {first}", *lines, *([f"Keep or delete your data: {link}"] if link else []), after])
+    send(profile["email"], f"{FROM_NAME}: your account is retired", _email(header, [body]), text)
+
+
+def send_retire_kept(profile: dict) -> None:
+    first, until = profile["name"].split()[0], _date(profile["keep_until"])
+    header = email_header(FROM_NAME, _today(), f"Your profile is kept, {first}", f"Until {until}, for when you come back",
+                          [(f"{profile['keep_months']} months", "Kept for"), (until, "Then deleted")])
+    lines = [f"HermitShell keeps your profile, your CV and your job history until {until}, so you can pick up where you "
+             "left off if you look for work again. Then it deletes them, backups included.",
+             "Changed your mind? Use the link in the earlier email, or reply to this one."]
+    send(profile["email"], f"{FROM_NAME}: your profile is kept until {until}", _email(header, ["".join(map(_para, lines))]),
+         "\n\n".join([f"Your profile is kept, {first}", *lines]))
+
+
+def send_erased(profile: dict, expired: bool) -> None:
+    first = profile["name"].split()[0]
+    why = "The time you chose to keep your profile for is up, so" if expired else "As you asked,"
+    lines = [f"{why} HermitShell has deleted your profile, your CV, the jobs it found for you, your answers, cover letters "
+             "and tailored CVs, and removed your name and email address from its logs.",
+             "It is also removing them from every one of its backups, on its server and off it, within a day. "
+             "This is the last email you will get from it."]
+    header = email_header(FROM_NAME, _today(), f"Your data is deleted, {first}", "Profile, CV, history and backups",
+                          [("0", "More emails"), ("Deleted", "Including backups")])
+    send(profile["email"], f"{FROM_NAME}: your data is deleted", _email(header, ["".join(map(_para, lines))]),
+         "\n\n".join([f"Your data is deleted, {first}", *lines]))
+
+
+def retire_choice(item: dict, api=None, now: float | None = None) -> None:
+    """A retired recruit's answer from their email's link: keep for one of RETIRE_KEEP_MONTHS months, or 0 to delete
+    everything now. Only while they are still retired, and only from a link sent since they were."""
+    pid, keep, day = str(item.get("u") or ""), item.get("keep"), item.get("d")
+    profile = load(pid) if ID_RE.match(pid) and pid != OWNER else None
+    if not profile or profile.get("owner"):
+        raise ProfileError(f"no profile {_text(pid, 40)}")
+    if profile.get("status") != "retired":
+        raise ProfileError("not retired (reactivated since)")
+    if type(day) is not int or day < int(float(profile.get("retired_at") or 0) // 86400):
+        raise ProfileError("a link from before this retirement")
+    if type(keep) is not int or (keep != 0 and keep not in RETIRE_KEEP_MONTHS):
+        raise ProfileError("not a valid choice")
+    if keep == 0:
+        erase(profile, api)
+        return
+    now = time.time() if now is None else now
+    profile.update({"keep_until": now + keep * MONTH, "keep_months": keep})
+    save(profile)
+    log(f"Profile {pid} kept for {keep} months, as they chose")
+    notify(lambda: send_retire_kept(profile))
+
+
+def erase(profile: dict, api=None, expired: bool = False, purge_now: bool = True) -> None:
+    """Deletes a retired recruit completely: their folder and traces in the logs (forget), what the Worker keeps of them,
+    and their copies in every backup, here and off the server (maintenance.py --forget-backups, in the background; the
+    nightly run does it itself)."""
+    import maintenance
+    maintenance.queue_forget(profile)
+    forget(profile)
+    if api is not None:
+        try:
+            api.forget(profile["id"])
+        except Exception as exc:  # the server's copy is gone either way; the Worker drops the rest with its status
+            log(f"The Worker did not drop the deleted profile's data: {exc.__class__.__name__}")
+    if purge_now:
+        _background([sys.executable, str(SCRIPT_DIR / "maintenance.py"), "--forget-backups"])
+    notify(lambda: send_erased(profile, expired))
+    notify(lambda: send_owner(f"{profile['name']}'s data is deleted",
+                              [f"{profile['name']} was retired and "
+                               + ("the time they chose to keep their profile for is up." if expired else "asked for their data to be deleted."),
+                               "Their profile, CV and history are deleted, their details removed from the logs, and every "
+                               "backup is being cleaned of them. They were emailed a confirmation."]))
+
+
+def expire_retired(now: float | None = None, api=None) -> int:
+    """Deletes the retired recruits whose keep date has passed, backups included; returns how many (nightly)."""
+    now = time.time() if now is None else now
+    gone = 0
+    for p in all_profiles():
+        until = p.get("keep_until")
+        if (not p.get("owner") and p.get("status") == "retired" and isinstance(until, (int, float))
+                and not isinstance(until, bool) and until <= now):
+            erase(p, api, expired=True, purge_now=False)
+            gone += 1
+    return gone
 
 
 def send_login_link(item: dict) -> None:
@@ -1198,6 +1353,8 @@ def bulk_action(item: dict, api=None) -> None:
             profile = load(pid)
             if not profile:
                 raise ProfileError(f"no profile {pid}")
+            if profile.get("status") == "retired":
+                raise ProfileError("retired")
             if not has_cv(profile):
                 raise ProfileError("no CV yet")
             starting.append(profile)
@@ -1248,7 +1405,11 @@ def admin_action(item: dict, api=None) -> None:
         raise ProfileError("recruits no longer have their own crawler keys; set web search keys under Global settings")
     elif action in ("pause", "resume"):
         set_status(pid, "paused" if action == "pause" else "active")
+    elif action == "retire":
+        retire(profile)
     elif action == "send_now":
+        if profile.get("status") == "retired":
+            raise ProfileError("retired: reactivate them first")
         start_report(profile)
     elif action == "cancel":
         log(cancel_task(str(item.get("task") or ""), pid))
@@ -1273,6 +1434,8 @@ def handle(item: dict, api: Api) -> None:
         admin_action(item, api)
     elif kind == "login_link":
         send_login_link(item)
+    elif kind == "retire_choice":
+        retire_choice(item, api)
     else:
         raise ProfileError(f"unknown queue item type {kind!r}")
 
@@ -1338,6 +1501,8 @@ def status_payload() -> dict:
             "owner": False, "recruiter": str(p.get("recruiter") or ""),
             "has_cv": (profile_dir(p["id"]) / "job_profile.md").is_file(),
             "created": _ms(p.get("created")), "last_run": _ms(p.get("last_run")), "cv_updated": _ms(p.get("cv_updated")),
+            **({"retired": _ms(p.get("retired_at")), "keep_until": _ms(p.get("keep_until")),
+                "keep_months": p.get("keep_months") or 0} if p.get("status") == "retired" else {}),
             "details": current_details(p),
             "job": job_settings.form_values(profile_getter(p)),
             "report": {"time": report_time, "days": report_days, "schedule": schedule, "job": bool(job),

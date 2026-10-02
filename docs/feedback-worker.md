@@ -466,7 +466,8 @@ settings** (the email server and web search keys the whole tool shares). Recruit
   applied it (the same timings as [Global settings](#global-settings)). Recruiters only see their own
   recruits' changes. Sign-ups and new CVs take minutes and show their own progress, so they don't reload the page.
   Deleting removes their CV and history from your server, their answers still waiting in KV and
-  their name and email from the logs.
+  their name and email from the logs. Retired recruits ([Retiring a recruit](#retiring-a-recruit)) are left
+  out of the list, with **N retired** beside the count to show them.
 - **Pending sign-ups**: someone who has sent the invite form gets a **pending** row straight away
   (name, email, when and what they're looking for), while HermitShell reads their CV and sets them
   up. HermitShell reports the new recruit before it takes the sign-up off the queue, so the row
@@ -474,8 +475,8 @@ settings** (the email server and web search keys the whole tool shares). Recruit
 - **Search**: the magnifying glass above the table slides out a search box and a status dropdown
   (CSS only). Press Enter and the page lists only the recruits whose name, email, id, place, tags or
   recruiter contain every word you typed (`/admin?q=`), with a count and **&times;** to show everyone
-  again. Status isn't typed: pick **Active**, **Paused**, **Scanning now**, **No CV** or **Pending
-  sign-up** from the dropdown (`/admin?s=`) to list only those, on its own or with the words. Picking
+  again. Status isn't typed: pick **Active**, **Paused**, **Scanning now**, **No CV**, **Pending
+  sign-up** or **Retired** from the dropdown (`/admin?s=`) to list only those, on its own or with the words. Picking
   one lists them at once; without JavaScript a **Show** button appears beside it instead. Searching
   a recruiter's name or username puts the recruiter at the top, followed by all of their recruits
   and then anyone else who matches; a recruiter and a person together (`casey jordan`) finds that
@@ -888,16 +889,17 @@ HermitShell refuses the request and says so under **HermitShell could not apply*
 #### Several recruits at once
 
 Each row on the Recruits list has a tick box. Ticking one or more brings up a bar under the list with how
-many are ticked and **Pause**, **Resume**, **Send jobs now** and, for admins, a recruiter list with
-**Assign**. The tick boxes belong to the bar's form, so it works without scripts; browsers without `:has`
-show the bar all the time.
+many are ticked and **Pause**, **Resume**, **Send jobs now**, for admins a recruiter list with
+**Assign**, and at the end a red **Retire** button, which opens a window to confirm (see
+[Retiring a recruit](#retiring-a-recruit)). The tick boxes belong to the bar's form, so it works without
+scripts; browsers without `:has` show the bar all the time.
 
 <img src="images/worker/admin-dashboard-bulk.png" alt="Two recruits ticked and the bar under the list" width="620">
 
 - Up to 25 recruits at a time. The Worker checks each one as the single button would: a recruiter only
   changes their own recruits and cannot assign, and the main admin's row is never one. Anyone else is
-  skipped, as is anyone already paused or active as asked, already that recruiter's, or asked for jobs in
-  the last minute. The note afterwards says how many were done and how many skipped.
+  skipped, as is anyone retired, already paused or active as asked, already that recruiter's, or asked for
+  jobs in the last minute. The note afterwards says how many were done and how many skipped.
 - The batch is one queue item (`action: "bulk"`, the operation and the recruit ids), so it costs one queue
   write; each recruit gets their own history line. KV writes: up to 2 + 2 per recruit (the queue item and
   flag, then each history line and, for **Send jobs now**, the one-minute repeat guard).
@@ -1286,6 +1288,42 @@ replaces their name and email address with `[deleted]` in the logs, emails them 
 tells you (without their address). The unsubscribe link in a report you received before your own job
 search moved to a recruit only pauses that recruit (the others keep running) until you resume it from
 `/admin` or with `profiles.py --resume <id>`.
+
+### Retiring a recruit
+
+When a recruit has found work or stopped looking, retire them instead of deleting them: their reports
+stop, and they choose by email whether HermitShell keeps their profile for when they look again.
+
+- **Where:** the red **Retire** button on the [bulk bar](#several-recruits-at-once) for the ticked recruits,
+  or **Retire** at the bottom of a recruit's page (after Manage's CV box). Both open a window where you tick
+  the box and press **Retire**; without the tick nothing happens. Admins, managers and recruiters can retire
+  the recruits they can see, never the main admin. The history notes who did it.
+
+<img src="images/worker/admin-dashboard-bulk-retire.png" alt="Two recruits ticked and the confirm window for retiring them" width="620">
+
+<img src="images/worker/admin-profile-retire.png" alt="The Retire section at the bottom of a recruit's page" width="620">
+
+- **What happens:** HermitShell sets them to **retired** (their daily job is paused, they can't sign in to
+  `/me`, and **Send jobs** and bulk changes skip them) and emails them a signed link (the action `retire`,
+  working for 90 days like the other buttons). They are left out of the Recruits list; **N retired** beside the
+  count, or **Retired** in the status dropdown, lists them with when they were retired and until when their
+  data is kept.
+- **Their choice:** the link opens a page with **Keep it for 6 months**, **12 months** or **24 months**, or
+  **Delete everything now**. Nothing changes until they press **Confirm my choice**. A keep choice is queued
+  as `retire_choice` and HermitShell emails them the date; they can use the link again to change it.
+  Deleting drops what the Worker keeps of them at once and HermitShell deletes the rest within minutes.
+  A link from before the latest retirement, or used after they were reactivated, changes nothing.
+- **No answer:** the profile is kept for `HERMES_RETIRE_KEEP_MONTHS` (6 by default), then the nightly
+  maintenance run deletes it and emails them.
+- **Deleting, backups included:** their folder, their traces in the logs, everything the Worker keeps of
+  them (`POST /api/forget` with the API token, refused for the main admin), and their copies in every
+  backup, on the server and on [Cloudflare](#backups-on-cloudflare): each archive is rewritten without them
+  and the copy on Cloudflare replaced (see [Data protection](configuration.md#data-protection)). You get an
+  email saying it is done, without their address.
+- **Bringing them back:** **Reactivate** at the bottom of their page (where **Retire** was) starts their
+  reports again and clears the keep date.
+
+<img src="images/worker/confirm-retire.png" alt="The retired recruit's page: keep for 6, 12 or 24 months or delete everything now" width="300">
 
 ### Recruits' own page
 

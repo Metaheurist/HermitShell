@@ -29,7 +29,7 @@ import {
   SETTINGS_DONE, SETTINGS_URL, STATUS_URL, USERS_URL, button, checklist, cvUpload, nav, problems, profileChange, profilePage, saveStatus,
   sendButton, settingsItem, settingsPage, settingsWaiting,
 } from "./settings.js";
-import { CONFIRM_STYLE, binButton, deleteModal } from "./confirm.js";
+import { CONFIRM_STYLE, RETIRE_ICON, RETIRE_INTRO, binButton, deleteModal } from "./confirm.js";
 import { MODAL_STYLE } from "./keys.js";
 import { NOTICE_STYLE, SERVER_STYLE, pullNotice, serverBox } from "./models.js";
 import { needsSeal, sealInfo, sealItem, sealText } from "./seal.js";
@@ -64,11 +64,11 @@ const SEND_NOW_SECONDS = 60;
 const BACKUP_NOW_SECONDS = 10 * 60;
 // What a recruiter may do from the dashboard, and then only for their own recruits; a manager also assigns, within
 // their team.
-const RECRUITER_ACTIONS = new Set(["invite", "revoke", "profile", "send_now", "pause", "resume", "bulk"]);
+const RECRUITER_ACTIONS = new Set(["invite", "revoke", "profile", "send_now", "pause", "resume", "retire", "bulk"]);
 const MANAGER_ACTIONS = new Set([...RECRUITER_ACTIONS, "assign"]);
 const mayDo = (me, act) => me.admin || (me.manager ? MANAGER_ACTIONS : RECRUITER_ACTIONS).has(act);
 // What the bar under the recruits does to the ticked ones, and how many at once (profiles.py BULK_OPS, MAX_BULK).
-const BULK_OPS = new Set(["pause", "resume", "send_now", "assign"]);
+const BULK_OPS = new Set(["pause", "resume", "send_now", "assign", "retire"]);
 const MAX_BULK = 25;
 const DONE = {
   queued: "Saved. HermitShell applies it within seconds while it is connected.",
@@ -76,6 +76,9 @@ const DONE = {
   nochange: "Nothing had changed, so nothing was saved.",
   revoked: "Invite revoked.",
   confirm: "Tick the confirmation box to delete a recruit.",
+  retireconfirm: "Tick the confirmation box to retire.",
+  retiring: "Retiring. HermitShell stops their reports and emails them to choose what happens to their data, within seconds while it is connected.",
+  reactivating: "Reactivating. HermitShell starts their reports again within seconds while it is connected.",
   badkey: "That does not look like an API key.",
   assigned: "Assigned. HermitShell records it within seconds while it is connected.",
   badrecruiter: "Pick a recruiter from the list.",
@@ -224,7 +227,9 @@ function perRecruit(items) {
 
 function describe(items) {
   return items.map((i) => i.type === "signup" ? `Sign-up from ${i.name}` : i.type === "unsubscribe"
-    ? `Unsubscribe ${i.u || "from an old report of yours"}` : `${String(i.action || i.type).replaceAll("_", " ")}${i.u ? ` for ${i.u}` : ""}`);
+    ? `Unsubscribe ${i.u || "from an old report of yours"}` : i.type === "retire_choice"
+      ? `${i.keep ? `Keep for ${i.keep} months` : "Delete everything"}, asked by ${i.u}`
+      : `${String(i.action || i.type).replaceAll("_", " ")}${i.u ? ` for ${i.u}` : ""}`);
 }
 
 // The recruit `u` when the signed-in user may see it, else null. Recruiters are checked against the recruiter
@@ -370,11 +375,19 @@ function pendingRow(p, tz, live, third) {
 
 // Row changes that HermitShell applies within seconds: the dashboard shows them at once, tagged, and reloads
 // itself until they are applied.
-const QUICK_ACTIONS = { pause: "pausing", resume: "resuming", delete: "deleting", send_now: "starting a scan", assign: "assigning" };
+const QUICK_ACTIONS = { pause: "pausing", resume: "resuming", delete: "deleting", send_now: "starting a scan", assign: "assigning",
+  retire: "retiring" };
+
+// A retired recruit's line: when, and until when their data is kept (their choice, or the default until they make one).
+function retiredNote(p, tz) {
+  const until = p.keep_until ? `kept until ${when(p.keep_until, tz).slice(0, 10)}${p.keep_months ? ", as they chose" : " unless they choose"}` : "";
+  return `<div class="muted"${p.retired ? ` title="${esc(when(p.retired, tz))}"` : ""}>Retired${p.retired ? ` ${esc(ago(p.retired))}` : ""}${until ? `; ${esc(until)}` : ""}</div>`;
+}
 
 function profileRow(p, csrf, tz, stats, { admin, third, inPool, busy = "", tags = [] }) {
-  const shown = busy === "pause" ? "paused" : busy === "resume" ? "active" : p.status;
-  const status = `<span class="pill${shown === "paused" ? " paused" : ""}">${esc(shown)}</span>`
+  const shown = busy === "pause" ? "paused" : busy === "resume" ? "active" : busy === "retire" ? "retired" : p.status;
+  const retired = shown === "retired";
+  const status = `<span class="pill${shown === "paused" ? " paused" : retired ? " retired" : ""}">${esc(shown)}</span>`
     + (busy ? ` ${savingTag(QUICK_ACTIONS[busy])}` : "")
     + (p.scanning ? ' <span class="pill scanning">scanning now</span>' : "");
   const remove = admin ? binButton(`del-${p.id}`, `Delete ${p.name}`) : "";
@@ -384,9 +397,9 @@ function profileRow(p, csrf, tz, stats, { admin, third, inPool, busy = "", tags 
   return `<tr${inPool ? ' class="inpool"' : ""}><td><div class="who">${pick}<span class="avatar" aria-hidden="true">${esc(initials(p.name))}</span><div>
 <b>${esc(p.name)}</b>${cv}${tagPills(tags)}<div class="muted">${esc(p.email || "")}</div>${joined}
 <div class="rowlinks"><a class="small" href="/admin/profile?u=${esc(p.id)}">Manage</a>${statsLink(p, stats, tz)}</div></div></div></td>
-<td>${status}${whenTip(p.last_run, tz, "Last report")}${schedule(p)}</td>
+<td>${status}${retired ? retiredNote(p, tz) : `${whenTip(p.last_run, tz, "Last report")}${schedule(p)}`}</td>
 ${third === null ? "" : `<td>${third}</td>`}
-<td><div class="rowacts">${sendButton(p, csrf, {}, "Send jobs")}${toggleButton({ ...p, status: shown }, csrf)}${remove}</div></td></tr>`;
+<td><div class="rowacts">${retired ? "" : sendButton(p, csrf, {}, "Send jobs") + toggleButton({ ...p, status: shown }, csrf)}${remove}</div></td></tr>`;
 }
 
 // The ticked rows' checkboxes belong to this form (form="bulk"), so it needs no script. Where the browser
@@ -398,6 +411,8 @@ input.pick{width:18px;height:18px;margin:0 2px 0 0;flex:none;accent-color:var(--
 border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:0 12px 30px -18px rgba(15,23,42,.5)}
 .bulkbar select{width:auto;min-width:0;max-width:170px;padding:6px 8px;font-size:13.5px}
 .bulkbar .count::before{content:counter(picked) " ticked"}.bulkbar .count{font-weight:700;margin-right:4px}
+.bulkbar .redbtn{margin-left:auto}
+.pill.retired{background:#f1f5f9;color:#64748b}.pill.retired::before{background:#94a3b8;animation:none}
 @supports selector(:has(a)){.bulkbar{display:none}body:has(input.pick:checked) .bulkbar{display:flex}}
 @supports not selector(:has(a)){.bulkbar .count{display:none}}
 `;
@@ -410,7 +425,14 @@ function bulkBar(s, recs) {
   return `<form id="bulk" method="post" action="/admin/action" class="bulkbar"><input type="hidden" name="csrf" value="${esc(s.csrf)}"><input type="hidden" name="action" value="bulk">
 <span class="count"></span><span class="muted">Up to ${MAX_BULK} at a time:</span>
 <button class="small quiet" name="op" value="pause">Pause</button><button class="small quiet" name="op" value="resume">Resume</button>
-<button class="small quiet" name="op" value="send_now">Send jobs now</button>${assign}</form>`;
+<button class="small quiet" name="op" value="send_now">Send jobs now</button>${assign}
+<a class="redbtn" href="#bulk-retire">${RETIRE_ICON}Retire</a></form>`;
+}
+
+// The bulk bar's Retire: a confirm window whose tick box and button belong to the bulk form, so it takes the ticked rows.
+function bulkRetireModal() {
+  return deleteModal({ id: "bulk-retire", title: "Retire the ticked recruits?", intro: RETIRE_INTRO, form: "bulk", op: "retire",
+    check: "Retire them and email each one to choose what happens to their data", label: "Retire", icon: RETIRE_ICON });
 }
 
 // "N done, M skipped" after a bulk change, from the counts in the redirect.
@@ -469,6 +491,7 @@ async function dashboard(request, env, s) {
     tags: tagsOf[p.id] || [] })), ...signups.map((p) => ({ p, rec: p.recruiter, tags: [] }))];
   const shown = all.filter(({ p, rec, tags }) => matchesProfile({ ...p, tags }, q, byId.get(rec)) && matchesStatus(p, only)
     && (!tag || tags.includes(tag)));
+  const retiredCount = all.filter(({ p }) => p.status === "retired").length;
   const hits = lead ? recruiterHits(recs, q, new Set(shown.map((e) => e.rec).filter(Boolean))) : [];
   const row = (e, inPool) => {
     const third = lead ? recruiterCell(e.p, e.rec, recs, s.csrf, admin) : null;
@@ -490,7 +513,7 @@ async function dashboard(request, env, s) {
 ${lastUpdate(current, waiting, presence, admin)}
 ${quick.length ? waitBar(quick.length === 1 ? "the change" : `${quick.length} changes`, refresh) : ""}
 ${admin ? `${pullNotice(current)}${problems(current)}${checklist(current)}` : ""}
-${all.length ? searchBar(q, shown.length, all.length, tasks, only) : tasks ? `<div class="tabletools"><span></span><div class="tools">${tasks}</div></div>` : ""}
+${all.length ? searchBar(q, shown.length, all.length - retiredCount, tasks, only, retiredCount) : tasks ? `<div class="tabletools"><span></span><div class="tools">${tasks}</div></div>` : ""}
 ${tagFilter(tag, shown.length)}
 <table class="list stack recruits"><tr class="head"><th>Recruit</th><th>Status</th>${lead ? "<th>Recruiter</th>" : ""}<th></th></tr>
 ${rows}</table>
@@ -498,7 +521,8 @@ ${shown.some(({ p }) => !p.pending) ? bulkBar(s, recs) : ""}
 ${inviteForm(s, recs)}
 ${inviteRows ? `<table class="list">${inviteRows}</table>` : ""}
 `,
-  { wide: "full", refresh, before: (admin ? tasksModal() : "") + passwordModal(s.me, s.csrf, env) + deletes,
+  { wide: "full", refresh, before: (admin ? tasksModal() : "") + passwordModal(s.me, s.csrf, env) + deletes
+    + (shown.some(({ p }) => !p.pending) ? bulkRetireModal() : ""),
     headers: admin ? { "Content-Security-Policy": `${CSP}; frame-src 'self'` } : {} });
 }
 
@@ -670,11 +694,11 @@ async function action(request, env, s) {
   const act = String(form.get("action") || "");
   const u = String(form.get("u") || "");
   if (!mayDo(s.me, act)) return page(...ADMINS_ONLY);
-  if (["assign", "pause", "resume", "delete", "send_now"].includes(act) && !PROFILE_RE.test(u)) {
+  if (["assign", "pause", "resume", "delete", "send_now", "retire"].includes(act) && !PROFILE_RE.test(u)) {
     return page("Unknown recruit", "<p>Reload the admin page and try again.</p>", { status: 400 });
   }
   const current = await status(env);
-  if (["pause", "resume", "send_now", "profile", "delete"].includes(act) && !allowed(s, current, u)) return page(...NOT_FOUND);
+  if (["pause", "resume", "send_now", "profile", "delete", "retire"].includes(act) && !allowed(s, current, u)) return page(...NOT_FOUND);
   if (act === "assign" && !s.me.admin && !allowed(s, current, u)) return page(...NOT_FOUND);
   const recs = recruitersFor(s.me, s.acc, current, env);
   if (act === "invite") {
@@ -732,23 +756,38 @@ async function action(request, env, s) {
     await queueItem(env, item, setting.ttl);
     return redirect(`${back}queued${anchor}`);
   }
+  const retired = (current.profiles || []).find((x) => x.id === u)?.status === "retired";
+  const back = form.get("back") === "profile" ? `/admin/profile?u=${u}&done=` : "/admin?done=";
+  if (act === "retire") {
+    if (form.get("confirm") !== "yes") return redirect(`${back}retireconfirm`);
+    if (!retired) {
+      await queueItem(env, { type: "admin", action: act, u });
+      await record(env, u, "retire", "Retired: no more reports, and emailed to choose what happens to their data", by);
+    }
+    return redirect(`${back}retiring`);
+  }
   if (act === "delete") {
     if (form.get("confirm") !== "yes") return redirect("/admin?done=confirm");
     await queueItem(env, { type: "admin", action: act, u });
     await purgeProfileEvents(env, u);
+  } else if (act === "pause" && retired) {
+    return redirect(`${back}nochange`);
   } else if (["pause", "resume"].includes(act)) {
     await queueItem(env, { type: "admin", action: act, u });
-    await record(env, u, act, act === "pause" ? "Paused reports" : "Resumed reports", by);
+    await record(env, u, act, retired ? "Reactivated: reports start again" : act === "pause" ? "Paused reports" : "Resumed reports", by);
+    if (retired) return redirect(`${back}reactivating`);
   } else {
     return page("Unknown action", "<p>Reload the admin page and try again.</p>", { status: 400 });
   }
   return redirect("/admin?done=queued");
 }
 
-const BULK_HISTORY = { send_now: ["send", "Asked for jobs now"], pause: ["pause", "Paused reports"], resume: ["resume", "Resumed reports"] };
+const BULK_HISTORY = { send_now: ["send", "Asked for jobs now"], pause: ["pause", "Paused reports"], resume: ["resume", "Resumed reports"],
+  retire: ["retire", "Retired: no more reports, and emailed to choose what happens to their data"] };
 
-// One queue item for the ticked recruits the user may change. Skipped: anyone else, anyone already paused or
-// active as asked, already that recruiter's, or asked for jobs in the last minute.
+// One queue item for the ticked recruits the user may change. Skipped: anyone else, anyone retired (Reactivate is
+// on their page), anyone already paused or active as asked, already that recruiter's, or asked for jobs in the
+// last minute. Retiring needs the confirm window's tick box.
 async function bulkAction(env, s, form, current, recs, by) {
   const op = String(form.get("op") || "");
   if (!BULK_OPS.has(op)) return page("Unknown action", "<p>Reload the admin page and try again.</p>", { status: 400 });
@@ -756,9 +795,10 @@ async function bulkAction(env, s, form, current, recs, by) {
   const picked = [...new Set(form.getAll("u").map(String))];
   if (!picked.length) return redirect("/admin?done=bulknone");
   if (picked.length > MAX_BULK) return redirect("/admin?done=bulkmany");
+  if (op === "retire" && form.get("confirm") !== "yes") return redirect("/admin?done=retireconfirm");
   const recruiter = op === "assign" ? String(form.get("recruiter") || "") : "";
   if (op === "assign" && (recruiter || !s.me.admin) && !recs.some((r) => r.id === recruiter)) return redirect("/admin?done=badrecruiter");
-  let todo = picked.filter((u) => PROFILE_RE.test(u)).map((u) => visible(s, current, u)).filter((p) => p
+  let todo = picked.filter((u) => PROFILE_RE.test(u)).map((u) => visible(s, current, u)).filter((p) => p && p.status !== "retired"
     && !(op === "pause" && p.status === "paused") && !(op === "resume" && p.status === "active")
     && !(op === "assign" && String(p.recruiter || "") === recruiter));
   if (op === "send_now") {
@@ -1079,6 +1119,14 @@ export async function handleApi(request, env) {
   if (url.pathname === "/api/cv" && request.method === "POST") return storeProfileCv(request, env);
   // A job emailed to its profile from the list of jobs sent (job_mail.py), for its "Emailed" mark there.
   if (url.pathname === "/api/emailed" && request.method === "POST") return markEmailed(request, env);
+  // A retired recruit HermitShell has deleted for good (profiles.py erase): what the Worker keeps of them goes too.
+  if (url.pathname === "/api/forget" && request.method === "POST") {
+    const body = (await limitedJson(request, 1000)) || {};
+    const u = typeof body.u === "string" ? body.u : "";
+    if (!PROFILE_RE.test(u) || u === "owner") return json({ error: "bad profile" }, 400);
+    await purgeProfileEvents(env, u);
+    return json({ deleted: true });
+  }
   if (url.pathname === "/api/invite" && request.method === "POST") {
     const body = (await limitedJson(request, 10000)) || {};
     const invite = await createInvite(env, body.note || "");

@@ -34,6 +34,7 @@ const PATHS = {
   download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/>',
   note: '<path d="M5 4h14v11l-5 5H5z"/><path d="M14 20v-5h5M8.5 9h7M8.5 12.5h4"/>',
   stage: '<rect x="3.5" y="4" width="4.5" height="16" rx="1.5"/><rect x="9.75" y="4" width="4.5" height="10" rx="1.5"/><rect x="16" y="4" width="4.5" height="6" rx="1.5"/>',
+  retire: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 19.5c.6-3.2 3-5 6.5-5s5.9 1.8 6.5 5M16 11h6"/>',
 };
 // Each kind of event: its icon and colour.
 const KINDS = {
@@ -41,7 +42,7 @@ const KINDS = {
   report: ["send", "violet"], pause: ["pause", "amber"], resume: ["play", "green"], assign: ["person", "teal"],
   cv: ["doc", "blue"], cv_read: ["doc", "blue"], cover_letter: ["doc", "brand"], tailored_cv: ["doc", "brand"], interview_prep: ["doc", "brand"], profile_cv: ["doc", "green"],
   send_job: ["mail", "brand"], skill: ["star", "amber"], answer: ["reply", "slate"], cancel: ["cross", "slate"],
-  note: ["note", "teal"], stage: ["stage", "green"],
+  note: ["note", "teal"], stage: ["stage", "green"], retire: ["retire", "slate"],
 };
 
 function clean(value, max) {

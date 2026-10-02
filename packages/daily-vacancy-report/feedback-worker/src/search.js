@@ -4,7 +4,8 @@
 // name or username, contain every word and who have that status. A recruiter the words point at is listed first,
 // as a row of its own, followed by their recruits: "sam job" lists the recruiter Sam Job and all of their
 // recruits, "sam job riley" only Riley under Sam Job. Picking a status sends the form by itself where scripts run;
-// without them a Show button appears once the pick differs from the one the page was sent with.
+// without them a Show button appears once the pick differs from the one the page was sent with. Retired recruits
+// are left out unless Retired is picked, so the list stays the people being worked with.
 
 import { esc } from "./lib.js";
 
@@ -16,6 +17,7 @@ export const STATUSES = {
   scanning: { label: "Scanning now", match: (p) => !p.pending && Boolean(p.scanning) },
   nocv: { label: "No CV", match: (p) => !p.pending && p.has_cv === false },
   pending: { label: "Pending sign-up", match: (p) => Boolean(p.pending) },
+  retired: { label: "Retired", match: (p) => !p.pending && p.status === "retired" },
 };
 
 export function searchQuery(url) {
@@ -29,7 +31,7 @@ export function statusQuery(url) {
 }
 
 export function matchesStatus(p, s) {
-  return !s || STATUSES[s].match(p);
+  return s === "retired" ? STATUSES.retired.match(p) : p.status !== "retired" && (!s || STATUSES[s].match(p));
 }
 
 const words = (q) => q.toLowerCase().split(" ").filter(Boolean);
@@ -69,9 +71,12 @@ function initialsOf(name) {
 const LENS = `<svg class="lens" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
 <circle class="glass" cx="10.5" cy="10.5" r="6.5"/><path class="shine" d="M7.4 9.2a3.4 3.4 0 0 1 2.4-2.3" pathLength="1"/><path d="m15.4 15.4 4.6 4.6"/></svg>`;
 
-export function searchBar(q, shown, total, tools = "", status = "") {
+// `total` counts the recruits not retired, and `retired` the others, linked to when they are left out.
+export function searchBar(q, shown, total, tools = "", status = "", retired = 0) {
   const narrowed = q || status;
-  const count = narrowed ? `${shown} of ${total} recruit${total === 1 ? "" : "s"}` : `${total} recruit${total === 1 ? "" : "s"}`;
+  const [of, noun] = status === "retired" ? [retired, "retired"] : [total, `recruit${total === 1 ? "" : "s"}`];
+  const count = (narrowed ? `${shown} of ${of} ${noun}` : `${of} ${noun}`)
+    + (retired && status !== "retired" ? ` <a class="retiredlink" href="/admin?s=retired">${retired} retired</a>` : "");
   const options = [["", "Any status"], ...Object.entries(STATUSES).map(([k, v]) => [k, v.label])]
     .map(([k, label]) => `<option value="${k}"${k === status ? " selected" : ""}>${label}</option>`).join("");
   return `<div class="tabletools"><span class="count">${count}</span><div class="tools">${tools}
@@ -93,6 +98,7 @@ export function noMatch(q, status = "") {
 export const SEARCH_STYLE = `
 .tabletools{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:22px 0 10px}
 .tabletools .count{font-size:12px;font-weight:650;color:var(--muted);background:#f0f2f8;border-radius:99px;padding:4px 12px}
+.tabletools .retiredlink{margin-left:6px;color:#64748b;text-decoration:underline dotted;text-underline-offset:3px}
 form.search{display:flex;align-items:center;gap:10px;margin:0;position:relative}
 #profile-search{width:0;min-width:0;height:40px;box-sizing:border-box;padding:0;border-color:transparent;background:transparent;opacity:0;
 border-radius:13px;transition:width .35s var(--ease),padding .35s var(--ease),opacity .25s,border-color .2s,background .2s}

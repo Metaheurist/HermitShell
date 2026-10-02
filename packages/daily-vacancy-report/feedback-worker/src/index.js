@@ -8,7 +8,8 @@
 // A confirmed "cover_letter" answer is a request: HermitShell's cover_letter.py polls every few minutes,
 // writes the letter on the HermitShell server and emails it as a PDF. "add_skill" links carry the job's
 // missing skills (signed, parameter s); the ones you tick, plus any you type, join your skills pool.
-// Links for extra profiles carry the profile id (signed, parameter u); "unsubscribe" removes one.
+// Links for extra profiles carry the profile id (signed, parameter u); "unsubscribe" removes one. "retire", in the
+// email a retired recruit gets (profiles.py retire()), lets them keep their profile for a while or delete it now.
 // Every link also carries its issue day (signed, parameter d) and stops working after LINK_DAYS.
 // Invite sign-ups (/join), the admin gateway (/admin) and recruits' own page (/me) are in join.js, admin.js and me.js.
 
@@ -45,7 +46,10 @@ export const ACTIONS = {
   tailored_cv: "Tailored CV",
   add_skill: "Add to my skills",
   unsubscribe: "Unsubscribe",
+  retire: "Keep or delete your data",
 };
+// A retired recruit's choices (profiles.py RETIRE_KEEP_MONTHS): months to keep their profile, or delete it now.
+const KEEP_MONTHS = [6, 12, 24];
 const PLACEHOLDERS = {
   not_for_me: "Why not? For example: too senior, needs travel, wrong tech stack",
   rejected: "Anything they said (optional)",
@@ -77,7 +81,7 @@ function skillList(packed) {
 async function validLink(env, p) {
   const day = Number(p.d);
   if (!env.JOB_FEEDBACK_SECRET || !ACTIONS[p.a] || !p.j || p.j.length > 300 || (p.n || "").length > MAX_TITLE ||
-      (p.s || "").length > (MAX_SKILL + 1) * MAX_SKILLS || (p.a === "add_skill") !== Boolean(p.s) ||
+      (p.s || "").length > (MAX_SKILL + 1) * MAX_SKILLS || (p.a === "add_skill") !== Boolean(p.s) || (p.a === "retire" && !p.u) ||
       (p.u && !PROFILE_RE.test(p.u)) || !/^\d{1,6}$/.test(p.d || "") || day > today() + 1 ||
       LINK_FIELDS.some((k) => CONTROL_RE.test(p[k] || ""))) {
     return false;
@@ -131,6 +135,51 @@ function unsubscribePage(p, hidden) {
 <p style="font-size:13px">Nothing changes until you press Confirm.</p>`);
 }
 
+// The recruit `u` as last reported, while they are retired; null once reactivated (or gone).
+async function retiredProfile(env, u) {
+  const status = await env.FEEDBACK.get("status:profiles", "json");
+  return (Array.isArray(status?.profiles) ? status.profiles : []).find((x) => x?.id === u && x.status === "retired") || null;
+}
+
+const NOT_RETIRED = ["Nothing to choose", "<p>Your account is active again, so there is nothing to choose about your data. You can close this tab.</p>"];
+const RETIRE_STYLE = `
+fieldset{border:0;margin:14px 0 4px;padding:0}legend{font-weight:700;margin-bottom:8px}
+.choice{margin:8px 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--field);align-items:flex-start}
+.choice:has(input:checked){border-color:#a5b4fc;background:var(--soft)}
+.choice small{display:block;margin-top:3px;color:var(--muted);font-weight:450;line-height:1.45}
+.choice.gone:has(input:checked){border-color:#f87171;background:#fef2f2}
+`;
+
+function retirePage(p, hidden, r) {
+  const until = r.keep_until ? new Date(r.keep_until).toISOString().slice(0, 10) : "";
+  const now = r.keep_months || 0;
+  const keep = KEEP_MONTHS.map((m) => `<label class="check choice"><input type="radio" name="k" value="${m}"${m === (now || KEEP_MONTHS[0]) ? " checked" : ""}>
+<span><b>Keep it for ${m} months</b><small>Your profile, CV and job history stay, so your recruiter can pick up where you left off. Then they are deleted, backups included.</small></span></label>`).join("");
+  return page(ACTIONS.retire, `<style>${RETIRE_STYLE}</style><p>Your account${p.n ? ` (<b>${esc(p.n)}</b>)` : ""} is retired, so you get no more job reports.</p>
+<p>${now ? `You chose to keep it for ${now} months: it is kept until <b>${esc(until)}</b>.` : until ? `Unless you choose, it is kept until <b>${esc(until)}</b>, then deleted, backups included.` : ""}</p>
+<form method="post" action="/f">${hidden}<fieldset><legend>What should happen to your data?</legend>${keep}
+<label class="check choice gone"><input type="radio" name="k" value="delete"><span><b>Delete everything now</b><small>Your profile, your CV, the jobs found for you, your answers, letters and CVs, from HermitShell and from every one of its backups. This can't be undone.</small></span></label></fieldset>
+<button type="submit">Confirm my choice</button></form>
+<p style="font-size:13px">Nothing changes until you press Confirm. <a href="/privacy">How your data is handled</a>.</p>`);
+}
+
+// The retired recruit's choice: queued for HermitShell with the link's issue day, so a link from an earlier
+// retirement does nothing; deleting drops what this Worker keeps of them at once.
+async function saveRetireChoice(form, env, p) {
+  if (!(await retiredProfile(env, p.u))) return page(...NOT_RETIRED);
+  const k = String(form.get("k") || "");
+  const keep = k === "delete" ? 0 : KEEP_MONTHS.find((m) => String(m) === k);
+  if (keep === undefined) return page("Nothing chosen", "<p>Pick one of the choices. Use your browser's Back button to try again.</p>", { status: 400 });
+  await queueItem(env, { type: "retire_choice", u: p.u, keep, d: Number(p.d) });
+  if (!keep) {
+    await purgeProfileEvents(env, p.u);
+    return page("Deleting your data", "<p>Done. HermitShell deletes your profile, CV and history within about 5 minutes, removes them from every backup within a day, and emails you when it has.</p><p>You can close this tab.</p>");
+  }
+  await record(env, p.u, "retire", `Chose to keep their profile for ${keep} months`, { via: "email" });
+  return page("Saved", `<p>HermitShell keeps your profile for ${keep} months from today, then deletes it, backups included. It emails you to confirm.</p>
+<p>Changed your mind? Use the link in the email again. You can close this tab.</p>`);
+}
+
 // A letter or CV made for this job in the last few days: download it, or write a new one.
 function readyPage(p, hidden, kept) {
   const what = p.a === "cover_letter" ? "cover letter" : "tailored CV";
@@ -151,6 +200,10 @@ async function confirmPage(p, env) {
     .map((k) => `<input type="hidden" name="${k}" value="${esc(p[k])}">`).join("");
   if (p.a === "add_skill") return skillPage(p, hidden);
   if (p.a === "unsubscribe") return unsubscribePage(p, hidden);
+  if (p.a === "retire") {
+    const r = await retiredProfile(env, p.u);
+    return r ? retirePage(p, hidden, r) : page(...NOT_RETIRED);
+  }
   const kept = DOC_KINDS[p.a] ? await docFor(env, (await answerProfile(env, p)) || OWNER_ID, p.a, p.j) : null;
   if (kept) return readyPage(p, hidden, kept);
   const placeholder = PLACEHOLDERS[p.a] || "Anything worth remembering (optional)";
@@ -192,6 +245,7 @@ async function saveAnswer(form, env) {
   const problem = await checkLink(env, p);
   if (problem) return problem;
   p.r = cleanReason(p.r);
+  if (p.a === "retire") return saveRetireChoice(form, env, p);
   if (p.a === "unsubscribe") {
     await queueItem(env, { type: "unsubscribe", u: p.u, reason: p.r });
     if (p.u) await purgeProfileEvents(env, p.u);

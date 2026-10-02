@@ -241,7 +241,7 @@ h2{font-size:16px;letter-spacing:-.01em;margin:32px 0 10px;font-weight:700}
 p{color:var(--text);margin:10px 0}
 a{color:var(--brand-ink);text-underline-offset:3px;text-decoration-thickness:1px;transition:color var(--t-fast)}a:hover{color:var(--brand2)}
 label{display:block;font-size:13.5px;font-weight:650;margin:16px 0 6px;color:var(--ink)}
-textarea,select,input:not([type=checkbox]):not([type=hidden]):not([type=submit]):not([type=file]){width:100%;border:1px solid var(--line);
+textarea,select,input:not([type=checkbox],[type=radio]):not([type=hidden]):not([type=submit]):not([type=file]){width:100%;border:1px solid var(--line);
 border-radius:12px;padding:11px 13px;font:inherit;color:var(--ink);background:var(--field);
 transition:border-color var(--t-fast),box-shadow var(--t-fast),background var(--t-fast)}
 input[type=file]{width:100%;font:inherit;font-size:14px;color:var(--muted);padding:10px;border:1px dashed #cdd3e1;border-radius:12px;
@@ -249,12 +249,12 @@ background:var(--field);transition:border-color var(--t-fast),background var(--t
 input[type=file]:hover{border-color:var(--brand);background:#fff}
 input[type=file]::file-selector-button{font:inherit;font-size:13px;font-weight:650;border:0;border-radius:9px;padding:7px 12px;
 margin-right:12px;background:var(--soft);color:var(--brand-ink);cursor:pointer}
-textarea:hover,select:hover,input:not([type=checkbox]):not([type=file]):hover{border-color:#c9cfe0}
-textarea:focus,select:focus,input:not([type=checkbox]):focus{outline:0;border-color:var(--brand);background:#fff;
+textarea:hover,select:hover,input:not([type=checkbox],[type=radio]):not([type=file]):hover{border-color:#c9cfe0}
+textarea:focus,select:focus,input:not([type=checkbox],[type=radio]):focus{outline:0;border-color:var(--brand);background:#fff;
 box-shadow:0 0 0 4px rgba(99,102,241,.15)}
 textarea{min-height:92px;resize:vertical}
 input::placeholder,textarea::placeholder{color:#9aa4b6}
-input[type=checkbox]{width:17px;height:17px;margin:2px 0 0;accent-color:var(--brand);flex:none;cursor:pointer}
+input[type=checkbox],input[type=radio]{width:17px;height:17px;margin:2px 0 0;accent-color:var(--brand);flex:none;cursor:pointer}
 button{margin-top:18px;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;border:0;border-radius:12px;padding:12px 22px;
 font:inherit;font-size:15px;font-weight:650;cursor:pointer;box-shadow:0 8px 20px -8px rgba(99,102,241,.75),inset 0 1px 0 rgba(255,255,255,.2);
 transition:transform var(--t-fast) var(--ease),box-shadow var(--t-fast),filter var(--t-fast)}

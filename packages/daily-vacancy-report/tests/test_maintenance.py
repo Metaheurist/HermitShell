@@ -1,10 +1,12 @@
 """Unit tests for maintenance.py and Tracker.prune: retention, encryption of older files, backups and restores."""
 
 import contextlib
+import io
 import json
 import os
 import sqlite3
 import sys
+import tarfile
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -445,3 +447,125 @@ def test_the_commands_say_when_the_worker_cant_be_reached(worker, monkeypatch):
     monkeypatch.setattr(maintenance.worker_link, "from_env", lambda timeout=30: None)
     with pytest.raises(SystemExit, match="no feedback Worker is set up"):
         maintenance.main(["--fetch", NAME])
+
+
+# --------------------------------------------------------------------------- removing deleted people from the backups
+
+SAM = {"id": "sam-lee-1", "name": "Sam Lee", "email": "sam@example.com"}
+
+
+def tar_of(files: dict[str, str]) -> bytes:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name, text in files.items():
+            raw = text.encode("utf-8")
+            info = tarfile.TarInfo(name)
+            info.size = len(raw)
+            tar.addfile(info, io.BytesIO(raw))
+    return buf.getvalue()
+
+
+def files_of(data: bytes) -> dict[str, str]:
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+        return {m.name: tar.extractfile(m).read().decode("utf-8") for m in tar.getmembers() if m.isfile()}
+
+
+def with_sam(state: Path) -> None:
+    aged(state / "profiles" / SAM["id"] / "cv.txt", 1, "Sam Lee, data analyst")
+    aged(state / "profiles" / "riley-chen-2" / "cv.txt", 1, "Riley Chen")
+    aged(state / "profiles.log", 1, "Profile sam-lee-1 retired\nSent to SAM@example.com for Sam  Lee\nRiley Chen ran\n")
+
+
+def test_an_archive_loses_their_folders_and_their_name_in_its_logs(tmp_path):
+    data = tar_of({"scripts/state/profiles/sam-lee-1/cv.txt": "Sam Lee", "state/profiles/sam-lee-1/profile.json": "{}",
+                   "scripts/state/profiles/sam-lee-10/cv.txt": "Sam Leeson", "scripts/state/profiles.log": "Sam Lee left\nother\n",
+                   "scripts/state/forget_backups.json": "[]", "scripts/state/notes.txt": "Sam Lee stays in non-log files"})
+    rx = profiles.scrub_pattern([SAM["email"], SAM["name"], SAM["id"]])
+    files = files_of(maintenance.forget_in_archive(data, {SAM["id"]}, rx))
+    assert sorted(files) == ["scripts/state/notes.txt", "scripts/state/profiles.log", "scripts/state/profiles/sam-lee-10/cv.txt"]
+    assert files["scripts/state/profiles.log"] == "[deleted] left\nother\n"
+    assert maintenance.forget_in_archive(tar_of({"scripts/state/other.log": "Riley Chen"}), {SAM["id"]}, rx) is None
+
+
+def test_the_list_of_people_to_remove_is_sealed_and_never_backed_up(tree, monkeypatch):
+    pytest.importorskip("cryptography")
+    _, _, state = tree
+    monkeypatch.setenv(hc.DATA_KEY_ENV, hc.new_data_key())
+    maintenance.queue_forget(SAM)
+    path = state / maintenance.FORGET_FILE
+    assert hc.is_sealed(path) and b"sam@example.com" not in path.read_bytes()
+    assert maintenance._forgets()[0]["terms"] == ["sam@example.com", "Sam Lee", "sam-lee-1"]
+    assert maintenance._skipped(path)
+    hc.write_private(path, json.dumps([{"u": "../x", "terms": []}, "junk", {"u": "riley-chen-2"}]))
+    assert [f["u"] for f in maintenance._forgets()] == ["riley-chen-2"]
+
+
+def test_nobody_waiting_leaves_the_backups_alone(tree):
+    assert maintenance.forget_backups() == "forget: nobody to remove from the backups"
+
+
+def test_a_deleted_recruit_leaves_every_backup_here_and_on_the_worker(worker):
+    state = maintenance.STATE_DIR
+    with_sam(state)
+    maintenance.make_backup(datetime(2026, 10, 1, 3, 15))
+    first = maintenance.list_backups()[0]
+    first.unlink()
+    maintenance.make_backup(datetime(2026, 10, 2, 3, 15))
+    before = {n: f["sha"] for n, f in worker.files.items()}
+    assert len(before) == 2
+    maintenance.queue_forget(SAM)
+    summary = maintenance.forget_backups()
+    assert summary == "forget: 1 deleted person removed from 1 backup(s) here and 2 on the feedback Worker"
+    for data in [maintenance.list_backups()[0].read_bytes()] + [f["parts"][0] for f in worker.files.values()]:
+        assert data.startswith(hc.SEALED)
+        files = files_of(hc.unseal(data))
+        assert not [n for n in files if "sam-lee-1" in n] and any("riley-chen-2" in n for n in files)
+        log = next(v for n, v in files.items() if n.endswith("profiles.log"))
+        assert "sam" not in log.lower() and "Riley Chen ran" in log
+    assert all(worker.files[n]["sha"] != sha for n, sha in before.items())
+    assert not (state / maintenance.FORGET_FILE).exists()
+    assert maintenance.forget_backups() == "forget: nobody to remove from the backups"
+
+
+def test_an_off_server_failure_keeps_them_waiting_for_the_next_run(worker, monkeypatch):
+    with_sam(maintenance.STATE_DIR)
+    maintenance.make_backup(datetime(2026, 10, 1, 3, 15))
+    maintenance.queue_forget(SAM)
+
+    def refused(*_a, **_k):
+        raise maintenance.worker_link.WorkerError("feedback Worker answered HTTP 507")
+
+    monkeypatch.setattr(worker, "request", refused)
+    summary = maintenance.forget_backups()
+    assert summary.startswith("forget: 1 deleted person removed from 1 backup(s) here and 0 on the feedback Worker; will retry: off-server")
+    assert "https://" not in summary
+    assert [f["u"] for f in maintenance._forgets()] == ["sam-lee-1"]
+
+
+def test_without_off_server_copies_only_the_local_backups_are_cleaned(worker, monkeypatch):
+    monkeypatch.setenv("HERMES_BACKUP_OFFSITE", "off")
+    with_sam(maintenance.STATE_DIR)
+    maintenance.make_backup(datetime(2026, 10, 1, 3, 15))
+    maintenance.queue_forget(SAM)
+    assert maintenance.forget_backups().startswith("forget: 1 deleted person removed from 1 backup(s) here (off-server copies: ")
+    assert worker.calls == [] and maintenance._forgets() == []
+
+
+def test_forget_backups_now_waits_for_the_nightly_run_and_logs_the_outcome(tree, monkeypatch):
+    free = []
+
+    @contextlib.contextmanager
+    def lock(_path):
+        yield bool(free)
+
+    logged, naps = [], []
+    monkeypatch.setattr(maintenance, "log", logged.append)
+    monkeypatch.setattr(hc, "run_lock", lock)
+    assert maintenance.forget_backups_now(wait=(3, 7), sleep=naps.append) == 0
+    assert naps == [7, 7, 7] and "nightly run removes them" in logged[-1]
+    free.append(True)
+    assert maintenance.forget_backups_now(wait=(1, 0), sleep=naps.append) == 0
+    assert logged[-1] == "forget: nobody to remove from the backups"
+    monkeypatch.setattr(maintenance, "forget_backups", lambda: (_ for _ in ()).throw(OSError("disk full")))
+    assert maintenance.forget_backups_now(wait=(1, 0), sleep=naps.append) == 1
+    assert logged[-1] == "forget failed: OSError: disk full"

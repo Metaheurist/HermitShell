@@ -52,7 +52,10 @@ account and, when the operator has turned encryption on, your CV, profile, lette
 letters and tailored CVs from the server, drops anything still waiting on Cloudflare and your history and the notes
 about you there, removes your name and email
 address from the logs and emails you a confirmation. Copies in the encrypted backups disappear as those backups are
-rotated out. For a copy of your data (including the notes kept about you, which your own page doesn't show) or a
+rotated out. If your recruiter retires your account, your reports stop and you are emailed a link to choose: keep your
+profile for 6, 12 or 24 months in case you look for work again, or delete it now. If you don't choose it is
+kept for 6 months. When it is deleted, your choice or once the time is up, it is also removed from every
+backup, on the server and on Cloudflare, within a day. For a copy of your data (including the notes kept about you, which your own page doesn't show) or a
 correction, reply to any report.`],
 ];
 

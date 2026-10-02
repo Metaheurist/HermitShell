@@ -1924,3 +1924,176 @@ def test_run_child_notes_the_scan_process_in_the_marker(home):
     done = profiles.run_child([sys.executable, "-c", "raise SystemExit(3)"], {**profiles.os.environ, "JOB_SCAN_MARKER": str(marker)},
                               home[0], 60)
     assert done.returncode == 3 and profiles.read_json(marker, {})["child"] > 1
+
+
+# --------------------------------------------------------------------------- retiring
+
+class ForgetApi(FakeApi):
+    def __init__(self, items=None, fail=False):
+        super().__init__(items)
+        self.forgotten, self.fail = [], fail
+
+    def forget(self, pid):
+        if self.fail:
+            raise requests.ConnectionError("https://feedback.example.com/api/forget")
+        self.forgotten.append(pid)
+
+
+SAM_ID = "sam-lee-456789"
+
+
+@pytest.fixture
+def retiring(home, monkeypatch):
+    import maintenance
+    monkeypatch.setattr(maintenance, "STATE_DIR", home[0] / "state")
+    started = []
+    monkeypatch.setattr(profiles, "_background", lambda cmd, spawn=None: started.append(cmd))
+    return maintenance, started
+
+
+def retired_sam(retiring, **extra):
+    profiles.sync(FakeApi([signup()]))
+    report = profiles.sync(FakeApi([admin("retire", SAM_ID, **extra)]))
+    assert report == [f"admin: done ({SAM_ID})"]
+    return profiles.load(SAM_ID)
+
+
+def link_in(text):
+    from urllib.parse import parse_qs, urlsplit
+    url = next(w for w in text.split() if "/f?" in w)
+    return {k: v[0] for k, v in parse_qs(urlsplit(url).query).items()}
+
+
+def choice(keep, day=None, u=SAM_ID, n=3):
+    return {"id": f"queue:{n}:c{n}", "type": "retire_choice", "u": u, "keep": keep,
+            "d": int(profiles.time.time() // 86400) if day is None else day}
+
+
+def test_retiring_stops_reports_and_emails_a_signed_link_to_keep_or_delete(home, retiring):
+    _, sent = home
+    before = profiles.time.time()
+    sent.clear()
+    sam = retired_sam(retiring)
+    assert sam["status"] == "retired" and before <= sam["retired_at"] <= profiles.time.time()
+    assert abs(sam["keep_until"] - sam["retired_at"] - 6 * profiles.MONTH) < 1 and "keep_months" not in sam
+    (mail,) = [m for m in sent if m["subject"].endswith("your account is retired")]
+    assert mail["to"] == "sam@example.com"
+    assert "Keep or delete my data" in mail["html"] and "backups included" in mail["text"]
+    params = link_in(mail["text"])
+    assert (params["j"], params["a"], params["u"], params["n"]) == ("profile", "retire", SAM_ID, "Sam Lee")
+    assert params["t"] and int(params["d"]) == int(profiles.time.time() // 86400)
+    row = next(p for p in profiles.status_payload()["profiles"] if p["id"] == SAM_ID)
+    assert row["status"] == "retired" and row["keep_months"] == 0
+    assert row["retired"] == int(sam["retired_at"] * 1000) and row["keep_until"] == int(sam["keep_until"] * 1000)
+
+
+def test_a_retired_recruit_gets_no_reports_and_only_resume_changes_that(home, retiring):
+    _, started = retiring
+    retired_sam(retiring)
+    report = profiles.sync(FakeApi([admin("retire", SAM_ID, 3), admin("pause", SAM_ID, 4), admin("send_now", SAM_ID, 5),
+                                    {"id": "queue:6:a6", "type": "admin", "action": "bulk", "op": "send_now", "us": [SAM_ID]}]))
+    assert report == ["admin: rejected (already retired)", "admin: rejected (retired: reactivate them first)",
+                      "admin: rejected (retired: reactivate them first)", "admin: rejected (1 of 1 skipped (sam-lee-456789: retired))"]
+    assert not [c for c in started if "report" in c]
+    assert profiles.sync(FakeApi([admin("resume", SAM_ID, 7)])) == [f"admin: done ({SAM_ID})"]
+    sam = profiles.load(SAM_ID)
+    assert sam["status"] == "active" and not {"retired_at", "keep_until", "keep_months"} & set(sam)
+    assert "retired" not in next(p for p in profiles.status_payload()["profiles"] if p["id"] == SAM_ID)
+
+
+def test_the_owner_is_never_retired(home, retiring):
+    assert profiles.sync(FakeApi([admin("retire", "owner")])) == [f"admin: rejected ({profiles.STAFF})"]
+    assert profiles.load("owner")["status"] == "active"
+
+
+@pytest.mark.parametrize("value, expected", [("", 6), ("12", 12), ("99", 36), ("0", 1), ("-4", 1), ("soon", 6)])
+def test_how_long_an_unanswered_retirement_keeps_the_profile_comes_from_the_env(home, monkeypatch, value, expected):
+    monkeypatch.setenv("HERMES_RETIRE_KEEP_MONTHS", value)
+    assert profiles.retire_default_months() == expected
+
+
+def test_keeping_the_profile_sets_their_months_and_emails_the_date(home, retiring):
+    _, sent = home
+    retired_sam(retiring)
+    sent.clear()
+    assert profiles.sync(FakeApi([choice(12)])) == [f"retire_choice: done ({SAM_ID})"]
+    sam = profiles.load(SAM_ID)
+    assert sam["status"] == "retired" and sam["keep_months"] == 12
+    assert abs(sam["keep_until"] - profiles.time.time() - 12 * profiles.MONTH) < 5
+    (mail,) = sent
+    assert mail["to"] == "sam@example.com" and "your profile is kept until" in mail["subject"]
+    assert next(p for p in profiles.status_payload()["profiles"] if p["id"] == SAM_ID)["keep_months"] == 12
+
+
+@pytest.mark.parametrize("item, why", [
+    (dict(keep=7), "not a valid choice"), (dict(keep=True), "not a valid choice"), (dict(keep="12"), "not a valid choice"),
+    (dict(keep=None), "not a valid choice"), (dict(keep=-6), "not a valid choice"),
+    (dict(keep=6, day=1), "a link from before this retirement"), (dict(keep=6, day="20000"), "a link from before this retirement"),
+    (dict(keep=0, u="owner"), "no profile owner"), (dict(keep=0, u="../x"), "no profile ../x"),
+])
+def test_a_choice_that_is_not_one_offered_changes_nothing(home, retiring, item, why):
+    retired_sam(retiring)
+    assert profiles.sync(ForgetApi([choice(**item)])) == [f"retire_choice: rejected ({why})"]
+    assert profiles.load(SAM_ID)["status"] == "retired" and "keep_months" not in profiles.load(SAM_ID)
+    assert profiles.load("owner")
+
+
+def test_a_choice_after_reactivating_changes_nothing(home, retiring):
+    retired_sam(retiring)
+    profiles.sync(FakeApi([admin("resume", SAM_ID, 3)]))
+    api = ForgetApi([choice(0, n=4)])
+    assert profiles.sync(api) == ["retire_choice: rejected (not retired (reactivated since))"]
+    assert profiles.load(SAM_ID)["status"] == "active" and api.forgotten == []
+
+
+def test_deleting_now_removes_them_here_on_the_worker_and_from_the_backups(home, retiring, monkeypatch):
+    tmp, sent = home
+    maintenance, started = retiring
+    retired_sam(retiring)
+    sent.clear()
+    api = ForgetApi([choice(0)])
+    assert profiles.sync(api) == [f"retire_choice: done ({SAM_ID})"]
+    assert not (tmp / "profiles" / SAM_ID).exists() and api.forgotten == [SAM_ID]
+    assert [f["u"] for f in maintenance._forgets()] == [SAM_ID]
+    assert started[-1] == [sys.executable, str(profiles.SCRIPT_DIR / "maintenance.py"), "--forget-backups"]
+    goodbye, note = sent
+    assert goodbye["to"] == "sam@example.com" and goodbye["subject"].endswith("your data is deleted")
+    assert "As you asked" in goodbye["text"] and "every one of its backups" in goodbye["text"]
+    assert note["to"] == "owner@example.com" and "asked for their data to be deleted" in note["text"]
+    assert "sam@example.com" not in note["text"]
+
+
+def test_a_worker_that_cannot_be_told_does_not_stop_the_deletion(home, retiring, capsys):
+    retired_sam(retiring)
+    capsys.readouterr()
+    assert profiles.sync(ForgetApi([choice(0)], fail=True)) == [f"retire_choice: done ({SAM_ID})"]
+    assert profiles.load(SAM_ID) is None
+    logged = capsys.readouterr().err
+    assert "did not drop the deleted profile's data: ConnectionError" in logged and "feedback.example.com" not in logged
+
+
+def test_the_nightly_run_deletes_those_whose_keep_date_has_passed(home, retiring):
+    _, sent = home
+    maintenance, started = retiring
+    retired_sam(retiring)
+    sam = profiles.load(SAM_ID)
+    now = sam["keep_until"] - 60
+    assert profiles.expire_retired(now, ForgetApi()) == 0 and profiles.load(SAM_ID)
+    sent.clear()
+    calls = len(started)
+    api = ForgetApi()
+    assert profiles.expire_retired(sam["keep_until"] + 1, api) == 1
+    assert profiles.load(SAM_ID) is None and api.forgotten == [SAM_ID] and len(started) == calls
+    assert [f["u"] for f in maintenance._forgets()] == [SAM_ID]
+    assert "The time you chose to keep your profile for is up" in sent[0]["text"]
+    assert profiles.expire_retired(sam["keep_until"] + 1, api) == 0
+
+
+def test_the_nightly_run_leaves_active_and_odd_keep_dates_alone(home, retiring):
+    retired_sam(retiring)
+    for until in ("0", None, True, [1]):
+        sam = profiles.load(SAM_ID)
+        sam["keep_until"] = until
+        profiles.save(sam)
+        assert profiles.expire_retired(10 ** 12, ForgetApi()) == 0
+    assert profiles.expire_retired(10 ** 12, ForgetApi()) == 0 and profiles.load("owner")["status"] == "active"

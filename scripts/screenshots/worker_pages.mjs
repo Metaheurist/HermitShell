@@ -398,6 +398,23 @@ await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${
   done_mb: pulling.total_mb, finished: now - 2 * 60000 }) });
 await save("admin-dashboard-model-ready", await admin("/admin"));
 await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: STATUS });
+// Retiring: the confirm window from the bulk bar's red button, the Retire section at the bottom of a recruit's page,
+// then a recruit retired two days ago, listed under Retired, and the page their email's link opens.
+await save("admin-dashboard-bulk-retire", new Response((await (await admin("/admin")).text())
+  .replace(/(value="(?:avery-lane|jordan-patel)" form="bulk")/g, "$1 checked")
+  .replace("</head>", "<style>#bulk-retire{display:grid}</style></head>")));
+await save("admin-profile-retire", new Response((await (await admin("/admin/profile?u=avery-lane")).text())
+  .replace("</head>", "<style>main>:not(.eyebrow):not(h1):not(#retire):not(#retire~*){display:none!important}</style></head>")));
+await save("admin-profile-retire-modal", await withOpenModal("/admin/profile?u=avery-lane", "retire-avery-lane"));
+const jordan = STATUS.profiles.find((p) => p.id === "jordan-patel");
+const withRetired = { ...STATUS, profiles: [...STATUS.profiles, { ...jordan, id: "taylor-reid", name: "Taylor Reid",
+  email: "taylor.reid@example.com", status: "retired", created: now - 140 * day, last_run: now - 3 * day, retired: now - 2 * day,
+  keep_until: now + 180 * day, keep_months: 0, details: { ...jordan.details, name: "Taylor Reid", email: "taylor.reid@example.com",
+    location: "Bolton" } }] };
+await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: withRetired });
+await save("admin-dashboard-retired", await admin("/admin?s=retired"));
+await save("confirm-retire", await call(`/f?${new URLSearchParams(await link("retire", "Taylor Reid", { job: "profile", profile: "taylor-reid" }))}`));
+await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, json: STATUS });
 // The server button's panel, as hovering over it shows it.
 await save("admin-server-panel", new Response((await (await admin("/admin")).text())
   .replace("</head>", "<style>.me .srv .srvpanel{display:block}</style></head>")));

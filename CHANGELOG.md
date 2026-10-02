@@ -8,6 +8,21 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Retire recruits, and let them choose what happens to their data.** A red **Retire** button on the bulk
+  bar (for the ticked recruits) and a **Retire** section at the bottom of a recruit's page, each behind a
+  confirm window with a tick box, stop the recruit's reports and email them a signed link (the `retire`
+  action) to keep their profile for 6, 12 or 24 months for when they look for work again, or delete
+  everything now. Without an answer it is kept for `HERMES_RETIRE_KEEP_MONTHS` (6 by default), then the
+  nightly maintenance run deletes it. Deleting removes the profile, its traces in the logs and what the
+  Worker keeps (the new `POST /api/forget`), and the new `maintenance.py --forget-backups` (also a nightly
+  step) rewrites every backup on the server without them and replaces each copy on Cloudflare with the
+  cleaned one; the people waiting to be removed are kept encrypted in `state/forget_backups.json`, which is
+  never backed up, until every copy is clean. Retired recruits are left out of the Recruits list (**N
+  retired** beside the count and **Retired** in the status dropdown show them), skipped by bulk changes and
+  **Send jobs**, can't sign in to `/me`, and come back with **Reactivate** on their page. Links from before
+  the latest retirement, or used after reactivating, change nothing. The privacy notice says how it works.
+  Covered by `test/retire.test.js` (including who may retire, forged and expired links and `/api/forget`
+  auth), `e2e/retire.spec.js`, `test_profiles.py` and `test_maintenance.py`.
 - **Backups on Cloudflare, away from the server.** Each nightly backup and each **Back up now** is also sent
   to the feedback Worker, byte for byte the encrypted archive kept on the server (which stays), so a lost or
   broken server can be rebuilt from Cloudflare. `maintenance.py` now encrypts the archive before writing it,

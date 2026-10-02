@@ -15,6 +15,7 @@ import { LINK_STYLE, STATS_URL, icon } from "./stats.js";
 import { profileTabs } from "./history.js";
 import { DOC_STYLE, PROFILE_CV_STYLE, profileCvButtons } from "./docs.js";
 import { NOTES_STYLE } from "./notes.js";
+import { CONFIRM_STYLE, RETIRE_ICON, RETIRE_INTRO, deleteModal } from "./confirm.js";
 
 export const LEVELS = ["junior", "mid", "senior", "lead", "any"];
 export const EMPLOYMENT_TYPES = ["Permanent", "Contract", "Temporary", "Part-time", "Internship"];
@@ -429,6 +430,24 @@ export function sendSection(p, csrf, tz) {
   return `<h2 id="send">Send jobs now</h2><p class="muted">${state}</p>${sendButton(p, csrf, { back: "profile" })}`;
 }
 
+// The foot of a recruit's page: Retire, with a confirm window, or for a retired recruit how long their data is kept
+// and Reactivate.
+function retireSection(p, csrf, tz) {
+  if (p.status === "retired") {
+    const until = !p.keep_until ? "" : ` Their data is kept until <b>${esc(when(p.keep_until, tz).slice(0, 10))}</b>${p.keep_months
+      ? `, as they chose (${esc(p.keep_months)} months)` : ", unless they choose otherwise from the email they were sent"}, then deleted, backups included.`;
+    return `<h2 id="retire">Retired</h2><p class="muted">Retired${p.retired ? ` on ${esc(when(p.retired, tz).slice(0, 10))}` : ""}: they get no reports.${until} Reactivate starts their reports again.</p>
+${button(csrf, "resume", "Reactivate", { u: p.id, back: "profile" }, "small")}`;
+  }
+  return `<h2 id="retire">Retire</h2><p class="muted">${esc(RETIRE_INTRO)}</p><a class="redbtn" href="#retire-${esc(p.id)}">${RETIRE_ICON}Retire ${esc(p.name)}</a>`;
+}
+
+function retireModal(p, csrf) {
+  return p.status === "retired" ? "" : deleteModal({ id: `retire-${p.id}`, title: `Retire ${p.name}?`, intro: RETIRE_INTRO, action: "/admin/action",
+    fields: { csrf, action: "retire", u: p.id, back: "profile" }, check: "Retire them and email them to choose what happens to their data",
+    label: "Retire", icon: RETIRE_ICON });
+}
+
 export function profilePage(status, pid, csrf,
   { done = "", error = "", queue = [], saving = false, draft = null, base = null, conflicts = [], code = 200, cv = null, notes = "" } = {}) {
   const p = (status.profiles || []).find((x) => x.id === pid);
@@ -438,7 +457,7 @@ export function profilePage(status, pid, csrf,
   const latest = latestValues(p, queue);
   const v = draft || latest;
   const message = error ? note(error, "bad") : done ? note(done) : "";
-  return page(p.name, `<style>${LINK_STYLE}${cv ? DOC_STYLE + PROFILE_CV_STYLE : ""}${notes ? NOTES_STYLE : ""}</style>${cv ? profileCvButtons(p, { csrf, ...cv }) : ""}${profileTabs(pid, "manage")}
+  return page(p.name, `<style>${LINK_STYLE}${MODAL_STYLE}${CONFIRM_STYLE}${cv ? DOC_STYLE + PROFILE_CV_STYLE : ""}${notes ? NOTES_STYLE : ""}</style>${cv ? profileCvButtons(p, { csrf, ...cv }) : ""}${profileTabs(pid, "manage")}
 <p><a class="statlink" href="${STATS_URL}?u=${esc(pid)}">${icon("chart")}View stats</a></p>
 ${message}<iframe class="saving" src="${STATUS_URL}?u=${esc(pid)}${saving ? "&amp;n=1" : ""}" title="Save status"></iframe>
 ${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
@@ -450,7 +469,7 @@ ${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
 <div><label for="d_loc">Home town</label><input id="d_loc" name="location" value="${esc(v.location)}" maxlength="80" autocomplete="off">${hint("Shown on cover letters.")}</div></div>
 ${searchFields(v, reportHint(p, status))}
 <button>Save changes</button></form>
-${sendSection(p, csrf, status.timezone)}
+${p.status === "retired" ? "" : sendSection(p, csrf, status.timezone)}
 ${notes}
 <h2 id="cv">CV</h2>
 <p class="muted">${p.has_cv ? `HermitShell has a CV${p.cv_updated ? ` (updated ${esc(when(p.cv_updated, status.timezone))})` : ""}. A new one replaces it and rebuilds the skills and profile the jobs are rated against.` : "No CV yet: jobs can't be rated until one is uploaded."}</p>
@@ -458,7 +477,8 @@ ${notes}
 <label for="cv">CV file</label><input id="cv" name="cv" type="file" accept=".pdf,.docx,.txt,.md">${hint("PDF, Word (.docx) or text, up to 5 MB.")}
 <label for="cv_text">Or paste the CV text</label><textarea id="cv_text" name="cv_text" maxlength="${MAX_CV_TEXT}"></textarea>
 <label for="roles">Roles you're after</label><input id="roles" name="roles" maxlength="300">${hint("Optional. Helps suggest job titles from the CV.")}
-<button>Upload CV</button></form>`, { wide: true, status: code, before: BACK_TO_RECRUITS, headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` },
+<button>Upload CV</button></form>
+${retireSection(p, csrf, status.timezone)}`, { wide: true, status: code, before: retireModal(p, csrf) + BACK_TO_RECRUITS, headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` },
     refresh: cv?.busy ? 15 : 0, refreshTo: cv?.busy ? `/admin/profile?u=${pid}` : "" });
 }
 

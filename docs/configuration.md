@@ -269,6 +269,7 @@ Full template: [`.env.example`](../.env.example).
 | `HERMES_BACKUP_KEEP_DAILY` / `HERMES_BACKUP_KEEP_WEEKLY` | `14` / `8` | Newest backups kept, plus the newest of each week for this many more weeks |
 | `HERMES_BACKUP_OFFSITE` | `1` | `0` = don't also send each encrypted backup to the feedback Worker ([Backups on Cloudflare](feedback-worker.md#backups-on-cloudflare), Worker protocol 7). Needs `JOB_FEEDBACK_URL`, `JOB_FEEDBACK_API_TOKEN` and `HERMES_DATA_KEY`; unencrypted backups are never sent |
 | `HERMES_BACKUP_OFFSITE_KEEP_DAILY` / `HERMES_BACKUP_OFFSITE_KEEP_WEEKLY` | `7` / `4` | Copies kept on Cloudflare: the newest, plus the newest of each week for this many more weeks |
+| `HERMES_RETIRE_KEEP_MONTHS` | `6` | How long a [retired recruit](feedback-worker.md#retiring-a-recruit)'s profile is kept when they don't answer the email asking (1 to 36). Then it is deleted, backups included |
 
 ## Job finder settings
 
@@ -414,6 +415,14 @@ This is how it is carried out:
   answers still waiting on the Worker, replaces its name, email address and profile id with
   `[deleted]` in the logs, and emails the person a confirmation. The link in a report you got
   before your own job search moved to a recruit only pauses that recruit. `profiles.py --delete ID` does the same from the command line.
+- **Retiring.** A [retired recruit](feedback-worker.md#retiring-a-recruit) gets no reports and is emailed a link to
+  keep their profile for 6, 12 or 24 months or delete it now; without an answer it is kept for
+  `HERMES_RETIRE_KEEP_MONTHS`. Deleting (their choice, or the nightly run once the time is up) does all of the
+  above and also removes them from every backup: `maintenance.py --forget-backups` rewrites each archive here
+  without their profile folder and with their name, email address and id scrubbed from the logs inside, then
+  replaces each copy on Cloudflare with the cleaned one. The people still to remove wait, encrypted, in
+  `state/forget_backups.json` (never itself backed up); an off-server failure leaves them there for the next
+  nightly run, which does the same step after its backup.
 
 ### A second copy of the backups
 

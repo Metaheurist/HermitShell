@@ -15,16 +15,26 @@ export function iconButton(href, label, icon, tone) {
   return `<a class="iconbtn ${tone}" href="${esc(href)}" title="${esc(label)}" aria-label="${esc(label)}">${icon}</a>`;
 }
 
-// `fields` are the form's hidden inputs; `check` is the tick box's text.
-export function deleteModal({ id, title, intro, action, fields, check }) {
-  const hidden = Object.entries(fields).map(([k, v]) => `<input type="hidden" name="${esc(k)}" value="${esc(v)}">`).join("");
+export const RETIRE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 19.5c.6-3.2 3-5 6.5-5s5.9 1.8 6.5 5M16 11h6"/></svg>';
+
+// What retiring does (profiles.py retire()), for the confirm windows on the recruits list and a recruit's page.
+export const RETIRE_INTRO = "They stop getting reports and are emailed a link to choose: keep their profile, CV and job history "
+  + "for 6, 12 or 24 months so they can come back to it, or have it deleted now, backups included. Until they choose it is "
+  + "kept for a while, then deleted. Reactivate on their page brings them back.";
+
+// `fields` are the form's hidden inputs; `check` is the tick box's text; `label` and `icon` the button's. With `form`
+// (another form's id) the window has no form of its own: its tick box and button (`op`, its value) belong to that
+// one, and the tick box isn't required there, as the form's other buttons would need it too; the Worker checks it.
+export function deleteModal({ id, title, intro, action = "", fields = {}, check, label = "Delete", icon = BIN, form = "", op = "" }) {
+  const of = form ? ` form="${esc(form)}"` : "";
+  const hidden = Object.entries(fields).map(([k, v]) => `<input type="hidden" name="${esc(k)}" value="${esc(v)}"${of}>`).join("");
+  const inner = `${hidden}<label class="check dangercheck"><input type="checkbox" name="confirm" value="yes"${of}${form ? "" : " required"}> <span>${esc(check)}</span></label>
+<div class="confirmrow"><a class="small quiet cancel" href="#_">Cancel</a><button class="danger"${of}${op ? ` name="op" value="${esc(op)}"` : ""}>${icon}${esc(label)}</button></div>`;
   return `<div class="modal" id="${esc(id)}" role="dialog" aria-modal="true" aria-labelledby="${esc(id)}-h">
 <a class="scrim" href="#_" aria-label="Close" tabindex="-1"></a>
-<div class="sheet"><a class="x" href="#_" aria-label="Close">&times;</a><div class="sheeticon danger">${BIN}</div>
+<div class="sheet"><a class="x" href="#_" aria-label="Close">&times;</a><div class="sheeticon danger">${icon}</div>
 <h2 id="${esc(id)}-h">${esc(title)}</h2><p class="muted">${esc(intro)}</p>
-<form method="post" action="${esc(action)}">${hidden}
-<label class="check dangercheck"><input type="checkbox" name="confirm" value="yes" required> <span>${esc(check)}</span></label>
-<div class="confirmrow"><a class="small quiet cancel" href="#_">Cancel</a><button class="danger">${BIN}Delete</button></div></form></div></div>`;
+${form ? `<div class="confirmform">${inner}</div>` : `<form method="post" action="${esc(action)}">${inner}</form>`}</div></div>`;
 }
 
 export const CONFIRM_STYLE = `
@@ -44,4 +54,9 @@ transition:transform .15s var(--ease),box-shadow .15s}
 .confirmrow .cancel{text-decoration:none}
 .confirmrow button{display:inline-flex;align-items:center;gap:8px;margin:0}.confirmrow button svg{width:16px;height:16px}
 form:has(.dangercheck input:not(:checked)) .confirmrow button{opacity:.55}
+.confirmform:has(.dangercheck input:not(:checked)) .confirmrow button{opacity:.55;pointer-events:none}
+.redbtn{display:inline-flex;align-items:center;gap:7px;margin:0;color:#fff;text-decoration:none;border:0;border-radius:10px;
+padding:6px 12px;font-size:13.5px;font-weight:650;background:linear-gradient(135deg,#ef4444,#dc2626);
+box-shadow:0 8px 18px -10px rgba(220,38,38,.8);transition:transform .15s var(--ease),filter .15s}
+.redbtn:hover{transform:translateY(-1px);filter:brightness(1.06)}.redbtn svg{width:16px;height:16px}
 `;
