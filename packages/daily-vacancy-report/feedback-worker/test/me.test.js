@@ -268,7 +268,7 @@ describe("a recruit's session", () => {
     expect(cookieNamed(out, "__Host-hv_me")).toBe("__Host-hv_me=");
     expect(await (await call(env, "/me", { cookie: two.cookie })).text()).toContain("Signed in as");
     const all = await call(env, "/me/logout", { fields: { csrf: two.csrf, all: "1" }, cookie: two.cookie });
-    expect(await all.text()).toContain("everywhere else within about a minute");
+    expect(await all.text()).toContain("on all your other devices within about a minute");
     expect(await (await call(env, "/me", { cookie: two.cookie })).text()).toContain("Email me a sign-in link");
     expect(await (await call(env, "/me", { cookie: one.cookie })).text()).toContain("Email me a sign-in link");
   });

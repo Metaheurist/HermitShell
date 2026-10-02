@@ -317,7 +317,7 @@ deleted ([data protection](configuration.md#data-protection)).
 
 ### A recruit's own page
 
-`/me`, off until the **Recruits' own page (/me)** switch is on (`HERMES_SELF_SERVICE=1`). A recruit asks for a
+`/me`, off until the **Recruits' own page** switch is on (`HERMES_SELF_SERVICE=1`). A recruit asks for a
 sign-in link with the address their reports go to (every address gets the same answer), and opening the emailed
 link shows a **Sign in** button that works once, within 15 minutes
 ([more](feedback-worker.md#recruits-own-page)). While the switch is on, recruits' reports and welcome email end
@@ -379,13 +379,13 @@ buttons. On a phone everything is in one column.
 
 | Control | What it does |
 | --- | --- |
-| Status line | **HermitShell is connected** (green dot) while its live link is up, so changes reach it within seconds, then when it last reported its profiles. Without the link: when HermitShell last checked in, with the time in your timezone (`HERMES_TIMEZONE`). Also says how many changes are still **Waiting for HermitShell**, which opens **Tasks** for an admin. While a pause, resume, delete, assignment or send of yours is waiting, a **Saving** bar shows under it, the row carries a tag such as **pausing&hellip;**, and the page updates by itself until it is applied. A warning appears above it if HermitShell hasn't checked in for 45 minutes |
+| Status line | **HermitShell is online** (green dot) while its live link is up, so changes take effect within seconds, then when it last reported its profiles. Without the link: when HermitShell last checked in, with the time in your timezone (`HERMES_TIMEZONE`). Also says how many changes are still **Waiting for HermitShell**, which opens **Tasks** for an admin. While a pause, resume, delete, assignment or send of yours is waiting, a **Saving** bar shows under it, the row carries a tag such as **pausing&hellip;**, and the page updates by itself until it is applied. A warning appears above it if HermitShell hasn't checked in for 45 minutes |
 | **Tasks** (loading circle + number, admins only) | Opens the [task list](#tasks): everything HermitShell is doing or has waiting. The ring turns while something runs and the number in the corner says how many tasks there are |
-| Search (magnifying glass) | Slides out a search box and a status dropdown. Type part of a name, email, place, tag or recruiter and press Enter: only the recruits with every word are listed, with **1 of 3 recruits** above the table. The dropdown (**Any status**, **Active**, **Paused**, **Scanning now**, **No CV**, **Pending sign-up**) narrows the list to that status, on its own or with the words; it applies as soon as it is picked (without JavaScript, press **Show**). Searching a recruiter lists them first, followed by all their recruits. **&times;** shows everyone again |
+| Search (magnifying glass) | Slides out a search box and a status dropdown. Type part of a name, email, place, tag or recruiter and press Enter: only the recruits with every word are listed, with **1 of 3 recruits** above the table. The dropdown (**Any status**, **Active**, **Paused**, **Finding jobs now**, **No CV**, **Pending sign-up**) narrows the list to that status, on its own or with the words; it applies as soon as it is picked (without JavaScript, press **Show**). Searching a recruiter lists them first, followed by all their recruits. **&times;** shows everyone again |
 | **pending** (orange) | Someone who has sent the invite form. They stay in the table, with when they signed up and what they're looking for, while HermitShell reads their CV, then the row becomes their profile |
 | Tag pills | The recruit's tags beside their name; pressing one lists only the recruits with it (**2 tagged**, **Show everyone**). Searching a tag finds them too |
-| Recruit, Status | Name, email and the date they joined, **no CV** when there is none yet; active or paused; **scanning now** while a report runs; when the last report ran (hover for the exact time) and the report time, **Daily at 08:00** or **Weekdays at 08:15** |
-| **Send jobs** | Runs that recruit's report straight away and emails it when the scan finishes, even if nothing new turned up. Shows **Scanning…** while a report runs; missing without a CV |
+| Recruit, Status | Name, email and the date they joined, **no CV** when there is none yet; active or paused; **finding jobs now** while a report runs; when the last report ran (hover for the exact time) and the report time, **Daily at 08:00** or **Weekdays at 08:15** |
+| **Send jobs** | Runs that recruit's report straight away and emails it when the scan finishes, even if nothing new turned up. Shows **Finding jobs…** while a report runs; missing without a CV |
 | **Manage** | Opens [that profile's page](#a-recruits-page): details, job search, report time and CV |
 | Stats line (the little chart) | This week's jobs sent, day by day; opens [that profile's stats and charts](#a-recruits-stats) |
 | **24 sent** | How many jobs were sent this week; opens [the list of those jobs](#the-jobs-sent-to-a-recruit) |
@@ -518,9 +518,9 @@ Applied…) are never listed and can't be cancelled here.
 
 | Control | What it does |
 | --- | --- |
-| Email server + **Save email server** | SMTP server, port, username, password and sender for everyone's emails. The password box stays empty; leave it empty to keep the saved password |
+| Email server + **Save email server** | Outgoing mail server (SMTP), port, username, password and sender for everyone's emails. The password box stays empty; leave it empty to keep the saved password |
 | **Send a test email** | Sends a test to the address typed (default: yours); the result shows under Email server after HermitShell's next check |
-| **Go back to the .env email settings** | Shown when the email server was set here; undoes it |
+| **Use the server's own email settings instead** | Shown when the email server was set here; undoes it |
 | Web search API keys | One row per provider (Firecrawl, Tavily, Scrapfly): **set here** or **from .env**, the start and end of the key, the credits left, and Firecrawl's backup keys. These keys are used for every recruit |
 | A provider, pressed | Opens its keys in the order they are tried: each one's start and end, a bar of the credits left (amber under 40%, red under 15%), the plan, when it resets and when HermitShell last checked, or why it couldn't. Pressed again, it closes |
 | **Add key** / **Change** | Opens a window to pick the provider and paste the key. Firecrawl takes several keys, comma separated |
@@ -614,9 +614,9 @@ When it is ready, the notice turns green for a day:
 | **CV** / **Generate** | Top right of the card: **Generate** makes their CV from the one uploaded (every role, not tailored); **CV** downloads it and only shows once one is made ([more](feedback-worker.md#a-recruits-page)) |
 | **Manage** / **History** | The page's own tabs: this page and [its timeline](#a-recruits-history); Users and roles and Global settings are only on the dashboard |
 | **View stats** | Opens [this profile's stats](#a-recruits-stats) |
-| Status box | Under the tabs: **Up to date**, **Waiting for HermitShell** while a save is queued (it checks again by itself), **Applied by HermitShell**, **Scanning for jobs since…** while a report runs, or why a change couldn't be applied |
+| Status box | Under the tabs: **Up to date**, **Saved. Taking effect in a few seconds** while a save is queued (it checks again by itself), **Done. Your changes are in effect**, **Looking for jobs since…** while a report runs, or **A change didn't work** and why |
 | Details | Name, the email address reports go to, phone and home town (for cover letters and the distance filter) |
-| Job search | Job titles (up to 8), region or city (used in web searches), country from a list (a hand-set code not in the list is kept as its own option), towns, within N km of home town (as the crow flies, empty = no limit; GeoNames place data, CC BY 4.0), remote elsewhere, seniority, minimum salary (empty = none), salary currency (a list; salaries in other currencies are converted to it), employment types, work location, hiding unnamed agency adverts |
+| Job search | Job titles (up to 8), region or city (used in web searches), country from a list (a hand-set code not in the list is kept as its own option), towns, maximum distance from home town in km (in a straight line, empty = no limit; town locations from GeoNames, CC BY 4.0), remote elsewhere, seniority, minimum salary (empty = none), salary currency (a list; salaries in other currencies are converted to it), job types, work location, hiding unnamed agency adverts |
 | Daily report | The time and days (every day or weekdays) HermitShell sends this profile's report; each profile's report is its own scheduled job |
 | **Save changes** | One button for details, job search and report time; only the fields you changed are sent |
 | **Send jobs now** | Runs the report now instead of at the daily time ([more](feedback-worker.md#send-jobs-now)) |
@@ -664,8 +664,8 @@ at the top switch months; the oldest ends with the day they joined. It is kept u
 <img src="images/worker/admin-pipeline.png" alt="A recruit's Pipeline tab: columns for Interested, Applied, Interview, Offer, Placed and Rejected, each job a card with a Move to menu and, for an admin, a start date and fee" width="620">
 
 `/admin/pipeline?u=<id>`, the **Pipeline** tab: each job they answered, in the column of its latest
-answer (email buttons and moves made here). **Move** puts a job in another column; the card moves after
-HermitShell's next check-in. Admins and managers can add a start date and fee to an offer or placement; the fee is
+answer (email buttons and moves made here). **Move** puts a job in another column; the card moves within
+about 5 minutes. Admins and managers can add a start date and fee to an offer or placement; the fee is
 sealed for HermitShell and never shown on the board or to recruiters. Cards at Interview and Offer have
 an **Interview prep** button, then a **Prep pack** download once HermitShell has made it
 ([more](feedback-worker.md#pipeline)).

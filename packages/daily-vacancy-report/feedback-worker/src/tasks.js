@@ -170,7 +170,7 @@ export function tasksModal() {
 <a class="scrim" href="#_" aria-label="Close" tabindex="-1"></a>
 <div class="sheet tasksheet"><a class="x" href="#_" aria-label="Close">&times;</a>
 <div class="sheeticon">${icon("tasks")}</div><h2 id="tasks-h">Tasks</h2>
-<p class="muted">What HermitShell is doing or has waiting: from here, on a schedule, from a sign-up or from an email button. It updates by itself while open.</p>
+<p class="muted">What HermitShell is working on now and what is waiting its turn. This list updates by itself.</p>
 <iframe class="tasksframe" src="${TASKS_URL}" loading="lazy" title="Tasks"></iframe></div></div>`;
 }
 
@@ -202,8 +202,8 @@ function detail(t) {
     const count = t.total ? ` &middot; ${t.done} of ${t.total}` : "";
     return `${stage}${count}${since ? ` &middot; started ${esc(since)}` : ""}`;
   }
-  const wait = t.where === "worker" ? "Waiting for HermitShell to collect it" : t.where === "queue" ? "Waiting for HermitShell"
-    : t.retry ? "Failed once; tried again soon" : "Queued behind the one being made";
+  const wait = t.where === "worker" ? "Waiting to start" : t.where === "queue" ? "Waiting to start"
+    : t.retry ? "Didn't work the first time; trying again soon" : "Waiting for the one before it";
   return `${wait}${since ? ` &middot; ${esc(since)}` : ""}`;
 }
 
@@ -230,7 +230,7 @@ ${cancelForm(t, csrf)}</li>`;
 
 const NOTES = {
   cancelled: "Cancelled.",
-  stopping: "Asked HermitShell to stop it. That takes a few seconds while it is connected.",
+  stopping: "Stopping. This takes a few seconds.",
   gone: "That task had already finished.",
 };
 

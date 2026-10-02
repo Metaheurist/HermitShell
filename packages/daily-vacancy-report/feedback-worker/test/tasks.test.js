@@ -213,7 +213,7 @@ describe("cancelling a task", () => {
     expect(body).toContain("s-stopping");
     expect(body).toContain("Stopping&hellip;");
     expect(body).not.toContain(">Stop</button>");
-    expect(body).toContain("Asked HermitShell to stop it");
+    expect(body).toContain("Stopping. This takes a few seconds.");
     expect(body.split('<li class="task')).toHaveLength(2);
   });
 

@@ -253,7 +253,7 @@ describe("jobs sent page", () => {
   });
 
   it("explains an empty list and 404s for an unknown profile", async () => {
-    expect(await sentOf(null, "sam-lee", { range: "7" })).toContain("HermitShell sends the list");
+    expect(await sentOf(null, "sam-lee", { range: "7" })).toContain("The list appears within a few minutes");
     expect(await sentOf({ days: {} }, "sam-lee", { range: "7" })).toContain("No jobs were sent in this period.");
     expect((await sentPage(STATUS, sample(), "casey-quinn", { range: "7" })).status).toBe(404);
   });
@@ -341,7 +341,7 @@ describe("jobs sent page", () => {
     const added = await sentOf(s, "riley-chen", { range: "7", csrf: "c".repeat(32), done: "skill" });
     expect(added).not.toContain("Press a skill you have");
     expect(added).toContain("Press a skill they have to count it as on the CV.");
-    expect(added).toContain("Added. HermitShell counts it as on the CV within a few minutes");
+    expect(added).toContain("Added. Within a few minutes it counts as on their CV");
     const noForm = await sentOf(s, "sam-lee", { range: "7" });
     expect(noForm).not.toContain('action="/admin/skill"');
     expect(noForm).toContain("<span>dbt</span>");

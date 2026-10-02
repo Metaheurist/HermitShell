@@ -735,8 +735,8 @@ def send_welcome(profile: dict, built: dict, updated: bool) -> None:
     how = ("<ul style=\"margin:8px 0 0;padding-left:18px;font-size:14px;line-height:22px;color:#334155\">"
            "<li>Each morning's report lists new roles with a fit score from 0 to 10, the skills you match and "
            "the ones you are missing.</li>"
-           "<li>Buttons on every job record what you think (interested, not for me, applied) so later ratings "
-           "fit you better.</li>"
+           "<li>Use the buttons on each job to say what you think (interested, not for me, applied), so future "
+           "matches fit you better.</li>"
            "<li>Generate cover letter writes a letter from your CV and emails it as a PDF.</li>"
            "<li>Tap a yellow missing skill to add it if you do have it.</li>"
            "<li>On Sundays a weekly roll-up shows your applications and the skills that keep coming up.</li></ul>")
@@ -750,14 +750,14 @@ def send_welcome(profile: dict, built: dict, updated: bool) -> None:
     ]
     privacy = f"{hc.env('JOB_FEEDBACK_URL', '').rstrip('/')}/privacy" if unsub else ""
     page = own_page_link(env("JOB_FEEDBACK_URL", "") or "", profile["id"], features()["self_service"])
-    footer = ("First report with the next daily run. Something wrong above? Reply to this email."
+    footer = ("Your first report comes with the next daily email. Something wrong above? Reply to this email."
               + (f'<br><a href="{html.escape(page)}" style="color:#64748b">Your page</a> (your jobs, documents and '
                  "job search; it emails you a sign-in link)" if page else "")
               + (f'<br><a href="{html.escape(unsub)}" style="color:#64748b">Unsubscribe</a> (deletes your profile and CV)'
                  f' &middot; <a href="{html.escape(privacy)}" style="color:#64748b">Your data</a>' if unsub else ""))
     text = (f"{title}\n\nHermitShell will search for: {', '.join(built['titles'])}\n"
             f"Skills: {', '.join(s['name'] for s in built['skills'])}\n\n"
-            "Your first report arrives with the next daily run."
+            "Your first report comes with the next daily email."
             + (f"\n\nYour page (your jobs, documents and job search): {page}" if page else "")
             + (f"\n\nUnsubscribe: {unsub}\nHow your data is handled: {privacy}" if unsub else ""))
     send(profile["email"], f"{FROM_NAME}: {title.lower() if updated else 'your profile is ready'}",
@@ -947,7 +947,7 @@ def send_goodbye(profile: dict) -> None:
             "profile, your CV, the jobs it found for you, your feedback, cover letters and tailored CVs, and has "
             "removed your name and email address from its logs.</p>"
             '<p style="margin:0;font-size:14px;line-height:21px;color:#334155">This is the last email you will get '
-            "from it. Copies in the nightly encrypted backups expire as those backups are rotated out.</p>")
+            "from it. Any copies in the nightly backups are deleted as old backups are cleared out.</p>")
     text = (f"Goodbye, {first}\n\nHermitShell has deleted your profile, your CV, the jobs it found for you, your feedback, "
             "cover letters and tailored CVs, and removed your name and email address from its logs. This is the "
             "last email you will get from it.")
@@ -1042,7 +1042,7 @@ def send_erased(profile: dict, expired: bool) -> None:
     why = "The time you chose to keep your profile for is up, so" if expired else "As you asked,"
     lines = [f"{why} HermitShell has deleted your profile, your CV, the jobs it found for you, your answers, cover letters "
              "and tailored CVs, and removed your name and email address from its logs.",
-             "It is also removing them from every one of its backups, on its server and off it, within a day. "
+             "It is also removing them from all of its backups within a day. "
              "This is the last email you will get from it."]
     header = email_header(FROM_NAME, _today(), f"Your data is deleted, {first}", "Profile, CV, history and backups",
                           [("0", "More emails"), ("Deleted", "Including backups")])

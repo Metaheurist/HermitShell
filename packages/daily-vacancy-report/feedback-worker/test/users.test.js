@@ -333,7 +333,21 @@ describe("a recruiter's dashboard updating itself", () => {
     expect(mine.match(/savingtag">pausing/g)).toHaveLength(1);
     const all = await admin.text("/admin");
     expect(all.match(/savingtag">pausing/g)).toHaveLength(2);
-    expect(all).toContain("Waiting for HermitShell to apply 2 changes");
+    expect(all).toContain("Waiting for HermitShell to pick up 2 changes");
+  });
+
+  it("shows the server commands in the stale warning to an admin only", async () => {
+    const { env, admin, casey } = await setup();
+    await env.FEEDBACK.put("status:profiles", JSON.stringify({ profiles: PROFILES, updated: Date.now() - 3 * 3600 * 1000 }));
+    const warning = (html) => html.match(/<div class="warn">HermitShell last checked in[\s\S]*?<\/div>/)?.[0] || "";
+    const theirs = warning(await casey.text("/admin"));
+    expect(theirs).toContain("so changes made here are waiting");
+    expect(theirs).toContain("Let your admin know.");
+    expect(theirs).not.toContain("docker");
+    expect(theirs).not.toContain("scheduler.py");
+    const mine = warning(await admin.text("/admin"));
+    expect(mine).toContain("<code>docker logs hermitshell</code>");
+    expect(mine).not.toContain("Let your admin know.");
   });
 });
 

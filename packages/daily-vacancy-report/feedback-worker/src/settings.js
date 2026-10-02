@@ -18,6 +18,7 @@ import { NOTES_STYLE } from "./notes.js";
 import { CONFIRM_STYLE, RETIRE_ICON, RETIRE_INTRO, deleteModal } from "./confirm.js";
 
 export const LEVELS = ["junior", "mid", "senior", "lead", "any"];
+const LEVEL_LABELS = { junior: "Junior", mid: "Mid-level", senior: "Senior", lead: "Lead", any: "Any level" };
 export const EMPLOYMENT_TYPES = ["Permanent", "Contract", "Temporary", "Part-time", "Internship"];
 export const WORK_MODES = ["On-site", "Hybrid", "Remote"];
 const KEY_RE = /^[A-Za-z0-9_-]{8,120}$/;
@@ -69,15 +70,15 @@ export function checklist(status) {
   const keys = status.keys || {};
   const items = [
     [Boolean(status.updated), "HermitShell is connected",
-      "HermitShell has not reported yet. It checks in every few minutes once the vacancy-profiles job runs."],
+      "Waiting for HermitShell to check in. It does this every few minutes once it is running."],
     [email.source && email.source !== "none" && email.password_set, "Email server set",
       `<a href="${SETTINGS_URL}#email">Set the email server</a> in Global settings so reports can be sent.`],
     [email.last_test?.ok === true, "Test email received",
       `<a href="${SETTINGS_URL}#email">Send a test email</a> to check the settings.`],
     [Object.values(keys).some((k) => k && k.source && k.source !== "none"), "Web search key set",
-      `<a href="${SETTINGS_URL}#keys">Add a web search key</a> in Global settings (Firecrawl, Tavily or Scrapfly; all have free plans).`],
+      `<a href="${SETTINGS_URL}#keys">Add a web search key</a> in Global settings. Firecrawl, Tavily and Scrapfly all have free plans.`],
     [(status.profiles || []).some((p) => !p.owner), "First recruit joined",
-      '<a href="#invite">Create an invite link</a> below and send it to someone looking for work. You and your recruiters manage recruits; you have no job search of your own here.'],
+      '<a href="#invite">Create an invite link</a> below and send it to someone looking for work.'],
   ];
   const todo = items.filter(([ok]) => !ok);
   if (!todo.length) return '<p class="muted">Setup complete.</p>';
@@ -108,22 +109,22 @@ export function versionNote(status) {
 export function emailSection(status, csrf) {
   const e = status.email || {};
   const owner = ownerOf(status);
-  const now = e.source === "dashboard" ? "set here" : e.source === "env" ? "from HermitShell's .env" : "not set";
+  const now = e.source === "dashboard" ? "set here" : e.source === "env" ? "set on the server" : "not set";
   const test = e.last_test ? (e.last_test.ok ? `worked, sent to ${e.last_test.to} ${when(e.last_test.at, status.timezone)}`
     : `failed ${when(e.last_test.at, status.timezone)}: ${e.last_test.error}`) : "none yet";
   return `<h2 id="email">Email server</h2>
-<p class="muted">Sends every report, cover letter and tailored CV. Now: ${esc(now)}. Last test: ${esc(test)}.</p>
+<p class="muted">The email account that sends every report, cover letter and CV. Now: ${esc(now)}. Last test: ${esc(test)}.</p>
 <form method="post" action="/admin/action">${hidden({ csrf, action: "email" })}
-<div class="grid2"><div><label for="smtp_host">SMTP server</label><input id="smtp_host" name="host" value="${esc(e.host || "smtp.gmail.com")}" required maxlength="120"></div>
-<div><label for="smtp_port">Port</label><input id="smtp_port" name="port" value="${esc(e.port || "587")}" inputmode="numeric" maxlength="5"></div>
+<div class="grid2"><div><label for="smtp_host">Outgoing mail server (SMTP)</label><input id="smtp_host" name="host" value="${esc(e.host || "smtp.gmail.com")}" required maxlength="120"></div>
+<div><label for="smtp_port">Port</label><input id="smtp_port" name="port" value="${esc(e.port || "587")}" inputmode="numeric" maxlength="5">${hint("Usually 587.")}</div>
 <div><label for="smtp_user">Username</label><input id="smtp_user" name="user" value="${esc(e.user || "")}" required maxlength="120" autocomplete="off">${hint("Usually your email address.")}</div>
-<div><label for="smtp_pass">Password or app password</label><input id="smtp_pass" name="password" type="password" maxlength="200" autocomplete="new-password" placeholder="${e.password_set ? "unchanged (leave empty to keep it)" : "Gmail: a 16-letter app password"}"></div></div>
-<label for="smtp_from">Send as</label><input id="smtp_from" name="from" value="${esc(e.from || "")}" maxlength="120" type="email">${hint("Optional. Leave empty to send from the username.")}
+<div><label for="smtp_pass">Password or app password</label><input id="smtp_pass" name="password" type="password" maxlength="200" autocomplete="new-password" placeholder="${e.password_set ? "Saved. Leave empty to keep it" : "For Gmail, a 16-letter app password"}"></div></div>
+<label for="smtp_from">Send as</label><input id="smtp_from" name="from" value="${esc(e.from || "")}" maxlength="120" type="email">${hint("Optional. The address people see emails coming from. Leave empty to use the username.")}
 <button>Save email server</button></form>
-<p class="muted">Gmail needs 2-Step Verification and an <a href="https://myaccount.google.com/apppasswords" rel="noopener">app password</a>; Outlook.com uses smtp-mail.outlook.com.</p>
+<p class="muted">Gmail: turn on 2-Step Verification, then make an <a href="https://myaccount.google.com/apppasswords" rel="noopener">app password</a> and use it here. Outlook.com: the server is smtp-mail.outlook.com.</p>
 <form method="post" action="/admin/action" class="inline">${hidden({ csrf, action: "test_email" })}
 <input name="to" type="email" maxlength="120" placeholder="${esc(owner?.email || "Send the test to")}"><button class="small quiet">Send a test email</button></form>
-${e.source === "dashboard" ? `<p>${button(csrf, "email_clear", "Go back to the .env email settings")}</p>` : ""}`;
+${e.source === "dashboard" ? `<p>${button(csrf, "email_clear", "Use the server's own email settings instead")}</p>` : ""}`;
 }
 
 export function button(csrf, action, label, fields = {}, cls = "small quiet") {
@@ -142,10 +143,10 @@ const WAITING_SECTIONS = { email: "email", test_email: "email", api_keys: "keys"
 
 // Global settings, Features: switch name (profiles.py FEATURES), label, explanation and default.
 export const FEATURES = [
-  ["alerts", "Admin alerts by email", "Emails you once when credits run low, a provider stops answering, a backup fails or the disk fills up, and again when it clears.", true],
-  ["prep_auto", "Interview prep packs on Interview", "Makes an interview prep pack as soon as a job reaches Interview. The button on the job always works.", false],
-  ["word_copies", "Word copies of letters and CVs", "Saves and emails a Word file beside each PDF cover letter, tailored CV and interview prep pack, and offers it on Download.", false],
-  ["self_service", "Recruits' own page (/me)", "Lets recruits sign in with a link sent to their email and see their jobs, documents and search.", false],
+  ["alerts", "Admin alerts by email", "Emails you when something needs attention, such as a failed backup, a full disk or search credits running out, and again once it is fixed.", true],
+  ["prep_auto", "Automatic interview prep packs", "Makes a prep pack as soon as a job is moved to Interview. You can always make one yourself with the button on the job.", false],
+  ["word_copies", "Word copies of letters and CVs", "Also makes a Word file of each cover letter, tailored CV and prep pack, for anyone who wants to edit it.", false],
+  ["self_service", "Recruits' own page", "Lets recruits sign in with a link emailed to them to see their jobs and documents and change their search.", false],
 ];
 
 export function featureOn(status, name) {
@@ -170,7 +171,7 @@ const FEATURE_STYLE = `.featurelist{display:grid;gap:8px;margin:6px 0 14px}
 function featuresSection(on, csrf) {
   if (!Object.keys(on).length) return "";
   return `<h2 id="features">Features</h2>
-<p class="muted">Parts of HermitShell you can switch on or off. HermitShell applies a change within seconds while it is connected.</p>
+<p class="muted">Extra parts of HermitShell you can switch on or off. Changes take effect within seconds.</p>
 <form method="post" action="/admin/action">${hidden({ csrf, action: "features" })}<div class="featurelist">
 ${FEATURES.filter(([n]) => Object.hasOwn(on, n)).map(([n, label, help]) => `<input type="hidden" name="shown" value="${n}"><label class="check"><input type="checkbox" name="${n}" value="1"${checked(on[n])}> <span><b>${esc(label)}</b><br><span class="muted">${esc(help)}</span></span></label>`).join("\n")}
 </div><button>Save features</button></form>`;
@@ -218,8 +219,8 @@ ${demo}`, { wide: true, before: keyModals(csrf) + modelModals(csrf) + localModal
 
 // ------------------------------------------------------------------------- one profile's page
 
-function select(name, options, current) {
-  return `<select id="${name}" name="${name}">${options.map((o) => `<option value="${esc(o)}"${o === current ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
+function select(name, options, current, labels = {}) {
+  return `<select id="${name}" name="${name}">${options.map((o) => `<option value="${esc(o)}"${o === current ? " selected" : ""}>${esc(labels[o] || o)}</option>`).join("")}</select>`;
 }
 
 function hint(text) {
@@ -263,7 +264,7 @@ const LABELS = {
   report_time: "Daily report time", report_days: "Report days",
   name: "Name", email: "Email for reports", phone: "Phone", location: "Home town", titles: "Job titles",
   region: "Region or city", places: "Towns", max_km: "Distance from home town", country: "Country", remote_anywhere: "Fully remote jobs", level: "Seniority",
-  types: "Employment types", modes: "Work location", min_salary: "Minimum salary", currency: "Currency",
+  types: "Job types", modes: "Work location", min_salary: "Minimum salary", currency: "Currency",
   hide_agency: "Hide agency adverts",
 };
 
@@ -402,7 +403,7 @@ function shown(key, value) {
 
 function conflictBox(conflicts, latest, mine) {
   return `<div class="warn" id="conflict"><b>Someone else changed this recruit while you were editing.</b>
-<p>Nothing has been saved yet. Your version is in the form below; Save again to keep it, or change these back:</p>
+<p>Nothing is saved yet. Your version is in the form below. Press Save again to keep it, or change these back:</p>
 <ul>${conflicts.map((k) => `<li><b>${esc(LABELS[k])}</b>: now <i>${esc(shown(k, latest[k]))}</i>, yours <i>${esc(shown(k, mine[k]))}</i></li>`).join("")}</ul></div>`;
 }
 
@@ -412,21 +413,21 @@ export const STATUS_URL = "/admin/profile/status";
 
 function reportHint(p, status) {
   const zone = status.timezone ? ` (${status.timezone})` : "";
-  if (p.report?.pending) return `HermitShell moves the report to this time when it next checks in${zone}.`;
-  if ((status.scheduler ?? status.hermes_jobs) === false) return `Saved, but HermitShell's scheduler isn't set up, so the time applies once it is${zone}.`;
-  return `When HermitShell sends their report${zone}. Each recruit's report is its own scheduled job.`;
+  if (p.report?.pending) return `The new time starts from the next report${zone}.`;
+  if ((status.scheduler ?? status.hermes_jobs) === false) return `Saved. Reports start once HermitShell's daily schedule is set up${zone}.`;
+  return `When their daily email is sent${zone}.`;
 }
 
 // A report now, rather than at the daily time; the email follows when the scan finishes.
 export function sendButton(p, csrf, fields = {}, label = "Send jobs now") {
-  if (p.scanning) return '<button class="small" disabled>Scanning&hellip;</button>';
+  if (p.scanning) return '<button class="small" disabled>Finding jobs&hellip;</button>';
   return p.has_cv === false ? "" : button(csrf, "send_now", label, { u: p.id, ...fields }, "small");
 }
 
 export function sendSection(p, csrf, tz) {
-  const state = p.scanning ? `Scanning now (started ${esc(when(p.scanning, tz))}); the email follows when it finishes.`
-    : p.has_cv === false ? "Upload a CV first: jobs are rated against it."
-      : `Runs their report straight away instead of waiting for the daily time, and emails it even if nothing new turned up. A scan usually takes 10 to 20 minutes.`;
+  const state = p.scanning ? `Looking for jobs now (started ${esc(when(p.scanning, tz))}). The email follows when it is done.`
+    : p.has_cv === false ? "Upload a CV first, so jobs can be matched to it."
+      : `Look for jobs now instead of waiting for the daily email. It arrives in about 10 to 20 minutes, even if nothing new turned up.`;
   return `<h2 id="send">Send jobs now</h2><p class="muted">${state}</p>${sendButton(p, csrf, { back: "profile" })}`;
 }
 
@@ -435,8 +436,8 @@ export function sendSection(p, csrf, tz) {
 function retireSection(p, csrf, tz) {
   if (p.status === "retired") {
     const until = !p.keep_until ? "" : ` Their data is kept until <b>${esc(when(p.keep_until, tz).slice(0, 10))}</b>${p.keep_months
-      ? `, as they chose (${esc(p.keep_months)} months)` : ", unless they choose otherwise from the email they were sent"}, then deleted, backups included.`;
-    return `<h2 id="retire">Retired</h2><p class="muted">Retired${p.retired ? ` on ${esc(when(p.retired, tz).slice(0, 10))}` : ""}: they get no reports.${until} Reactivate starts their reports again.</p>
+      ? `, as they chose (${esc(p.keep_months)} months)` : ", unless they choose otherwise from the email they were sent"}, then deleted for good.`;
+    return `<h2 id="retire">Retired</h2><p class="muted">Retired${p.retired ? ` on ${esc(when(p.retired, tz).slice(0, 10))}` : ""}. They get no reports.${until} Reactivate starts their reports again.</p>
 ${button(csrf, "resume", "Reactivate", { u: p.id, back: "profile" }, "small")}`;
   }
   return `<h2 id="retire">Retire</h2><p class="muted">${esc(RETIRE_INTRO)}</p><a class="redbtn" href="#retire-${esc(p.id)}">${RETIRE_ICON}Retire ${esc(p.name)}</a>`;
@@ -466,17 +467,17 @@ ${conflicts.length ? conflictBox(conflicts, latest, v) : ""}
 <div class="grid2"><div><label for="d_name">Name</label><input id="d_name" name="name" value="${esc(v.name)}" required maxlength="80" autocomplete="off"></div>
 <div><label for="d_email">Email for reports</label><input id="d_email" name="email" type="email" value="${esc(v.email)}" required maxlength="120" autocomplete="off"></div>
 <div><label for="d_phone">Phone</label><input id="d_phone" name="phone" value="${esc(v.phone)}" maxlength="40" autocomplete="off">${hint("Optional. Shown on cover letters.")}</div>
-<div><label for="d_loc">Home town</label><input id="d_loc" name="location" value="${esc(v.location)}" maxlength="80" autocomplete="off">${hint("Shown on cover letters.")}</div></div>
+<div><label for="d_loc">Home town</label><input id="d_loc" name="location" value="${esc(v.location)}" maxlength="80" autocomplete="off">${hint("Shown on cover letters, and used for the distance limit.")}</div></div>
 ${searchFields(v, reportHint(p, status))}
 <button>Save changes</button></form>
 ${p.status === "retired" ? "" : sendSection(p, csrf, status.timezone)}
 ${notes}
 <h2 id="cv">CV</h2>
-<p class="muted">${p.has_cv ? `HermitShell has a CV${p.cv_updated ? ` (updated ${esc(when(p.cv_updated, status.timezone))})` : ""}. A new one replaces it and rebuilds the skills and profile the jobs are rated against.` : "No CV yet: jobs can't be rated until one is uploaded."}</p>
+<p class="muted">${p.has_cv ? `CV on file${p.cv_updated ? ` (updated ${esc(when(p.cv_updated, status.timezone))})` : ""}. Uploading a new one replaces it, and jobs are matched against the new one.` : "No CV yet. Upload one so jobs can be matched to it."}</p>
 <form method="post" action="/admin/cv" enctype="multipart/form-data">${hidden({ csrf, u: pid })}
 <label for="cv">CV file</label><input id="cv" name="cv" type="file" accept=".pdf,.docx,.txt,.md">${hint("PDF, Word (.docx) or text, up to 5 MB.")}
 <label for="cv_text">Or paste the CV text</label><textarea id="cv_text" name="cv_text" maxlength="${MAX_CV_TEXT}"></textarea>
-<label for="roles">Roles you're after</label><input id="roles" name="roles" maxlength="300">${hint("Optional. Helps suggest job titles from the CV.")}
+<label for="roles">Roles they're after</label><input id="roles" name="roles" maxlength="300">${hint("Optional. Helps pick the right job titles from the CV.")}
 <button>Upload CV</button></form>
 ${retireSection(p, csrf, status.timezone)}`, { wide: true, status: code, before: retireModal(p, csrf) + BACK_TO_RECRUITS, headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` },
     refresh: cv?.busy ? 15 : 0, refreshTo: cv?.busy ? `/admin/profile?u=${pid}` : "" });
@@ -485,16 +486,16 @@ ${retireSection(p, csrf, status.timezone)}`, { wide: true, status: code, before:
 // The job search and daily report boxes, on a recruit's page and on their own (/me).
 export function searchFields(v, timeHint) {
   return `<h2 id="job">Job search</h2>
-<label for="titles">Job titles</label><textarea id="titles" name="titles" maxlength="600" placeholder="Data Engineer&#10;Analytics Engineer">${esc(v.titles.join("\n"))}</textarea>${hint(`One per line, up to ${MAX_TITLES}.`)}
-<div class="grid2"><div><label for="region">Region or city</label><input id="region" name="region" value="${esc(v.region)}" maxlength="80" placeholder="Greater Manchester">${hint("Where to look. Web searches use this.")}</div>
-<div><label for="country">Country</label>${countrySelect(v.country)}${hint("Searches favour jobs in this country.")}</div></div>
-<label for="places">Towns</label><input id="places" name="places" value="${esc(v.places.join(", "))}" maxlength="1200" placeholder="Salford, Stockport, Trafford">${hint("Towns in the region whose jobs count as local, separated by commas.")}
-<label for="max_km">Within N km of home town (as the crow flies)</label><input id="max_km" name="max_km" type="number" min="0" max="${MAX_DISTANCE_KM}" step="1" value="${esc(v.max_km === "0" ? "" : v.max_km)}" placeholder="No limit" inputmode="numeric">${hint(`Up to ${MAX_DISTANCE_KM} km from the Home town in the details. Where a job's town is known, its distance decides instead of the region and towns; remote and hybrid jobs, and towns that aren't found, still go by the region.`)}<span class="hint">Place data from <a href="https://www.geonames.org/" rel="noopener noreferrer">GeoNames</a>, CC BY 4.0.</span>
-<label class="check"><input type="checkbox" name="remote_anywhere" value="1"${checked(v.remote_anywhere)}> <span>Include fully remote jobs based anywhere</span></label>
-<div class="grid2"><div><label for="level">Seniority</label>${select("level", LEVELS, v.level)}</div>
-<div><label for="min_salary">Minimum salary</label><input id="min_salary" name="min_salary" value="${esc(v.min_salary === "0" ? "" : v.min_salary)}" maxlength="12" placeholder="No minimum" inputmode="decimal">${hint("For example 45000 or 45k. Jobs that don't show a salary are always included.")}</div>
-<div><label for="currency">Currency</label>${currencySelect(v.currency)}${hint("Salaries in other currencies are converted to this one at the day's exchange rate, and the minimum is in it. As advertised leaves them as they are.")}</div></div>
-<label>Employment types</label>${boxes("types", EMPLOYMENT_TYPES, v.types)}
+<label for="titles">Job titles</label><textarea id="titles" name="titles" maxlength="600" placeholder="Data Engineer&#10;Analytics Engineer">${esc(v.titles.join("\n"))}</textarea>${hint(`The jobs to look for, one per line (up to ${MAX_TITLES}).`)}
+<div class="grid2"><div><label for="region">Region or city</label><input id="region" name="region" value="${esc(v.region)}" maxlength="80" placeholder="Greater Manchester">${hint("The area to look for jobs in.")}</div>
+<div><label for="country">Country</label>${countrySelect(v.country)}${hint("Jobs in this country come first.")}</div></div>
+<label for="places">Towns</label><input id="places" name="places" value="${esc(v.places.join(", "))}" maxlength="1200" placeholder="Salford, Stockport, Trafford">${hint("Nearby towns that also count as local, separated by commas.")}
+<label for="max_km">Maximum distance from home town (km)</label><input id="max_km" name="max_km" type="number" min="0" max="${MAX_DISTANCE_KM}" step="1" value="${esc(v.max_km === "0" ? "" : v.max_km)}" placeholder="No limit" inputmode="numeric">${hint(`Leave empty for no limit. Measured in a straight line, up to ${MAX_DISTANCE_KM} km. Remote and hybrid jobs aren't limited by distance.`)}<span class="hint">Town locations from <a href="https://www.geonames.org/" rel="noopener noreferrer">GeoNames</a> (CC BY 4.0).</span>
+<label class="check"><input type="checkbox" name="remote_anywhere" value="1"${checked(v.remote_anywhere)}> <span>Also include fully remote jobs from anywhere</span></label>
+<div class="grid2"><div><label for="level">Seniority</label>${select("level", LEVELS, v.level, LEVEL_LABELS)}</div>
+<div><label for="min_salary">Minimum salary</label><input id="min_salary" name="min_salary" value="${esc(v.min_salary === "0" ? "" : v.min_salary)}" maxlength="12" placeholder="No minimum" inputmode="decimal">${hint("For example 45000 or 45k. Jobs that don't show a salary are still included.")}</div>
+<div><label for="currency">Currency</label>${currencySelect(v.currency)}${hint("Salaries are shown in this currency, and the minimum is in it too. Pick As advertised to leave them as they are.")}</div></div>
+<label>Job types</label>${boxes("types", EMPLOYMENT_TYPES, v.types)}
 <label>Work location</label>${boxes("modes", WORK_MODES, v.modes)}
 <label class="check"><input type="checkbox" name="hide_agency" value="1"${checked(v.hide_agency)}> <span>Hide agency adverts that don't name the employer</span></label>
 
@@ -520,19 +521,19 @@ export function saveStatus(status, pid, queue, n) {
   if (mine.length) {
     refresh = n < WAIT_FAST ? 5 : n < WAIT_SLOW ? 20 : 0;
     const cv = mine.some((i) => i.action === "cv");
-    body = !refresh ? `Still waiting for HermitShell. <a href="/admin/profile?u=${esc(pid)}" target="_top">Reload</a> to check again; <a href="/admin" target="_top">Recruits</a> shows when it last reported.`
-      : cv ? "Saved. HermitShell is reading the new CV; this takes a few minutes."
-        : mine.every((i) => i.action === "send_now") ? "Starting the scan&hellip;"
-          : "Saved. Waiting for HermitShell to apply it (a few seconds while it is connected)&hellip;";
+    body = !refresh ? `Still waiting for HermitShell. It may be offline. <a href="/admin/profile?u=${esc(pid)}" target="_top">Reload</a> to check again.`
+      : cv ? "Saved. HermitShell is reading the new CV. This takes a few minutes."
+        : mine.every((i) => i.action === "send_now") ? "Starting the job search&hellip;"
+          : "Saved. Taking effect in a few seconds&hellip;";
   } else if (scan && !failed.length) {
     refresh = n < SCAN_CHECKS ? 30 : 0;
-    body = `Scanning for jobs since ${esc(when(scan, tz))}; the email follows when it finishes.`;
+    body = `Looking for jobs since ${esc(when(scan, tz))}. The email follows when it is done.`;
   } else if (failed.length) {
-    body = `<b>HermitShell could not apply a change:</b> ${esc(failed.at(-1).error)}`;
+    body = `<b>A change didn't work:</b> ${esc(failed.at(-1).error)}`;
   } else if (n > 0) {
-    body = `Applied by HermitShell${status.updated ? ` at ${esc(when(status.updated, tz))}` : ""}.`;
+    body = `Done${status.updated ? ` at ${esc(when(status.updated, tz))}` : ""}. Your changes are in effect.`;
   } else {
-    body = status.updated ? `Up to date. HermitShell last reported ${esc(ago(status.updated))}.` : "HermitShell hasn't reported yet.";
+    body = status.updated ? `Up to date. HermitShell last checked in ${esc(ago(status.updated))}.` : "HermitShell hasn't reported yet.";
   }
   const next = refresh ? `<meta http-equiv="refresh" content="${refresh};url=${STATUS_URL}?u=${esc(pid)}&amp;n=${n + 1}">` : "";
   const state = mine.length || (scan && !failed.length) ? (refresh ? "wait" : "idle") : failed.length ? "bad" : n > 0 ? "done" : "ok";
@@ -674,13 +675,13 @@ export const SETTINGS_DONE = {
   bademail: "Check the email settings: the server, port, username and addresses must be valid.",
   badmodel: "Choose a provider and paste its API key or a model name (letters, numbers and . _ : / @ + -).",
   badlocal: "Pick a server model, or type an Ollama model name such as mistral:7b (letters, numbers and . _ - / :).",
-  nokey: "Not saved: HermitShell hasn't sent the key that keeps passwords and API keys encrypted until it collects them. Save again once it is connected and up to date.",
+  nokey: "Not saved yet: HermitShell needs to be online to store passwords and keys securely. Try again once it is online.",
   baddetails: "A name and a valid email address are needed.",
   profile: "Unknown recruit. Reload the admin page and try again.",
   cvsize: "The CV file is larger than 5 MB.",
   cvtype: "The CV must be a PDF, a Word .docx file or a text file.",
   cvmissing: "Upload a CV file or paste the CV (at least a few lines).",
-  cvqueued: "CV uploaded. HermitShell reads it and rebuilds the profile within about 10 minutes, then emails a summary.",
+  cvqueued: "CV uploaded. HermitShell reads it and updates the profile within about 10 minutes, then emails a summary.",
   badtime: "Choose a time for the daily report.",
   sending: "Sending. HermitShell starts the scan within seconds while it is connected; the email follows when it finishes, usually in 10 to 20 minutes.",
 };

@@ -71,7 +71,7 @@ describe("retiring recruits from the dashboard", () => {
   it("retires the ticked recruits only with the tick box, skipping anyone already retired", async () => {
     const { env, admin } = await setup();
     expect(await admin.to({ action: "bulk", op: "retire", u: ["sam-lee", "jordan-patel"] })).toBe("/admin?done=retireconfirm");
-    expect(await admin.text("/admin?done=retireconfirm")).toContain("Tick the confirmation box to retire.");
+    expect(await admin.text("/admin?done=retireconfirm")).toContain("Tick the confirmation box to retire them.");
     expect(queue(env)).toEqual([]);
     expect(await admin.to({ action: "bulk", op: "retire", u: ["sam-lee", "jordan-patel", "riley-chen", "owner"], confirm: "yes" }))
       .toBe("/admin?done=bulk&n=2&m=2");

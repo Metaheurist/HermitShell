@@ -67,7 +67,7 @@ function moveForm(pid, c, h, ctx) {
   const placement = ctx.admin ? `<details class="pdet"><summary>Start date and fee (offer or placed)</summary>
 <label>Start date<input type="date" name="start"></label><label>Fee<input name="fee" inputmode="decimal" maxlength="12" placeholder="0.00"></label>
 <label>Currency<select name="currency">${CURRENCIES.map(([code]) => `<option${code === currency ? " selected" : ""}>${code}</option>`).join("")}</select></label>
-<small>Only admins and managers see these. The fee is sealed for HermitShell and not shown on the dashboard.</small></details>` : "";
+<small>Only admins and managers see these. The fee is stored securely and isn't shown on the dashboard.</small></details>` : "";
   return `<form method="post" action="${STAGE_URL}" class="pmove"><input type="hidden" name="csrf" value="${esc(ctx.csrf)}">
 <input type="hidden" name="u" value="${esc(pid)}"><input type="hidden" name="j" value="${esc(c.key)}">
 <label class="sr" for="st-${h}">Move to</label><select id="st-${h}" name="a">${options}</select><button>Move</button>${placement}</form>`;
@@ -96,9 +96,9 @@ ${prepAction(pid, c, hash, ctx)}${ctx.csrf ? moveForm(pid, c, h, ctx) : ""}</li>
 }
 
 const NOTES = {
-  stage: ["ok", "Moved. HermitShell collects it within about 5 minutes, and the board shows it after its next check-in."],
+  stage: ["ok", "Moved. The board shows it within about 5 minutes."],
   stagebad: ["bad", "That move could not be made. Check the start date and fee, then try again."],
-  feeseal: ["bad", "The fee was not saved: HermitShell has not sent the key it is sealed with yet. Try again after its next check-in."],
+  feeseal: ["bad", "The fee was not saved because HermitShell isn't ready to store it securely yet. Try again in about 5 minutes."],
   doc: ["ok", "HermitShell is making the prep pack. It is emailed to the recruit and can be downloaded here within a few minutes."],
   docbad: ["bad", "That prep pack could not be asked for. Reload the page and try again."],
 };
@@ -119,10 +119,10 @@ export async function pipelinePage(status, board, pid, opts = {}) {
 <ul>${rows.map(([c, h]) => cardHtml(pid, c, h, ctx)).join("") || '<li class="pnone">None</li>'}</ul></section>`;
   }).join("");
   const [tone, message] = NOTES[opts.done] || [];
-  const intro = `<p class="muted">Where each application stands, from the email buttons and the moves made here. A move shows on the board
-after HermitShell's next check-in, within about 5 minutes. Jobs marked Not for me are left off.</p>`;
+  const intro = `<p class="muted">Where each application stands, from the recruit's email buttons and the moves made here. A move shows on the board
+within about 5 minutes. Jobs marked Not for me are left off.</p>`;
   const body = Array.isArray(board) ? `<div class="pboard">${columns}</div>`
-    : '<p class="note">No board yet. HermitShell sends it with the jobs sent, within a few minutes of its next check-in.</p>';
+    : '<p class="note">No board yet. It appears within a few minutes.</p>';
   return page(p.name, `<style>${PIPELINE_STYLE}</style>${profileTabs(pid, "pipeline")}${message ? `<p class="note ${tone}" role="status">${esc(message)}</p>` : ""}
 ${intro}${body}`, back);
 }

@@ -108,7 +108,7 @@ describe("presence on the dashboard", () => {
     ws.serializeAttachment({ at: Date.now() });
     HUB.state.acceptWebSocket(ws);
     const page = await dashboard(env);
-    expect(page).toContain('<span class="live" aria-hidden="true"></span><b>HermitShell is connected</b>');
+    expect(page).toContain('<span class="live" aria-hidden="true"></span><b>HermitShell is online</b>');
     expect(page).toContain("Recruits last reported 8 minutes ago");
   });
 

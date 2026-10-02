@@ -16,7 +16,7 @@ const MAX_CV_TEXT = 20000;
 const MAX_ZIP_ENTRIES = 500;
 const CV_TYPES = { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   txt: "text/plain", md: "text/markdown" };
-const EXPIRED = ["Invite not valid", "<p>This invite link has expired or has already been used. Ask for a new one.</p>", { status: 410 }];
+const EXPIRED = ["Invite not valid", "<p>This invite link has expired or has already been used. Ask the person who invited you for a new one.</p>", { status: 410 }];
 
 // HermitShell applies the queue in id order, so two changes saved in the same millisecond must not be ordered by
 // their random part.
@@ -114,7 +114,7 @@ function form(inviteId, values = {}, error = "") {
 <label for="location">Where you live (optional)</label><input id="location" name="location" maxlength="80" value="${v("location")}" placeholder="For example: Belfast">
 <label for="roles">Roles you are looking for</label><textarea id="roles" name="roles" required maxlength="300" placeholder="For example: data analyst or BI developer, hybrid or remote">${v("roles")}</textarea>
 <label for="cv">Your CV (PDF, Word .docx or text, up to 5 MB)</label><input id="cv" name="cv" type="file" accept=".pdf,.docx,.txt,.md">
-<label for="cv_text">Or paste your CV (used if the file cannot be read)</label><textarea id="cv_text" name="cv_text" maxlength="${MAX_CV_TEXT}">${v("cv_text")}</textarea>
+<label for="cv_text">Or paste the text of your CV instead</label><textarea id="cv_text" name="cv_text" maxlength="${MAX_CV_TEXT}">${v("cv_text")}</textarea>
 <label class="check"><input type="checkbox" name="consent" value="yes" required> <span>I agree that HermitShell keeps my CV and details on its server to match jobs for me, as described in <a href="/privacy" target="_blank" rel="noopener">how your data is handled</a>. Every report has an unsubscribe link that deletes them.</span></label>
 <button type="submit">Create my profile</button></form>`);
 }
@@ -159,5 +159,5 @@ export async function handleJoin(request, env) {
     ...(invite.recruiter ? { recruiter: invite.recruiter } : {}), ...values, cv };
   await queueItem(env, info ? await sealItem(info, item) : item);
   return page("Thanks, you're in", `<p>Thanks ${esc(values.name)}. HermitShell is setting up your profile from your CV and will email
-${esc(values.email)} when it is ready. Your first report arrives with the next daily run.</p><p>You can close this tab.</p>`);
+${esc(values.email)} when it is ready. Your first list of jobs comes in your next daily email.</p><p>You can close this tab.</p>`);
 }

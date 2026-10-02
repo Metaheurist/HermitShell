@@ -276,7 +276,7 @@ describe("a cover letter's length and tone", () => {
     const titles = valuesWith(env, "history:sam-lee:").flat().map((e) => e.t);
     expect(titles).toContain("Asked for a cover letter (detailed, direct): Data Engineer");
     await upload(env);
-    expect(await (await worker.fetch(new Request(`${BASE}/f?${q}`), env)).text()).toMatch(/Or have a new one written[\s\S]*name="len"[\s\S]*Confirm: write a new cover letter/);
+    expect(await (await worker.fetch(new Request(`${BASE}/f?${q}`), env)).text()).toMatch(/Or ask for a new one[\s\S]*name="len"[\s\S]*Confirm: write a new cover letter/);
   });
 });
 

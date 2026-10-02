@@ -387,7 +387,7 @@ export function waitRefresh(items, now = Date.now()) {
   return age < 45000 ? 4 : age < 300000 ? 20 : 0;
 }
 
-export const APPLIED = "Applied by HermitShell. The page shows the change.";
+export const APPLIED = "Done. The page shows the change.";
 
 // Where a page reloads to so it keeps its place at #section. Reloading its own address would not do: with a #section
 // in it the browser only scrolls there, so `w` flips to make each reload a real one.
@@ -399,8 +399,8 @@ export function reloadTo(url, section) {
 
 export function waitBar(what, refresh) {
   return refresh
-    ? `<p class="waitbar" role="status"><span class="spinner" aria-hidden="true"></span><span><b>Saving.</b> Waiting for HermitShell to apply ${esc(what)}; this page updates by itself.</span></p>`
-    : `<p class="waitbar late" role="status"><span><b>Still waiting for HermitShell</b> to apply ${esc(what)}. It may be offline or busy; reload the page to check again.</span></p>`;
+    ? `<p class="waitbar" role="status"><span class="spinner" aria-hidden="true"></span><span><b>Saving.</b> Waiting for HermitShell to pick up ${esc(what)}. This page updates by itself.</span></p>`
+    : `<p class="waitbar late" role="status"><span><b>Still waiting for HermitShell</b> to pick up ${esc(what)}. It may be offline or busy. Reload the page to check again.</span></p>`;
 }
 
 export function savingTag(label = "saving") {

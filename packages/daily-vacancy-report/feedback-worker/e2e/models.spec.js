@@ -40,7 +40,7 @@ test("the server panel shows the last backup, and Back up now queues one for Her
   await expect(panel).toContainText("keep a copy of it away from this server");
   await panel.getByRole("button", { name: "Back up now" }).click();
   await expect(page).toHaveURL(/\/admin\?done=backup$/);
-  await expect(page.getByText("Backing up. HermitShell starts within seconds")).toBeVisible();
+  await expect(page.getByText("Backing up. The backup appears in the server panel")).toBeVisible();
   const res = await hermitShellApi(request, "GET", "/api/queue?full=1");
   expect((await res.json()).items.some((i) => i.type === "admin" && i.action === "backup_now")).toBe(true);
 });
@@ -59,7 +59,7 @@ test("an AI model key is added from its modal and queued for HermitShell, sealed
   await modal.getByLabel(/^Model/).fill("Qwen/Qwen2.5-14B-Instruct");
   await modal.getByRole("button", { name: "Save" }).click();
   await expect(page).toHaveURL(/done=queued#models$/);
-  await expect(page.locator(".waitbar")).toContainText("Waiting for HermitShell to apply the AI model settings");
+  await expect(page.locator(".waitbar")).toContainText("Waiting for HermitShell to pick up the AI model settings");
   await expect(row.locator(".savingtag")).toHaveText("saving…");
   await expect(page.locator("body")).not.toContainText("rc-e2e-featherless-0001");
   const res = await hermitShellApi(request, "GET", "/api/queue?full=1");

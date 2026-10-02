@@ -133,7 +133,7 @@ describe("moving a job", () => {
     expect(keysWith(env, "flag:events:sam-lee")).toEqual(["flag:events:sam-lee"]);
     const history = valuesWith(env, "history:sam-lee:").flat();
     expect(history.map((e) => [e.k, e.t])).toContainEqual(["stage", "Moved to Interview: Data Engineer at Northwind"]);
-    expect(await admin.text("/admin/pipeline?u=sam-lee&done=stage")).toContain("Moved. HermitShell collects it");
+    expect(await admin.text("/admin/pipeline?u=sam-lee&done=stage")).toContain("Moved. The board shows it");
   });
 
   it("refuses an unknown stage or job, and a stale form", async () => {

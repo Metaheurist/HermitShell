@@ -19,7 +19,7 @@ async function fillForm(page, cv) {
   await page.getByLabel("Full name").fill("Casey Quinn");
   await page.getByLabel("Email for your reports").fill("casey.quinn@example.com");
   await page.getByLabel("Roles you are looking for").fill("Data analyst or BI developer, hybrid");
-  await page.getByLabel("Or paste your CV").fill(cv);
+  await page.getByLabel("Or paste the text of your CV").fill(cv);
   await page.getByRole("checkbox").check();
 }
 

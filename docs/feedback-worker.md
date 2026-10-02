@@ -365,7 +365,7 @@ HermitShell applies the changes, since the Worker can't reach your server.
    Each run syncs, then makes sure the **live link** is up: a background `profiles.py listen`
    process that keeps a WebSocket open from your server to the Worker's `/api/live`. The Worker
    pushes a message down it the moment anything is queued, so dashboard changes and sign-ups are
-   applied within a second or two, and the dashboard shows **HermitShell is connected**. The link
+   applied within a second or two, and the dashboard shows **HermitShell is online**. The link
    pings every 30 seconds, reconnects by itself after a drop (every Worker deploy closes it) and
    restarts when `profiles.py` changes; if the process dies, the next run starts another.
    `python3 profiles.py --once` syncs once and exits. Items are applied in the order they were
@@ -442,7 +442,7 @@ settings** (the email server and web search keys the whole tool shares). Recruit
 
 <img src="images/worker/admin-dashboard-setup.png" alt="Admin page right after setup, with the checklist" width="720">
 
-- **HermitShell is connected**, with a green dot, while the live link is up (changes reach it
+- **HermitShell is online**, with a green dot, while the live link is up (changes take effect
   within seconds), followed by when it last reported its recruits. Without the link the line says
   when HermitShell last checked in instead (each poll counts). Times on every admin page are in
   your timezone (`HERMES_TIMEZONE`). If it hasn't checked in for 45 minutes, a warning asks you to
@@ -457,7 +457,7 @@ settings** (the email server and web search keys the whole tool shares). Recruit
   **Weekdays at 08:15**) and a **no CV** tag when there is none yet. The buttons sit on one line at
   the end of the row. **Send jobs** runs that recruit's report straight away (see
   [Send jobs now](#send-jobs-now)); while a report is running, daily or sent now, it says
-  **Scanning…** and the row says **scanning now**. **Manage** opens that recruit's page (details,
+  **Finding jobs…** and the row says **finding jobs now**. **Manage** opens that recruit's page (details,
   job search, report time and CV). The sent button has two halves: the little chart opens its
   [stats page](#stats) and **24 sent** the [list of jobs sent](#jobs-sent). The pause and play
   buttons pause or resume their reports, and the red bin button deletes them: it opens a window where you tick **Delete their CV and history** and press **Delete**.
@@ -475,7 +475,7 @@ settings** (the email server and web search keys the whole tool shares). Recruit
 - **Search**: the magnifying glass above the table slides out a search box and a status dropdown
   (CSS only). Press Enter and the page lists only the recruits whose name, email, id, place, tags or
   recruiter contain every word you typed (`/admin?q=`), with a count and **&times;** to show everyone
-  again. Status isn't typed: pick **Active**, **Paused**, **Scanning now**, **No CV**, **Pending
+  again. Status isn't typed: pick **Active**, **Paused**, **Finding jobs now**, **No CV**, **Pending
   sign-up** or **Retired** from the dropdown (`/admin?s=`) to list only those, on its own or with the words. Picking
   one lists them at once; without JavaScript a **Show** button appears beside it instead. Searching
   a recruiter's name or username puts the recruiter at the top, followed by all of their recruits
@@ -643,12 +643,12 @@ Emails are drawn by HermitShell, so they keep HermitShell's look.
 
 <img src="images/worker/admin-settings.png" alt="Global settings: email server, web search and AI model API keys" width="720">
 
-- **Email server**: SMTP server, port, username, password (for Gmail an
+- **Email server**: outgoing mail server (SMTP), port, username, password (for Gmail an
   [app password](api-keys.md#gmail-app-password)) and an optional sender address, used for
   everyone's reports. The password box stays empty; leave it empty to keep the saved one. Changing
   the server or username without a new password clears the old password, so it is never sent to a
   different server. **Send a test email** reports the result on the page after HermitShell's next check.
-  **Go back to the .env email settings** undoes the dashboard values. Where each person's reports
+  **Use the server's own email settings instead** undoes the dashboard values. Where each person's reports
   go is set on their own page under **Recruits**.
 - **Web search API keys**: one row each for Firecrawl, Tavily and Scrapfly, showing whether the key
   was set here or comes from `.env` and its start and end. **Add key** or **Change** opens a window
@@ -737,7 +737,7 @@ are applied by `profiles.py`, within seconds over the live link. Until then a **
 says what is pending, the key or model being changed carries a **saving&hellip;** tag, a new model order
 is shown picked, and the email server form shows what you saved rather than the old values. The page
 updates itself every 4 seconds for the first 45, then every 20, and once HermitShell has applied the
-change it shows it with **Applied by HermitShell**. After 5 minutes it stops and says HermitShell may be
+change it shows it with **Done. The page shows the change.** After 5 minutes it stops and says HermitShell may be
 offline, so an offline server doesn't use up KV's daily list operations. Where scripts run, the dashboard's
 script fetches the page in the background and swaps in the new card, keeping what you are typing, open
 windows and menus, focus and the scroll: it waits while a field has focus or has been typed in, while a
@@ -751,8 +751,8 @@ them.
 ##### Features
 
 On/off switches for optional features, each shown once HermitShell has the feature and reports it:
-**Admin alerts by email** ([what they check](configuration.md#admin-alerts)) and **Interview prep packs
-on Interview** (off at first; see [Pipeline](#pipeline)). **Save features** queues
+**Admin alerts by email** ([what they check](configuration.md#admin-alerts)) and **Automatic interview
+prep packs** (off at first; see [Pipeline](#pipeline)). **Save features** queues
 the change like the other settings; HermitShell writes only these switches to its settings and ignores
 anything else in the request.
 
@@ -818,8 +818,8 @@ button; **Send jobs now** and the CV's **Upload CV** have their own.
 - **Job search**: up to 8 job titles, region or city (web searches use it, with the country as a
   filter), country (picked from a list by name; a two-letter code set by hand in `.env` that isn't in
   the list shows as its own option and is kept when the form is saved), the towns that count as local
-  (comma separated), **Within N km of home town** (as the crow flies, up to 500; empty is no limit;
-  place data from GeoNames, CC BY 4.0: see
+  (comma separated), **Maximum distance from home town (km)** (in a straight line, up to 500; empty is no limit;
+  town locations from GeoNames, CC BY 4.0: see
   [Distance from home](../packages/daily-vacancy-report/README.md#distance-from-home)), whether fully
   remote jobs elsewhere count, seniority,
   minimum salary (empty means no minimum; `45000`, `45k` and `£45,000` all work), the salary
@@ -855,8 +855,8 @@ without the link. Meanwhile:
 
 - The page shows what HermitShell last reported with every save still waiting laid over it, so the
   form keeps what you saved instead of jumping back to the old values.
-- A small box at the top says **Waiting for HermitShell**, then **Applied by HermitShell** (or why
-  it couldn't be applied). It reloads itself every 5 seconds for a minute, then every 20 seconds for
+- A small box at the top says **Saved. Taking effect in a few seconds**, then **Done. Your changes are in effect** (or
+  **A change didn't work** and why). It reloads itself every 5 seconds for a minute, then every 20 seconds for
   3 more, then stops; each check lists the KV queue, which the free plan limits to 1,000 a day.
   The box needs no JavaScript: it is a small frame that only the dashboard itself can embed.
 - Only the fields you changed are saved. Each form remembers the values it opened with, so if
@@ -880,8 +880,8 @@ earlier report aren't repeated. It works for a paused recruit too, as a one-off.
 
 <img src="images/worker/admin-profile-scanning.png" alt="A recruit's page while their report is running" width="720">
 
-While any report is running, daily or sent now, the dashboard row shows **scanning now**, the
-button becomes **Scanning…**, and the recruit's page status box says when the scan started,
+While any report is running, daily or sent now, the dashboard row shows **finding jobs now**, the
+button becomes **Finding jobs…**, and the recruit's page status box says when the search started,
 checking every 30 seconds (from HermitShell's status report only, with no KV listing) for up to 40
 minutes. A second press while a scan is running does nothing. A recruit without a CV has no button;
 HermitShell refuses the request and says so under **HermitShell could not apply**.
@@ -980,7 +980,7 @@ stage, and a **Move to** menu.
   back" reminders stop.
 - **Interview prep**: cards at **Interview** and **Offer** have an **Interview prep** button that asks
   for the job's [prep pack](#jobs-sent), then show **Prep pack being made** and, once it is kept, a
-  green **Prep pack** download. With **Interview prep packs on Interview** switched on (Global settings,
+  green **Prep pack** download. With **Automatic interview prep packs** switched on (Global settings,
   Features, or `INTERVIEW_PREP_AUTO=1`), HermitShell makes one by itself when a job reaches Interview
   in the last two days: one per job, ever, and none if one was already asked for.
 
@@ -1327,7 +1327,7 @@ stop, and they choose by email whether HermitShell keeps their profile for when 
 
 ### Recruits' own page
 
-With the **Recruits' own page (/me)** switch under Features on Global settings (`HERMES_SELF_SERVICE=1`, off by
+With the **Recruits' own page** switch under Features on Global settings (`HERMES_SELF_SERVICE=1`, off by
 default; it needs Worker and HermitShell protocol 6), each active recruit can sign in at `/me` with a link
 emailed to the address their reports go to. While it is off, every `/me` address is a 404.
 

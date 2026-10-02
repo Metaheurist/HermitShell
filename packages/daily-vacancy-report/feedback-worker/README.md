@@ -27,7 +27,7 @@ missing-skill tags) without opening any port on your server.
   with `POST /api/status`.
 - `/api/live` is HermitShell's live link: a WebSocket, opened from the HermitShell server, that a
   Durable Object (`Hub`, binding `HUB`) tells the moment anything is queued. The dashboard shows
-  **HermitShell is connected** while it is up. Without it HermitShell polls `/api/queue/flag`.
+  **HermitShell is online** while it is up. Without it HermitShell polls `/api/queue/flag`.
 
 Source: `src/index.js` (buttons, routing), `src/join.js` (invites, sign-up), `src/admin.js` (admin
 page, HermitShell API), `src/users.js` (dashboard users and roles), `src/keys.js` (global web search

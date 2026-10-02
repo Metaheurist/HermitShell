@@ -169,7 +169,7 @@ describe("feedback worker", () => {
     expect(res.status).toBe(200);
     expect(body).toContain('value="Terraform" checked');
     expect(body).toContain('value="Kubernetes">');
-    expect(body).toContain("Other skills you have");
+    expect(body).toContain("Any other skills you have");
     expect(env.FEEDBACK.store.size).toBe(0);
   });
 

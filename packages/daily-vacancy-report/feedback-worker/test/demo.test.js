@@ -151,8 +151,8 @@ describe("demo mode pages", () => {
     expect(dashboard).not.toContain("/admin/profile?u=owner");
     for (const name of ["Alex Morgan", "Avery Lane", "Sam Lee", "Jordan Patel", "Morgan Ellis", "Taylor Reid", "Jamie Walsh", "Robin Shaw", "Riley Chen", "Casey Quinn",
       "Drew Harper"]) expect(dashboard).toContain(name);
-    expect(dashboard).toContain("HermitShell is connected");
-    expect(dashboard).toContain("scanning now");
+    expect(dashboard).toContain("HermitShell is online");
+    expect(dashboard).toContain("finding jobs now");
     expect(dashboard).toContain("Careers fair, marketing graduate");
     expect(dashboard).toContain('<div class="demoribbon" role="status">');
     expect(dashboard).toMatch(/<form method="post" action="\/admin\/demo"><input type="hidden" name="csrf" value="[0-9a-f]+"><input type="hidden" name="on" value="0">\s*<input type="hidden" name="from" value="ribbon"><button>Turn off<\/button><\/form>/);
@@ -199,7 +199,7 @@ describe("demo mode's desk under load", () => {
     await demoOn(admin);
     const dashboard = (await admin.get("/admin")).body;
     expect(new Set(dashboard.match(/aria-label="Recruiter for (?!the ticked)[^"]+"/g)).size).toBe(35);
-    expect(dashboard.match(/scanning now/g).length).toBeGreaterThanOrEqual(4);
+    expect(dashboard.match(/finding jobs now/g).length).toBeGreaterThanOrEqual(4);
     for (const note of ["Engineering open evening", "Graduate scheme, cyber security"]) expect(dashboard).toContain(note);
     const users = (await admin.get("/admin/users")).body;
     for (const name of ["Jamie Chen", "Robin Ellis", "Riley Morgan", "Sam Patel", "Avery Reid", "Jordan Lane", "Taylor Shaw"]) expect(users).toContain(name);
@@ -255,7 +255,7 @@ describe("demo mode's newer features", () => {
     const { admin } = await setup();
     await demoOn(admin);
     const settings = (await admin.get("/admin/settings")).body;
-    for (const label of ["Admin alerts by email", "Interview prep packs on Interview", "Word copies of letters and CVs"]) expect(settings).toContain(label);
+    for (const label of ["Admin alerts by email", "Automatic interview prep packs", "Word copies of letters and CVs"]) expect(settings).toContain(label);
     expect(settings).toContain('id="mlocal"');
     expect(settings).toContain('value="qwen3:30b-a3b-instruct-2507-q4_K_M"');
     expect(settings).toMatch(/Downloading <code class="mname">qwen3:30b-a3b-instruct-2507-q4_K_M<\/code>: \d+%/);
@@ -447,10 +447,10 @@ describe("demo mode presses play out", () => {
     expect(robin).toContain('<option value="casey" selected>');
     expect(body).not.toContain("Taylor Reid");
     const morgan = () => body.slice(body.indexOf("<b>Morgan Ellis</b>")).split("</tr>")[0];
-    expect(morgan()).toContain("scanning now");
+    expect(morgan()).toContain("finding jobs now");
     later(WORK_MS.scan);
     const done = (await admin.get("/admin")).body;
-    expect(done.slice(done.indexOf("<b>Morgan Ellis</b>")).split("</tr>")[0]).not.toContain("scanning now");
+    expect(done.slice(done.indexOf("<b>Morgan Ellis</b>")).split("</tr>")[0]).not.toContain("finding jobs now");
   });
 
   it("starts afresh each time it is turned on", async () => {

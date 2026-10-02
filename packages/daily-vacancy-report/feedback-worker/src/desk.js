@@ -235,7 +235,7 @@ ${fees ? `<span class="tfee">${money(sum.fees)}</span>` : ""}</a>`;
   }).join("");
 
   const updated = view?.updated ? `<span class="muted">Updated ${esc(ago(view.updated))}</span>` : "";
-  const waiting = !view ? '<p class="note ok" role="status">HermitShell sends the desk within 30 minutes of its next check-in once it runs this version. Until then every number shows as a dash.</p>' : "";
+  const waiting = !view ? '<p class="note ok" role="status">The numbers appear within about 30 minutes. Until then they show as a dash.</p>' : "";
   const empty = mine.length ? "" : `<p class="muted">${team ? "This team has no recruits yet." : me.admin ? "No recruits yet." : me.manager ? "Your team has no recruits yet." : "You have no recruits yet."}</p>`;
   const scope = me.admin ? "Every recruiter's recruits, grouped by recruiter. Fees are the placements' fees, by currency."
     : me.manager ? "Your team's recruits, grouped by recruiter. Fees are the placements' fees, by currency." : "Your recruits only.";

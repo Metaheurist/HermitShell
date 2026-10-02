@@ -218,7 +218,7 @@ describe("backups in the server panel", () => {
     expect(res.headers.get("Location")).toBe("/admin?done=backup");
     await act({ action: "backup_now" });
     expect(valuesWith(env, "queue:").filter((i) => i.action === "backup_now")).toEqual([expect.objectContaining({ type: "admin", action: "backup_now" })]);
-    expect(await admin.get("/admin?done=backup")).toContain("Backing up. HermitShell starts within seconds");
+    expect(await admin.get("/admin?done=backup")).toContain("Backing up. The backup appears in the server panel");
     expect(await admin.get("/admin")).toContain("Back up now");
   });
 });

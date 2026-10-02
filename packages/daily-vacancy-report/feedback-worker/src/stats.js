@@ -524,12 +524,12 @@ ${jobMore(j, fit, color, docs, key, ctx)}</details></li>`;
 }
 
 const SENT_NOTES = {
-  doc: ["ok", "HermitShell is making it. It shows here to download within a few minutes, and this page checks every 15 seconds while it waits."],
+  doc: ["ok", "HermitShell is making it. It appears here to download within a few minutes. This page updates by itself."],
   docbad: ["bad", "That request could not be made. Reload the page and try again."],
   docgone: ["bad", "That document is no longer kept. Generate a new one below."],
-  mail: ["ok", "HermitShell will email this job within a few minutes. This page checks every 15 seconds until it has gone."],
-  docmail: ["ok", "HermitShell will email it within a few minutes, the same PDF you can download. This page checks every 15 seconds until it has gone."],
-  skill: ["ok", "Added. HermitShell counts it as on the CV within a few minutes, for ratings, cover letters and tailored CVs."],
+  mail: ["ok", "HermitShell will email this job within a few minutes. This page updates by itself."],
+  docmail: ["ok", "HermitShell will email it within a few minutes, as the same PDF you can download here. This page updates by itself."],
+  skill: ["ok", "Added. Within a few minutes it counts as on their CV when jobs are scored and letters and CVs are written."],
   skillbad: ["bad", "That skill could not be added. Reload the page and try again."],
 };
 
@@ -563,7 +563,7 @@ export async function sentPage(status, stats, pid, opts = {}) {
   });
   const waiting = open && shown.some((j, i) => rows[i].startsWith(`<li id="job-${open}"`) && rows[i].includes('class="doc busy"'));
   const updated = stats?.updated ? `Updated ${esc(ago(stats.updated))} &middot; ` : "";
-  const empty = !stats ? "HermitShell sends the list within a few minutes of its next check-in, and after every report."
+  const empty = !stats ? "The list appears within a few minutes, and is updated after every report."
     : inRange.length ? "No job sent in this period has that answer." : "No jobs were sent in this period.";
   const [tone, message] = SENT_NOTES[opts.done] || [];
   const body = byDay.length ? byDay.map((g) => `<section class="sentday"><h3>${weekday(g.day)} ${shortDay(g.day)}<span>${g.rows.length} job${g.rows.length === 1 ? "" : "s"}</span></h3>
@@ -587,7 +587,7 @@ export function statsPage(status, stats, pid, rangeParam) {
   const manage = `<a class="small" href="${SENT_URL}?u=${esc(pid)}&amp;r=${range === 365 ? 90 : range}">Jobs sent</a> &middot; <a class="small" href="/admin/profile?u=${esc(pid)}">Manage recruit</a> &middot; <a class="small" href="${PIPELINE_URL}?u=${esc(pid)}">Pipeline</a> &middot; <a class="small" href="${HISTORY_URL}?u=${esc(pid)}">History</a>`;
   if (!stats) {
     return page(heading, `<style>${STYLE}</style>${rangeTabs(pid, range)}
-<div class="nostats">${icon("radar", "hero")}<p><b>No stats yet.</b> HermitShell sends them within a few minutes of its next check-in, and after every report.</p>${manage}</div>`, back);
+<div class="nostats">${icon("radar", "hero")}<p><b>No stats yet.</b> They appear within a few minutes, and are updated after every report.</p>${manage}</div>`, back);
   }
   const today = zonedToday(status.timezone);
   const win = windowFor(range, today);

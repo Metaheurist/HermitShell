@@ -168,7 +168,7 @@ async function spend(request, env, current) {
   const u = await hubTokenSpend(env, await sha256Hex(t));
   if (u === null) return page(...UNAVAILABLE);
   if (!u) return page("Link used or expired", `<p>Each sign-in link works once, within 15 minutes. <a href="${ME_URL}">Ask for a new one</a>.</p>`, { status: 410 });
-  if (!activeRecruit(current, u)) return page("Page not available", "<p>Your page isn't available. Reports may be paused; ask the person who invited you.</p>", { status: 403 });
+  if (!activeRecruit(current, u)) return page("Page not available", "<p>Your page isn't available. Your reports may be paused. Ask the person who invited you.</p>", { status: 403 });
   const epoch = (await env.FEEDBACK.get(`meepoch:${u}`)) || "0";
   const exp = String(Date.now() + SESSION_SECONDS * 1000);
   const res = redirect(ME_URL);
@@ -226,7 +226,7 @@ async function jobsPage(env, s, current) {
   });
   const body = rows.length ? `<ul class="myjobs">${rows.join("")}</ul>`
     : `<p class="muted">${stats || listedJobs ? "No jobs have been sent to you recently." : "Your list appears after your next report."}</p>`;
-  return myPage(s, "My jobs", "jobs", `<p class="muted">The jobs in your recent reports, newest first, with their fit score out of 10. Answer them with the buttons in the emails.</p>${body}`);
+  return myPage(s, "My jobs", "jobs", `<p class="muted">The jobs in your recent reports, newest first, with their fit score out of 10. Use the buttons in your report emails to tell us how each one went.</p>${body}`);
 }
 
 async function queued(env) {
@@ -235,9 +235,9 @@ async function queued(env) {
 }
 
 const SEARCH_DONE = {
-  saved: ["ok", "Saved. HermitShell applies it within a few minutes."],
+  saved: ["ok", "Saved. Your changes take effect within a few minutes."],
   nochange: ["ok", "Nothing had changed, so nothing was saved."],
-  conflict: ["bad", "Your search was changed elsewhere while you were editing, so nothing was saved. This is the latest; change it again if you need to."],
+  conflict: ["bad", "Someone else changed your search while you were editing, so nothing was saved. This is the latest version. Make your changes again if you still need them."],
   badtime: ["bad", "Pick a time for your daily report."],
 };
 
@@ -286,8 +286,8 @@ ${downloadMenu(`${ME_URL}/doc?k=${d.k}&amp;h=${d.h}`, d, DOC_NAMES[d.k])}</div>`
   const generate = s.p.has_cv === false ? "" : busy ? '<p class="muted">Making your CV&hellip;</p>'
     : `<form class="mycv" method="post" action="${ME_URL}/cv"><input type="hidden" name="csrf" value="${s.csrf}"><button class="small">${cv ? "Make it again" : "Make my CV"}</button></form>`;
   return myPage(s, "My documents", "docs", `${message ? note(message, tone) : ""}
-<h2>Your CV</h2><p class="muted">Every role from the CV you sent, laid out by HermitShell.</p>${own}${generate}
-<h2>Letters, tailored CVs and prep packs</h2><p class="muted">Kept for a few days after they are made. Ask for new ones with the buttons in your report emails.</p>
+<h2>Your CV</h2><p class="muted">A neat copy of the CV you sent, with every job on it.</p>${own}${generate}
+<h2>Cover letters, tailored CVs and interview prep</h2><p class="muted">Kept for a few days after they are made. Ask for new ones with the buttons in your report emails.</p>
 ${rows.join("") || '<p class="muted">None kept at the moment.</p>'}`, { style: DOC_STYLE });
 }
 
@@ -312,7 +312,7 @@ async function logout(request, env, s) {
   const all = form.get("all") === "1";
   if (all) await env.FEEDBACK.put(`meepoch:${s.u}`, String(Date.now()));
   return signedOut("Signed out", all
-    ? "<p>Signed out here, and everywhere else within about a minute.</p>"
+    ? "<p>Signed out on this device, and on all your other devices within about a minute.</p>"
     : `<p>Signed out. <a href="${ME_URL}">Sign in again</a>.</p>`);
 }
 

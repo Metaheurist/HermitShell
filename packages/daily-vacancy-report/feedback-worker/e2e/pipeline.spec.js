@@ -30,7 +30,7 @@ test("the Pipeline shows where each application stands, and a move waits for Her
   await card.getByLabel("Move to").selectOption("interview");
   await card.getByRole("button", { name: "Move" }).click();
   await expect(page).toHaveURL(/done=stage#card-[0-9a-f]{16}$/);
-  await expect(page.getByRole("status")).toContainText("Moved. HermitShell collects it within about 5 minutes");
+  await expect(page.getByRole("status")).toContainText("Moved. The board shows it within about 5 minutes");
 
   const events = (await (await hermitShellApi(request, "GET", "/events?u=sam-lee")).json()).events;
   const moved = events.filter((e) => e.j === "job-e2e-pipeline-1" && e.a === "interview" && e.via === "dashboard");

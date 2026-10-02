@@ -14,7 +14,7 @@ export const MAX_QUERY = 60;
 export const STATUSES = {
   active: { label: "Active", match: (p) => !p.pending && p.status === "active" },
   paused: { label: "Paused", match: (p) => !p.pending && p.status === "paused" },
-  scanning: { label: "Scanning now", match: (p) => !p.pending && Boolean(p.scanning) },
+  scanning: { label: "Finding jobs now", match: (p) => !p.pending && Boolean(p.scanning) },
   nocv: { label: "No CV", match: (p) => !p.pending && p.has_cv === false },
   pending: { label: "Pending sign-up", match: (p) => Boolean(p.pending) },
   retired: { label: "Retired", match: (p) => !p.pending && p.status === "retired" },

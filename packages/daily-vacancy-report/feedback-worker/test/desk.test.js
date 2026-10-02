@@ -132,7 +132,7 @@ describe("the desk page", () => {
   it("says when HermitShell has not sent the desk yet", async () => {
     const { env, admin } = await setup({ desk: null });
     const html = await page(env, admin, "/admin/desk");
-    expect(html).toContain("HermitShell sends the desk within 30 minutes");
+    expect(html).toContain("The numbers appear within about 30 minutes");
     expect(html).toContain("Shown once 3 jobs with the same title give a salary.");
   });
 

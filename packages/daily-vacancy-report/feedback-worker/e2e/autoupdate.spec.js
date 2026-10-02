@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { hermitShellApi, hermitShellStatus, reportStatus, signIn } from "./fixtures.js";
 
-const APPLIED = "Applied by HermitShell. The page shows the change.";
+const APPLIED = "Done. The page shows the change.";
 
 // What HermitShell does with the queue: applies it, reports the result, then takes the items off.
 async function applyQueue(request, status) {
@@ -33,7 +33,7 @@ test("a key added on Global settings shows as saving, then appears by itself onc
   await applyQueue(request, hermitShellStatus());
   await signIn(page);
   const row = await addTavilyKey(page);
-  await expect(page.locator(".waitbar")).toContainText("Waiting for HermitShell to apply the web search keys; this page updates by itself.");
+  await expect(page.locator(".waitbar")).toContainText("Waiting for HermitShell to pick up the web search keys. This page updates by itself.");
   await expect(row.locator(".savingtag")).toHaveText("saving…");
 
   const status = hermitShellStatus();

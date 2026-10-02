@@ -915,6 +915,18 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Plain, short wording for people who aren't technical.** Labels, hints and messages across the
+  dashboard, a recruit's page, `/me`, the sign-up form, the pages behind email buttons and the welcome,
+  goodbye and deleted emails now say what happens in everyday words, without terms like scan, queue,
+  `.env`, sealed or check-in. For example **Within N km of home town (as the crow flies)** is now
+  **Maximum distance from home town (km)** with the hint "Leave empty for no limit. Measured in a straight
+  line, up to 500 km. Remote and hybrid jobs aren't limited by distance."; **scanning now** is **finding
+  jobs now**; **Employment types** is **Job types**; seniority shows **Mid-level** and **Any level**; the
+  save messages say **Saved. It takes effect within seconds.** instead of "HermitShell applies it within
+  seconds while it is connected"; the profile status box says **Done. Your changes are in effect.**; and
+  the feature switches are **Automatic interview prep packs** and **Recruits' own page**. Server commands
+  in the "last checked in" warning are now shown to admins only; everyone else is asked to tell their
+  admin. Stored values and form fields are unchanged. Tests and docs follow the new wording.
 - **Managers no longer get a Manager pick.** On Users and roles, the **Manager** list (the team a recruiter
   is in) hides whenever Manager or Admin is ticked, in **Edit** and **Add user**, and comes back when only
   Recruiter is left, with no scripts needed. Saving still keeps a team only for a recruiter-only account.

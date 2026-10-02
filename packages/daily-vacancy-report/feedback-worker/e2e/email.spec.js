@@ -7,13 +7,13 @@ test("an old email button of the admin's asks first, saves once and shows in the
   await page.goto(await emailLink("interested", JOB_TITLE));
   await expect(page.getByText(JOB_TITLE)).toBeVisible();
   await expect(page.getByText("Nothing is saved until you press Confirm.")).toBeVisible();
-  await page.getByLabel("Note for HermitShell (optional)").fill("Hybrid suits me");
+  await page.getByLabel("Add a note (optional)").fill("Hybrid suits me");
   await page.getByRole("button", { name: /^Confirm:/ }).click();
   await expect(page.getByRole("heading", { name: "Saved" })).toBeVisible();
 
   // Pressing Confirm a second time with the same answer is not a second entry.
   await page.goBack();
-  await page.getByLabel("Note for HermitShell (optional)").fill("Hybrid suits me");
+  await page.getByLabel("Add a note (optional)").fill("Hybrid suits me");
   await page.getByRole("button", { name: /^Confirm:/ }).click();
   await expect(page.getByRole("heading", { name: "Saved" })).toBeVisible();
 

@@ -18,9 +18,9 @@ export function iconButton(href, label, icon, tone) {
 export const RETIRE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 19.5c.6-3.2 3-5 6.5-5s5.9 1.8 6.5 5M16 11h6"/></svg>';
 
 // What retiring does (profiles.py retire()), for the confirm windows on the recruits list and a recruit's page.
-export const RETIRE_INTRO = "They stop getting reports and are emailed a link to choose: keep their profile, CV and job history "
-  + "for 6, 12 or 24 months so they can come back to it, or have it deleted now, backups included. Until they choose it is "
-  + "kept for a while, then deleted. Reactivate on their page brings them back.";
+export const RETIRE_INTRO = "Their reports stop, and they get an email asking what to do with their data: keep their profile, "
+  + "CV and job history for 6, 12 or 24 months in case they come back, or delete it all now, backups included. If they "
+  + "don't choose, it is kept for a while and then deleted. To bring them back, press Reactivate on their page.";
 
 // `fields` are the form's hidden inputs; `check` is the tick box's text; `label` and `icon` the button's. With `form`
 // (another form's id) the window has no form of its own: its tick box and button (`op`, its value) belong to that

@@ -61,13 +61,13 @@ const PLACEHOLDERS = {
   unsubscribe: "Anything we could do better? (optional)",
 };
 const SAVED_MESSAGES = {
-  cover_letter: "HermitShell is writing your cover letter. It arrives by email, as a PDF, within about 10 minutes (sooner if it made one for this job in the last few days).",
-  tailored_cv: "HermitShell is tailoring your CV to this job. It arrives by email, as a PDF, within about 10 minutes (sooner if it made one for this job in the last few days).",
-  add_skill: "HermitShell counts these as on your CV from its next run, for ratings and cover letters.",
+  cover_letter: "HermitShell is writing your cover letter. It will be emailed to you as a PDF within about 10 minutes.",
+  tailored_cv: "HermitShell is tailoring your CV to this job. It will be emailed to you as a PDF within about 10 minutes.",
+  add_skill: "From your next report on, these count as skills you have when jobs are scored and letters are written.",
 };
 const FRESH_MESSAGES = {
-  cover_letter: "HermitShell is writing a new cover letter. It arrives by email, as a PDF, within about 10 minutes.",
-  tailored_cv: "HermitShell is tailoring your CV to this job again. It arrives by email, as a PDF, within about 10 minutes.",
+  cover_letter: "HermitShell is writing a new cover letter. It will be emailed to you as a PDF within about 10 minutes.",
+  tailored_cv: "HermitShell is tailoring your CV to this job again. It will be emailed to you as a PDF within about 10 minutes.",
 };
 const MAX_TITLE = 120;
 const MAX_SKILLS = 12;
@@ -114,9 +114,9 @@ function skillPage(p, hidden) {
   const picked = cleanSkill(p.p);
   const boxes = skillList(p.s).map((skill) => `<label class="skill"><input type="checkbox" name="k" value="${esc(skill)}"${
     skill === picked ? " checked" : ""}> ${esc(skill)}</label>`).join("");
-  return page(ACTIONS.add_skill, `<p>Missing from your CV for ${esc(p.n || "this job")}. Tick the ones you have.</p>
+  return page(ACTIONS.add_skill, `<p>The job ad for ${esc(p.n || "this job")} asks for these skills, but they aren't on your CV. Tick any you have.</p>
 <form method="post" action="/f">${hidden}${boxes}
-<label for="o">Other skills you have (optional, comma separated)</label>
+<label for="o">Any other skills you have (optional, separated by commas)</label>
 <input id="o" name="o" maxlength="${MAX_REASON}" placeholder="For example: Kubernetes, Terraform">
 <button type="submit">Confirm: ${esc(ACTIONS.add_skill)}</button></form>
 <p style="font-size:13px">Nothing is saved until you press Confirm.</p>`);
@@ -124,9 +124,9 @@ function skillPage(p, hidden) {
 
 function unsubscribePage(p, hidden) {
   const effect = p.j === "profile-pause"
-    ? "HermitShell stops sending these reports. Your profile is kept on the server and can be switched back on there."
-    : "HermitShell stops sending these reports and deletes this profile, its CV and its history from the server, " +
-      'removes your name and email from its logs, and emails you a confirmation. <a href="/privacy">How your data is handled</a>.';
+    ? "HermitShell stops sending these reports. The profile is kept, so they can be switched back on later."
+    : "HermitShell stops sending these reports, deletes this profile, its CV and its history, " +
+      'removes your name and email from its records, and emails you to confirm. <a href="/privacy">How your data is handled</a>.';
   return page("Unsubscribe", `<p>Stop HermitShell's job reports for <b>${esc(p.n || "this profile")}</b>?</p><p>${effect}</p>
 <form method="post" action="/f">${hidden}
 <label for="r">Feedback (optional)</label>
@@ -189,7 +189,7 @@ function readyPage(p, hidden, kept) {
 <span><b>Your ${what} is ready</b><small>made ${esc(ago(kept.at))}, kept until ${esc(new Date(kept.exp).toISOString().slice(0, 10))}</small></span>
 <a class="dl" href="/f/doc?${query}" download>Download PDF</a>${kept.w ? `<a class="dl" href="/f/doc?${query}&amp;f=word" download>Word</a>` : ""}</div>
 <form method="post" action="/f">${hidden}<input type="hidden" name="fresh" value="1">
-<label for="r">Or have a new one written (optional guidance)</label>
+<label for="r">Or ask for a new one (optional: say what you'd like changed)</label>
 <textarea id="r" name="r" maxlength="${MAX_REASON}" placeholder="${esc(PLACEHOLDERS[p.a])}"></textarea>
 ${p.a === "cover_letter" ? letterFields() : ""}<button type="submit" class="quiet">Confirm: write a new ${what}</button></form>
 <p style="font-size:13px">Downloading changes nothing. A new one is only written when you press Confirm.</p>`);
@@ -208,7 +208,7 @@ async function confirmPage(p, env) {
   if (kept) return readyPage(p, hidden, kept);
   const placeholder = PLACEHOLDERS[p.a] || "Anything worth remembering (optional)";
   const label = p.a === "cover_letter" ? "Guidance for the letter (optional)"
-    : p.a === "tailored_cv" ? "Guidance for the CV (optional)" : "Note for HermitShell (optional)";
+    : p.a === "tailored_cv" ? "Guidance for the CV (optional)" : "Add a note (optional)";
   return page(ACTIONS[p.a], `<p>${esc(p.n || "This job")}</p>
 <form method="post" action="/f">${hidden}
 <label for="r">${label}</label>
@@ -217,9 +217,9 @@ ${p.a === "cover_letter" ? letterFields() : ""}<button type="submit">Confirm: ${
 <p style="font-size:13px">Nothing is saved until you press Confirm.</p>`);
 }
 
-const INVALID_LINK = ["Link not valid", "<p>This feedback link is incomplete or has been changed. Use the button in the email again.</p>", { status: 403 }];
-const EXPIRED_LINK = ["Link expired", `<p>Buttons in reports work for ${LINK_DAYS} days. Use the buttons in a newer report.</p>`, { status: 410 }];
-const GONE_PROFILE = ["Profile removed", "<p>This profile no longer exists, so its links do nothing.</p>", { status: 410 }];
+const INVALID_LINK = ["Link not valid", "<p>This link is incomplete or has been changed. Try the button in the email again.</p>", { status: 403 }];
+const EXPIRED_LINK = ["Link expired", `<p>Buttons in a report work for ${LINK_DAYS} days. Please use the buttons in a newer report.</p>`, { status: 410 }];
+const GONE_PROFILE = ["Profile removed", "<p>This profile has been deleted, so its links no longer work.</p>", { status: 410 }];
 
 async function checkLink(env, p) {
   if (!(await validLink(env, p))) return page(...INVALID_LINK);
@@ -251,7 +251,7 @@ async function saveAnswer(form, env) {
     if (p.u) await purgeProfileEvents(env, p.u);
     const after = p.u
       ? "HermitShell deletes your profile, CV and history within about 5 minutes and emails you when it is done."
-      : `${esc(p.n || "This profile")} gets no more reports once HermitShell applies it, within about 5 minutes.`;
+      : `${esc(p.n || "This profile")} stops getting reports within about 5 minutes.`;
     return page("Unsubscribed", `<p>Done. ${after}</p><p>You can close this tab.</p>`);
   }
   const at = Date.now();
@@ -284,7 +284,7 @@ async function saveAnswer(form, env) {
     setFlag(env, eventFlag(u), EVENT_TTL_SECONDS),
     rememberRequest(env, event, p.n, EVENT_TTL_SECONDS),
   ]);
-  const next = (fresh && FRESH_MESSAGES[p.a]) || SAVED_MESSAGES[p.a] || "HermitShell picks this up on its next run.";
+  const next = (fresh && FRESH_MESSAGES[p.a]) || SAVED_MESSAGES[p.a] || "It is used from the next report on.";
   return page("Saved", `<p>${saved}</p>
 <p>${esc(next)} You can close this tab.</p>`);
 }

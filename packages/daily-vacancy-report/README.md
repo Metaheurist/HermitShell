@@ -259,8 +259,8 @@ Every option is an environment variable (or a line in `$HERMITSHELL_HOME/.env`).
 
 ### Distance from home
 
-A recruit's job search can keep jobs within a set distance of their Home town, as the crow flies: the
-**Within N km of home town** field on their profile page (`JOB_MAX_DISTANCE_KM`, a whole number up to
+A recruit's job search can keep jobs within a set distance of their Home town, in a straight line: the
+**Maximum distance from home town (km)** field on their profile page (`JOB_MAX_DISTANCE_KM`, a whole number up to
 500; empty or `0` is off). It needs the profile's Country and Home town.
 
 - **Place data.** The first scan that needs it downloads the country's list of places from

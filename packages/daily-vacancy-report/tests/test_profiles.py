@@ -2058,7 +2058,7 @@ def test_deleting_now_removes_them_here_on_the_worker_and_from_the_backups(home,
     assert started[-1] == [sys.executable, str(profiles.SCRIPT_DIR / "maintenance.py"), "--forget-backups"]
     goodbye, note = sent
     assert goodbye["to"] == "sam@example.com" and goodbye["subject"].endswith("your data is deleted")
-    assert "As you asked" in goodbye["text"] and "every one of its backups" in goodbye["text"]
+    assert "As you asked" in goodbye["text"] and "all of its backups" in goodbye["text"]
     assert note["to"] == "owner@example.com" and "asked for their data to be deleted" in note["text"]
     assert "sam@example.com" not in note["text"]
 

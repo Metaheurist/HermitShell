@@ -71,27 +71,27 @@ const mayDo = (me, act) => me.admin || (me.manager ? MANAGER_ACTIONS : RECRUITER
 const BULK_OPS = new Set(["pause", "resume", "send_now", "assign", "retire"]);
 const MAX_BULK = 25;
 const DONE = {
-  queued: "Saved. HermitShell applies it within seconds while it is connected.",
-  saved: "Saved. The box above shows when HermitShell has applied it, within seconds while it is connected.",
+  queued: "Saved. It takes effect within seconds.",
+  saved: "Saved. The box above shows when it has taken effect, usually within seconds.",
   nochange: "Nothing had changed, so nothing was saved.",
   revoked: "Invite revoked.",
   confirm: "Tick the confirmation box to delete a recruit.",
-  retireconfirm: "Tick the confirmation box to retire.",
-  retiring: "Retiring. HermitShell stops their reports and emails them to choose what happens to their data, within seconds while it is connected.",
-  reactivating: "Reactivating. HermitShell starts their reports again within seconds while it is connected.",
+  retireconfirm: "Tick the confirmation box to retire them.",
+  retiring: "Retiring. Their reports stop, and they get an email asking what to do with their data.",
+  reactivating: "Reactivating. Their reports start again within seconds.",
   badkey: "That does not look like an API key.",
-  assigned: "Assigned. HermitShell records it within seconds while it is connected.",
+  assigned: "Assigned.",
   badrecruiter: "Pick a recruiter from the list.",
   password: "Password changed. You are still signed in here, and signed out everywhere else.",
   badcurrent: "Your current password was wrong, so nothing changed.",
   pwlocked: "Too many wrong current passwords. Try again in 15 minutes.",
-  mainpass: "The main admin's password is the ADMIN_PASSWORD secret; change it with wrangler.",
-  cvmaking: "HermitShell is making their CV from the one uploaded. The CV button downloads it once it is ready, usually within a few minutes.",
-  cvnone: "Upload a CV first: their CV is made from it.",
-  cvgone: "Their CV is no longer kept. Generate makes a new one.",
+  mainpass: "The main admin's password can only be changed on the server (the ADMIN_PASSWORD setting).",
+  cvmaking: "HermitShell is making their CV from the one uploaded. It is usually ready to download within a few minutes.",
+  cvnone: "Upload a CV first. The new CV is made from it.",
+  cvgone: "Their CV is no longer kept. Press Generate to make a new one.",
   bulknone: "Tick at least one recruit first.",
   bulkmany: `Tick at most ${MAX_BULK} recruits at a time.`,
-  backup: "Backing up. HermitShell starts within seconds while it is connected; the server panel shows the backup when it finishes.",
+  backup: "Backing up. The backup appears in the server panel when it is done.",
   ...SETTINGS_DONE,
   ...DEMO_DONE,
   ...NOTES_DONE,
@@ -290,12 +290,14 @@ function lastUpdate(current, queued, presence, admin) {
   const waiting = !queued.length ? "" : admin ? ` <a href="#tasks">${count}</a>.` : ` ${count}.`;
   const report = current.updated ? ` Recruits last reported ${esc(ago(current.updated))}.` : "";
   if (presence.live) {
-    return `<p class="muted"><span class="live" aria-hidden="true"></span><b>HermitShell is connected</b>: changes reach it within seconds.${report}${waiting}</p>`;
+    return `<p class="muted"><span class="live" aria-hidden="true"></span><b>HermitShell is online</b>. Changes take effect within seconds.${report}${waiting}</p>`;
   }
   const seen = Math.max(presence.seen, current.updated || 0);
   if (!seen) return `<p class="muted">HermitShell hasn't reported yet.${waiting}</p>`;
   const stale = Date.now() - seen > STALE_MS
-    ? `<div class="warn">HermitShell last checked in ${esc(ago(seen))}. Check that HermitShell is running (<code>docker logs hermitshell</code>) and its <b>vacancy-profiles</b> job is scheduled (<code>python3 scheduler.py list</code>).</div>` : "";
+    ? `<div class="warn">HermitShell last checked in ${esc(ago(seen))}, so changes made here are waiting. It may be switched off. ${admin
+      ? "Check that it is running (<code>docker logs hermitshell</code>) and its <b>vacancy-profiles</b> job is scheduled (<code>python3 scheduler.py list</code>)."
+      : "Let your admin know."}</div>` : "";
   return `${stale}<p class="muted">HermitShell last checked in ${esc(ago(seen))} (${esc(when(seen, current.timezone))}).${waiting}</p>`;
 }
 
@@ -367,7 +369,7 @@ ${face}<select name="recruiter" aria-label="Recruiter for ${esc(p.name)}">${opti
 function pendingRow(p, tz, live, third) {
   const roles = p.roles ? `<div class="muted">looking for ${esc(p.roles.slice(0, 80))}</div>` : "";
   const doing = live ? "HermitShell is reading their CV and setting them up. They show here in full within a few minutes."
-    : "HermitShell sets them up as soon as it connects.";
+    : "HermitShell sets them up as soon as it is back online.";
   return `<tr class="pendingrow"><td><div class="who"><span class="avatar" aria-hidden="true">${esc(initials(p.name))}</span><div>
 <b>${esc(p.name)}</b><div class="muted">${esc(p.email)}</div>${whenTip(p.at, tz, "Signed up", "just now")}${roles}</div></div></td>
 <td><span class="pill pending">pending</span><div class="muted">${doing}</div></td>${third === null ? "" : `<td>${third}</td>`}<td></td></tr>`;
@@ -375,7 +377,7 @@ function pendingRow(p, tz, live, third) {
 
 // Row changes that HermitShell applies within seconds: the dashboard shows them at once, tagged, and reloads
 // itself until they are applied.
-const QUICK_ACTIONS = { pause: "pausing", resume: "resuming", delete: "deleting", send_now: "starting a scan", assign: "assigning",
+const QUICK_ACTIONS = { pause: "pausing", resume: "resuming", delete: "deleting", send_now: "finding jobs", assign: "assigning",
   retire: "retiring" };
 
 // A retired recruit's line: when, and until when their data is kept (their choice, or the default until they make one).
@@ -389,7 +391,7 @@ function profileRow(p, csrf, tz, stats, { admin, third, inPool, busy = "", tags 
   const retired = shown === "retired";
   const status = `<span class="pill${shown === "paused" ? " paused" : retired ? " retired" : ""}">${esc(shown)}</span>`
     + (busy ? ` ${savingTag(QUICK_ACTIONS[busy])}` : "")
-    + (p.scanning ? ' <span class="pill scanning">scanning now</span>' : "");
+    + (p.scanning ? ' <span class="pill scanning">finding jobs now</span>' : "");
   const remove = admin ? binButton(`del-${p.id}`, `Delete ${p.name}`) : "";
   const cv = p.has_cv === false ? ' <span class="pill paused">no CV</span>' : "";
   const joined = p.created ? `<div class="muted" title="${esc(when(p.created, tz))}">Joined ${esc(when(p.created, tz).slice(0, 10))}</div>` : "";
@@ -432,25 +434,25 @@ function bulkBar(s, recs) {
 // The bulk bar's Retire: a confirm window whose tick box and button belong to the bulk form, so it takes the ticked rows.
 function bulkRetireModal() {
   return deleteModal({ id: "bulk-retire", title: "Retire the ticked recruits?", intro: RETIRE_INTRO, form: "bulk", op: "retire",
-    check: "Retire them and email each one to choose what happens to their data", label: "Retire", icon: RETIRE_ICON });
+    check: "Yes, retire them and email each one about their data", label: "Retire", icon: RETIRE_ICON });
 }
 
 // "N done, M skipped" after a bulk change, from the counts in the redirect.
 function bulkNote(url) {
   const count = (name) => Math.max(0, Math.min(MAX_BULK, Math.floor(Number(url.searchParams.get(name))) || 0));
   const [n, m] = [count("n"), count("m")];
-  return `${n} done, ${m} skipped.${n ? " HermitShell applies it within seconds while it is connected." : ""}`;
+  return `${n} done, ${m} skipped.${n ? " Changes take effect within seconds." : ""}`;
 }
 
 function deleteRecruitModal(p, csrf) {
   return deleteModal({ id: `del-${p.id}`, title: `Delete ${p.name}?`, action: "/admin/action",
     intro: "They stop getting reports and are removed from HermitShell and this dashboard. This can't be undone.",
-    fields: { csrf, action: "delete", u: p.id }, check: "Delete their CV and history (jobs found, answers, letters and CVs) from the server" });
+    fields: { csrf, action: "delete", u: p.id }, check: "Yes, delete their CV and everything HermitShell has about them" });
 }
 
 function inviteForm(s, recs) {
   if (s.me.manager && !recs.length) {
-    return `<h2 id="invite">Invite someone</h2><p class="muted">Invites join a recruiter in your team. <a href="${USERS_URL}#user-new">Add a recruiter</a> first.</p>`;
+    return `<h2 id="invite">Invite someone</h2><p class="muted">Everyone you invite joins a recruiter in your team. <a href="${USERS_URL}#user-new">Add a recruiter</a> first.</p>`;
   }
   const assign = oversees(s.me) && recs.length
     ? `<select name="recruiter" aria-label="Whose recruit they become" style="width:auto;flex:none">${[...(s.me.admin ? [["", "Nobody's recruit"]] : []), ...recs.map((r) => [r.id, `${r.name}'s recruit`])]
@@ -847,7 +849,7 @@ async function usersRequest(request, env, s) {
 export async function handleAdmin(request, env, ctx) {
   if (!env.ADMIN_PASSWORD || !env.JOB_FEEDBACK_SECRET) return text("Not found", 404);
   if (env.ACCESS_AUD && !(await accessUser(request, env, ctx))) {
-    return page("Sign-in required", "<p>This page is protected by Cloudflare Access. Open it again to sign in with your email.</p>", { status: 403 });
+    return page("Sign-in required", "<p>You need to sign in with your email first. Open this page again to sign in.</p>", { status: 403 });
   }
   const path = new URL(request.url).pathname;
   if (path === "/admin/login" && request.method === "POST") return login(request, env);

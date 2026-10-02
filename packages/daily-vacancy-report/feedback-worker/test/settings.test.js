@@ -166,7 +166,7 @@ describe("setup checklist", () => {
   it("asks for HermitShell to connect before anything else", async () => {
     const { get } = await setup(null);
     const { body } = await get("/admin");
-    expect(body).toContain("HermitShell has not reported yet");
+    expect(body).toContain("Waiting for HermitShell to check in");
     expect(body).toContain("0 of 5 done");
   });
 
@@ -210,8 +210,8 @@ describe("global settings page", () => {
     await act({ action: "test_email", to: "alex@example.com" });
     await act({ action: "pause", u: "sam-lee" });
     const { body } = await get("/admin/settings?done=queued");
-    expect(body).toContain("Saved. HermitShell applies it within seconds while it is connected.");
-    expect(body).toContain("Waiting for HermitShell to apply the test email; this page updates by itself.");
+    expect(body).toContain("Saved. It takes effect within seconds.");
+    expect(body).toContain("Waiting for HermitShell to pick up the test email. This page updates by itself.");
     expect(body).not.toContain("sam-lee");
   });
 });
@@ -242,8 +242,8 @@ describe("pages that update themselves", () => {
     expect(waiting).toContain('<meta http-equiv="refresh" content="4;url=/admin/settings?done=queued&amp;w=1#keys">');
     expect((await get("/admin/settings?done=queued&w=1")).body).toContain('content="4;url=/admin/settings?done=queued&amp;w=2#keys"');
     expect(waiting).toContain('<body class="still">');
-    expect(waiting).toContain("Waiting for HermitShell to apply the web search keys");
-    expect(waiting).toContain("Saved. HermitShell applies it within seconds while it is connected.");
+    expect(waiting).toContain("Waiting for HermitShell to pick up the web search keys");
+    expect(waiting).toContain("Saved. It takes effect within seconds.");
     const keys = waiting.slice(waiting.indexOf('<h2 id="keys">'), waiting.indexOf('<h2 id="models">'));
     const tavily = keys.slice(keys.indexOf("cr-tavily"), keys.indexOf("cr-scrapfly"));
     expect(tavily).toContain('<span class="savingtag">saving&hellip;</span>');
@@ -284,7 +284,7 @@ describe("pages that update themselves", () => {
     const late = (await get("/admin/settings")).body;
     expect(refreshOf(late)).toBeNull();
     expect(late).not.toContain('<body class="still">');
-    expect(late).toContain("Still waiting for HermitShell</b> to apply the test email. It may be offline or busy");
+    expect(late).toContain("Still waiting for HermitShell</b> to pick up the test email. It may be offline or busy");
   });
 
   it("shows a pause on the dashboard at once and reloads until HermitShell applies it", async () => {
@@ -292,7 +292,7 @@ describe("pages that update themselves", () => {
     await act({ action: "pause", u: "sam-lee" });
     const body = (await get("/admin?done=queued")).body;
     expect(refreshOf(body)).toBe("4");
-    expect(body).toContain("Waiting for HermitShell to apply the change; this page updates by itself.");
+    expect(body).toContain("Waiting for HermitShell to pick up the change. This page updates by itself.");
     const row = body.slice(body.indexOf("Sam &lt;b&gt;Lee"));
     expect(row).toMatch(/<span class="pill paused">paused<\/span> <span class="savingtag">pausing&hellip;<\/span>/);
     expect(row).toContain('aria-label="Resume reports for Sam &lt;b&gt;Lee&lt;/b&gt;"');
@@ -392,7 +392,7 @@ describe("email server", () => {
     const { get } = await setup({ ...STATUS, email: { ...STATUS.email, user: "alex@example.com", password_set: true, source: "env",
       last_test: { ok: false, at: 1, error: "SMTPAuthenticationError: 535 <bad>" } } });
     const { body } = await get("/admin/settings");
-    expect(body).toContain("unchanged (leave empty to keep it)");
+    expect(body).toContain("Saved. Leave empty to keep it");
     expect(body).toContain("535 &lt;bad&gt;");
     expect(body).not.toMatch(/name="password"[^>]*value=/);
   });
@@ -445,7 +445,7 @@ describe("profile page", () => {
     expect(body).toContain('<option value="GBP" selected>£ Pound sterling (GBP)</option>');
     expect(body).toContain('<option value="CAD">C$ Canadian dollar (CAD)</option>');
     expect(body).not.toContain('<input id="currency"');
-    expect(body).toContain("converted to this one at the day&#39;s exchange rate");
+    expect(body).toContain("Salaries are shown in this currency, and the minimum is in it too.");
   });
 
   it("queues a picked currency, and one that isn't offered as salaries as advertised", async () => {
@@ -498,7 +498,7 @@ describe("profile page", () => {
       places: ["Leeds", "Bradford"], remote_anywhere: true, level: "senior", types: ["Permanent"], modes: ["Remote"],
       min_salary: "55000" });
     expect(valuesWith(env, "history:jordan-patel:")).toMatchObject([[{ k: "job", by: "Alex Morgan", v: "dashboard",
-      t: "Changed Email for reports, Phone, Job titles, Region or city, Towns, Fully remote jobs, Seniority, Employment types, Work location and Minimum salary" }]]);
+      t: "Changed Email for reports, Phone, Job titles, Region or city, Towns, Fully remote jobs, Seniority, Job types, Work location and Minimum salary" }]]);
   });
 
   it("keeps what was saved on the page until HermitShell applies it, with a live status box", async () => {
@@ -507,7 +507,7 @@ describe("profile page", () => {
     const { body } = await get("/admin/profile?u=sam-lee&done=saved");
     expect(body).toContain('value="sam.lee@example.com"');
     expect(body).toContain(">Data Analyst</textarea>");
-    expect(body).toContain("The box above shows when HermitShell has applied it");
+    expect(body).toContain("The box above shows when it has taken effect");
     expect(body).toContain('<iframe class="saving" src="/admin/profile/status?u=sam-lee&amp;n=1"');
     expect((await get("/admin/profile?u=sam-lee")).body).toContain('src="/admin/profile/status?u=sam-lee"');
   });
@@ -580,9 +580,9 @@ describe("profile page", () => {
   it("offers a distance from home and queues only whole kilometres up to 500", async () => {
     const { env, act, get } = await setup();
     const { body } = await get("/admin/profile?u=sam-lee");
-    expect(body).toContain('<label for="max_km">Within N km of home town (as the crow flies)</label>');
+    expect(body).toContain('<label for="max_km">Maximum distance from home town (km)</label>');
     expect(body).toContain('id="max_km" name="max_km" type="number" min="0" max="500" step="1" value=""');
-    expect(body).toContain('Place data from <a href="https://www.geonames.org/" rel="noopener noreferrer">GeoNames</a>, CC BY 4.0.');
+    expect(body).toContain('Town locations from <a href="https://www.geonames.org/" rel="noopener noreferrer">GeoNames</a> (CC BY 4.0).');
     for (const max_km of ["25", "501", "-3", "2.5", "1e2", "<b>", "", "500"]) await save(get, act, "jordan-patel", { max_km });
     expect(valuesWith(env, "queue:").map((i) => i.job.max_km)).toEqual(["25", "0", "500"]);
     expect(valuesWith(env, "history:jordan-patel:").flat().map((h) => h.t)).toContain("Changed Distance from home town");
@@ -604,7 +604,7 @@ describe("profile page", () => {
     const { body } = await get("/admin/profile?u=sam-lee");
     expect(body).toContain('<label for="places">Towns</label>');
     expect(body).toContain('<label for="min_salary">Minimum salary</label>');
-    expect(body).toContain("Jobs that don&#39;t show a salary are always included.");
+    expect(body).toContain("Jobs that don&#39;t show a salary are still included.");
     expect(body).not.toContain("All profiles");
     expect(body).toMatch(/<\/div><\/div><a class="back" href="\/admin"><svg [^>]*aria-hidden="true"><path [^>]*\/><\/svg>Back to recruits<\/a><main class="wide">/);
     expect(body).toMatch(/<body><style>[^<]*<\/style><div class="me" role="region" aria-label="Signed in as /);
@@ -653,7 +653,7 @@ describe("daily report and Send jobs now", () => {
     const { body } = await get("/admin/profile?u=sam-lee");
     expect(body).toContain('<input id="report_time" name="report_time" type="time" value="08:15">');
     expect(body).toContain('<option value="weekdays" selected>Weekdays (Monday to Friday)</option>');
-    expect(body).toContain("When HermitShell sends their report (Europe/London). Each recruit&#39;s report is its own scheduled job.");
+    expect(body).toContain("When their daily email is sent (Europe/London).");
     expect(body).not.toContain("Hermes ");
     await save(get, act, "sam-lee", { report_time: "06:45", report_days: "daily" });
     await save(get, act, "jordan-patel", { report_days: "weekdays" });
@@ -677,11 +677,11 @@ describe("daily report and Send jobs now", () => {
   it("says when a new time is still to be applied, or can't be", async () => {
     const pending = await setup(scheduled({ report: { time: "07:00", days: "daily", schedule: "0 7 * * *", pending: true } }));
     expect((await pending.get("/admin")).body).toContain("Daily at 07:00 (moving)");
-    expect((await pending.get("/admin/profile?u=sam-lee")).body).toContain("HermitShell moves the report to this time when it next checks in");
+    expect((await pending.get("/admin/profile?u=sam-lee")).body).toContain("The new time starts from the next report");
     const outside = await setup({ ...scheduled(), scheduler: false });
-    expect((await outside.get("/admin/profile?u=jordan-patel")).body).toContain("HermitShell&#39;s scheduler isn&#39;t set up");
+    expect((await outside.get("/admin/profile?u=jordan-patel")).body).toContain("Reports start once HermitShell&#39;s daily schedule is set up");
     const older = await setup({ ...scheduled(), scheduler: undefined, hermes_jobs: false });
-    expect((await older.get("/admin/profile?u=jordan-patel")).body).toContain("HermitShell&#39;s scheduler isn&#39;t set up");
+    expect((await older.get("/admin/profile?u=jordan-patel")).body).toContain("Reports start once HermitShell&#39;s daily schedule is set up");
   });
 
   it("queues Send jobs now for one profile, from the dashboard or its page", async () => {
@@ -698,7 +698,7 @@ describe("daily report and Send jobs now", () => {
     expect(valuesWith(env, "queue:")).toEqual([expect.objectContaining({ type: "admin", action: "send_now", u: "sam-lee" })]);
     const page = (await get("/admin/profile?u=sam-lee&done=sending")).body;
     expect(page).toContain('src="/admin/profile/status?u=sam-lee&amp;n=1"');
-    expect((await get("/admin/profile/status?u=sam-lee&n=1")).body).toContain("Starting the scan&hellip;");
+    expect((await get("/admin/profile/status?u=sam-lee&n=1")).body).toContain("Starting the job search&hellip;");
     expect((await get("/admin/profile?u=jordan-patel")).body).toContain("Upload a CV first");
     expect((await act({ action: "send_now", u: "../owner" })).status).toBe(400);
   });
@@ -707,13 +707,13 @@ describe("daily report and Send jobs now", () => {
     const started = Date.now() - 3 * 60 * 1000;
     const { get } = await setup(scheduled({ scanning: started }));
     const dash = (await get("/admin")).body;
-    expect(dash).toContain('<span class="pill scanning">scanning now</span>');
-    expect(dash).toContain('<button class="small" disabled>Scanning&hellip;</button>');
+    expect(dash).toContain('<span class="pill scanning">finding jobs now</span>');
+    expect(dash).toContain('<button class="small" disabled>Finding jobs&hellip;</button>');
     expect(dash).not.toContain(">Send jobs<");
-    expect((await get("/admin/profile?u=sam-lee")).body).toContain("Scanning now (started ");
+    expect((await get("/admin/profile?u=sam-lee")).body).toContain("Looking for jobs now (started ");
     const box = (await get("/admin/profile/status?u=sam-lee&n=1")).body;
     expect(box).toContain('<body class="wait');
-    expect(box).toContain("Scanning for jobs since");
+    expect(box).toContain("Looking for jobs since");
     expect(box).toContain('content="30;url=/admin/profile/status?u=sam-lee&amp;n=2"');
     expect((await get("/admin/profile/status?u=sam-lee&n=80")).body).not.toContain("http-equiv");
   });
@@ -727,18 +727,18 @@ describe("save status box", () => {
     const idle = await get("/admin/profile/status?u=sam-lee");
     expect(idle.res.status).toBe(200);
     expect(idle.body).toContain('<body class="ok');
-    expect(idle.body).toContain("Up to date. HermitShell last reported just now.");
+    expect(idle.body).toContain("Up to date. HermitShell last checked in just now.");
     expect(idle.body).not.toContain("http-equiv");
     await save(get, act, "sam-lee", { phone: "07700 900111" });
     const waiting = await get("/admin/profile/status?u=sam-lee&n=1");
-    expect(waiting.body).toContain("Waiting for HermitShell to apply it");
+    expect(waiting.body).toContain("Saved. Taking effect in a few seconds");
     expect(waiting.body).toContain('<body class="wait');
     expect(waiting.body).toContain('<meta http-equiv="refresh" content="5;url=/admin/profile/status?u=sam-lee&amp;n=2">');
     expect((await get("/admin/profile/status?u=jordan-patel")).body).toContain("Up to date");
     const ids = keysWith(env, "queue:");
     await worker.fetch(new Request(`${BASE}/api/queue/ack`, { method: "POST", headers: API_HEADERS, body: JSON.stringify({ ids }) }), env);
     const applied = await get("/admin/profile/status?u=sam-lee&n=3");
-    expect(applied.body).toContain("Applied by HermitShell");
+    expect(applied.body).toContain("Your changes are in effect");
     expect(applied.body).toContain('<body class="done');
     expect(applied.body).not.toContain("http-equiv");
   });
@@ -757,7 +757,7 @@ describe("save status box", () => {
   it("shows a change HermitShell could not apply, escaped", async () => {
     const { get } = await setup({ ...STATUS, problems: [{ at: Date.now(), what: "profile for sam-lee", error: "invalid <b>email</b>" }] });
     const { body } = await get("/admin/profile/status?u=sam-lee&n=1");
-    expect(body).toContain("HermitShell could not apply a change:</b> invalid &lt;b&gt;email&lt;/b&gt;");
+    expect(body).toContain("A change didn't work:</b> invalid &lt;b&gt;email&lt;/b&gt;");
   });
 
   it("says a CV takes longer", async () => {
