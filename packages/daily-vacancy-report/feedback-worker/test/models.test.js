@@ -168,6 +168,18 @@ describe("the admin's server panel", () => {
     expect(dash).not.toContain("AMD Ryzen");
   });
 
+  it("keeps a GPU the host's report missed, saying its use isn't reported and since when", () => {
+    const server = { ...STATUS.server, gpus: [{ name: "NVIDIA GeForce RTX 3060", vram_mb: 12288, free_mb: null }], gpus_at: NOW - 20 * 60000 };
+    const html = serverBox({ ...STATUS, server });
+    expect(html).toContain("<b>GPU</b><span>NVIDIA GeForce RTX 3060 &middot; 12 GB</span>");
+    expect(html).toContain("Use not reported since 20 minutes ago: the host's hardware report (the Ollama watchdog) is late.");
+    expect(html.slice(html.indexOf("<b>GPU</b>"), html.indexOf("<b>Disk</b>"))).not.toContain('class="sbar');
+    expect(serverBox({ ...STATUS, server: { ...server, gpus: [{ name: "Broken", vram_mb: 0, free_mb: 0 }] } })).not.toContain("<b>GPU</b>");
+    const odd = serverBox({ ...STATUS, server: { ...server, gpus: [{ name: '<img src=x onerror=alert(1)>', vram_mb: 4096, free_mb: null }], gpus_at: "soon" } });
+    expect(odd).not.toContain("<img");
+    expect(odd).toContain("Use not reported: the host");
+  });
+
   it("says so when the machine hasn't been reported", () => {
     const html = serverBox({ profiles: [] });
     expect(html).toContain("HermitShell hasn&rsquo;t reported the machine yet.");

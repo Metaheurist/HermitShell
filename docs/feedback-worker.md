@@ -549,7 +549,10 @@ to 1320px), so they keep the row above the page up to 1860px wide.
 
 Admins also get a **server** button before the key button. Point at it (or Tab to it) and a panel
 opens with the machine HermitShell runs on: CPU and its load, memory, each GPU's memory and free
-disk, each with a bar (amber from 70%, red from 90%). Under them are the AI models in the order they
+disk, each with a bar (amber from 70%, red from 90%). The GPUs come from the host's hardware report,
+written every 2 minutes by the Ollama watchdog; when it is late, each GPU seen in the last day stays
+listed with its memory and "Use not reported since&hellip;" instead of vanishing, and its bar is back as soon
+as a report arrives (HermitShell sends a GPU going or coming back at once). Under them are the AI models in the order they
 are asked, each with its model name and whether it is ready, how many requests it answered today or
 why it is resting, then which one gave the last answer. **Backups** shows the last backup, its size
 and how many are kept (or why the last one failed), when the last one was sent to

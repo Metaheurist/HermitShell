@@ -112,6 +112,10 @@ HOST_RE = re.compile(r"^[A-Za-z0-9.-]{3,120}$")
 QUEUE_ATTEMPTS = 5
 FULL_LIST_EVERY = 3600
 STATUS_EVERY = 900
+# The GPUs last reported by the host (state/gpus_seen.json), shown for a day when a report is missed; rewritten at
+# most hourly.
+GPUS_REMEMBER = 86400
+GPUS_SEEN_EVERY = 3600
 # Each changed profile's stats are sent at most this often (the free plan allows 1,000 KV writes a day), and at
 # once when its report finishes.
 STATS_EVERY = 1800
@@ -1390,9 +1394,30 @@ def llm_info() -> dict:
             "last": summary["last"]}
 
 
+def seen_gpus(gpus: list[dict], now: float | None = None) -> tuple[list[dict], int | None]:
+    """The GPUs to show: those reported now, else for a day those last seen, with their use unknown and when they
+    were seen, so a missed host report doesn't make a GPU vanish from the server panel."""
+    now = time.time() if now is None else now
+    path = STATE_DIR / "gpus_seen.json"
+    seen = read_json(path, {})
+    seen = seen if isinstance(seen, dict) else {}
+    at = seen.get("at") if isinstance(seen.get("at"), (int, float)) else 0
+    if gpus:
+        kept = [{"name": g["name"], "vram_mb": g["vram_mb"]} for g in gpus]
+        if seen.get("gpus") != kept or not 0 <= now - at <= GPUS_SEEN_EVERY:
+            write_json(path, {"at": now, "gpus": kept})
+        return gpus, None
+    if not isinstance(seen.get("gpus"), list) or not 0 <= now - at <= GPUS_REMEMBER:
+        return [], None
+    return [{"name": autofit._text(g.get("name")), "vram_mb": autofit._num(g.get("vram_mb"), 0, 1 << 22), "free_mb": None}
+            for g in seen["gpus"][:4] if isinstance(g, dict)], _ms(at)
+
+
 def server_info() -> dict:
     """The machine HermitShell and its Ollama run on, for the admin's server panel."""
     hw = autofit.hardware()
+    gpus, gpus_at = seen_gpus([{"name": g["name"], "vram_mb": g["vram_mb"], "free_mb": g["free_mb"]}
+                               for g in hw["gpus"][:4] if g["vram_mb"]])
     try:
         load = round(os.getloadavg()[0], 2)
     except (AttributeError, OSError):
@@ -1403,14 +1428,16 @@ def server_info() -> dict:
     except OSError:
         disk_mb = None
     return {"cpu": {"model": hw["cpu"]["model"], "cores": hw["cpu"]["logical"]}, "load": load, "ram_mb": hw["ram_mb"],
-            "gpus": [{"name": g["name"], "vram_mb": g["vram_mb"], "free_mb": g["free_mb"]} for g in hw["gpus"][:4]],
-            "disk_mb": disk_mb}
+            "gpus": gpus, **({"gpus_at": gpus_at} if gpus_at else {}), "disk_mb": disk_mb}
 
 
 def _stable(payload: dict) -> dict:
     """The status without what changes by itself (the server's load, requests and tokens counted, the model that
-    answered last), so those alone send it at most every STATUS_EVERY seconds."""
+    answered last), so those alone send it at most every STATUS_EVERY seconds. Which GPUs there are, and whether
+    their use is known, still counts, so a GPU coming back shows at once."""
     stable = {k: v for k, v in payload.items() if k not in ("server", "usage")}
+    if isinstance(payload.get("server"), dict):
+        stable["gpus"] = [[g.get("name"), g.get("vram_mb"), g.get("free_mb") is None] for g in payload["server"].get("gpus") or []]
     if isinstance(payload.get("llm"), dict):
         llm = payload["llm"]
         local = llm["local"]

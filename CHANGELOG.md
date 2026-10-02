@@ -1064,6 +1064,14 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The server panel's GPU no longer vanishes now and then.** The GPU comes from the host's hardware report;
+  when HermitShell sent its status without one (the report missed or too old to use), the GPU row disappeared,
+  and since the machine's numbers alone don't count as a change, it could stay gone for up to 15 minutes.
+  HermitShell now remembers the GPUs the host last reported (`state/gpus_seen.json`, names and memory only) and
+  for a day keeps sending them with their use unknown, which the panel shows as "Use not reported since&hellip;"
+  instead of dropping the row; a GPU going, coming back or its use becoming known again is sent at once. A GPU
+  reported with no memory is left out rather than shown as empty. Covered by `test_profiles.py`, the Worker's
+  `test/models.test.js`, and security tests that a tampered `gpus_seen.json` gives only plain, bounded values.
 - **A hand-set country is kept on the profile page.** A `JOB_SEARCH_COUNTRY` set in `.env` to two letters
   that aren't in the country list showed as "Any country". It now shows as its own selected option (for
   example "ZZ (not in the list)"), and saving other fields leaves it alone. A form still can't queue a new

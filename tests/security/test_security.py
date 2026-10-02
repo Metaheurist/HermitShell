@@ -625,6 +625,33 @@ def test_a_tampered_hardware_report_only_gives_plain_bounded_values(autofit_file
     assert hw["cpu"]["logical"] == 1 and hw["cpu"]["physical"] == 1 and hw["cpu"]["avx2"] is False
 
 
+@pytest.mark.parametrize("seen", [
+    {"at": "yesterday", "gpus": [{"name": "x", "vram_mb": 1}]},
+    {"at": 10**20, "gpus": [{"name": "x", "vram_mb": 1}]},
+    {"at": 0, "gpus": "all of them"},
+    ["not", "a", "dict"],
+])
+def test_a_tampered_gpus_seen_file_shows_no_gpu(tmp_path, monkeypatch, seen):
+    monkeypatch.setattr(profiles, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(profiles.time, "time", lambda: 1_700_000_000.0)
+    (tmp_path / "gpus_seen.json").write_text(json.dumps(seen), encoding="utf-8")
+    assert profiles.seen_gpus([]) == ([], None)
+    gpu = {"name": "NVIDIA GeForce RTX 3050", "vram_mb": 4096, "free_mb": 3900}
+    assert profiles.seen_gpus([gpu]) == ([gpu], None)
+    assert json.loads((tmp_path / "gpus_seen.json").read_text()) == {"at": 1_700_000_000.0, "gpus": [{"name": gpu["name"], "vram_mb": 4096}]}
+
+
+def test_a_tampered_gpus_seen_file_only_gives_plain_bounded_values(tmp_path, monkeypatch):
+    monkeypatch.setattr(profiles, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(profiles.time, "time", lambda: 1_700_000_000.0)
+    (tmp_path / "gpus_seen.json").write_text(json.dumps({"at": 1_699_999_000.0, "gpus": [
+        {"name": HOSTILE * 5, "vram_mb": 10**12}, "junk", {"name": "ok", "vram_mb": "4096; rm -rf /"}] * 10}), encoding="utf-8")
+    gpus, at = profiles.seen_gpus([])
+    assert len(gpus) <= 4 and at == 1_699_999_000_000
+    assert all(not set(g["name"]) & set("<>\"'&;$`\\") and len(g["name"]) <= 80 and g["free_mb"] is None for g in gpus)
+    assert all(isinstance(g["vram_mb"], int) and 0 <= g["vram_mb"] <= 1 << 22 for g in gpus)
+
+
 def test_a_tampered_autofit_state_is_bounded_and_cannot_add_instances(autofit_files, monkeypatch):
     autofit = autofit_files
     autofit.STATE_FILE.write_text(__import__("json").dumps({

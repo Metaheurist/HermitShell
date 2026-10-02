@@ -941,6 +941,64 @@ def test_status_carries_the_tokens_each_task_used(home, monkeypatch, tmp_path):
     assert usage["tasks"][0]["today"]["in"] == 5200 and usage["tasks"][0]["period"]["out"] == 640
 
 
+def _hardware(gpus):
+    return {"source": "host report" if gpus else "this machine", "age": 0, "ollama_gpu": "",
+            "cpu": {"model": "Intel Xeon", "logical": 36, "physical": 18, "avx2": True},
+            "ram_mb": {"total": 24000, "available": 20000}, "gpus": gpus}
+
+
+RTX = {"index": 0, "name": "NVIDIA GeForce RTX 3050", "vram_mb": 4096, "free_mb": 3900, "compute": "8.6"}
+
+
+def test_the_server_panel_keeps_a_gpu_for_a_day_when_the_host_report_is_missed(home, monkeypatch):
+    now = 1_700_000_000.0
+    monkeypatch.setattr(profiles.time, "time", lambda: now)
+    monkeypatch.setattr(profiles.autofit, "hardware", lambda: _hardware([RTX, {**RTX, "index": 1, "name": "Broken", "vram_mb": 0}]))
+    server = profiles.server_info()
+    assert server["gpus"] == [{"name": "NVIDIA GeForce RTX 3050", "vram_mb": 4096, "free_mb": 3900}] and "gpus_at" not in server
+    monkeypatch.setattr(profiles.autofit, "hardware", lambda: _hardware([]))
+    now += 3 * 3600
+    server = profiles.server_info()
+    assert server["gpus"] == [{"name": "NVIDIA GeForce RTX 3050", "vram_mb": 4096, "free_mb": None}]
+    assert server["gpus_at"] == 1_700_000_000_000
+    now += profiles.GPUS_REMEMBER
+    assert profiles.server_info()["gpus"] == [] and "gpus_at" not in profiles.server_info()
+
+
+def test_the_gpus_seen_are_only_rewritten_when_they_change_or_hourly(home, monkeypatch):
+    now = 1_700_000_000.0
+    monkeypatch.setattr(profiles.time, "time", lambda: now)
+    monkeypatch.setattr(profiles.autofit, "hardware", lambda: _hardware([RTX]))
+    seen = profiles.STATE_DIR / "gpus_seen.json"
+    profiles.server_info()
+    first = seen.stat().st_mtime_ns
+    now += 60
+    monkeypatch.setattr(profiles.autofit, "hardware", lambda: _hardware([{**RTX, "free_mb": 100}]))
+    profiles.server_info()
+    assert seen.stat().st_mtime_ns == first and json.loads(seen.read_text())["at"] == 1_700_000_000.0
+    now += profiles.GPUS_SEEN_EVERY
+    profiles.server_info()
+    assert json.loads(seen.read_text())["at"] == now
+
+
+def test_a_gpu_going_or_coming_back_is_pushed_at_once_but_its_use_alone_is_not(home, monkeypatch):
+    api = FakeApi()
+    profiles.sync(FakeApi([signup()]))
+    (profiles.PROFILES_DIR / ".status").unlink(missing_ok=True)
+    hw = {"now": _hardware([RTX])}
+    monkeypatch.setattr(profiles.autofit, "hardware", lambda: hw["now"])
+    profiles.push_status(api)
+    hw["now"] = _hardware([{**RTX, "free_mb": 1200}])
+    profiles.push_status(api)
+    assert len(api.statuses) == 1
+    hw["now"] = _hardware([])
+    profiles.push_status(api)
+    assert len(api.statuses) == 2 and api.statuses[-1]["server"]["gpus"][0]["free_mb"] is None
+    hw["now"] = _hardware([RTX])
+    profiles.push_status(api)
+    assert len(api.statuses) == 3 and api.statuses[-1]["server"]["gpus"][0]["free_mb"] == 3900
+
+
 def test_status_is_only_pushed_when_it_changes(home, monkeypatch):
     api = FakeApi()
     profiles.sync(FakeApi([signup()]))

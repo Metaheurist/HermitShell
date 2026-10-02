@@ -343,12 +343,16 @@ function serverFacts(server) {
   const disk = obj(server.disk_mb);
   const [dTotal, dFree] = [whole(disk.total, 2 ** 40), whole(disk.free, 2 ** 40)];
   const gpus = (Array.isArray(server.gpus) ? server.gpus : []).slice(0, 4).map(obj);
+  const seen = Number.isFinite(server.gpus_at) ? ` since ${esc(ago(server.gpus_at))}` : "";
   return [
     cores ? meter("CPU", load, cores, `${esc(text(cpu.model, 60) || "CPU")} &middot; ${cores} threads${load !== null ? ` &middot; load ${load}` : ""}`) : "",
     total && free !== null ? meter("Memory", total - free, total, `${gb(total - free)} of ${gb(total)} used`) : "",
     ...gpus.map((g) => {
       const [vram, vfree] = [whole(g.vram_mb, 1 << 22), whole(g.free_mb, 1 << 22)];
-      return vram && vfree !== null ? meter("GPU", vram - vfree, vram, `${esc(text(g.name, 60) || "GPU")} &middot; ${gb(vram - vfree)} of ${gb(vram)}`) : "";
+      if (!vram) return "";
+      const name = esc(text(g.name, 60) || "GPU");
+      return vfree !== null ? meter("GPU", vram - vfree, vram, `${name} &middot; ${gb(vram - vfree)} of ${gb(vram)}`)
+        : `<div class="smeter"><div class="shead"><b>GPU</b><span>${name} &middot; ${gb(vram)}</span></div><p class="snote">Use not reported${seen}: the host's hardware report (the Ollama watchdog) is late.</p></div>`;
     }),
     dTotal && dFree !== null ? meter("Disk", dTotal - dFree, dTotal, `${gb(dFree)} free of ${gb(dTotal)}`) : "",
   ].filter(Boolean).join("");
