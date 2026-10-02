@@ -765,8 +765,8 @@ same short list of first names and surnames, and every email address is at one o
 recruiter signed in sees the desk as a made-up manager or recruiter like them (as the made-up account
 with their username only when it has the same roles and isn't an admin), so they see a team or a pool
 and never a page their own role can't open. Only admins can switch it, and it applies to everyone signed in until an admin turns it off, with the
-switch (which says since when it has been on) or the **Turn off** link on the ribbon at the foot of each
-page. The switch is a plain form, so it works without scripts, and screen readers hear it as a switch
+switch (which says since when it has been on) or **Turn off** on the ribbon at the foot of each page,
+which turns it off in one press and goes back to the real recruits. The switch is a plain form, so it works without scripts, and screen readers hear it as a switch
 that is on or off.
 
 <img src="images/worker/admin-settings-demo.png" alt="Global settings with the demo mode switch on: what it does and when it was turned on" width="720">

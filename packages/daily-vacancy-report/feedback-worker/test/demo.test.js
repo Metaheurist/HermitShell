@@ -104,6 +104,25 @@ describe("demo mode switch", () => {
     expect(dashboard).not.toContain("demoribbon");
   });
 
+  it("turns off in one press from the ribbon, back on the recruits, but only with the form's token", async () => {
+    const { env, admin } = await setup();
+    await demoOn(admin);
+    await admin.post("/admin/action", { action: "pause", u: "sam-lee" });
+    expect((await admin.post("/admin/demo", { on: "0", from: "ribbon" }, "0".repeat(32))).status).toBe(403);
+    expect(env.FEEDBACK.store.has("demo:mode")).toBe(true);
+    const off = await admin.post("/admin/demo", { on: "0", from: "ribbon" });
+    expect(off.status).toBe(303);
+    expect(off.headers.get("Location")).toBe("/admin?done=demo_off");
+    expect(env.FEEDBACK.store.has("demo:mode")).toBe(false);
+    expect(env.FEEDBACK.store.has("demo:state")).toBe(false);
+    const dashboard = (await admin.get("/admin?done=demo_off")).body;
+    expect(dashboard).toContain("Demo mode is off: the dashboard shows your real recruits again.");
+    expect(dashboard).toContain("Real Recruit");
+    expect(dashboard).not.toContain("demoribbon");
+    const on = await admin.post("/admin/demo", { on: "1", from: "ribbon" });
+    expect(on.headers.get("Location")).toBe("/admin/settings?done=demo_on#demo");
+  });
+
   it("can only be switched by an admin, with the form's token", async () => {
     const { env, admin } = await setup();
     const casey = await addRecruiter(admin, env);
@@ -136,7 +155,7 @@ describe("demo mode pages", () => {
     expect(dashboard).toContain("scanning now");
     expect(dashboard).toContain("Careers fair, marketing graduate");
     expect(dashboard).toContain('<div class="demoribbon" role="status">');
-    expect(dashboard).toContain('href="/admin/settings#demo">Turn off</a>');
+    expect(dashboard).toMatch(/<form method="post" action="\/admin\/demo"><input type="hidden" name="csrf" value="[0-9a-f]+"><input type="hidden" name="on" value="0">\s*<input type="hidden" name="from" value="ribbon"><button>Turn off<\/button><\/form>/);
     const history = (await admin.get("/admin/history?u=sam-lee")).body;
     const months = [...history.matchAll(/href="(\/admin\/history\?u=sam-lee&amp;m=\d{4}-\d\d)"/g)].map((m) => m[1].replace("&amp;", "&"));
     const shown = [history, ...(await Promise.all(months.map(async (m) => (await admin.get(m)).body)))];
@@ -169,7 +188,8 @@ describe("demo mode pages", () => {
     for (const name of ["Sam Lee", "Morgan Ellis", "Taylor Reid"]) expect(body).toContain(name);
     for (const name of ["Jamie Walsh", "Robin Shaw", "Real Recruit"]) expect(body).not.toContain(name);
     expect(body).toContain("demoribbon");
-    expect(body).not.toContain("Turn off</a>");
+    expect(body).not.toContain("Turn off");
+    expect(body).not.toContain('action="/admin/demo"');
   });
 });
 

@@ -114,13 +114,13 @@ test("demo mode fills the dashboard with made-up recruits, plays presses out wit
   const [file] = await Promise.all([page.waitForEvent("download"), page.getByRole("link", { name: "Download the cover letter" }).click()]);
   expect(file.suggestedFilename()).toMatch(/^Cover letter - Avery Lane - .+\.pdf$/);
 
-  await ribbon.getByRole("link", { name: "Turn off" }).click();
-  await expect(page).toHaveURL(/\/admin\/settings#demo$/);
-  await page.locator('label[for="demo-switch"]').click();
-  await expect(page).toHaveURL(/done=demo_off#demo$/);
+  await ribbon.getByRole("button", { name: "Turn off" }).click();
+  await expect(page).toHaveURL(/\/admin\?done=demo_off$/);
+  await expect(page.getByText("Demo mode is off: the dashboard shows your real recruits again.")).toBeVisible();
+  await expect(page.locator(".demoribbon")).toHaveCount(0);
+  await page.goto("/admin/settings");
   await expect(page.getByRole("switch", { name: "Demo mode" })).not.toBeChecked();
   await page.goto("/admin");
-  await expect(page.locator(".demoribbon")).toHaveCount(0);
   await expect(page.locator("table.recruits").getByText("Jamie Walsh")).toHaveCount(0);
 });
 

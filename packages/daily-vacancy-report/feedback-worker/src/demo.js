@@ -76,6 +76,7 @@ export async function demoToggle(request, env, s) {
   if (on) await env.FEEDBACK.put(DEMO_KEY, JSON.stringify({ at: Date.now() }));
   else await env.FEEDBACK.delete(DEMO_KEY);
   await env.FEEDBACK.delete(STATE_KEY);
+  if (!on && form.get("from") === "ribbon") return redirect("/admin?done=demo_off");
   return redirect(`${SETTINGS_URL}?done=${on ? "demo_on" : "demo_off"}#demo`);
 }
 
@@ -125,13 +126,18 @@ ${demoSwitch(demo, csrf, tz, moved)}`;
 const RIBBON_STYLE = `.demoribbon{position:fixed;left:50vw;bottom:16px;transform:translateX(-50%);z-index:30;display:flex;gap:10px;align-items:center;
 width:max-content;max-width:calc(100vw - 32px);padding:9px 16px;border-radius:99px;background:#1e1b4b;color:#e0e7ff;font-size:13px;font-weight:600;
 box-shadow:0 12px 30px -12px rgba(30,27,75,.7)}
-.demoribbon b{color:#fff}.demoribbon a{color:#c7d2fe;white-space:nowrap}.demoribbon a:hover{color:#fff}
+.demoribbon b{color:#fff}.demoribbon form{margin:0;display:flex}
+.demoribbon button,.demoribbon button:hover{margin:0;padding:0;width:auto;height:auto;border:0;border-radius:0;background:none;box-shadow:none;
+transform:none;filter:none;font:inherit;color:#c7d2fe;text-decoration:underline;text-underline-offset:2px;white-space:nowrap;cursor:pointer}
+.demoribbon button:hover{color:#fff}
+.demoribbon button:focus-visible{outline:2px solid #fff;outline-offset:3px;border-radius:4px}
 .demoribbon::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:#fbbf24;box-shadow:0 0 0 4px rgba(251,191,36,.25)}`;
 
 // Shown at the foot of every signed-in page while demo mode is on.
-export function demoRibbon(admin) {
+export function demoRibbon(admin, csrf) {
   return `<style>${RIBBON_STYLE}</style><div class="demoribbon" role="status"><span><b>Demo mode:</b> made-up data, and nothing you press reaches anyone.</span>${
-    admin ? `<a href="${SETTINGS_URL}#demo">Turn off</a>` : ""}</div>`;
+    admin ? `<form method="post" action="${DEMO_URL}"><input type="hidden" name="csrf" value="${esc(csrf)}"><input type="hidden" name="on" value="0">
+<input type="hidden" name="from" value="ribbon"><button>Turn off</button></form>` : ""}</div>`;
 }
 
 // ------------------------------------------------------------------------- the pretend KV and live link

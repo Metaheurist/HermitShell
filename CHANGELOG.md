@@ -900,6 +900,9 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Turn off on the demo ribbon turns demo mode off in one press.** It used to open Global settings, where the
+  switch then had to be pressed; now it posts the switch itself (with the form's token, admins only) and goes
+  back to the real recruits with "Demo mode is off". Covered in `test/demo.test.js` and `e2e/demo.spec.js`.
 - **Demo mode shows a busy desk, with every newer feature.** It now has 35 made-up recruits (several
   scanning at once, some paused, some new without a CV), two managers with their teams (one also recruits),
   recruiters in and out of a team, three sign-ups, five invites and a full Tasks list. The newer features are

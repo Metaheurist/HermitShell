@@ -898,7 +898,7 @@ async function withSignedIn(res, env, s, path, method) {
   if (method === "GET" && [TASKS_URL, STATUS_URL].includes(path)) return res;
   if (!(res.headers.get("Content-Type") || "").startsWith("text/html")) return res;
   const [html, current] = await Promise.all([res.text(), status(env)]);
-  const ribbon = s.demo ? demoRibbon(s.me.admin) : "";
+  const ribbon = s.demo ? demoRibbon(s.me.admin, s.csrf) : "";
   const headers = new Headers(res.headers);
   headers.set("Content-Security-Policy", enhancedCsp(headers.get("Content-Security-Policy")));
   return new Response(enhance(html.replace(/<body[^>]*>/, (tag) => `${tag}${signedInBox(s, current)}${ribbon}`)), { status: res.status, headers });

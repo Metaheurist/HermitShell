@@ -554,7 +554,7 @@ When it is ready, the notice turns green for a day:
 | Control | What it does |
 | --- | --- |
 | **Demo mode** switch | Admins only; shows Off, or On and since when. Every dashboard page shows a busy made-up desk for everyone signed in (35 recruits, two managers with their teams, recruiters, tasks, features, the server model downloading and backups on Cloudflare); presses play out on it (letters and CVs get made, skills added, recruits paused, features switched, a server model picked, **Back up now**) but reach neither the real data nor HermitShell ([more](feedback-worker.md#demo-mode)) |
-| Demo mode ribbon | At the foot of every page while it is on; admins get a **Turn off** link |
+| Demo mode ribbon | At the foot of every page while it is on; admins get **Turn off**, which turns it off in one press and goes back to the real recruits |
 
 <img src="images/worker/admin-dashboard-demo.png" alt="The recruits list in demo mode with made-up recruits and the ribbon" width="620">
 
