@@ -1230,17 +1230,37 @@ def test_back_up_now_is_refused_while_maintenance_runs(backups, monkeypatch):
 
 def test_status_carries_the_last_backup_without_paths(backups, monkeypatch):
     _, note, _ = backups
-    assert profiles.status_payload()["backup"] == {"at": None, "size": 0, "kept": 0, "error": "", "failed_at": None,
-                                                   "encrypted": False}
+
+    def local():
+        return {k: v for k, v in profiles.status_payload()["backup"].items() if k != "offsite"}
+
+    assert local() == {"at": None, "size": 0, "kept": 0, "error": "", "failed_at": None, "encrypted": False}
     note.write_text(json.dumps({"at": 1_700_000_000.5, "size": 2048, "kept": 3, "encrypted": True,
                                 "error": "PermissionError: denied", "failed_at": 1_700_000_100, "dir": "/secret"}))
     monkeypatch.setenv(profiles.hc.DATA_KEY_ENV, "x" * 43)
-    backup = profiles.status_payload()["backup"]
-    assert backup == {"at": 1_700_000_000_500, "size": 2048, "kept": 3, "error": "PermissionError: denied",
-                      "failed_at": 1_700_000_100_000, "encrypted": True}
+    assert local() == {"at": 1_700_000_000_500, "size": 2048, "kept": 3, "error": "PermissionError: denied",
+                       "failed_at": 1_700_000_100_000, "encrypted": True}
     note.write_text(json.dumps({"at": "soon", "size": -5, "kept": "lots", "error": None, "failed_at": True}))
-    assert profiles.status_payload()["backup"] == {"at": None, "size": 0, "kept": 0, "error": "", "failed_at": None,
-                                                   "encrypted": True}
+    assert local() == {"at": None, "size": 0, "kept": 0, "error": "", "failed_at": None, "encrypted": True}
+
+
+def test_status_says_whether_backups_go_to_the_worker_and_how_the_last_went(backups, monkeypatch):
+    maintenance, note, _ = backups
+    monkeypatch.delenv(profiles.hc.DATA_KEY_ENV, raising=False)
+    assert profiles.status_payload()["backup"]["offsite"] == {"on": False, "why": "unencrypted", "at": None, "kept": 0,
+                                                              "error": "", "failed_at": None}
+    monkeypatch.setenv(profiles.hc.DATA_KEY_ENV, "x" * 43)
+    monkeypatch.setattr(maintenance.worker_link, "from_env", lambda **kw: object())
+    monkeypatch.setattr(maintenance.worker_link, "worker_protocol", lambda: {"protocol": 6})
+    assert profiles.status_payload()["backup"]["offsite"]["why"] == "worker"
+    monkeypatch.setattr(maintenance.worker_link, "worker_protocol", lambda: {"protocol": maintenance.worker_link.BACKUP_PROTOCOL})
+    note.write_text(json.dumps({"at": 1, "offsite": {"on": True, "at": 1_700_000_000, "kept": 4, "error": "x" * 500,
+                                                     "failed_at": 1_700_000_100, "url": "https://secret.example"}}))
+    assert profiles.status_payload()["backup"]["offsite"] == {"on": True, "why": "", "at": 1_700_000_000_000, "kept": 4,
+                                                              "error": "x" * 200, "failed_at": 1_700_000_100_000}
+    monkeypatch.setenv("HERMES_BACKUP_OFFSITE", "off")
+    assert profiles.status_payload()["backup"]["offsite"]["on"] is False
+    assert profiles.status_payload()["backup"]["offsite"]["why"] == "off"
 
 
 def bulk(op, us, n=5, **extra):

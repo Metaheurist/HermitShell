@@ -103,20 +103,26 @@ def ollama(state: dict, now: float) -> dict[str, str]:
 
 
 def backup(state_dir, now: float) -> dict[str, str]:
-    """The last backup failed, or none has been made for BACKUP_STALE."""
+    """The last backup failed, or none has been made for BACKUP_STALE; and, apart, sending the last one to
+    Cloudflare failed (maintenance.send_offsite)."""
     import maintenance
     try:
         info = json.loads((state_dir / BACKUP_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         info = {}
     info = info if isinstance(info, dict) else {}
+    off = info.get("offsite") if isinstance(info.get("offsite"), dict) else {}
+    found = {}
+    if off.get("on") is True and isinstance(off.get("error"), str) and off["error"] \
+            and float(off.get("failed_at") or 0) >= float(off.get("at") or 0):
+        found["offsite"] = f"Sending the last backup to Cloudflare failed: {off['error'][:80]}"
     if isinstance(info.get("error"), str) and info["error"]:
-        return {"backup": f"The last backup failed: {info['error'][:80]}"}
+        return found | {"backup": f"The last backup failed: {info['error'][:80]}"}
     newest = maintenance.list_backups()
     if newest:
         hours = int((now - maintenance.stamp_of(newest[0]).timestamp()) // 3600)
-        return {"backup": f"No backup for {hours} hours"} if hours * 3600 >= BACKUP_STALE else {}
-    return {"backup": "No backup has been made yet"} if info else {}
+        return found | ({"backup": f"No backup for {hours} hours"} if hours * 3600 >= BACKUP_STALE else {})
+    return found | ({"backup": "No backup has been made yet"} if info else {})
 
 
 def disk(state_dir) -> dict[str, str]:

@@ -68,7 +68,8 @@ Everything is kept while you are subscribed, except that by default jobs, answer
 older than 12 months and logs older than 90 days are deleted, and letters and CVs kept for download
 on Cloudflare are deleted after 7 days (the CV made from yours, when the next one replaces it).
 Encrypted nightly backups are kept
-for about two months (14 daily and 8 weekly copies), then deleted.
+for about two months (14 daily and 8 weekly copies), then deleted. Copies of the last month's (7 daily and
+4 weekly) are also kept on Cloudflare, encrypted before they leave the server so Cloudflare can't read them.
 
 ## How it is protected
 

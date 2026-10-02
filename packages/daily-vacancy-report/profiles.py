@@ -2114,9 +2114,13 @@ def backup_status() -> dict:
     number = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0  # noqa: E731
     whole = lambda v: int(v) if number(v) else 0  # noqa: E731
     stamp = lambda v: _ms(v) if number(v) else None  # noqa: E731
+    off = info.get("offsite") if isinstance(info.get("offsite"), dict) else {}
+    why = maintenance.offsite_why()
     return {"at": stamp(info.get("at")), "size": whole(info.get("size")), "kept": whole(info.get("kept")),
             "error": str(info.get("error") or "")[:200], "failed_at": stamp(info.get("failed_at")),
-            "encrypted": bool(env(hc.DATA_KEY_ENV))}
+            "encrypted": bool(env(hc.DATA_KEY_ENV)),
+            "offsite": {"on": not why, "why": why, "at": stamp(off.get("at")), "kept": whole(off.get("kept")),
+                        "error": str(off.get("error") or "")[:200], "failed_at": stamp(off.get("failed_at"))}}
 
 
 # --------------------------------------------------------------------------- the dashboard's task list

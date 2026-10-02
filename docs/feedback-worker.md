@@ -552,7 +552,9 @@ opens with the machine HermitShell runs on: CPU and its load, memory, each GPU's
 disk, each with a bar (amber from 70%, red from 90%). Under them are the AI models in the order they
 are asked, each with its model name and whether it is ready, how many requests it answered today or
 why it is resting, then which one gave the last answer. **Backups** shows the last backup, its size
-and how many are kept (or why the last one failed), a reminder to keep `HERMES_DATA_KEY` away from the
+and how many are kept (or why the last one failed), when the last one was sent to
+[Cloudflare](#backups-on-cloudflare) and how many copies are kept there, with a **Download** link (or why
+they aren't sent, or that sending the last one failed), a reminder to keep `HERMES_DATA_KEY` away from the
 server, and **Back up now**, which asks HermitShell for a backup straight away (once per 10 minutes; it
 won't run beside the nightly one, see [Data protection](configuration.md#data-protection)). Last comes
 **Model settings**. It needs no JavaScript, and it shows what HermitShell last reported (see
@@ -1275,6 +1277,46 @@ admins have **Export these notes** under Notes on a recruit's page, a text file 
 
 <img src="images/worker/me-jobs.png" alt="A recruit's own page: My jobs" width="560">
 
+### Backups on Cloudflare
+
+A backup on the same machine as HermitShell is lost with that machine. From Worker and HermitShell
+protocol 7, each nightly backup (and each **Back up now**) is also sent to the Worker, so a copy lives on
+Cloudflare. The copy on the server stays too.
+
+- **What is sent:** the same encrypted archive written to `HERMES_BACKUP_DIR`, byte for byte. HermitShell
+  encrypts it with `HERMES_DATA_KEY` before it leaves the server and only sends encrypted backups, so
+  neither Cloudflare nor anyone who gets into the Worker can open one. Without `HERMES_DATA_KEY` set,
+  nothing is sent and the server panel says so.
+- **How:** in 1 MB parts over the signed API (`POST /api/backup/part`, with each part's place, the number
+  of parts and the archive's SHA-256), into the hub Durable Object's SQLite storage, in an instance of
+  its own (`backups`) so the sign-in and rate-limit data never share it. The Worker refuses anything that
+  isn't a HermitShell backup name or doesn't start like an encrypted archive, and a backup only counts
+  once every part has arrived; an upload left unfinished for a day is removed.
+- **How many:** HermitShell keeps the 7 newest plus the newest of each of the 4 weeks before
+  (`HERMES_BACKUP_OFFSITE_KEEP_DAILY` / `_KEEP_WEEKLY`) and deletes the rest after each upload. The Worker
+  also holds at most 40 backups and 1 GB, well inside the free plan's 5 GB.
+- **When it fails:** the backup on the server is still made. The server panel says sending the last one
+  failed and an [admin alert](configuration.md#admin-alerts) is emailed; the next backup tries again.
+  Turn it off with `HERMES_BACKUP_OFFSITE=0`.
+- **Downloading one:** **Download** in the server panel opens **Backups on Cloudflare** (`/admin/backups`,
+  admins only), which lists each copy with its date and size. Managers and recruiters are refused.
+
+<img src="images/worker/admin-backups.png" alt="Backups on Cloudflare: nine encrypted backups, each with its date, file name, size and a Download link, then how to restore one after losing the server" width="380">
+
+**Restoring after losing the server.** Install HermitShell on the new machine, put the same
+`HERMES_DATA_KEY` in its `.env`, download a backup into its data folder (for example
+`/opt/hermitshell/data`, which is `/data` in the container), then unpack it into an empty folder and copy
+back what you need:
+
+```sh
+docker exec hermitshell python3 maintenance.py --restore /data/hermitshell-20261002-031500.tar.gz.enc --to /data/restore
+```
+
+(without Docker, run `python3 maintenance.py --restore FILE --to DIR` in the scripts folder). A server that
+still has its `.env` can list and fetch the copies itself: `python3 maintenance.py --list-offsite`, then
+`--fetch NAME` (add `--out PATH` to choose where it goes; the SHA-256 is checked). Without that key no one
+can open the backups, so keep a copy of it away from the server, in a password manager.
+
 ### Privacy notice
 
 The Worker serves `/privacy`: what is kept about the people you invite, where, for how long, how
@@ -1313,7 +1355,8 @@ email-button request adds one write when it arrives and one when HermitShell col
 Tasks window only lists the queue when its flag says something is waiting. Each recruit's stats
 are written only when they changed, at most every 30 minutes, plus once after each report (in
 practice a few writes per recruit a day). Each [history](#history) entry adds one write, and a
-History page one list. If the Durable Object allowance ever ran out, saves still work and
+History page one list. A [backup sent to Cloudflare](#backups-on-cloudflare) writes one SQLite row a
+megabyte (a couple of hundred of the 100,000 rows a day, even with Back up now). If the Durable Object allowance ever ran out, saves still work and
 HermitShell falls back to polling.
 
 ## Removing it

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PROTOCOL } from "../src/apiauth.js";
 import worker from "../src/index.js";
 import { SECRET_TTL_SECONDS } from "../src/join.js";
 import { APPLIED, waitRefresh } from "../src/lib.js";
@@ -172,9 +173,9 @@ describe("setup checklist", () => {
   it("warns when HermitShell and the Worker speak different protocols, with the fix for whichever is older", async () => {
     const older = (await (await setup({ ...STATUS, protocol: undefined })).get("/admin")).body;
     expect(older).toContain("HermitShell and this Worker don&rsquo;t match:");
-    expect(older).toContain("HermitShell (protocol 1) is older than this Worker (protocol 6)");
-    const newer = (await (await setup({ ...STATUS, protocol: 7 })).get("/admin/settings")).body;
-    expect(newer).toContain("This Worker (protocol 6) is older than HermitShell (protocol 7). Redeploy it");
+    expect(older).toContain(`HermitShell (protocol 1) is older than this Worker (protocol ${PROTOCOL})`);
+    const newer = (await (await setup({ ...STATUS, protocol: PROTOCOL + 1 })).get("/admin/settings")).body;
+    expect(newer).toContain(`This Worker (protocol ${PROTOCOL}) is older than HermitShell (protocol ${PROTOCOL + 1}). Redeploy it`);
     expect((await (await setup()).get("/admin")).body).not.toContain("don&rsquo;t match");
     expect((await (await setup(null)).get("/admin")).body).not.toContain("don&rsquo;t match");
   });

@@ -7,6 +7,9 @@
 // It also remembers the nonces of signed API requests (apiauth.js) for ten minutes, so none is accepted twice,
 // counts attempts for rate limits (a counted attempt is a row here rather than one of KV's 1,000 daily writes),
 // and holds one-time sign-in tokens, spent by a single statement so each works once even when two requests race.
+// A second instance of the class, "backups", keeps the off-server copies of HermitShell's backups (backups.js).
+
+import { vault } from "./backups.js";
 
 const NAME = "hub";
 const LIMIT_KEY_RE = /^[a-z]{1,12}:[0-9A-Za-z:._-]{1,80}$/;
@@ -168,6 +171,7 @@ export class Hub {
 
   async fetch(request) {
     const path = new URL(request.url).pathname;
+    if (path.startsWith("/backup/")) return vault(this.state.storage.sql, request, path);
     if (path === "/connect") {
       if (request.headers.get("Upgrade") !== "websocket") return new Response("Expected a WebSocket", { status: 426 });
       const [client, server] = Object.values(new WebSocketPair());

@@ -413,8 +413,10 @@ Then keep it running: `python3 scheduler.py run` (a service does this for you), 
   late if it was due in the last `HERMITSHELL_CATCHUP_MINUTES` (30); a run is stopped after
   `HERMITSHELL_JOB_TIMEOUT` seconds (6 hours).
 - Nightly maintenance deletes old data, encrypts and backs up; set `HERMES_DATA_KEY` first
-  (`python3 maintenance.py --new-key`) so the backups are encrypted. See
-  [data protection](configuration.md#data-protection).
+  (`python3 maintenance.py --new-key`) so the backups are encrypted. With the feedback Worker set up, each
+  backup is also sent to [Cloudflare](feedback-worker.md#backups-on-cloudflare), so a lost server can be
+  rebuilt from there; that only works with the same `HERMES_DATA_KEY`, so keep a copy of it in a password
+  manager, not only on the server. See [data protection](configuration.md#data-protection).
 
 ## Moving from Hermes
 

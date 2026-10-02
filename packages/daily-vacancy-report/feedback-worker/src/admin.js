@@ -16,6 +16,7 @@ import { DEMO_DONE, DEMO_URL, demoEnv, demoMode, demoRibbon, demoSection, demoTo
 import { HISTORY_URL, PIPELINE_URL, historyPage, listed, moveOwnerHistory, record, recordReported } from "./history.js";
 import { META_STAGES, STAGE_LABELS, STAGE_URL, pipelineBack, pipelinePage, requestStage, stageMeta } from "./pipeline.js";
 import { hasCheckedIn } from "./apiauth.js";
+import { BACKUPS_URL, backupsPage } from "./backups.js";
 import { POLL_PATH, hubConnect, hubLimit, hubLimitClear, hubPresence, hubSeen } from "./hub.js";
 import { enhance, enhancedCsp } from "./enhance.js";
 import { createInvite, openInvites, queueItem } from "./join.js";
@@ -912,6 +913,9 @@ async function signedInRoute(request, env, s, path) {
   }
   if (path === USERS_URL && ["GET", "POST"].includes(request.method)) return usersRequest(request, env, s);
   if (path === TASKS_URL && !s.me.admin) return page(...ADMINS_ONLY);
+  if (path === BACKUPS_URL && request.method === "GET") {
+    return s.me.admin ? backupsPage(request, env, (await status(env)).timezone) : page(...ADMINS_ONLY);
+  }
   if (path === TASKS_URL && request.method === "POST") return tasksAction(request, env, s);
   if (path === TASKS_URL && request.method === "GET") {
     const url = new URL(request.url);

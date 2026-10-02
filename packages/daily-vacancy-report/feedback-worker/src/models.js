@@ -6,6 +6,7 @@
 // (llm_providers.py, key_usage.py, autofit.py) and is checked field by field before it is shown; keys only ever
 // arrive masked.
 
+import { BACKUPS_URL } from "./backups.js";
 import { ago, esc, savingTag } from "./lib.js";
 import { CHEVRON, keyList, leftSummary, logo, reported } from "./keys.js";
 
@@ -379,6 +380,23 @@ function modelFacts(status) {
 const size = (bytes) => (bytes >= 2 ** 30 ? `${(bytes / 2 ** 30).toFixed(1)} GB`
   : bytes >= 2 ** 20 ? `${(bytes / 2 ** 20).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 
+const OFFSITE_OFF = {
+  off: "Kept on this server only (<code>HERMES_BACKUP_OFFSITE=off</code>).",
+  unencrypted: "Not sent to Cloudflare until they are encrypted.",
+  worker: "Redeploy the Worker to keep copies on Cloudflare too.",
+};
+
+// The copies on Cloudflare (backups.js): when the last went, how many are kept and where to download them. A
+// HermitShell from before them sends no offsite field, so nothing is said.
+function offsiteFacts(o) {
+  if (!o || typeof o !== "object") return "";
+  if (o.on !== true) return OFFSITE_OFF[o.why] ? `<p class="snote">${OFFSITE_OFF[o.why]}</p>` : "";
+  const [at, failed, kept] = [whole(o.at, 1e14), whole(o.failed_at, 1e14), whole(o.kept, 10000)];
+  const error = text(o.error, 200);
+  const sent = at ? `On Cloudflare too: last sent ${esc(ago(at))}${kept ? ` &middot; ${kept} kept` : ""}` : "On Cloudflare too, from the next backup";
+  return `${error && failed && failed >= (at || 0) ? `<p class="sbad">Sending the last backup to Cloudflare failed ${esc(ago(failed))}: ${esc(error)}</p>` : ""}<p class="sback">${sent} &middot; <a href="${BACKUPS_URL}">Download</a></p>`;
+}
+
 // The nightly backups (maintenance.py, state/backup.json): the last one or its failure, and Back up now. An older
 // HermitShell sends no backup field, so the section is left out.
 function backupFacts(status, csrf) {
@@ -390,6 +408,7 @@ function backupFacts(status, csrf) {
   const last = at ? `Last backup ${esc(ago(at))}${bytes ? ` &middot; ${size(bytes)}` : ""}${kept ? ` &middot; ${kept} kept` : ""}` : "No backup yet.";
   return `<div class="ssec"><b>Backups</b></div>
 ${error && failed ? `<p class="sbad">The last backup failed ${esc(ago(failed))}: ${esc(error)}</p>` : ""}<p class="sback">${last}</p>
+${offsiteFacts(b.offsite)}
 ${b.encrypted === true ? '<p class="snote">Backups open only with <code>HERMES_DATA_KEY</code>: keep a copy of it away from this server, in a password manager.</p>'
     : '<p class="sbad">Backups are not encrypted: set <code>HERMES_DATA_KEY</code> (<code>python3 maintenance.py --new-key</code>).</p>'}
 <form method="post" action="/admin/action" class="sbackup"><input type="hidden" name="csrf" value="${esc(csrf)}"><input type="hidden" name="action" value="backup_now"><button class="small quiet">Back up now</button></form>`;

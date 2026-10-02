@@ -14,6 +14,7 @@
 
 import { handleAdmin, handleApi } from "./admin.js";
 import { verifyApi, withProtocol } from "./apiauth.js";
+import { backupApi } from "./backups.js";
 import { ENHANCE_PATH, enhanceScript } from "./enhance.js";
 import { DOC_KINDS, DOC_STYLE, OWNER_ID, docFor, jobHash, letterFields, letterStyle, docResponse, readDoc, styleLabel } from "./docs.js";
 import { listed, record } from "./history.js";
@@ -297,6 +298,7 @@ async function apiRoute(request, env, url) {
     if (ids.length) await forgetRequests(env, ids);
     return json({ deleted: ids.length });
   }
+  if (url.pathname === "/api/backups" || url.pathname.startsWith("/api/backup/")) return backupApi(request, env, url);
   if (url.pathname.startsWith("/api/")) return handleApi(request, env);
   return json({ error: "not found" }, 404);
 }

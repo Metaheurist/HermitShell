@@ -228,3 +228,220 @@ def test_nightly_run_and_decrypt_command(tree, monkeypatch, tmp_path, capsys):
     assert (tmp_path / "cv.txt").read_text(encoding="utf-8") == "Sam Lee"
     assert maintenance.main(["--new-key"]) == 0
     assert len(capsys.readouterr().out.strip()) == 43
+
+
+# --------------------------------------------------------------------------- off-server copies
+
+class Answer:
+    def __init__(self, content: bytes = b"{}"):
+        self.content = content
+
+
+class FakeWorker:
+    """The feedback Worker's backup routes (feedback-worker/src/backups.js), in memory: a backup is listed once every
+    part has arrived."""
+
+    def __init__(self):
+        self.files: dict[str, dict] = {}
+        self.calls: list[tuple] = []
+
+    def keep(self, name: str, data: bytes = hc.SEALED + b"x") -> None:
+        self.files[name] = {"n": 1, "sha": maintenance.hashlib.sha256(data).hexdigest(), "parts": {0: data}}
+
+    def request(self, method, path, *, params=None, json_body=None, data=None, content_type="", **_):
+        self.calls.append((method, path, dict(params or {}), json_body, len(data or b""), content_type))
+        if (method, path) == ("POST", "/api/backup/part"):
+            f = self.files.setdefault(params["name"], {"n": params["n"], "sha": params["sha"], "parts": {}})
+            f["parts"][params["i"]] = data
+            return Answer()
+        if (method, path) == ("GET", "/api/backup/part"):
+            return Answer(self.files[params["name"]]["parts"][params["i"]])
+        if (method, path) == ("POST", "/api/backup/delete"):
+            self.files.pop(json_body["name"], None)
+            return Answer()
+        raise AssertionError(f"unexpected {method} {path}")
+
+    def json(self, method, path, **_):
+        assert (method, path) == ("GET", "/api/backups")
+        done = {n: f for n, f in self.files.items() if len(f["parts"]) == f["n"]}
+        return {"backups": [{"name": n, "parts": f["n"], "sha": f["sha"], "size": sum(map(len, f["parts"].values())), "at": 1}
+                            for n, f in sorted(done.items(), reverse=True)]}
+
+    def sent(self) -> list[tuple]:
+        return [c for c in self.calls if c[:2] == ("POST", "/api/backup/part")]
+
+
+def blob(size: int) -> bytes:
+    return hc.SEALED + os.urandom(size - len(hc.SEALED))
+
+
+@pytest.fixture
+def worker(tree, monkeypatch):
+    """A set-up feedback Worker that has backups (protocol 7), and a data key."""
+    pytest.importorskip("cryptography")
+    fake = FakeWorker()
+    monkeypatch.setattr(maintenance.worker_link, "from_env", lambda timeout=30: fake)
+    monkeypatch.setattr(maintenance.worker_link, "worker_protocol", lambda: {"protocol": maintenance.worker_link.BACKUP_PROTOCOL})
+    monkeypatch.setenv(hc.DATA_KEY_ENV, hc.new_data_key())
+    for key in ("HERMES_BACKUP_OFFSITE", "HERMES_BACKUP_OFFSITE_KEEP_DAILY", "HERMES_BACKUP_OFFSITE_KEEP_WEEKLY"):
+        monkeypatch.delenv(key, raising=False)
+    return fake
+
+
+NAME = "hermitshell-20261001-031500.tar.gz.enc"
+
+
+def test_a_backup_goes_up_in_whole_parts_with_the_files_sha256(worker):
+    data = blob(2 * maintenance.OFFSITE_PART + 1234)
+    assert maintenance.send_offsite(NAME, data) == (3, 1, 0)
+    sha = maintenance.hashlib.sha256(data).hexdigest()
+    assert [(c[2], c[4], c[5]) for c in worker.sent()] == [
+        ({"name": NAME, "i": i, "n": 3, "sha": sha}, size, "application/octet-stream")
+        for i, size in enumerate((maintenance.OFFSITE_PART, maintenance.OFFSITE_PART, 1234))]
+    assert b"".join(worker.files[NAME]["parts"][i] for i in range(3)) == data
+
+
+def test_the_copies_on_the_worker_rotate_to_seven_daily_and_four_weekly(worker, monkeypatch):
+    start = datetime(2026, 7, 1, 3, 15)
+    names = [f"hermitshell-{start + timedelta(days=d):%Y%m%d-%H%M%S}.tar.gz.enc" for d in range(60)]
+    for name in names:
+        worker.keep(name)
+    newest = f"hermitshell-{start + timedelta(days=60):%Y%m%d-%H%M%S}.tar.gz.enc"
+    parts, kept, removed = maintenance.send_offsite(newest, blob(100))
+    assert (parts, kept, removed) == (1, 11, 50)
+    assert set(worker.files) == maintenance.keeping(names + [newest], 7, 4)
+    assert newest in worker.files and names[0] not in worker.files
+    monkeypatch.setenv("HERMES_BACKUP_OFFSITE_KEEP_DAILY", "2")
+    monkeypatch.setenv("HERMES_BACKUP_OFFSITE_KEEP_WEEKLY", "0")
+    maintenance.send_offsite(f"hermitshell-{start + timedelta(days=61):%Y%m%d-%H%M%S}.tar.gz.enc", blob(100))
+    assert len(worker.files) == 2
+
+
+def test_rotation_keeps_the_same_backups_as_before(tmp_path):
+    start = datetime(2026, 1, 1, 3, 30)
+    names = [f"hermitshell-{start + timedelta(days=d):%Y%m%d-%H%M%S}.tar.gz.enc" for d in range(40)]
+    kept = maintenance.keeping(names + ["notes.txt"], 5, 3)
+    assert len(kept) == 8 and "notes.txt" not in kept and names[-1] in kept
+
+
+def test_only_encrypted_backups_of_a_size_the_worker_takes_are_sent(worker, monkeypatch):
+    for name, data in ((NAME, b"\x1f\x8b plain gzip"), ("hermitshell-20261001-031500.tar.gz", blob(100)),
+                       ("../hub.tar.gz.enc", blob(100))):
+        with pytest.raises(ValueError, match="only encrypted"):
+            maintenance.send_offsite(name, data)
+    monkeypatch.setattr(maintenance, "OFFSITE_MAX_PARTS", 2)
+    with pytest.raises(ValueError, match="too large"):
+        maintenance.send_offsite(NAME, blob(2 * maintenance.OFFSITE_PART + 1))
+    assert worker.calls == []
+
+
+def test_a_backup_the_worker_did_not_keep_is_a_failure(worker, monkeypatch):
+    monkeypatch.setattr(worker, "json", lambda *a, **k: {"backups": []})
+    with pytest.raises(maintenance.worker_link.WorkerError, match="did not keep"):
+        maintenance.send_offsite(NAME, blob(100))
+
+
+def test_the_list_from_the_worker_is_checked(worker, monkeypatch):
+    good = {"name": NAME, "parts": 1, "sha": "a" * 64, "size": 10, "at": 1}
+    junk = [None, "x", {**good, "name": "../etc/passwd"}, {**good, "parts": 0}, {**good, "parts": 65},
+            {**good, "size": -1}, {**good, "sha": "nothex"}, {**good, "parts": True}, {**good, "size": "10"}]
+    monkeypatch.setattr(worker, "json", lambda *a, **k: {"backups": junk + [good]})
+    assert maintenance.offsite_list() == [good]
+    monkeypatch.setattr(worker, "json", lambda *a, **k: {"backups": "nope"})
+    assert maintenance.offsite_list() == []
+
+
+def test_why_backups_stay_on_the_server(worker, monkeypatch):
+    assert maintenance.offsite_why() == ""
+    monkeypatch.setattr(maintenance.worker_link, "worker_protocol", lambda: {})
+    assert maintenance.offsite_why() == "", "a Worker that hasn't answered yet is tried"
+    monkeypatch.setattr(maintenance.worker_link, "worker_protocol", lambda: {"protocol": 6})
+    assert maintenance.offsite_why() == "worker"
+    monkeypatch.setattr(maintenance.worker_link, "from_env", lambda timeout=30: None)
+    assert maintenance.offsite_why() == "noworker"
+    monkeypatch.delenv(hc.DATA_KEY_ENV)
+    assert maintenance.offsite_why() == "unencrypted"
+    for value in ("off", "OFF", "0", "no", "false"):
+        monkeypatch.setenv("HERMES_BACKUP_OFFSITE", value)
+        assert maintenance.offsite_why() == "off"
+
+
+def test_each_backup_is_also_sent_to_the_worker_as_saved_here(worker):
+    summary = maintenance.make_backup(datetime(2026, 10, 1, 3, 15))
+    assert "off-server copy: sent to the feedback Worker in 1 part, 1 kept there, 0 old removed" in summary
+    local = maintenance.list_backups()[0]
+    assert local.name == NAME and worker.files[NAME]["parts"][0] == local.read_bytes()
+    info = maintenance.backup_info()
+    assert info["error"] == "" and info["offsite"]["on"] is True and info["offsite"]["kept"] == 1
+    assert info["offsite"]["error"] == "" and abs(info["offsite"]["at"] - time.time()) < 60
+
+
+def test_a_failed_copy_keeps_the_local_backup_and_the_last_good_copys_numbers(worker, monkeypatch):
+    maintenance.make_backup(datetime(2026, 10, 1, 3, 15))
+    good = maintenance.backup_info()["offsite"]
+
+    def refused(*_a, **_k):
+        raise maintenance.worker_link.WorkerError("feedback Worker answered HTTP 507")
+
+    monkeypatch.setattr(worker, "request", refused)
+    summary = maintenance.make_backup(datetime(2026, 10, 2, 3, 15))
+    assert "off-server copy failed: feedback Worker answered HTTP 507" in summary
+    assert len(maintenance.list_backups()) == 2
+    info = maintenance.backup_info()
+    assert info["error"] == "" and info["offsite"]["error"] == "feedback Worker answered HTTP 507"
+    assert (info["offsite"]["at"], info["offsite"]["kept"]) == (good["at"], good["kept"])
+    assert info["offsite"]["failed_at"] >= good["at"]
+    assert maintenance.main(["--backup-now"]) == 0, "the backup itself worked"
+
+
+def test_a_failure_never_records_the_address_or_token(worker, monkeypatch):
+    def unreachable(*_a, **_k):
+        raise maintenance.worker_link.requests.ConnectionError("https://fb.example.workers.dev/api?token=hunter2")
+
+    monkeypatch.setattr(worker, "request", unreachable)
+    maintenance.make_backup(datetime(2026, 10, 1, 3, 15))
+    noted = (maintenance.STATE_DIR / maintenance.BACKUP_FILE).read_text(encoding="utf-8")
+    assert "example.workers.dev" not in noted and "hunter2" not in noted
+    assert maintenance.backup_info()["offsite"]["error"] == "ConnectionError"
+
+
+def test_an_unencrypted_backup_never_leaves_the_server(worker, monkeypatch):
+    monkeypatch.delenv(hc.DATA_KEY_ENV)
+    summary = maintenance.make_backup(datetime(2026, 10, 1, 3, 15))
+    assert "off-server copy: not sent (HERMES_DATA_KEY is not set)" in summary
+    assert worker.calls == [] and maintenance.backup_info()["offsite"] == {"on": False, "why": "unencrypted"}
+    monkeypatch.setenv(hc.DATA_KEY_ENV, hc.new_data_key())
+    monkeypatch.setenv("HERMES_BACKUP_OFFSITE", "off")
+    maintenance.make_backup(datetime(2026, 10, 2, 3, 15))
+    assert worker.calls == [] and maintenance.backup_info()["offsite"] == {"on": False, "why": "off"}
+
+
+def test_a_copy_comes_back_checked_and_restores(worker, tmp_path, capsys):
+    maintenance.make_backup(datetime(2026, 10, 1, 3, 15))
+    original = maintenance.list_backups()[0].read_bytes()
+    out = tmp_path / "fetched" / NAME
+    assert maintenance.main(["--fetch", NAME, "--out", str(out)]) == 0
+    assert out.read_bytes() == original and f"Saved {out}" in capsys.readouterr().out
+    if os.name == "posix":
+        assert out.stat().st_mode & 0o777 == 0o600
+    assert maintenance.restore(out, tmp_path / "restored") > 0
+    assert maintenance.main(["--list-offsite"]) == 0
+    assert NAME in capsys.readouterr().out
+    worker.files[NAME]["parts"][0] = original[:-1] + bytes([original[-1] ^ 1])
+    with pytest.raises(SystemExit, match="damaged"):
+        maintenance.fetch_offsite(NAME, tmp_path / "bad")
+    assert not (tmp_path / "bad").exists()
+    with pytest.raises(SystemExit, match="not kept"):
+        maintenance.fetch_offsite("hermitshell-20200101-000000.tar.gz.enc")
+
+
+def test_the_commands_say_when_the_worker_cant_be_reached(worker, monkeypatch):
+    def down(*_a, **_k):
+        raise maintenance.worker_link.WorkerError("feedback Worker unreachable (ConnectTimeout)")
+
+    monkeypatch.setattr(worker, "json", down)
+    with pytest.raises(SystemExit, match="unreachable"):
+        maintenance.main(["--list-offsite"])
+    monkeypatch.setattr(maintenance.worker_link, "from_env", lambda timeout=30: None)
+    with pytest.raises(SystemExit, match="no feedback Worker is set up"):
+        maintenance.main(["--fetch", NAME])

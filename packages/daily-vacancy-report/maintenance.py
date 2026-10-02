@@ -12,21 +12,30 @@ Runs nightly (the setup wizard schedules it as vacancy-maintenance), for the own
    <HermitShell home>/backups/nightly). The newest HERMES_BACKUP_KEEP_DAILY (14) are kept, plus the newest of each week
    for HERMES_BACKUP_KEEP_WEEKLY (8) more weeks. The outcome goes to state/backup.json, which the dashboard's
    server panel and the admin alerts read.
+5. Off-server copy: each encrypted backup is also sent to the feedback Worker (feedback-worker/src/backups.js), in
+   1 MB parts over the signed API, so losing this server doesn't lose its backups. There the newest
+   HERMES_BACKUP_OFFSITE_KEEP_DAILY (7) are kept, plus the newest of each week for HERMES_BACKUP_OFFSITE_KEEP_WEEKLY
+   (4) more. HERMES_BACKUP_OFFSITE=off keeps them on this server only; an unencrypted backup is never sent.
 
     python3 maintenance.py                          # all of the above (cron)
     python3 maintenance.py --no-backup
     python3 maintenance.py --backup-now             # just the backup (the dashboard's Back up now)
     python3 maintenance.py --new-key                # print a new HERMES_DATA_KEY
     python3 maintenance.py --list-backups
+    python3 maintenance.py --list-offsite           # the copies on the feedback Worker
+    python3 maintenance.py --fetch NAME [--out PATH]  # download one of them (default: into the backups folder)
     python3 maintenance.py --restore FILE --to DIR  # decrypt and unpack a backup into an empty folder
     python3 maintenance.py --decrypt FILE [--out PATH]  # open one encrypted file (a CV, letter or profile)
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import json
+import math
 import os
+import re
 import sqlite3
 import sys
 import tarfile
@@ -37,6 +46,7 @@ from pathlib import Path
 
 import hermes_common as hc
 import profiles
+import worker_link
 from hermes_common import STATE_DIR, env, env_int, log
 from job_tracker import Tracker
 
@@ -55,6 +65,13 @@ BACKUP_FILE = "backup.json"
 LOCK_FILE = "maintenance.lock"
 # Back up now is refused this soon after a backup finished.
 BACKUP_NOW_GAP = 10 * 60
+# backups.js: BACKUP_PART_BYTES, MAX_BACKUP_PARTS and the names it takes.
+OFFSITE_PART = 1024 * 1024
+OFFSITE_MAX_PARTS = 64
+OFFSITE_NAME = re.compile(r"^hermitshell-\d{8}-\d{6}\.tar\.gz\.enc\Z")
+OFFSITE_TIMEOUT = 120
+OFFSITE_WHY = {"off": "HERMES_BACKUP_OFFSITE=off", "unencrypted": "HERMES_DATA_KEY is not set",
+               "noworker": "no feedback Worker is set up", "worker": "the feedback Worker is too old: redeploy it"}
 
 
 def backup_dir() -> Path:
@@ -215,18 +232,25 @@ def list_backups(folder: Path | None = None) -> list[Path]:
     return sorted(found, key=stamp_of, reverse=True)
 
 
+def keeping(names: list[str], keep_daily: int, keep_weekly: int) -> set[str]:
+    """The backup names a rotation keeps: the newest keep_daily, then the newest of each older week for keep_weekly
+    weeks. Names without a time stamp are never kept."""
+    dated = sorted((n for n in names if stamp_of(Path(n))), key=lambda n: stamp_of(Path(n)), reverse=True)
+    keep = set(dated[:keep_daily])
+    weeks: dict[tuple[int, int], str] = {}
+    for name in dated[keep_daily:]:
+        week = tuple(stamp_of(Path(name)).isocalendar()[:2])
+        if week not in weeks and len(weeks) < keep_weekly:
+            weeks[week] = name
+    return keep | set(weeks.values())
+
+
 def rotate(folder: Path, keep_daily: int, keep_weekly: int) -> int:
     backups = list_backups(folder)
-    keep = set(backups[:keep_daily])
-    weeks: dict[tuple[int, int], Path] = {}
-    for path in backups[keep_daily:]:
-        week = tuple(stamp_of(path).isocalendar()[:2])
-        if week not in weeks and len(weeks) < keep_weekly:
-            weeks[week] = path
-    keep |= set(weeks.values())
+    keep = keeping([p.name for p in backups], keep_daily, keep_weekly)
     removed = 0
     for path in backups:
-        if path not in keep:
+        if path.name not in keep:
             path.unlink(missing_ok=True)
             removed += 1
     return removed
@@ -246,6 +270,98 @@ def _note_backup(info: dict) -> None:
     hc.write_atomic(STATE_DIR / BACKUP_FILE, json.dumps(info).encode())
 
 
+# --------------------------------------------------------------------------- off-server copies
+
+def offsite_why() -> str:
+    """Why backups aren't sent to the feedback Worker (a key of OFFSITE_WHY), or "" when they are."""
+    if (env("HERMES_BACKUP_OFFSITE") or "auto").strip().lower() in ("off", "0", "no", "false"):
+        return "off"
+    if not env(hc.DATA_KEY_ENV):
+        return "unencrypted"
+    if worker_link.from_env() is None:
+        return "noworker"
+    known = worker_link.worker_protocol().get("protocol", 0)
+    return "worker" if known and known < worker_link.BACKUP_PROTOCOL else ""
+
+
+def _link(link=None):
+    link = link or worker_link.from_env(timeout=OFFSITE_TIMEOUT)
+    if link is None:
+        raise worker_link.WorkerError("no feedback Worker is set up (JOB_FEEDBACK_URL and JOB_FEEDBACK_API_TOKEN)")
+    return link
+
+
+def offsite_list(link=None) -> list[dict]:
+    """The copies on the feedback Worker, newest first: name, parts, sha (of the whole file), size and at (ms)."""
+    got = _link(link).json("GET", "/api/backups").get("backups")
+    whole = lambda v: type(v) is int and v >= 0  # noqa: E731
+    return [b for b in (got if isinstance(got, list) else []) if isinstance(b, dict)
+            and OFFSITE_NAME.match(str(b.get("name"))) and whole(b.get("parts")) and 0 < b["parts"] <= OFFSITE_MAX_PARTS
+            and whole(b.get("size")) and re.fullmatch(r"[0-9a-f]{64}", str(b.get("sha")))]
+
+
+def send_offsite(name: str, data: bytes, link=None) -> tuple[int, int, int]:
+    """Sends one encrypted backup to the feedback Worker part by part, then drops the copies there the off-server
+    rotation no longer keeps. Returns (parts, kept, removed); raises WorkerError or ValueError."""
+    if not OFFSITE_NAME.match(name) or not data.startswith(hc.SEALED):
+        raise ValueError("only encrypted backups are sent")
+    parts = max(1, math.ceil(len(data) / OFFSITE_PART))
+    if parts > OFFSITE_MAX_PARTS:
+        raise ValueError(f"too large for the feedback Worker ({len(data) // 2**20} MB; it takes {OFFSITE_MAX_PARTS} MB)")
+    link, sha = _link(link), hashlib.sha256(data).hexdigest()
+    for i in range(parts):
+        link.request("POST", "/api/backup/part", params={"name": name, "i": i, "n": parts, "sha": sha},
+                     data=data[i * OFFSITE_PART:(i + 1) * OFFSITE_PART], content_type="application/octet-stream")
+    listed = offsite_list(link)
+    if not any(b["name"] == name and b["sha"] == sha for b in listed):
+        raise worker_link.WorkerError("the feedback Worker did not keep the backup")
+    keep = keeping([b["name"] for b in listed], env_int("HERMES_BACKUP_OFFSITE_KEEP_DAILY", 7),
+                   env_int("HERMES_BACKUP_OFFSITE_KEEP_WEEKLY", 4)) | {name}
+    removed = 0
+    for b in listed:
+        if b["name"] not in keep:
+            link.request("POST", "/api/backup/delete", json_body={"name": b["name"]})
+            removed += 1
+    return parts, len(listed) - removed, removed
+
+
+def fetch_offsite(name: str, out: Path | None = None, link=None) -> Path:
+    """Downloads one copy from the feedback Worker, checks its SHA-256 and saves it (still encrypted)."""
+    link = _link(link)
+    found = next((b for b in offsite_list(link) if b["name"] == name), None)
+    if found is None:
+        raise SystemExit(f"{name} is not kept on the feedback Worker (--list-offsite lists them)")
+    data = b"".join(link.request("GET", "/api/backup/part", params={"name": name, "i": i}).content
+                    for i in range(found["parts"]))
+    if hashlib.sha256(data).hexdigest() != found["sha"]:
+        raise SystemExit("the download is damaged (its SHA-256 doesn't match); try again")
+    out = out or backup_dir() / name
+    out.parent.mkdir(parents=True, exist_ok=True)
+    hc.write_atomic(out, data)
+    if os.name == "posix":
+        os.chmod(out, 0o600)
+    return out
+
+
+def offsite_step(name: str, data: bytes) -> str:
+    """Sends a backup just made off the server and notes how it went in state/backup.json; never raises, since the
+    backup itself is already safe on this server."""
+    why = offsite_why()
+    info = backup_info()
+    before = info.get("offsite") if isinstance(info.get("offsite"), dict) else {}
+    if why:
+        _note_backup({**info, "offsite": {"on": False, "why": why}})
+        return f"off-server copy: not sent ({OFFSITE_WHY[why]})"
+    try:
+        parts, kept, removed = send_offsite(name, data)
+    except Exception as exc:  # the local backup stands; the dashboard and admin alerts say what went wrong
+        error = str(exc) if isinstance(exc, ValueError) else worker_link.reason(exc)
+        _note_backup({**info, "offsite": {**before, "on": True, "why": "", "error": error[:200], "failed_at": time.time()}})
+        return f"off-server copy failed: {error}"
+    _note_backup({**info, "offsite": {"on": True, "why": "", "at": time.time(), "kept": kept, "error": ""}})
+    return f"off-server copy: sent to the feedback Worker in {parts} part{'s' * (parts != 1)}, {kept} kept there, {removed} old removed"
+
+
 def make_backup(now: datetime | None = None) -> str:
     try:
         folder = backup_dir()
@@ -253,17 +369,20 @@ def make_backup(now: datetime | None = None) -> str:
         data = build_archive()
         encrypted = bool(env(hc.DATA_KEY_ENV))
         name = f"{BACKUP_PREFIX}{(now or datetime.now()):%Y%m%d-%H%M%S}.tar.gz" + (".enc" if encrypted else "")
+        data = hc.seal(data)
         hc.write_private(folder / name, data)
         removed = rotate(folder, env_int("HERMES_BACKUP_KEEP_DAILY", 14), env_int("HERMES_BACKUP_KEEP_WEEKLY", 8))
     except Exception as exc:
         # The last good backup's numbers stay, beside the error.
         _note_backup({**backup_info(), "error": f"{exc.__class__.__name__}: {exc}"[:200], "failed_at": time.time()})
         raise
+    offsite = backup_info().get("offsite")
     _note_backup({"at": time.time(), "size": len(data), "kept": len(list_backups(folder)), "encrypted": encrypted,
-                  "error": ""})
+                  "error": "", **({"offsite": offsite} if isinstance(offsite, dict) else {})})
     if not encrypted:
         log("Warning: HERMES_DATA_KEY is not set, so this backup is NOT encrypted (python3 maintenance.py --new-key)")
-    return f"backup: {name} ({len(data) // 1024} KB{', encrypted' if encrypted else ''}), {removed} old removed"
+    return (f"backup: {name} ({len(data) // 1024} KB{', encrypted' if encrypted else ''}), {removed} old removed; "
+            + offsite_step(name, data))
 
 
 def backup_refusal(now: float) -> str:
@@ -318,6 +437,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--backup-now", action="store_true", help="only the backup (refused within 10 minutes of one)")
     parser.add_argument("--new-key", action="store_true", help="print a new random HERMES_DATA_KEY")
     parser.add_argument("--list-backups", action="store_true")
+    parser.add_argument("--list-offsite", action="store_true", help="list the copies on the feedback Worker")
+    parser.add_argument("--fetch", metavar="NAME", help="download a copy from the feedback Worker (--out PATH)")
     parser.add_argument("--restore", metavar="FILE", help="decrypt and unpack a backup (needs --to)")
     parser.add_argument("--to", metavar="DIR", help="empty folder to restore into")
     parser.add_argument("--decrypt", metavar="FILE", help="print (or --out) the plaintext of one encrypted file")
@@ -330,6 +451,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.list_backups:
         for path in list_backups():
             print(f"{path.name}  {path.stat().st_size // 1024} KB")
+        return 0
+    if args.list_offsite or args.fetch:
+        try:
+            if args.fetch:
+                print(f"Saved {fetch_offsite(args.fetch, Path(args.out) if args.out else None)}")
+            for b in offsite_list() if args.list_offsite else []:
+                print(f"{b['name']}  {b['size'] // 1024} KB")
+        except worker_link.WorkerError as exc:
+            raise SystemExit(f"The feedback Worker: {worker_link.reason(exc)}") from None
         return 0
     if args.restore:
         if not args.to:

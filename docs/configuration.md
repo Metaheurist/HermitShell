@@ -267,6 +267,8 @@ Full template: [`.env.example`](../.env.example).
 | `HERMES_LOG_RETENTION_DAYS` | `90` | Logs and scheduled-job output older than this are deleted. `0` = keep forever |
 | `HERMES_BACKUP_DIR` | `<home>/backups/nightly` | Where the nightly backups go. Point it at a second disk or a mounted share for an off-machine copy |
 | `HERMES_BACKUP_KEEP_DAILY` / `HERMES_BACKUP_KEEP_WEEKLY` | `14` / `8` | Newest backups kept, plus the newest of each week for this many more weeks |
+| `HERMES_BACKUP_OFFSITE` | `1` | `0` = don't also send each encrypted backup to the feedback Worker ([Backups on Cloudflare](feedback-worker.md#backups-on-cloudflare), Worker protocol 7). Needs `JOB_FEEDBACK_URL`, `JOB_FEEDBACK_API_TOKEN` and `HERMES_DATA_KEY`; unencrypted backups are never sent |
+| `HERMES_BACKUP_OFFSITE_KEEP_DAILY` / `HERMES_BACKUP_OFFSITE_KEEP_WEEKLY` | `7` / `4` | Copies kept on Cloudflare: the newest, plus the newest of each week for this many more weeks |
 
 ## Job finder settings
 
@@ -360,7 +362,7 @@ about before a recruit does, and emails the admin (the owner's address, else `AL
 - a cloud model resting because it is out of credits or its key was rejected;
 - Ollama not answering for over 30 minutes, once it has answered before (or at once when there is no
   cloud model to fall back on);
-- the last backup failed, or none has been made for 36 hours;
+- the last backup failed, or none has been made for 36 hours, or sending it to the Worker failed;
 - less than `ALERT_DISK_BELOW_PCT` of the disk free;
 - a feedback Worker on another protocol than HermitShell for over 30 minutes.
 
@@ -398,7 +400,10 @@ This is how it is carried out:
   overwritten and the file compacted. The skills you added are kept.
 - **Backups.** Every night `.env`, the schedule (`cron/`) and the scripts folder with its state go into one
   encrypted archive (`hermitshell-<date>.tar.gz.enc`) in `HERMES_BACKUP_DIR`, rotated to 14 daily and 8 weekly
-  copies (archives from an install inside Hermes, `hermes-*`, are rotated with them). Keep [a second copy](#a-second-copy-of-the-backups) on another disk.
+  copies (archives from an install inside Hermes, `hermes-*`, are rotated with them). With the feedback Worker
+  set up, each one is also sent to it, so 7 daily and 4 weekly copies live on
+  [Cloudflare](feedback-worker.md#backups-on-cloudflare), away from the server; a failed send is retried by the
+  next backup and sends an [admin alert](#admin-alerts). Keep [a second copy](#a-second-copy-of-the-backups) on another disk too.
   Restore with `python3 maintenance.py --restore FILE --to EMPTY_DIR`, then copy back
   what you need. The server panel on `/admin` (the server button beside Sign out) shows the last backup,
   its size and how many are kept, or why the last one failed, and has **Back up now**. That runs

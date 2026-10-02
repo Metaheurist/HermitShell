@@ -61,14 +61,17 @@ function memorySql() {
 }
 
 // A Durable Object's SQLite storage on a real in-memory SQLite database (node:sqlite), for the hub's rate
-// limits and one-time tokens: exec returns a cursor with toArray(), as the runtime's does.
+// limits, one-time tokens and backups: exec returns a cursor with toArray(), and BLOBs go in and come back as
+// ArrayBuffers, as the runtime's do.
 export function realSql() {
   const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite");
   const db = new DatabaseSync(":memory:");
+  const blob = (v) => (v instanceof Uint8Array ? v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) : v);
   return {
     db,
     exec(query, ...args) {
-      const rows = db.prepare(query).all(...args);
+      const rows = db.prepare(query).all(...args.map((a) => (a instanceof ArrayBuffer ? new Uint8Array(a) : a)))
+        .map((row) => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, blob(v)])));
       return { toArray: () => rows };
     },
   };

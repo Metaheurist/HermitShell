@@ -9,7 +9,7 @@ import worker from "../../packages/daily-vacancy-report/feedback-worker/src/inde
 import { hubTokenPut } from "../../packages/daily-vacancy-report/feedback-worker/src/hub.js";
 import { memoryHub, sealingKeys } from "../../packages/daily-vacancy-report/feedback-worker/test/helpers.js";
 import { WORD_PARTS, bundle, zipOf } from "../../packages/daily-vacancy-report/feedback-worker/test/zip.js";
-import { LINK_DAYS, STYLE_URL, sha256Hex, sign, stylesheet, today } from "../../packages/daily-vacancy-report/feedback-worker/src/lib.js";
+import { LINK_DAYS, STYLE_URL, hex, sha256Hex, sign, stylesheet, today } from "../../packages/daily-vacancy-report/feedback-worker/src/lib.js";
 import { jobHash } from "../../packages/daily-vacancy-report/feedback-worker/src/docs.js";
 import { record } from "../../packages/daily-vacancy-report/feedback-worker/src/history.js";
 import { zonedToday } from "../../packages/daily-vacancy-report/feedback-worker/src/stats.js";
@@ -41,10 +41,12 @@ function freshEnv(extra = {}) {
   return { FEEDBACK: memoryKV(), JOB_FEEDBACK_SECRET: SECRET, JOB_FEEDBACK_API_TOKEN: TOKEN, ADMIN_PASSWORD: PASSWORD, ...extra };
 }
 
-// The live link's Durable Object, as it answers while HermitShell is connected.
+// The live link's Durable Object, as it answers while HermitShell is connected; its "backups" instance is a real
+// one on an in-memory SQLite database, for the backups kept on Cloudflare.
+const VAULT = memoryHub({ sql: "sqlite" });
 const LIVE_HUB = {
   idFromName: (name) => name,
-  get: () => ({ fetch: async (url) => Response.json(String(url).endsWith("/presence") ? { live: true, seen: Date.now() } : { sent: 1 }) }),
+  get: (id) => (id === "backups" ? VAULT.get() : { fetch: async (url) => Response.json(String(url).endsWith("/presence") ? { live: true, seen: Date.now() } : { sent: 1 }) }),
 };
 
 let env = freshEnv();
@@ -188,7 +190,8 @@ const STATUS = {
   ] },
   server: { cpu: { model: "AMD Ryzen 7 5700G", cores: 16 }, load: 3.4, ram_mb: { total: 32768, available: 19000 },
     gpus: [{ name: "NVIDIA GeForce RTX 3060", vram_mb: 12288, free_mb: 7400 }], disk_mb: { total: 953000, free: 512000 } },
-  backup: { at: now - 5 * 3600000, size: 18_400_000, kept: 14, error: "", failed_at: null, encrypted: true },
+  backup: { at: now - 5 * 3600000, size: 1_790_000, kept: 14, error: "", failed_at: null, encrypted: true,
+    offsite: { on: true, why: "", at: now - 5 * 3600000 + 40000, kept: 9, error: "", failed_at: null } },
   problems: [],
   features: { alerts: true },
   timezone: "Europe/London",
@@ -397,6 +400,26 @@ await call("/api/status", { method: "POST", headers: { Authorization: `Bearer ${
 // The server button's panel, as hovering over it shows it.
 await save("admin-server-panel", new Response((await (await admin("/admin")).text())
   .replace("</head>", "<style>.me .srv .srvpanel{display:block}</style></head>")));
+
+// The backups kept on Cloudflare: the last seven nights and the Sunday of two weeks before, as HermitShell sends them
+// (maintenance.send_offsite), each sent a minute after it was made.
+const PART = 1024 * 1024;
+const sent = [0, 1, 2, 3, 4, 5, 6, 12, 19].map((days, k) => ({ days, size: 1_640_000 + 37_000 * (8 - k) }));
+for (const { days, size } of sent) {
+  const made = new Date(now - 5 * 3600000 - days * 86400000);
+  const pad = (n) => String(n).padStart(2, "0");
+  const name = `hermitshell-${made.getUTCFullYear()}${pad(made.getUTCMonth() + 1)}${pad(made.getUTCDate())}-031500.tar.gz.enc`;
+  const data = new Uint8Array(size);
+  data.set(new TextEncoder().encode("HSEAL1"));
+  const sha = hex(await crypto.subtle.digest("SHA-256", data));
+  const n = Math.ceil(size / PART);
+  for (let i = 0; i < n; i++) {
+    await worker.fetch(new Request(`${BASE}/api/backup/part?${new URLSearchParams({ name, i: String(i), n: String(n), sha })}`, {
+      method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, body: data.subarray(i * PART, (i + 1) * PART) }), env, {});
+  }
+  VAULT.state.storage.sql.db.prepare("UPDATE backups SET done = ? WHERE name = ?").run(made.getTime() + 40000, name);
+}
+await save("admin-backups", await admin("/admin/backups"));
 await save("admin-stats", await admin("/admin/stats?u=avery-lane"));
 await save("admin-stats-90-days", await admin("/admin/stats?u=avery-lane&r=90"));
 await save("admin-stats-new-profile", await admin("/admin/stats?u=sam-lee&r=7"));

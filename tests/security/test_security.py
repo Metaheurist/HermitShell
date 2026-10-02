@@ -509,6 +509,38 @@ def test_backups_are_owner_only_and_encrypted(tmp_path, monkeypatch):
     assert hc.is_sealed(archive) and b"app-password-value" not in archive.read_bytes()
 
 
+def test_only_sealed_backups_leave_the_server_and_failures_stay_masked(tmp_path, monkeypatch):
+    pytest.importorskip("cryptography")
+    monkeypatch.setattr(hc, "APP_HOME", tmp_path / "home")
+    monkeypatch.setattr(maintenance, "SCRIPT_DIR", tmp_path / "scripts")
+    monkeypatch.setattr(maintenance, "STATE_DIR", tmp_path / "scripts" / "state")
+    (tmp_path / "scripts" / "state").mkdir(parents=True)
+    (tmp_path / "home").mkdir()
+    (tmp_path / "home" / ".env").write_text("SMTP_PASSWORD=app-password-value\n", encoding="utf-8")
+    monkeypatch.delenv("HERMES_BACKUP_DIR", raising=False)
+    monkeypatch.delenv("HERMES_BACKUP_OFFSITE", raising=False)
+    sent: list[bytes] = []
+
+    class Link:
+        def request(self, method, path, *, data=None, **_):
+            if data:
+                sent.append(data)
+            raise maintenance.worker_link.requests.ConnectionError("https://fb.example.workers.dev?token=api-token-value")
+
+    monkeypatch.setattr(maintenance.worker_link, "from_env", lambda timeout=30: Link())
+    monkeypatch.setattr(maintenance.worker_link, "worker_protocol", lambda: {"protocol": maintenance.worker_link.PROTOCOL})
+    monkeypatch.delenv(hc.DATA_KEY_ENV, raising=False)
+    maintenance.make_backup()
+    assert sent == [], "an unencrypted backup is never sent"
+    with pytest.raises(ValueError):
+        maintenance.send_offsite("hermitshell-20261001-031500.tar.gz.enc", b"\x1f\x8b plain archive")
+    monkeypatch.setenv(hc.DATA_KEY_ENV, hc.new_data_key())
+    maintenance.make_backup()
+    assert sent and all(part.startswith(hc.SEALED) and b"app-password-value" not in part for part in sent[:1])
+    noted = (maintenance.STATE_DIR / maintenance.BACKUP_FILE).read_text(encoding="utf-8")
+    assert "api-token-value" not in noted and "workers.dev" not in noted
+
+
 # --------------------------------------------------------------------------- secret hygiene
 
 def test_gitignore_keeps_personal_files_and_backups_out_of_the_repo():

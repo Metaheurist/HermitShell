@@ -111,6 +111,27 @@ def test_backups_failed_stale_or_fine(home, tmp_path):
     assert alerts.backup(state, made.timestamp() + 37 * 3600) == {"backup": "No backup for 37 hours"}
 
 
+def test_a_failed_copy_to_the_worker_is_its_own_alert(home, tmp_path):
+    folder = tmp_path / "backups"
+    folder.mkdir()
+    state = tmp_path / "state"
+    made = datetime(2026, 9, 1, 3, 30)
+    (folder / f"hermitshell-{made:%Y%m%d-%H%M%S}.tar.gz.enc").write_bytes(b"x")
+    later = made.timestamp() + 3600
+
+    def noted(offsite):
+        (state / "backup.json").write_text(json.dumps({"at": made.timestamp(), "error": "", "offsite": offsite}))
+        return alerts.backup(state, later)
+
+    failed = {"on": True, "at": made.timestamp() - 86400, "error": "feedback Worker answered HTTP 507", "failed_at": made.timestamp()}
+    assert noted(failed) == {"offsite": "Sending the last backup to Cloudflare failed: feedback Worker answered HTTP 507"}
+    assert noted({**failed, "at": made.timestamp() + 60}) == {}, "a copy sent since clears it"
+    assert noted({"on": False, "why": "off"}) == {}
+    assert noted({**failed, "on": False}) == {}
+    (state / "backup.json").write_text(json.dumps({"at": made.timestamp(), "error": "OSError: disk full", "offsite": failed}))
+    assert set(alerts.backup(state, later)) == {"backup", "offsite"}
+
+
 def test_disk_space_below_the_setting(home, monkeypatch, tmp_path):
     monkeypatch.setattr(alerts.shutil, "disk_usage", lambda path: Disk(100 * 2**30, 95 * 2**30, 5 * 2**30))
     assert alerts.disk(tmp_path) == {"disk": "Only 5% of the disk is free (5.0 GB)"}

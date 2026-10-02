@@ -8,6 +8,23 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Backups on Cloudflare, away from the server.** Each nightly backup and each **Back up now** is also sent
+  to the feedback Worker, byte for byte the encrypted archive kept on the server (which stays), so a lost or
+  broken server can be rebuilt from Cloudflare. `maintenance.py` now encrypts the archive before writing it,
+  sends it in 1 MB parts over the signed API (`POST /api/backup/part`, with the archive's SHA-256), and keeps
+  7 daily and 4 weekly copies there (`HERMES_BACKUP_OFFSITE_KEEP_DAILY` / `_KEEP_WEEKLY`; `HERMES_BACKUP_OFFSITE=0`
+  turns it off). Only encrypted backups are sent; without `HERMES_DATA_KEY` nothing leaves the server. The
+  Worker keeps them in the hub Durable Object's SQLite storage, in an instance of its own, refuses anything
+  that isn't a HermitShell backup name or an encrypted archive, counts a backup only once every part has
+  arrived, removes uploads left unfinished for a day and holds at most 40 backups and 1 GB. A failed send
+  never stops the local backup: the server panel says so, an admin alert is emailed and the next backup
+  tries again. The server panel shows when the last one was sent and how many are kept, with a **Download**
+  link to the new **Backups on Cloudflare** page (`/admin/backups`, admins only), which lists them and says
+  how to restore one after losing the server. `maintenance.py --list-offsite` and `--fetch NAME [--out PATH]`
+  list and download them on the server, checking the SHA-256. Needs Worker and HermitShell protocol 7: redeploy
+  the Worker. Covered by the Worker's `test/backups.test.js` (uploads, refusals, signatures and replays, roles)
+  and `e2e/backups.spec.js`, `test_maintenance.py`, and a security test that only sealed backups leave the
+  server and that failures never show the Worker's address or token.
 - **Pick the server model, and watch it download.** **Change** on Global settings' **Server model** row
   opens a window listing Qwen3 30B-A3B, Qwen2.5 14B and 7B, Qwen2.5-Coder 7B, Llama 3.1 8B, the 4B default,
   Qwen2.5 1.5B and any other model the server's Ollama has, each with its size, whether it would run on the
