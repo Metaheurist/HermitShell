@@ -900,6 +900,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Managers no longer get a Manager pick.** On Users and roles, the **Manager** list (the team a recruiter
+  is in) hides whenever Manager or Admin is ticked, in **Edit** and **Add user**, and comes back when only
+  Recruiter is left, with no scripts needed. Saving still keeps a team only for a recruiter-only account.
+  Covered by `test/manager.test.js` and `e2e/users.spec.js`.
 - **The Desk reads at a glance as the desk grows.** The totals are a funnel with how many of each stage got
   to the next. Admins get a card per manager's team (and **No team**) that filters the whole page to it
   (`?team=`). Admins and managers get the recruiters ranked by placements, with gold, silver and bronze for

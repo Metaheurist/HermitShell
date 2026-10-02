@@ -415,7 +415,7 @@ def main() -> int:
                                                   "me-search", "me-docs")) else
                     760 if html.stem in ("privacy", "admin-backups") else 600,
                     # A modal covers the whole window, so the page cannot be trimmed to its content.
-                    720 if html.stem in ("admin-global-key-modal", "admin-user-modal", "admin-delete-modal",
+                    720 if html.stem in ("admin-global-key-modal", "admin-user-modal", "admin-user-manager-modal", "admin-delete-modal",
                                          "admin-user-reset-modal", "admin-password-modal", "admin-tasks",
                                          "admin-tasks-model-download", "admin-tasks-demo") else
                     860 if html.stem in ("admin-model-key-modal", "admin-model-picker") else

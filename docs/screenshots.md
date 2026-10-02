@@ -409,7 +409,7 @@ buttons. On a phone everything is in one column.
 | Role cards | **Admin**: everything. **Manager**: their team of recruiters and those recruiters' recruits, with the team's desk and fees, but no admin pages. **Recruiter**: only their own pool, the people they invite and the recruits assigned to them |
 | Users table | Each user's name, username, roles, the team a recruiter is in, how many recruits they have (or recruiters, for a manager), and **short password** when their password is under 12 characters. The main admin (`ADMIN_USER`) is always first |
 | **Add user** | Opens a window for a name, username, password, roles and, for a recruiter, their manager |
-| **Edit** (pencil) | Changes the name, roles and a recruiter's **Manager**. On your own row it adds or removes your Recruiter role |
+| **Edit** (pencil) | Changes the name, roles and a recruiter's **Manager**; the **Manager** list hides while Manager or Admin is ticked. On your own row it adds or removes your Recruiter role |
 | **Reset password** (key) | Opens a window for a new password, typed twice. The user is signed out everywhere at once; tell them the new password yourself. On your own row the key opens **Change password** instead; not on the main admin's row |
 | Bin button (red) | Opens a window to confirm; tick the box and press **Delete** to sign the user out, delete their unused invites and leave their recruits unassigned |
 
@@ -418,6 +418,11 @@ buttons. On a phone everything is in one column.
 <tr>
 <td><img src="images/worker/admin-user-modal.png" alt="The Add a user window: name, username, password, roles and a recruiter's manager" width="380"></td>
 <td><img src="images/worker/admin-recruiter-view.png" alt="A recruiter signed in: only their own recruits and invites" width="380"></td>
+</tr>
+<tr><th>Editing a manager</th><th></th></tr>
+<tr>
+<td><img src="images/worker/admin-user-manager-modal.png" alt="Editing Morgan Ellis, a manager: name and roles with Manager ticked, and no Manager list" width="380"></td>
+<td></td>
 </tr>
 <tr><th>Reset password</th><th>Change password (a recruiter)</th></tr>
 <tr>

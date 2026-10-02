@@ -107,6 +107,22 @@ describe("teams", () => {
       .toBe("/admin/users?done=updated");
     expect(stored(env).find((x) => x.id === "riley").manager).toBe("");
   });
+
+  it("hides the manager pick while a role other than Recruiter is ticked, and never puts a manager in a team", async () => {
+    const { env, admin } = await setup();
+    const page = await admin.text("/admin/users");
+    expect(page).toContain('form:has(input[name=roles]:not([value=recruiter]):checked) .teampick{display:none}');
+    const drew = page.split('id="user-drew"')[1].split("</form>")[0];
+    expect(drew).toContain('value="manager" checked');
+    expect(drew).toContain('<div class="teampick"><label for="ue-drew-team">Manager</label>');
+    expect(drew).not.toContain('<option value="drew"');
+    expect(await admin.where("/admin/users", { op: "edit", id: "drew", name: "Drew Harper", roles: "manager", manager: "morgan" }))
+      .toBe("/admin/users?done=updated");
+    expect(stored(env).find((x) => x.id === "drew").manager).toBe("");
+    expect(await admin.where("/admin/users", { op: "add", name: "Jamie Walsh", username: "jamie", password: PASSWORD,
+      roles: ["recruiter", "manager"], manager: "morgan" })).toBe("/admin/users?done=added");
+    expect(stored(env).find((x) => x.id === "jamie").manager).toBe("");
+  });
 });
 
 describe("what a manager sees", () => {

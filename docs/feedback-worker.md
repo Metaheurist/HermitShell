@@ -510,8 +510,9 @@ settings** (the email server and web search keys the whole tool shares). Recruit
 - Each row's actions are icon buttons, with their name when you point at them: the pencil,
   the key and the red bin.
 - **Edit** (the pencil) changes a user's name and roles, and for a recruiter with no other role,
-  their **Manager**: the team they are in. The list shows "in Morgan Ellis's team" under their
-  roles, and how many recruiters each manager has.
+  their **Manager**: the team they are in. The **Manager** list hides as soon as Manager or Admin is
+  ticked, in **Edit** and **Add user** alike, since managers and admins are in no team. The list shows
+  "in Morgan Ellis's team" under their roles, and how many recruiters each manager has.
 - **Reset password** (the key button) opens a window for a new password, typed twice. The user is
   signed out everywhere at once and signs in with the new password; it isn't emailed, so tell them
   yourself. It isn't offered for the main admin's account; on your own row the key opens

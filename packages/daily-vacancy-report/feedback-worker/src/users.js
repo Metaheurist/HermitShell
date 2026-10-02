@@ -207,14 +207,15 @@ function roleBoxes(prefix, roles, { lockAdmin = false } = {}) {
   }).join("")}</div>`;
 }
 
-// An admin's pick of the team a recruiter-only account is in (users with the Manager role).
+// An admin's pick of the team a recruiter-only account is in (users with the Manager role). It hides while any
+// other role is ticked, as managers and admins are in no team (teamOf drops it on save anyway).
 function managerPick(prefix, acc, user = null) {
   const managers = acc.users.filter((m) => m.id !== user?.id && m.roles.includes("manager") && !m.roles.includes("admin"));
   if (!managers.length) return "";
   const options = [["", "No manager"], ...managers.map((m) => [m.id, `${m.name}'s team`])]
     .map(([id, label]) => `<option value="${esc(id)}"${id === (user?.manager || "") ? " selected" : ""}>${esc(label)}</option>`).join("");
-  return `<label for="${prefix}-team">Manager</label><select id="${prefix}-team" name="manager">${options}</select>
-<span class="hint">For a recruiter with no other role: their manager looks after them and their recruits.</span>`;
+  return `<div class="teampick"><label for="${prefix}-team">Manager</label><select id="${prefix}-team" name="manager">${options}</select>
+<span class="hint">For a recruiter with no other role: their manager looks after them and their recruits.</span></div>`;
 }
 
 // The accounts `me` may change: everyone for an admin, a manager's team.
@@ -465,6 +466,7 @@ export const USERS_STYLE = `
 .roleicon svg{width:20px;height:20px}
 .rolecard.admin .roleicon{background:linear-gradient(135deg,var(--brand),var(--brand2));box-shadow:0 6px 14px -8px rgba(99,102,241,.9)}
 .rolecard.recruiter .roleicon{background:linear-gradient(135deg,#2dd4bf,#0891b2);box-shadow:0 6px 14px -8px rgba(8,145,178,.9)}
+form:has(input[name=roles]:not([value=recruiter]):checked) .teampick{display:none}
 .rolecard.manager .roleicon,.avatar.mgr{background:linear-gradient(135deg,#fbbf24,#ea580c);box-shadow:0 6px 14px -8px rgba(234,88,12,.9)}
 .role{display:inline-block;font-size:11.5px;font-weight:650;border-radius:99px;padding:2px 9px;margin:2px 0}
 .role.admin{color:var(--brand-ink);background:var(--soft)}.role.recruiter{color:#0e7490;background:#ecfeff}

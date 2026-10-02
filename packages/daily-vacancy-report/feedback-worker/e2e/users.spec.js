@@ -99,9 +99,17 @@ test("a manager looks after their team's recruits and fees, and nothing else", a
   await add.getByRole("checkbox", { name: "Recruiter" }).uncheck();
   await add.getByRole("checkbox", { name: "Manager" }).check();
   await add.getByRole("button", { name: "Add user" }).click();
+  await page.getByRole("link", { name: `Edit ${MANAGER.name}` }).click();
+  await expect(page.locator(`#user-${MANAGER.username}`).getByRole("checkbox", { name: "Manager" })).toBeChecked();
+  await expect(page.locator(`#user-${MANAGER.username} .teampick`)).toBeHidden();
+  await page.goto("/admin/users");
   await page.getByRole("link", { name: `Edit ${RECRUITER.name}` }).click();
   const edit = page.locator(`#user-${RECRUITER.username}`);
-  await edit.getByRole("combobox", { name: "Manager" }).selectOption({ label: `${MANAGER.name}'s team` });
+  const pick = edit.getByRole("combobox", { name: "Manager" });
+  await edit.getByRole("checkbox", { name: "Manager" }).check();
+  await expect(pick).toBeHidden();
+  await edit.getByRole("checkbox", { name: "Manager" }).uncheck();
+  await pick.selectOption({ label: `${MANAGER.name}'s team` });
   await edit.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText(`in ${MANAGER.name}'s team`)).toBeVisible();
 
