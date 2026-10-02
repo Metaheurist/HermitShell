@@ -7,6 +7,7 @@
 // It also remembers the nonces of signed API requests (apiauth.js) for ten minutes, so none is accepted twice,
 // counts attempts for rate limits (a counted attempt is a row here rather than one of KV's 1,000 daily writes),
 // and holds one-time sign-in tokens, spent by a single statement so each works once even when two requests race.
+// It also keeps the last change asked for each recruit, so pressing the same button again queues nothing.
 // A second instance of the class, "backups", keeps the off-server copies of HermitShell's backups (backups.js).
 
 import { vault } from "./backups.js";
@@ -14,6 +15,7 @@ import { vault } from "./backups.js";
 const NAME = "hub";
 const LIMIT_KEY_RE = /^[a-z]{1,12}:[0-9A-Za-z:._-]{1,80}$/;
 const TOKEN_RE = /^[0-9a-f]{64}$/;
+const PRESS_VALUE_RE = /^[0-9A-Za-z:._-]{1,80}$/;
 const PROFILE_ID_RE = /^[a-z0-9-]{1,40}$/;
 const MAX_WINDOW_MS = 24 * 3600 * 1000;
 const MAX_TOKEN_MS = 60 * 60 * 1000;
@@ -58,6 +60,13 @@ export function hubBump(env, flag) {
 export async function hubLimit(env, key, max, windowMs, hit = false) {
   const got = await call(env, "/limit", { method: "POST", body: JSON.stringify({ key, max, window: windowMs, hit }) });
   return typeof got?.ok === "boolean" ? got : null;
+}
+
+// Whether `value` is a new change at `key` (true), or the same as the last one asked for there within `ms` (false);
+// a new one becomes the last. null when there is no hub to ask, so callers keep a fallback.
+export async function hubPress(env, key, value, ms) {
+  const got = await call(env, "/press", { method: "POST", body: JSON.stringify({ key, value, ms }) });
+  return typeof got?.fresh === "boolean" ? got.fresh : null;
 }
 
 export async function hubLimitClear(env, key) {
@@ -144,6 +153,18 @@ export class Hub {
     return { ok: hit === true ? n <= max : n < max, n };
   }
 
+  // One statement checks and replaces the last value, so of two presses arriving together only one is fresh.
+  press({ key, value, ms }) {
+    const sql = this.state.storage.sql;
+    if (!sql || typeof key !== "string" || !LIMIT_KEY_RE.test(key) || typeof value !== "string" || !PRESS_VALUE_RE.test(value) ||
+        !Number.isInteger(ms) || ms < 1000 || ms > MAX_WINDOW_MS) return null;
+    sql.exec("CREATE TABLE IF NOT EXISTS presses (k TEXT PRIMARY KEY, v TEXT NOT NULL, exp INTEGER NOT NULL)");
+    const now = Date.now();
+    const kept = sql.exec("INSERT INTO presses (k, v, exp) VALUES (?, ?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v, exp = excluded.exp "
+      + "WHERE presses.v <> excluded.v OR presses.exp < ? RETURNING k", key, value, now + ms, now).toArray();
+    return { fresh: kept.length > 0 };
+  }
+
   token({ op, h, u, ms }) {
     const sql = this.state.storage.sql;
     if (!sql || typeof h !== "string" || !TOKEN_RE.test(h)) return null;
@@ -206,9 +227,10 @@ export class Hub {
       if (fresh && body?.seen === true) await this.state.storage.put("seen", Date.now());
       return Response.json({ fresh });
     }
-    if ((path === "/limit" || path === "/token") && request.method === "POST") {
+    if ((path === "/limit" || path === "/token" || path === "/press") && request.method === "POST") {
       const body = await request.json().catch(() => null);
-      const got = body && typeof body === "object" ? (path === "/limit" ? this.limit(body) : this.token(body)) : null;
+      const got = body && typeof body === "object"
+        ? (path === "/limit" ? this.limit(body) : path === "/press" ? this.press(body) : this.token(body)) : null;
       return got ? Response.json(got) : Response.json({ error: "unavailable" }, { status: 503 });
     }
     return new Response("Not found", { status: 404 });

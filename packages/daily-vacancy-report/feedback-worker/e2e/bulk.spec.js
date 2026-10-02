@@ -23,3 +23,18 @@ test("ticking recruits shows the bar, and Pause queues one change for them all",
   await page.goto("/admin/history?u=sam-lee");
   await expect(page.getByText("Paused reports").first()).toBeVisible();
 });
+
+test("pressing Pause again and again, or several times at once, queues it once", async ({ page, request }) => {
+  await reportStatus(request);
+  await signIn(page);
+  const pause = page.getByRole("button", { name: "Pause reports for Sam Lee" });
+  await pause.dblclick();
+  await expect(page).toHaveURL(/done=/);
+  await page.evaluate(async () => {
+    const csrf = document.querySelector('input[name="csrf"]').value;
+    const body = new URLSearchParams({ csrf, action: "pause", u: "sam-lee" });
+    await Promise.all([1, 2, 3, 4].map(() => fetch("/admin/action", { method: "POST", body, redirect: "manual" })));
+  });
+  const { items } = await (await hermitShellApi(request, "GET", "/api/queue?full=1")).json();
+  expect(items.filter((i) => i.action === "pause" && i.u === "sam-lee")).toHaveLength(1);
+});

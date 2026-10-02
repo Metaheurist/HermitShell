@@ -1113,6 +1113,14 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Pressing a button again no longer queues the same change twice.** Pressing Pause (or Resume, Retire,
+  Delete or Assign) repeatedly, or several times at once, used to add one task per press, all waiting for
+  HermitShell. Now a change already waiting for that recruit, or the same press in the last two minutes before
+  HermitShell reports again, counts instead: nothing more is queued or written to the history, and a recruit
+  who already is what was pressed gets **Nothing had changed**. The bulk bar skips them the same way. The
+  hub keeps the last press per recruit and checks it in one statement (`POST /press`), so simultaneous presses
+  queue one change; without the hub a short-lived KV key does. Covered by `test/presses.test.js` (including
+  simultaneous presses, real changes of mind and the hub refusing malformed keys) and `e2e/bulk.spec.js`.
 - **The server panel's GPU no longer vanishes now and then.** The GPU comes from the host's hardware report;
   when HermitShell sent its status without one (the report missed or too old to use), the GPU row disappeared,
   and since the machine's numbers alone don't count as a change, it could stay gone for up to 15 minutes.

@@ -460,10 +460,15 @@ settings** (the email server and web search keys the whole tool shares). Recruit
   **Finding jobs…** and the row says **finding jobs now**. **Manage** opens that recruit's page (details,
   job search, report time and CV). The sent button has two halves: the little chart opens its
   [stats page](#stats) and **24 sent** the [list of jobs sent](#jobs-sent). The pause and play
-  buttons pause or resume their reports, and the red bin button deletes them: it opens a window where you tick **Delete their CV and history** and press **Delete**.
+  buttons pause or resume their reports, and the red bin button deletes them: it opens a window where you tick **Yes, delete their CV and everything HermitShell has about them** and press **Delete**.
   A pause, resume, delete, assignment or send shows on the row at once with a tag (**pausing&hellip;**,
   **deleting&hellip;**), and the page reloads itself, keeping where you had scrolled, until HermitShell has
-  applied it (the same timings as [Global settings](#global-settings)). Recruiters only see their own
+  applied it (the same timings as [Global settings](#global-settings)). Pressing the same button again, or
+  several times at once, queues nothing more: a pause, resume, retire, delete or assignment already waiting
+  for that recruit counts, and so does the same press in the last two minutes until HermitShell reports again
+  (the hub decides this in one statement, so of presses arriving together only one goes through; without the
+  hub a short-lived KV key does). A recruit who already is what was pressed gets **Nothing had changed**, and
+  the bulk bar skips them. Recruiters only see their own
   recruits' changes. Sign-ups and new CVs take minutes and show their own progress, so they don't reload the page.
   Deleting removes their CV and history from your server, their answers still waiting in KV and
   their name and email from the logs. Retired recruits ([Retiring a recruit](#retiring-a-recruit)) are left

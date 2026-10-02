@@ -17,7 +17,7 @@ import { HISTORY_URL, PIPELINE_URL, historyPage, listed, moveOwnerHistory, recor
 import { META_STAGES, STAGE_LABELS, STAGE_URL, pipelineBack, pipelinePage, requestStage, stageMeta } from "./pipeline.js";
 import { hasCheckedIn } from "./apiauth.js";
 import { BACKUPS_URL, backupsPage } from "./backups.js";
-import { POLL_PATH, hubConnect, hubLimit, hubLimitClear, hubPresence, hubSeen } from "./hub.js";
+import { POLL_PATH, hubConnect, hubLimit, hubLimitClear, hubPresence, hubPress, hubSeen } from "./hub.js";
 import { enhance, enhancedCsp } from "./enhance.js";
 import { createInvite, openInvites, queueItem } from "./join.js";
 import {
@@ -60,6 +60,10 @@ const COOKIE = "__Host-hv_admin";
 const INVITE_URL = "/admin/invite";
 // KV's shortest expiry: how long a second Send jobs for the same recruit is taken as the same press.
 const SEND_NOW_SECONDS = 60;
+// How long the same press for a recruit counts as a repeat: a burst of presses, a double click or a reload, and the
+// minute KV can take to list a change just queued.
+const PRESS_SECONDS = 120;
+const STATE_OF = { pause: "paused", resume: "active", retire: "retired", delete: "deleted" };
 // Back up now pressed again this soon is not queued again (maintenance.py BACKUP_NOW_GAP refuses it too).
 const BACKUP_NOW_SECONDS = 10 * 60;
 // What a recruiter may do from the dashboard, and then only for their own recruits; a manager also assigns, within
@@ -213,6 +217,38 @@ async function status(env) {
 async function queued(env) {
   const flag = await env.FEEDBACK.get("flag:queue");
   return flag ? perRecruit(await flaggedItems(env, "queue:", "flag:queue", 50, flag)) : [];
+}
+
+// What a recruit will be once the waiting changes are applied: the last waiting pause, resume, retire or delete
+// (else their status), and the last waiting recruiter (else theirs).
+function pendingState(p, queue) {
+  const mine = queue.filter((i) => i.type === "admin" && i.u === p.id);
+  const last = mine.filter((i) => Object.hasOwn(STATE_OF, i.action)).at(-1);
+  const assign = mine.filter((i) => i.action === "assign").at(-1);
+  return { status: last ? STATE_OF[last.action] : p.status, recruiter: String((assign || p).recruiter || "") };
+}
+
+// Whether this press asks for a new change at `key` ("state:<id>" or "owner:<id>"): false for the same `value` as
+// the last press there within PRESS_SECONDS. The value carries when HermitShell last reported, so once it has
+// reported again the recruit's reported state decides instead. The hub decides in one statement, so of several presses arriving at
+// once only one goes on; without the hub a short-lived KV key does.
+async function freshPress(env, key, value) {
+  const fresh = await hubPress(env, key, value, PRESS_SECONDS * 1000);
+  if (fresh !== null) return fresh;
+  if ((await env.FEEDBACK.get(`press:${key}`)) === value) return false;
+  await env.FEEDBACK.put(`press:${key}`, value, { expirationTtl: PRESS_SECONDS });
+  return true;
+}
+
+// Why a pause, resume, retire, delete or assignment for `p` needs no new queue item: "same" when they already are
+// what it asks for, "waiting" when a waiting change or a press moments ago already asks for it, "" to queue it.
+async function repeatOf(env, current, p, act, queue, recruiter = "") {
+  const will = pendingState(p, queue);
+  const now = act === "assign" ? String(p.recruiter || "") === recruiter : p.status === STATE_OF[act];
+  if (act === "assign" ? will.recruiter === recruiter : will.status === STATE_OF[act]) return now && will.status === p.status ? "same" : "waiting";
+  const asked = `${act === "assign" ? `to:${recruiter}` : act}:${Math.floor(Number(current.updated)) || 0}`;
+  const fresh = await freshPress(env, `${act === "assign" ? "owner" : "state"}:${p.id}`, asked);
+  return fresh ? "" : "waiting";
 }
 
 // A bulk change is one queue item for several recruits; the dashboard shows it as that change for each of them,
@@ -732,9 +768,13 @@ async function action(request, env, s) {
     const recruiter = String(form.get("recruiter") || "");
     const p = (current.profiles || []).find((x) => x.id === u);
     if (!p || p.owner || ((recruiter || !s.me.admin) && !recs.some((r) => r.id === recruiter))) return redirect("/admin?done=badrecruiter");
-    await queueItem(env, { type: "admin", action: "assign", u, recruiter });
-    const to = recs.find((r) => r.id === recruiter);
-    await record(env, u, "assign", to ? `Assigned to ${to.name}` : "Unassigned from their recruiter", by);
+    const repeat = await repeatOf(env, current, p, "assign", await queued(env), recruiter);
+    if (repeat === "same") return redirect("/admin?done=nochange");
+    if (!repeat) {
+      await queueItem(env, { type: "admin", action: "assign", u, recruiter });
+      const to = recs.find((r) => r.id === recruiter);
+      await record(env, u, "assign", to ? `Assigned to ${to.name}` : "Unassigned from their recruiter", by);
+    }
     return redirect("/admin?done=assigned");
   }
   if (act === "backup_now") {
@@ -758,11 +798,14 @@ async function action(request, env, s) {
     await queueItem(env, item, setting.ttl);
     return redirect(`${back}queued${anchor}`);
   }
-  const retired = (current.profiles || []).find((x) => x.id === u)?.status === "retired";
+  const p = (current.profiles || []).find((x) => x.id === u) || { id: u, status: "" };
+  const retired = p.status === "retired";
   const back = form.get("back") === "profile" ? `/admin/profile?u=${u}&done=` : "/admin?done=";
+  const repeat = Object.hasOwn(STATE_OF, act) && (act !== "retire" && act !== "delete" || form.get("confirm") === "yes")
+    ? await repeatOf(env, current, p, act, await queued(env)) : "";
   if (act === "retire") {
     if (form.get("confirm") !== "yes") return redirect(`${back}retireconfirm`);
-    if (!retired) {
+    if (!repeat) {
       await queueItem(env, { type: "admin", action: act, u });
       await record(env, u, "retire", "Retired: no more reports, and emailed to choose what happens to their data", by);
     }
@@ -770,10 +813,14 @@ async function action(request, env, s) {
   }
   if (act === "delete") {
     if (form.get("confirm") !== "yes") return redirect("/admin?done=confirm");
-    await queueItem(env, { type: "admin", action: act, u });
-    await purgeProfileEvents(env, u);
-  } else if (act === "pause" && retired) {
+    if (!repeat) {
+      await queueItem(env, { type: "admin", action: act, u });
+      await purgeProfileEvents(env, u);
+    }
+  } else if (act === "pause" && retired || repeat === "same") {
     return redirect(`${back}nochange`);
+  } else if (repeat) {
+    return redirect(retired ? `${back}reactivating` : `${back}queued`);
   } else if (["pause", "resume"].includes(act)) {
     await queueItem(env, { type: "admin", action: act, u });
     await record(env, u, act, retired ? "Reactivated: reports start again" : act === "pause" ? "Paused reports" : "Resumed reports", by);
@@ -788,8 +835,9 @@ const BULK_HISTORY = { send_now: ["send", "Asked for jobs now"], pause: ["pause"
   retire: ["retire", "Retired: no more reports, and emailed to choose what happens to their data"] };
 
 // One queue item for the ticked recruits the user may change. Skipped: anyone else, anyone retired (Reactivate is
-// on their page), anyone already paused or active as asked, already that recruiter's, or asked for jobs in the
-// last minute. Retiring needs the confirm window's tick box.
+// on their page), anyone already paused or active as asked or already that recruiter's (counting the changes still
+// waiting), anyone this was pressed for moments ago, or asked for jobs in the last minute. Retiring needs the
+// confirm window's tick box.
 async function bulkAction(env, s, form, current, recs, by) {
   const op = String(form.get("op") || "");
   if (!BULK_OPS.has(op)) return page("Unknown action", "<p>Reload the admin page and try again.</p>", { status: 400 });
@@ -800,9 +848,12 @@ async function bulkAction(env, s, form, current, recs, by) {
   if (op === "retire" && form.get("confirm") !== "yes") return redirect("/admin?done=retireconfirm");
   const recruiter = op === "assign" ? String(form.get("recruiter") || "") : "";
   if (op === "assign" && (recruiter || !s.me.admin) && !recs.some((r) => r.id === recruiter)) return redirect("/admin?done=badrecruiter");
-  let todo = picked.filter((u) => PROFILE_RE.test(u)).map((u) => visible(s, current, u)).filter((p) => p && p.status !== "retired"
-    && !(op === "pause" && p.status === "paused") && !(op === "resume" && p.status === "active")
-    && !(op === "assign" && String(p.recruiter || "") === recruiter));
+  let todo = picked.filter((u) => PROFILE_RE.test(u)).map((u) => visible(s, current, u)).filter((p) => p && p.status !== "retired");
+  if (op !== "send_now") {
+    const queue = await queued(env);
+    const repeats = await Promise.all(todo.map((p) => repeatOf(env, current, p, op, queue, recruiter)));
+    todo = todo.filter((_, i) => !repeats[i]);
+  }
   if (op === "send_now") {
     const recent = await Promise.all(todo.map((p) => env.FEEDBACK.get(`sendnow:${p.id}`)));
     todo = todo.filter((_, i) => !recent[i]);
