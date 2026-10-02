@@ -126,6 +126,7 @@ describe("the theme page", () => {
     for (const id of [...Object.keys(PALETTES), "custom"]) expect(body).toContain(`id="pal-${id}"`);
     expect(body).toContain('id="pal-hermitshell" checked');
     expect(body).toContain('enctype="multipart/form-data"');
+    expect(body).toContain('value="reset" class="quiet" formnovalidate>Reset to default</button>');
     expect(body).toContain('value="#6366F1" aria-label="Custom palette\'s main colour"');
     const add = new FormData();
     add.set("csrf", (await admin.text("/admin")).match(/name="csrf" value="([0-9a-f]+)"/)[1]);

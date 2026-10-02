@@ -739,7 +739,7 @@ HermitShell's own look ([more](feedback-worker.md#theme-and-branding)).
 | **Palette** | Eight palettes, or **Custom** with two colour pickers |
 | **Background** / **Corners** / **Font** / **Spacing** / **Motion** | The look of every page |
 | **Preview** | Follows the choices as you make them, and shows a logo as soon as it is picked, before saving; one too big or not a picture is refused at once |
-| **Save theme** / **Reset to HermitShell's look** | Apply for everyone, or go back to the default |
+| **Save theme** / **Reset to default** | Apply for everyone, or go back to HermitShell's own look |
 | **Back to recruits** | Returns to the dashboard |
 
 <img src="images/worker/admin-theme-applied.png" alt="The Recruits page under the name Northwind Talent in the Ocean palette with soft corners" width="720">

@@ -25,7 +25,7 @@ test("the admin picks a palette and a name from the palette button, sees them on
   await expect(page.locator(".eyebrow")).toContainText("Northwind Talent");
 
   await page.goto("/admin/theme");
-  await page.getByRole("button", { name: /Reset to HermitShell/ }).click();
+  await page.getByRole("button", { name: "Reset to default" }).click();
   await expect(page).toHaveURL(/done=reset/);
   await expect(page.locator(".eyebrow")).toContainText("HermitShell");
   await expect(page.locator(".eyebrow")).not.toContainText("Northwind");
@@ -59,6 +59,6 @@ test("a picked WebP logo shows in the preview at once, and one too big is refuse
   await expect(page).toHaveURL(/done=saved/);
   await expect(page.locator(".eyebrow img.mark")).toHaveAttribute("src", /^\/brand\/logo\?v=[0-9a-f]{12}$/);
   await expect(page.locator('link[rel="icon"]')).toHaveAttribute("type", "image/webp");
-  await page.getByRole("button", { name: /Reset to HermitShell/ }).click();
+  await page.getByRole("button", { name: "Reset to default" }).click();
   await expect(page).toHaveURL(/done=reset/);
 });

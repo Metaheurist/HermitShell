@@ -900,6 +900,8 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Theme and branding's reset button says Reset to default** instead of "Reset to HermitShell's look";
+  it still puts back HermitShell's own palette, name, logo and look.
 - **Autofit recommends 7B and 14B models on GPUs.** Between the 4B default and the 30B, a GPU with 8 GB
   of memory now gets `qwen2.5:7b-instruct-q4_K_M` and one with 12 GB `qwen2.5:14b-instruct-q4_K_M`. A
   machine without a GPU stays on the 4B until it has 48 GB of RAM, since the bigger dense models are much

@@ -425,7 +425,7 @@ ${segment("logoSize", t.logoSize)}</section>
 <span class="hint">Custom colours too light for white button text are darkened a little.</span></section>
 <section><h2>Look</h2>${["background", "corners", "font", "density", "motion"].map((k) => segment(k, t[k])).join("")}
 <span class="hint">Calm motion stops the background drifting and cards sliding in; people whose system asks for less motion get that anyway.</span></section>
-<div class="tbtns"><button type="submit">Save theme</button><button type="submit" name="op" value="reset" class="quiet" formnovalidate>Reset to HermitShell&rsquo;s look</button></div>
+<div class="tbtns"><button type="submit">Save theme</button><button type="submit" name="op" value="reset" class="quiet" formnovalidate>Reset to default</button></div>
 </div>
 <aside class="tprev" aria-label="Preview"><div class="pvbg"><div class="pvcard">
 <div class="pveye"><span class="pvmark">${mark}</span><span class="pvname">${esc(brandName(t))}</span></div>
