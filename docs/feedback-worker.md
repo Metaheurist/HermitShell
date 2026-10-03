@@ -816,7 +816,7 @@ running while it is on.
 **Manage** (this page) and **History** (see [History](#history)); **Users and roles** and **Global
 settings** are only on the dashboard. Each box has a short hint
 under it. Details, job search and the daily report time are one form with one **Save changes**
-button; **Send jobs now** and the CV's **Upload CV** have their own.
+button; **Send jobs now** and the CV's **Save CV** have their own.
 
 - **Details**: name, the email address their reports go to, phone and home town (shown on cover
   letters, and where the distance below is measured from).

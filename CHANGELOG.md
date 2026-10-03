@@ -1121,6 +1121,12 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A pasted CV is easy to save.** On a recruit's page the CV's button sat below **Roles they're after**
+  and said **Upload CV**, so it didn't look like it saved pasted text. It now says **Save CV** and sits
+  right under the paste box ("Paste the whole CV, at least a few lines."), **Roles they're after** comes
+  first, and the messages say "CV saved." or how to fix a short paste. Covered by `e2e/cv.spec.js` and
+  `test/settings.test.js`.
+
 - **Pressing a button again no longer queues the same change twice.** Pressing Pause (or Resume, Retire,
   Delete or Assign) repeatedly, or several times at once, used to add one task per press, all waiting for
   HermitShell. Now a change already waiting for that recruit, or the same press in the last two minutes before

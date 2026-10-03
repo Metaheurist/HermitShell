@@ -490,7 +490,9 @@ describe("profile page", () => {
     const { get } = await setup();
     const { body } = await get("/admin/profile?u=sam-lee");
     expect(body.match(/<button>Save changes<\/button>/g)).toHaveLength(1);
-    expect(body.match(/<button>Upload CV<\/button>/g)).toHaveLength(1);
+    expect(body.match(/<button>Save CV<\/button>/g)).toHaveLength(1);
+    const cvForm = body.slice(body.indexOf('action="/admin/cv"'), body.indexOf("</form>", body.indexOf('action="/admin/cv"')));
+    expect(cvForm.slice(cvForm.indexOf('id="cv_text"'))).toMatch(/^id="cv_text"[^]*<\/textarea><span class="hint">Paste the whole CV, at least a few lines\.<\/span>\s*<button>Save CV<\/button>$/);
     expect(body.match(/<button class="small">Send jobs now<\/button>/g)).toHaveLength(1);
     expect(body.slice(body.indexOf("<main")).match(/<form (?![^>]*action="\/admin\/notes")/g)).toHaveLength(4);
     expect(body.slice(body.indexOf("<main")).match(/<form [^>]*action="\/admin\/notes"/g)).toHaveLength(2);

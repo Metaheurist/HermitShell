@@ -473,12 +473,12 @@ ${searchFields(v, reportHint(p, status))}
 ${p.status === "retired" ? "" : sendSection(p, csrf, status.timezone)}
 ${notes}
 <h2 id="cv">CV</h2>
-<p class="muted">${p.has_cv ? `CV on file${p.cv_updated ? ` (updated ${esc(when(p.cv_updated, status.timezone))})` : ""}. Uploading a new one replaces it, and jobs are matched against the new one.` : "No CV yet. Upload one so jobs can be matched to it."}</p>
+<p class="muted">${p.has_cv ? `CV on file${p.cv_updated ? ` (updated ${esc(when(p.cv_updated, status.timezone))})` : ""}. A new one replaces it, and jobs are matched against the new one.` : "No CV yet. Add one so jobs can be matched to it."}</p>
 <form method="post" action="/admin/cv" enctype="multipart/form-data">${hidden({ csrf, u: pid })}
-<label for="cv">CV file</label><input id="cv" name="cv" type="file" accept=".pdf,.docx,.txt,.md">${hint("PDF, Word (.docx) or text, up to 5 MB.")}
-<label for="cv_text">Or paste the CV text</label><textarea id="cv_text" name="cv_text" maxlength="${MAX_CV_TEXT}"></textarea>
 <label for="roles">Roles they're after</label><input id="roles" name="roles" maxlength="300">${hint("Optional. Helps pick the right job titles from the CV.")}
-<button>Upload CV</button></form>
+<label for="cv">CV file</label><input id="cv" name="cv" type="file" accept=".pdf,.docx,.txt,.md">${hint("PDF, Word (.docx) or text, up to 5 MB.")}
+<label for="cv_text">Or paste the CV text</label><textarea id="cv_text" name="cv_text" maxlength="${MAX_CV_TEXT}"></textarea>${hint("Paste the whole CV, at least a few lines.")}
+<button>Save CV</button></form>
 ${retireSection(p, csrf, status.timezone)}`, { wide: true, status: code, before: retireModal(p, csrf) + BACK_TO_RECRUITS, headers: { "Content-Security-Policy": `${CSP}; frame-src 'self'` },
     refresh: cv?.busy ? 15 : 0, refreshTo: cv?.busy ? `/admin/profile?u=${pid}` : "" });
 }
@@ -680,8 +680,8 @@ export const SETTINGS_DONE = {
   profile: "Unknown recruit. Reload the admin page and try again.",
   cvsize: "The CV file is larger than 5 MB.",
   cvtype: "The CV must be a PDF, a Word .docx file or a text file.",
-  cvmissing: "Upload a CV file or paste the CV (at least a few lines).",
-  cvqueued: "CV uploaded. HermitShell reads it and updates the profile within about 10 minutes, then emails a summary.",
+  cvmissing: "Choose a CV file or paste the whole CV (at least a few lines), then press Save CV.",
+  cvqueued: "CV saved. HermitShell reads it and updates the profile within about 10 minutes, then emails a summary.",
   badtime: "Choose a time for the daily report.",
   sending: "Looking for jobs now. The email arrives in about 10 to 20 minutes.",
 };

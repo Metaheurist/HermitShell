@@ -623,7 +623,7 @@ When it is ready, the notice turns green for a day:
 | Notes: **Tags** + **Save tags** | Up to 8 tags, separated by commas, shown as pills on the recruits list ([more](feedback-worker.md#notes-and-tags)) |
 | Notes: **Add a note** + **Add note** | A note for you and the other recruiters, newest first with who wrote it and when; **Delete** for its writer and admins |
 | Notes: **Export these notes** | Admins only: a text file of the recruit's notes and tags, for a subject access request |
-| CV + **Upload CV** | A new CV file or pasted text; HermitShell rebuilds the profile and skills from it and emails a summary |
+| CV + **Save CV** | A new CV file or pasted text, saved with the button right under the paste box; HermitShell rebuilds the profile and skills from it and emails a summary |
 
 <img src="images/worker/admin-profile-notes.png" alt="The Notes box on a recruit's page: tags, a note being added and two earlier notes" width="620">
 
