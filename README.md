@@ -31,6 +31,7 @@ this repo).
 </table>
 
 Every email, PDF and page, with what each part does: [docs/screenshots.md](docs/screenshots.md).
+A guided tour of every feature, in the order a desk meets them: [docs/demo.md](docs/demo.md).
 
 ## What you get
 

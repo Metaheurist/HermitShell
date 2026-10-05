@@ -3,7 +3,8 @@
 `hermitshell-demo` is HermitShell in one container with made-up people, made-up adverts and recorded AI
 answers: no keys, no GPU, no Cloudflare account and no internet. Use it to show HermitShell, to try a change,
 or to watch every feature run with technical detail. It is built and published by
-[GitHub Actions](../.github/workflows/demo-image.yml) next to the production image.
+[GitHub Actions](../.github/workflows/demo-image.yml) next to the production image. For a feature-by-feature
+tour to follow along with, see [the demo guide](demo.md).
 
 - [Run it](#run-it)
 - [Modes](#modes)

@@ -8,6 +8,9 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A guided demo, [docs/demo.md](docs/demo.md).** A tour of every feature in the order a desk meets them,
+  from setup and invites to reports, the Pipeline, documents, branding and retiring, with screenshots and
+  how to try each step in the demo image.
 - **The demo image, `hermitshell-demo`.** HermitShell in one container with made-up people, twelve
   fictional adverts and recorded AI answers: no keys, no GPU and no internet. Modes: `app` (use it by
   hand), `demo` (a showcase of every feature, live in the viewer on port 8080), `test` (pick journeys, run
