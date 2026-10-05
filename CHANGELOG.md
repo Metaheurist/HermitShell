@@ -1126,6 +1126,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The Pipeline catches up with answers within minutes.** A recruit's **I applied** (or a move on the
+  board) was collected within about 5 minutes, but the board only showed it at the next stats upload, up
+  to 30 minutes later. Collecting new answers for a recruit now sends that recruit's stats straight away.
+  Found by the exploratory walkthrough; covered by `test_profiles.py` and `test_interview_prep.py`.
 - **No stray Chinese characters in a job's missing skills.** The local model sometimes finished an English
   phrase in another script ("experience in manufacturing or supply链" in a real report). A missing skill
   with Han, kana or Hangul characters the advert itself never uses is now left out. Found by the exploratory

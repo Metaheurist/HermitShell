@@ -969,8 +969,8 @@ stage, and a **Move to** menu.
 <img src="images/worker/admin-pipeline.png" alt="A recruit's Pipeline: columns for Interested, Applied, Interview, Offer, Placed and Rejected, each card with a Move to menu" width="720">
 
 - **Moving a job** (`POST /admin/stage`, CSRF-checked) stores the move as the matching email answer
-  would be, so HermitShell collects it at its next sync, within about 5 minutes. The board shows it
-  after HermitShell's next stats upload; the page says so. The same move for the same job in the same
+  would be, so HermitShell collects it at its next sync, within about 5 minutes, and sends that
+  recruit's stats again straight away, so the board shows it soon after; the page says so. The same move for the same job in the same
   minute is one event, so a double click does nothing extra. Each move is written in the
   [history](#history), for example **Moved to Interview: Data Engineer at Northwind**.
 - **Start date and fee** (admins, and managers for their team) go with an **Offer** or **Placed** move. The start date must
@@ -1173,7 +1173,7 @@ links to the advert and the employer's site. Each amber **Missing from the CV** 
 press one the recruit has and it is stored as the email's **Add to my skills** answer, so it joins
 their skills pool at HermitShell's next sync and counts as on the CV from then on (see
 [Adding missing skills](#adding-missing-skills)). It then shows as added (dashed, with a tick) until
-HermitShell's next stats update, at most 30 minutes later, lists it with a solid tick. Admins can do this for
+HermitShell collects it and sends that recruit's stats again (within about 5 minutes), listing it with a solid tick. Admins can do this for
 any recruit, a recruiter only for their own pool.
 
 **Also suits** lists up to 5 other recruits the same job was rated a fit for in the last 90 days (at
@@ -1447,8 +1447,8 @@ a report's progress while it runs (a 20-minute scan adds about 20), and one per 
 tailored CV as it starts and finishes. An
 email-button request adds one write when it arrives and one when HermitShell collects it. The
 Tasks window only lists the queue when its flag says something is waiting. Each recruit's stats
-are written only when they changed, at most every 30 minutes, plus once after each report (in
-practice a few writes per recruit a day). Each [history](#history) entry adds one write, and a
+are written only when they changed, at most every 30 minutes, plus once after each report and once
+when new answers are collected (in practice a few writes per recruit a day). Each [history](#history) entry adds one write, and a
 History page one list. A [backup sent to Cloudflare](#backups-on-cloudflare) writes one SQLite row a
 megabyte (a couple of hundred of the 100,000 rows a day, even with Back up now). If the Durable Object allowance ever ran out, saves still work and
 HermitShell falls back to polling.

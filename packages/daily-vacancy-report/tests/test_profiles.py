@@ -1676,6 +1676,24 @@ def test_a_finished_report_sends_its_stats_at_once(home, monkeypatch):
     assert [p for p, _ in api.pushed] == [pid]
 
 
+def test_new_answers_send_that_recruits_stats_at_once(home, monkeypatch):
+    api = FakeApi()
+    monkeypatch.setattr(profiles, "api_from_env", lambda: api)
+    profiles.sync(FakeApi([signup()]))
+    pid = "sam-lee-456789"
+    profiles.push_stats(api)
+    api.pushed.clear()
+    _rate_a_job(pid, profiles.time.time())
+    profiles.board_changed(pid)
+    assert [p for p, _ in api.pushed] == [pid]
+    api.pushed.clear()
+    for bad in ("", "../etc", "_"):
+        profiles.board_changed(bad)
+    monkeypatch.setattr(profiles, "api_from_env", lambda: None)
+    profiles.board_changed(pid)
+    assert api.pushed == []
+
+
 def test_stats_that_cannot_be_read_or_sent_are_retried_later(home, monkeypatch, capsys):
     class Down(FakeApi):
         def stats(self, pid, data):

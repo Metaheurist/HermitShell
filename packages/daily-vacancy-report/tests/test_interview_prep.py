@@ -251,3 +251,20 @@ def test_the_cron_run_queues_packs_only_with_the_switch_on(setup, tmp_path, monk
     monkeypatch.setattr(cover_letter, "process_pending",
                         lambda t, factory, dry_run: seen.append(len(t.pending_letters(action="interview_prep"))) or [])
     assert cover_letter.main([]) == 0 and seen == [queued]
+
+
+@pytest.mark.parametrize("synced, argv, pushed", [(2, [], ["sam-lee-04fbea"]), (0, [], []), (2, ["--dry-run"], [])])
+def test_new_answers_send_the_recruits_board_at_once(tmp_path, monkeypatch, synced, argv, pushed):
+    monkeypatch.setenv("JOB_PROFILE_ID", "sam-lee-04fbea")
+    monkeypatch.setattr(cover_letter, "TRACKER_FILE", tmp_path / "tracker.db")
+    monkeypatch.setattr(cover_letter, "LOCK_FILE", tmp_path / "cover_letter.lock")
+    monkeypatch.setattr(cover_letter, "FULL_SYNC_FILE", tmp_path / "full_sync")
+    monkeypatch.setattr(cover_letter, "load_env_file", lambda: None)
+    monkeypatch.setattr(cover_letter.hc, "set_model_priority", lambda **k: None)
+    monkeypatch.setattr(cover_letter.profiles, "spawn_others", lambda *a: None)
+    monkeypatch.setattr(cover_letter.profiles, "staff_run", lambda *a: False)
+    monkeypatch.setattr(cover_letter, "sync_feedback", lambda *a, **k: (synced, ""))
+    monkeypatch.setattr(cover_letter, "process_pending", lambda *a: [])
+    seen = []
+    monkeypatch.setattr(cover_letter.profiles, "board_changed", seen.append)
+    assert cover_letter.main(argv) == 0 and seen == pushed

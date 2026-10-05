@@ -1709,6 +1709,14 @@ def push_stats(api: Api, now_for: str = "") -> None:
     write_json(marker, sent)
 
 
+def board_changed(pid: str) -> None:
+    """New answers were collected for `pid`: send their stats at once, so the Pipeline shows the move within the
+    minute rather than at the next STATS_EVERY upload (nothing without the Worker or for the owner's own run)."""
+    api = api_from_env()
+    if api and pid and ID_RE.match(pid):
+        push_stats(api, now_for=pid)
+
+
 def desk_payload(people: list[dict], now: float) -> dict:
     """Every recruit's desk line (profile_stats.desk) in their own currency, and the salaries by job title across
     the desk, per currency, each from at least profile_stats.SALARY_MIN_N jobs."""

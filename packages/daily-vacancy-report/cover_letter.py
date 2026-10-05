@@ -827,13 +827,15 @@ def main(argv: list[str] | None = None) -> int:
             if not held:
                 return 0
             full = not FULL_SYNC_FILE.is_file() or time.time() - FULL_SYNC_FILE.stat().st_mtime > FULL_SYNC_EVERY
-            _, error = sync_feedback(tracker, env("JOB_FEEDBACK_URL", "") or "",
-                                     env("JOB_FEEDBACK_API_TOKEN", "") or "", ack=not args.dry_run,
-                                     profile=env("JOB_PROFILE_ID", "") or "", full=full)
+            synced, error = sync_feedback(tracker, env("JOB_FEEDBACK_URL", "") or "",
+                                          env("JOB_FEEDBACK_API_TOKEN", "") or "", ack=not args.dry_run,
+                                          profile=env("JOB_PROFILE_ID", "") or "", full=full)
             if error:
                 log(error)
             elif full and not args.dry_run:
                 FULL_SYNC_FILE.touch()
+            if synced and not args.dry_run:
+                profiles.board_changed(env("JOB_PROFILE_ID", "") or "")
             if (not args.dry_run and hc.env_bool("INTERVIEW_PREP_AUTO", False)
                     and (queued := tracker.queue_auto_prep(env("JOB_PROFILE_ID", "") or ""))):
                 log(f"Queued {len(queued)} interview prep pack(s) for jobs that reached Interview")
