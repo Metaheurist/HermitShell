@@ -8,6 +8,11 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`FIRECRAWL_API_BASE` and `TAVILY_API_BASE`.** Optional `.env` settings that send Firecrawl or Tavily
+  requests, and the Global settings credit checks, to another host, such as the demo image's replay server.
+  Only a plain `https://` address without a login, query or fragment is used; anything else is ignored with
+  a log line, so a key never goes out unencrypted, and the dashboard can't set either one. Covered by
+  `common/tests/test_api_base.py`, `test_key_usage.py` and `tests/security`.
 - **Retire recruits, and let them choose what happens to their data.** A red **Retire** button on the bulk
   bar (for the ticked recruits) and a **Retire** section at the bottom of a recruit's page, each behind a
   confirm window with a tick box, stop the recruit's reports and email them a signed link (the `retire`

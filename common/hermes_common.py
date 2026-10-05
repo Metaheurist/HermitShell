@@ -59,7 +59,8 @@ HERMES_HOME = APP_HOME
 # Reports, trackers, CVs and letters hold personal data: files the scripts create are readable by their owner only.
 os.umask(0o077)
 
-FIRECRAWL = "https://api.firecrawl.dev/v1"
+FIRECRAWL_ROOT = "https://api.firecrawl.dev"
+FIRECRAWL = f"{FIRECRAWL_ROOT}/v1"
 TAVILY = "https://api.tavily.com"
 SCRAPFLY = "https://api.scrapfly.io"
 BROWSER_HEADERS = {
@@ -104,7 +105,7 @@ _ENV_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
 # the exchange-rate address the server fetches from.
 _DASHBOARD_PREFIXES = ("ALERT_", "BAZAARLINK_", "COVER_LETTER_", "FEATHERLESS_", "FIRECRAWL_", "HUGGINGFACE_", "JOB_",
                        "LLM_", "OPENROUTER_", "SCRAPFLY_", "SMTP_", "TAVILY_")
-_DASHBOARD_DENIED = re.compile(r"^JOB_FEEDBACK_|_(FILE|DIR|PATH)$|^JOB_PROFILE_ID$|^JOB_FX_")
+_DASHBOARD_DENIED = re.compile(r"^JOB_FEEDBACK_|_(FILE|DIR|PATH)$|^JOB_PROFILE_ID$|^JOB_FX_|_API_BASE$")
 # The on/off switches under Global settings, Features: named one by one, as their prefixes cover more than this.
 DASHBOARD_SWITCHES = frozenset({"HERMES_ALERTS", "INTERVIEW_PREP_AUTO", "DOC_WORD_COPIES", "HERMES_SELF_SERVICE"})
 # The server model picked under Global settings; the rest of OLLAMA_ (the hosts the server talks to) stays in .env.
@@ -151,6 +152,33 @@ def env_int(name: str, default: int) -> int:
 
 def env_bool(name: str, default: bool) -> bool:
     return env(name, "1" if default else "0").lower() in {"1", "true", "yes", "on"}
+
+
+def api_base(name: str, default: str) -> str:
+    """Where a search provider's API lives. FIRECRAWL_API_BASE and TAVILY_API_BASE (in .env only, never the
+    dashboard) point it at another host, such as the demo image's replay server; anything but a plain https
+    address, without a login, query or fragment, is ignored so a key never goes out unencrypted."""
+    value = env(name)
+    if not value:
+        return default
+    parts = urlsplit(value)
+    try:
+        port_ok = parts.port is None or parts.port > 0
+    except ValueError:
+        port_ok = False
+    if parts.scheme != "https" or not parts.hostname or parts.username or parts.password or parts.query \
+            or parts.fragment or not port_ok or CONTROL_CHARS.search(value):
+        log(f"{name} is not a plain https address; using {default}")
+        return default
+    return value.rstrip("/")
+
+
+def firecrawl_api() -> str:
+    return f"{api_base('FIRECRAWL_API_BASE', FIRECRAWL_ROOT)}/v1"
+
+
+def tavily_api() -> str:
+    return api_base("TAVILY_API_BASE", TAVILY)
 
 
 def safe_url(url: str) -> str:
@@ -447,7 +475,7 @@ class Firecrawl:
             self._last = time.monotonic()
             self.calls += 1
             try:
-                resp = http().post(f"{FIRECRAWL}/{path}", json=payload, headers=self.headers, timeout=timeout)
+                resp = http().post(f"{firecrawl_api()}/{path}", json=payload, headers=self.headers, timeout=timeout)
             except requests.RequestException as exc:
                 self.network_failures += 1
                 log(f"Firecrawl {path} error (attempt {attempt}): {exc.__class__.__name__}")
@@ -501,7 +529,7 @@ class Firecrawl:
 
     def credits_remaining(self) -> int | None:
         try:
-            resp = requests.get(f"{FIRECRAWL}/team/credit-usage", headers=self.headers, timeout=20)
+            resp = requests.get(f"{firecrawl_api()}/team/credit-usage", headers=self.headers, timeout=20)
             return int(resp.json()["data"]["remaining_credits"])
         except Exception:
             return None
@@ -531,7 +559,7 @@ class Tavily:
 
     def _post(self, path: str, payload: dict) -> dict:
         try:
-            resp = http().post(f"{TAVILY}/{path}", json=payload, headers=self.headers, timeout=90)
+            resp = http().post(f"{tavily_api()}/{path}", json=payload, headers=self.headers, timeout=90)
         except requests.RequestException as exc:
             raise RuntimeError(f"Tavily {path} error: {exc.__class__.__name__}") from exc
         if resp.status_code in (401, 403, 432, 433) or \

@@ -47,6 +47,11 @@ PROVIDERS = ("firecrawl", "tavily", "scrapfly")
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
+def _follow(url: str, name: str, root: str) -> str:
+    """The usage address on the host the searches go to (hc.api_base), so an override never sends a key to two places."""
+    return hc.api_base(name, root) + url[len(root):]
+
+
 class UsageError(Exception):
     """The provider did not say how much is left; the message is shown on the dashboard."""
 
@@ -117,10 +122,11 @@ def _part(data, name: str) -> dict:
 def check(provider: str, key: str) -> dict:
     """The key's usage now, from the provider; UsageError when it can't be had."""
     if provider == "firecrawl":
-        data = _part(_get(FIRECRAWL_USAGE, {"Authorization": f"Bearer {key}"}), "data")
+        data = _part(_get(_follow(FIRECRAWL_USAGE, "FIRECRAWL_API_BASE", hc.FIRECRAWL_ROOT),
+                          {"Authorization": f"Bearer {key}"}), "data")
         return usage(limit=data.get("planCredits"), left=data.get("remainingCredits"), resets=data.get("billingPeriodEnd"))
     if provider == "tavily":
-        body = _get(TAVILY_USAGE, {"Authorization": f"Bearer {key}"})
+        body = _get(_follow(TAVILY_USAGE, "TAVILY_API_BASE", hc.TAVILY), {"Authorization": f"Bearer {key}"})
         own, account = _part(body, "key"), _part(body, "account")
         if _count(own.get("limit")):
             return usage(own.get("usage"), own.get("limit"), plan=account.get("current_plan"))

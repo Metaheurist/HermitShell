@@ -61,6 +61,21 @@ def test_firecrawl_reports_what_is_left_of_the_plan(calls):
     assert kw["allow_redirects"] is False and kw["timeout"] <= 10
 
 
+def test_usage_is_asked_of_the_overridden_host(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_BASE", "https://replay-search:8443")
+    monkeypatch.setenv("TAVILY_API_BASE", "https://replay-search:8443/tavily")
+    seen = []
+
+    def get(url, **kw):
+        seen.append(url)
+        return Reply(FIRECRAWL if "credit-usage" in url else TAVILY)
+
+    monkeypatch.setattr(key_usage.requests, "get", get)
+    key_usage.check("firecrawl", "fc-test-key-000000001")
+    key_usage.check("tavily", "tvly-test-key-0000001")
+    assert seen == ["https://replay-search:8443/v2/team/credit-usage", "https://replay-search:8443/tavily/usage"]
+
+
 def test_tavily_uses_the_keys_own_limit_else_the_accounts_plan(calls):
     assert key_usage.check("tavily", "tvly-test-key-00000001") == {
         "used": 400, "limit": 1000, "left": 600, "plan": "Researcher", "resets": "", "unit": "credits"}

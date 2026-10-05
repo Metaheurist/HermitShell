@@ -819,6 +819,25 @@ def test_key_usage_is_only_asked_of_the_providers_over_https_without_redirects(m
     assert all(kw["allow_redirects"] is False and kw["timeout"] <= 10 for _, kw in calls)
 
 
+@pytest.mark.parametrize("base", ["http://replay-search:8443", "https://user:pw@replay-search", "https://replay-search/?k=1",
+                                  "https://replay-search/#x", "ftp://replay-search", "https://", "https://bad host",
+                                  "https://replay-search:0", "https://replay-search:99999", "//replay-search"])
+def test_a_search_api_base_that_is_not_plain_https_is_ignored(monkeypatch, tmp_path, base):
+    monkeypatch.setenv("FIRECRAWL_API_BASE", base)
+    monkeypatch.setenv("TAVILY_API_BASE", base)
+    assert hc.firecrawl_api() == "https://api.firecrawl.dev/v1" and hc.tavily_api() == "https://api.tavily.com"
+    calls = []
+    monkeypatch.setattr(key_usage.requests, "get", lambda url, **kw: calls.append(url) or _Usage({}, 401))
+    key_usage.report({"firecrawl": [KEY], "tavily": [KEY]}, tmp_path, 60, 1_790_000_000.0)
+    assert set(calls) == {"https://api.firecrawl.dev/v2/team/credit-usage", "https://api.tavily.com/usage"}
+
+
+@pytest.mark.parametrize("key", ["FIRECRAWL_API_BASE", "TAVILY_API_BASE", "SCRAPFLY_API_BASE"])
+def test_the_dashboard_cannot_move_a_search_api_to_another_host(key):
+    assert not hc.dashboard_key_allowed(key)
+    assert hc.dashboard_key_allowed(key.replace("_BASE", "_KEY"))
+
+
 def test_key_usage_never_stores_or_reports_the_key(monkeypatch, tmp_path):
     def failing(url, **kw):
         raise key_usage.requests.ConnectionError(f"{url}?key={KEY}")
