@@ -36,6 +36,16 @@ _BOILERPLATE = re.compile(
 _RULE = re.compile(r"^[\s|:*_=\-]*$")
 
 
+# Han, kana and Hangul: small multilingual models sometimes finish an English phrase in another script
+# ("supply chain" came back as "supply\u94fe").
+_STRAY_SCRIPT = re.compile(r"[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]")
+
+
+def stray_script(value: str, source: str) -> bool:
+    """True when the model's text uses a script the listing it read never does, so it can't be from the listing."""
+    return any(ch not in source for ch in _STRAY_SCRIPT.findall(value))
+
+
 def trim_listing(text: str) -> str:
     """The advert without boilerplate lines, repeats and runs of blank lines, so more of the job fits the model's
     share of it in fewer tokens."""

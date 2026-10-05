@@ -1126,6 +1126,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **No stray Chinese characters in a job's missing skills.** The local model sometimes finished an English
+  phrase in another script ("experience in manufacturing or supply链" in a real report). A missing skill
+  with Han, kana or Hangul characters the advert itself never uses is now left out. Found by the exploratory
+  walkthrough; covered by `test_rating_checks.py`.
 - **A pasted CV is easy to save.** On a recruit's page the CV's button sat below **Roles they're after**
   and said **Upload CV**, so it didn't look like it saved pasted text. It now says **Save CV** and sits
   right under the paste box ("Paste the whole CV, at least a few lines."), **Roles they're after** comes

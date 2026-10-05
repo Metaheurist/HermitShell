@@ -9,10 +9,21 @@ PACKAGE = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(PACKAGE), str(PACKAGE.parents[1] / "common")]
 
 import job_extras  # noqa: E402
-from job_extras import prescreened_out, second_look, settle_second  # noqa: E402
+from job_extras import prescreened_out, second_look, settle_second, stray_script  # noqa: E402
 
 LONG = "word " * 400
 CV_SIZE = 20
+
+
+@pytest.mark.parametrize("gap, listing, stray", [
+    ("experience in manufacturing or supply\u94fe", "Supply chain experience in manufacturing", True),
+    ("\ub370\uc774\ud130 \ubd84\uc11d", "Data analysis", True),
+    ("supply chain", "Supply chain experience", False),
+    ("Caf\u00e9 management", "Caf\u00e9 management", False),
+    ("\u65e5\u672c\u8a9e", "Fluent \u65e5\u672c\u8a9e required", False),
+])
+def test_a_gap_in_a_script_the_listing_never_uses_is_dropped(gap, listing, stray):
+    assert stray_script(gap, listing) is stray
 
 
 def test_a_full_listing_with_none_of_the_cv_keywords_is_not_rated():

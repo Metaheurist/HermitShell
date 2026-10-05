@@ -58,7 +58,7 @@ from hermes_common import (BROWSER_HEADERS, EMAIL_HEAD, STATE_DIR, WebClient, co
                            load_env_file, log, ollama_chat)
 from job_extras import (below_min_salary, closing_date, combined_level, days_left, group_agency_posts,
                         parse_salary, prescreened_out, rating_failed, rating_profile, repost_key, second_look,
-                        second_opinion, settle_second, trim_listing,
+                        second_opinion, settle_second, stray_script, trim_listing,
                         triage_titles)
 from job_tracker import (ACTIONS, Tracker, card_links, followup_actions, own_page_link, prompt_examples, skill_link,
                          skills_text, sync_feedback, unsubscribe_link)
@@ -1403,7 +1403,8 @@ def run(args: argparse.Namespace) -> int:
         kw_matched, kw_other = keyword_match(full_text, cv_kw, other_kw)
         llm_matched = [s for s in rating.get("matched_skills", []) if s in cv_kw]
         matched = list(dict.fromkeys(llm_matched + kw_matched))
-        gaps = list(dict.fromkeys([s for s in rating.get("missing_skills", []) if s and s.lower() not in cv_lower]
+        gaps = list(dict.fromkeys([s for s in rating.get("missing_skills", [])
+                                   if s and s.lower() not in cv_lower and not stray_script(s, full_text)]
                                   + kw_other))[:6]
         coverage = round(100 * len(matched) / max(1, len(matched) + len(kw_other)))
         confidence = rating["confidence"]
