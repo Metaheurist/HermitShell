@@ -40,7 +40,7 @@ test("@settings theme, branding and Global settings", async () => {
   await step("settings", "Global settings never shows a key", page, async () => {
     await page.goto("/admin/settings");
     await a.say("Global settings: email, keys, models and features");
-    for (const h of ["Email server", "Web search API keys", "AI model API keys", "Server model", "Features"]) {
+    for (const h of ["Email server", "Web search API keys", "AI model API keys", "Features"]) {
       await expect(page.getByRole("heading", { name: h, exact: true }).filter({ visible: true }).first()).toBeVisible();
     }
     const html = await page.content();

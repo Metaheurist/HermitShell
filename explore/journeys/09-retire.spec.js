@@ -31,7 +31,8 @@ test("@retire Taylor is retired, keeps their data, and comes back", async () => 
 
   const t = await actor("Recruit", { key: "recruit-taylor" });
   await step("retire", "Taylor chooses to keep their data for 12 months", t.page, async () => {
-    const msg = await emailShowing(t, "waiting for Taylor's keep-or-delete email", { to: taylor.email, since }, { timeout: 600000 });
+    const msg = await emailShowing(t, "waiting for Taylor's keep-or-delete email",
+      { to: taylor.email, subject: "your account is retired", since }, { timeout: 600000 });
     await t.page.goto(link(msg, /keep|choose|data/i));
     await expect(t.page.getByRole("heading", { name: "Keep or delete your data" })).toBeVisible();
     await t.click(t.page.getByRole("radio", { name: /Keep it for 12 months/ }));

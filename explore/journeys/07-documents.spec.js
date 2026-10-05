@@ -1,11 +1,13 @@
 // @documents: Sam asks for a cover letter and a tailored CV from the report's buttons, and the admin presses Generate
-// for Sam's own CV. Each is written by the local model, emailed as a PDF and listed on the dashboard.
+// for Sam's own CV. Each is written by the local model; the letter and tailored CV are emailed as PDFs and listed on
+// the dashboard, and the own CV is kept on the profile page to download.
 
 import { expect, test } from "@playwright/test";
 
 import { actor, closeAll } from "../lib/actors.js";
 import { bug, note, step } from "../lib/findings.js";
 import { links, message, search } from "../lib/mailpit.js";
+import { waitShowing } from "../lib/show.js";
 import { RECRUITS, admin, emailShowing, recruitId } from "./shared.js";
 
 test.afterAll(closeAll);
@@ -43,19 +45,27 @@ test("@documents cover letter, tailored CV and the recruit's own CV", async () =
 
   const a = await admin();
   const id = await recruitId(a, sam.name);
-  const since = Date.now();
-  await step("documents", "Generate makes Sam's own CV", a.page, async () => {
-    await a.page.goto(`/admin/profile?u=${id}`);
-    await a.click(a.page.getByRole("button", { name: "Generate" }));
-    const menu = a.page.getByRole("button", { name: /^CV$|Their CV|CV from/ }).first();
-    if (await menu.isVisible().catch(() => false)) await a.click(menu);
-    const msg = await emailShowing(a, "HermitShell lays out Sam's CV", { to: sam.email, subject: "^CV:", since }, { timeout: 1800000 })
-      .catch(() => null);
-    await note("documents", msg ? `own CV: ${msg.Subject}` : "Generate did not email a CV within 30 minutes");
+  await step("documents", "Generate makes Sam's own CV to download", a.page, async () => {
+    const page = a.page;
+    await page.goto(`/admin/profile?u=${id}`);
+    await a.click(page.locator(".pcv").getByRole("button", { name: "Generate" }));
+    // Kept on the profile page (the CV button), not emailed.
+    await waitShowing(page, "Admin", "HermitShell lays out Sam's CV", async () => {
+      await page.goto(`/admin/profile?u=${id}`);
+      return page.locator(".pcv").getByRole("link", { name: "CV" }).isVisible();
+    }, { timeout: 1800000, every: 15000 });
+    const download = page.waitForEvent("download");
+    await page.locator(".pcv").getByRole("link", { name: "CV" }).click();
+    const name = (await download).suggestedFilename();
+    expect(name).toMatch(/\.(pdf|docx)$/i);
+    await note("documents", `own CV kept on the profile page: ${name}`);
   });
 
   await step("documents", "the documents are listed on the jobs sent page", a.page, async () => {
     await a.page.goto(`/admin/sent?u=${id}&r=7`);
-    await expect(a.page.locator(".doc.ready").first()).toBeVisible({ timeout: 300000 });
+    const row = a.page.locator("li > details", { has: a.page.locator(".doc.ready") }).first();
+    await expect(row).toBeAttached({ timeout: 300000 });
+    await a.click(row.locator(":scope > summary"));
+    await expect(row.locator(".doc.ready").first()).toBeVisible();
   });
 });

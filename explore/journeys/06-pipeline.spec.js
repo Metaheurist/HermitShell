@@ -1,5 +1,5 @@
 // @pipeline: the jobs Sam answered reach the Pipeline once HermitShell reports them; Riley moves the applied one to
-// Interview and asks for an interview prep pack, which HermitShell writes with the local model and emails.
+// Interview and asks for an interview prep pack, which HermitShell writes with the local model and keeps on the board.
 
 import { expect, test } from "@playwright/test";
 
@@ -40,8 +40,17 @@ test("@pipeline Riley moves an application along and asks for interview prep", a
     }, { timeout: 900000, every: 15000 });
     await r.click(interview.getByRole("button", { name: "Interview prep" }).first());
     await expect(page.getByRole("status").first()).toContainText("prep pack");
-    const msg = await emailShowing(r, "HermitShell writes the prep pack with the local model",
-      { to: RECRUITS.sam.email, subject: "Interview prep", since }, { timeout: 1800000 });
-    await note("pipeline", `prep pack emailed: ${msg.Subject} (${(msg.Attachments || []).length} attachment(s))`);
+    // Asked for on the dashboard, the pack is kept on the board rather than emailed.
+    await waitShowing(page, "Recruiter", "HermitShell writes the prep pack with the local model", async () => {
+      await page.goto(`/admin/pipeline?u=${id}`);
+      return (await interview.getByRole("link", { name: "Prep pack" }).count()) > 0;
+    }, { timeout: 1800000, every: 15000 });
+    const download = page.waitForEvent("download");
+    await interview.getByRole("link", { name: "Prep pack" }).first().click();
+    const name = (await download).suggestedFilename();
+    expect(name).toMatch(/\.pdf$/i);
+    const emailed = await emailShowing(r, "checking no prep email went out", { to: RECRUITS.sam.email, subject: "Interview prep", since },
+      { timeout: 1 }).catch(() => null);
+    await note("pipeline", `prep pack kept on the board: ${name}${emailed ? " (also emailed)" : ""}`);
   });
 });
