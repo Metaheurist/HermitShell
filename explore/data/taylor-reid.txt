@@ -1,0 +1,26 @@
+Taylor Reid
+Leeds, United Kingdom | taylor.reid@example.org | 07700 900789
+
+About me
+Marketing coordinator moving into digital marketing analytics. Four years running campaigns end to end, from brief
+to report, for retail and education clients.
+
+Experience
+Marketing Coordinator, Litware Retail, Leeds (2022 to now)
+- Runs the email programme (180,000 subscribers): segmentation, A/B tests and monthly performance reports.
+- Set up Google Analytics 4 events and a Looker Studio dashboard used by the whole team.
+- Coordinates paid social budgets of 20,000 GBP a month with an external agency.
+
+Marketing Assistant, Contoso College, Bradford (2020 to 2022)
+- Open-day campaigns across social, email and print; enquiries up 22 percent year on year.
+- Wrote and scheduled content; kept the CRM tidy.
+
+Skills
+Google Analytics 4, Looker Studio, Mailchimp, HubSpot, Meta Ads, Canva, Excel, copywriting, campaign planning,
+basic SQL.
+
+Education
+BA Marketing, Leeds Beckett University.
+
+Looking for
+Digital Marketing Executive or Marketing Analyst roles in Leeds or hybrid, 30,000 to 35,000 GBP.

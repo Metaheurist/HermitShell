@@ -1,0 +1,26 @@
+Drew Harper
+Sheffield, United Kingdom | drew.harper@example.com | 07700 900456
+
+Profile
+Backend engineer with six years' experience building APIs and data services in Python and Go. Comfortable owning a
+service from design to on-call, and keen on clear interfaces, good tests and boring, reliable deployments.
+
+Experience
+Software Engineer, Fabrikam Payments, Sheffield (2022 to now)
+- Owns the settlement API (Python, FastAPI, PostgreSQL) handling 2 million requests a day; p99 latency halved.
+- Moved three services from virtual machines to Kubernetes with Terraform and GitHub Actions.
+- Leads the team's incident reviews and wrote the runbooks the on-call rota uses.
+
+Junior Developer, Tailspin Software, Nottingham (2019 to 2022)
+- Go microservices for order tracking; added contract tests between services.
+- Built the internal admin site in Django.
+
+Skills
+Python (FastAPI, Django), Go, PostgreSQL, Redis, Docker, Kubernetes, Terraform, GitHub Actions, REST API design,
+observability (Prometheus, Grafana), incident response.
+
+Education
+BSc Computer Science, University of Sheffield, 2:1.
+
+Looking for
+Senior backend or platform engineer roles in Sheffield, Leeds or remote; around 60,000 GBP.

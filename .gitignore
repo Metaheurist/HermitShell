@@ -25,3 +25,10 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Exploratory runner (secrets live outside the repo; these are backstops)
+explore/node_modules/
+explore/out/
+.env.explore
+
+demo/out/

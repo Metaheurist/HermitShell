@@ -1,0 +1,28 @@
+Sam Lee
+York, United Kingdom | sam.lee@example.com | 07700 900123
+
+Profile
+Data analyst with five years' experience turning messy operational data into clear reporting. Strong SQL, Python
+and Power BI. Enjoys working with operations and finance teams, and has led the move from spreadsheets to a
+governed reporting layer twice.
+
+Experience
+Senior Data Analyst, Northwind Traders, York (2023 to now)
+- Built a Power BI suite for 40 store managers covering sales, stock and staffing; weekly report time fell from
+  two days to two hours.
+- Wrote the dbt models behind the finance month-end pack and added tests that catch late or missing feeds.
+- Mentors two junior analysts; runs a fortnightly SQL clinic.
+
+Data Analyst, Contoso Logistics, Leeds (2020 to 2023)
+- Python (pandas) pipelines joining warehouse scans with carrier data to explain late deliveries.
+- Dashboard for route planners that cut empty miles by 6 percent.
+
+Skills
+SQL (PostgreSQL, SQL Server), Python (pandas, matplotlib), Power BI, DAX, dbt, Excel, Git, Azure Data Factory,
+stakeholder workshops, data quality checks.
+
+Education
+BSc Mathematics, University of York, 2:1.
+
+Looking for
+Senior Data Analyst or Analytics Engineer roles in York, Leeds or remote; hybrid preferred; around 45,000 GBP.

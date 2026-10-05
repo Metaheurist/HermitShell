@@ -1,0 +1,31 @@
+# Replay for the explore stack (`node explore/run.mjs up --replay` or `--record`): search goes to the fictional adverts
+# and the model to recordings, instead of Firecrawl and Ollama. When recording, requests with no recording are
+# asked of the real Ollama and saved to explore/replay/recordings.json.
+services:
+  replay-search:
+    image: node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
+    depends_on:
+      certs: { condition: service_completed_successfully }
+    user: "1000:1000"
+    command: ["node", "/replay/server.mjs"]
+    environment:
+      REPLAY_TLS_CERT: /certs/replay-search.pem
+      REPLAY_TLS_KEY: /certs/replay-search-key.pem
+      REPLAY_RECORD: ${EXPLORE_REPLAY_RECORD:-}
+      REPLAY_UPSTREAM: http://ollama:11434
+      REPLAY_MODEL: ${EXPLORE_MODEL:-qwen3:4b-instruct-2507-q4_K_M}
+    volumes:
+      - ../replay:/replay
+      - ${EXPLORE_HOME}/certs:/certs:ro
+
+  backend:
+    depends_on:
+      replay-search: { condition: service_started }
+    environment:
+      FIRECRAWL_API_KEY: replay
+      FIRECRAWL_API_BASE: https://replay-search:8443
+      TAVILY_API_BASE: https://replay-search:8443/tavily
+      OLLAMA_HOST: http://replay-search:11434
+      EXPLORE_OFFLINE: "1"
+      HERMES_TIMEZONE: UTC
+      TZ: UTC

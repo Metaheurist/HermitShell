@@ -1,0 +1,12 @@
+{
+  "name": "hermitshell-explore",
+  "private": true,
+  "type": "module",
+  "description": "Exploratory, visible walkthrough of HermitShell against a local full stack (docs/exploratory-testing.md). Not part of CI.",
+  "scripts": {
+    "explore": "node run.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}

@@ -23,3 +23,5 @@ packages/*/feedback-worker/e2e
 .env
 **/.env
 data
+explore
+demo

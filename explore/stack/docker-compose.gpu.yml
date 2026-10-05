@@ -1,0 +1,4 @@
+# Added by `explore/run.mjs up` unless EXPLORE_GPU=0: hands the NVIDIA GPUs to Ollama (Docker Desktop on WSL2).
+services:
+  ollama:
+    gpus: all

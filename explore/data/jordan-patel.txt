@@ -1,0 +1,27 @@
+Jordan Patel
+Manchester, United Kingdom | jordan.patel@example.net | 07700 900456
+
+Summary
+Software engineer focused on Python back ends and data platforms. Six years building APIs, event pipelines and the
+tooling around them. Comfortable owning a service from design to on-call.
+
+Experience
+Backend Engineer, Fabrikam Payments, Manchester (2022 to now)
+- Designs and runs FastAPI services handling card authorisations; p99 latency down 35 percent after a caching
+  redesign.
+- Moved batch reconciliation onto Airflow with typed, tested tasks; failures now page the right team.
+- Introduced contract tests between six services.
+
+Software Engineer, Proseware, Salford (2019 to 2022)
+- Django and PostgreSQL product for school timetabling; led the move to containers on Kubernetes.
+- Wrote the CI pipelines (GitHub Actions) and cut build time from 25 to 8 minutes.
+
+Skills
+Python, FastAPI, Django, PostgreSQL, Redis, Kafka, Airflow, Docker, Kubernetes, Terraform, AWS, GitHub Actions,
+observability (Prometheus, Grafana), mentoring.
+
+Education
+MEng Computer Science, University of Manchester.
+
+Looking for
+Senior Backend or Data Engineer roles in Greater Manchester or remote, permanent, from 60,000 GBP.

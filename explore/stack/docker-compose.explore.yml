@@ -1,0 +1,110 @@
+# The exploratory test stack (docs/exploratory-testing.md): the feedback Worker under wrangler dev, the real
+# HermitShell backend from this checkout's Dockerfile, Ollama and a Mailpit inbox, all over https with a private test
+# CA. Start it with `node explore/run.mjs up`, which passes the secrets file from outside the repo:
+#   EXPLORE_HOME   the secrets folder (%LOCALAPPDATA%\HermitShell\explore), holding .env.explore and certs/
+# Only 127.0.0.1 is published: the Worker on 8787 and the Mailpit inbox on 8025. Each service gets an explicit
+# list of variables, never the whole secrets file.
+name: hermitshell-explore
+
+services:
+  certs:
+    image: alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+    command: ["sh", "/stack/certs.sh"]
+    volumes:
+      - ./:/stack:ro
+      - ${EXPLORE_HOME:?run through explore/run.mjs}/certs:/certs
+      - data:/data
+      - worker-state:/state
+      - worker-modules:/modules
+
+  mailpit:
+    image: ${EXPLORE_MAILPIT_IMAGE:-axllent/mailpit@sha256:b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48}
+    depends_on:
+      certs: { condition: service_completed_successfully }
+    environment:
+      MP_SMTP_TLS_CERT: /certs/mailpit.pem
+      MP_SMTP_TLS_KEY: /certs/mailpit-key.pem
+      MP_SMTP_REQUIRE_STARTTLS: "true"
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_MAX_MESSAGES: "5000"
+    volumes:
+      - ${EXPLORE_HOME}/certs:/certs:ro
+    ports:
+      - "127.0.0.1:8025:8025"
+
+  worker:
+    image: node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
+    depends_on:
+      certs: { condition: service_completed_successfully }
+    user: "1000:1000"
+    command: ["sh", "/stack/worker-start.sh"]
+    environment:
+      HOME: /tmp
+      WRANGLER_SEND_METRICS: "false"
+      JOB_FEEDBACK_SECRET: ${EXPLORE_LINK_SECRET:?}
+      JOB_FEEDBACK_API_TOKEN: ${EXPLORE_API_TOKEN:?}
+      ADMIN_PASSWORD: ${EXPLORE_ADMIN_PASSWORD:?}
+    volumes:
+      - ./:/stack:ro
+      - ../../packages/daily-vacancy-report/feedback-worker:/src:ro
+      - worker-modules:/app
+      - worker-state:/state
+      - ${EXPLORE_HOME}/certs:/certs:ro
+    ports:
+      - "127.0.0.1:8787:8787"
+
+  ollama:
+    image: ${EXPLORE_OLLAMA_IMAGE:-ollama/ollama:0.32.1@sha256:6345fbc18bd73a1e16404be681dbc6fd291a027cab43ed541abe78c4c81051b0}
+    environment:
+      OLLAMA_KEEP_ALIVE: 30m
+      NVIDIA_VISIBLE_DEVICES: ${EXPLORE_GPUS:-all}
+    volumes:
+      - ollama-models:/root/.ollama
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: hermitshell-explore-backend
+    depends_on:
+      certs: { condition: service_completed_successfully }
+      worker: { condition: service_started }
+      mailpit: { condition: service_started }
+      ollama: { condition: service_started }
+    command: ["sh", "/stack/backend-start.sh"]
+    environment:
+      TZ: Europe/London
+      HERMES_TIMEZONE: Europe/London
+      JOB_FEEDBACK_URL: https://worker:8787
+      JOB_FEEDBACK_SECRET: ${EXPLORE_LINK_SECRET:?}
+      JOB_FEEDBACK_API_TOKEN: ${EXPLORE_API_TOKEN:?}
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_USER: explore
+      SMTP_PASSWORD: explore-inbox
+      SMTP_FROM: hermitshell@example.com
+      ALERT_EMAIL: alex.morgan@example.com
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${EXPLORE_MODEL:-qwen3:4b-instruct-2507-q4_K_M}
+      HERMES_AUTOFIT: "0"
+      LLM_ORDER: local
+      JOB_SCANNER_MAX_SCRAPE: ${JOB_SCANNER_MAX_SCRAPE:-5}
+      JOB_TRIAGE_MAX: ${JOB_TRIAGE_MAX:-5}
+    volumes:
+      - data:/data
+      - ./:/stack:ro
+      - ${EXPLORE_HOME}/certs:/certs:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  data:
+  worker-state:
+  worker-modules:
+  ollama-models:
