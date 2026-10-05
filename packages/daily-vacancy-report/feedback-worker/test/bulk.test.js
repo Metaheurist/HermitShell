@@ -98,6 +98,21 @@ describe("bulk actions", () => {
     expect(history(env, "jordan-patel")).toEqual([["send", "Asked for jobs now", "Alex Morgan"]]);
   });
 
+  it("asks again for jobs once HermitShell has taken the last request, even within the minute", async () => {
+    const { env, admin, casey } = await setup();
+    await casey.send({ action: "send_now", u: "sam-lee" });
+    await admin.bulk("send_now", ["jordan-patel"]);
+    await casey.send({ action: "send_now", u: "sam-lee" });
+    expect(queue(env)).toHaveLength(2);
+    const ids = keysWith(env, "queue:");
+    const ack = new Request(`${BASE}/api/queue/ack`, { method: "POST", headers: API, body: JSON.stringify({ ids }) });
+    expect((await worker.fetch(ack, env)).status).toBe(200);
+    expect(env.FEEDBACK.store.has("sendnow:sam-lee") || env.FEEDBACK.store.has("sendnow:jordan-patel")).toBe(false);
+    await casey.send({ action: "send_now", u: "sam-lee" });
+    expect(await admin.bulk("send_now", ["jordan-patel"])).toBe("/admin?done=bulk&n=1&m=0");
+    expect(queue(env)).toHaveLength(2);
+  });
+
   it("assigns the ticked recruits, skipping those already that recruiter's, shown as assigning until applied", async () => {
     const { env, admin } = await setup();
     expect(await admin.bulk("assign", ["sam-lee", "jordan-patel"], { recruiter: "casey" })).toBe("/admin?done=bulk&n=1&m=1");

@@ -1148,6 +1148,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Send jobs now works again as soon as HermitShell has taken the last one.** A second press for the same
+  recruit within a minute was always ignored as a double click, even when the first report had already
+  finished. The Worker now forgets the press when HermitShell collects it, so only a press while the first is
+  still waiting is ignored. Covered by `test/bulk.test.js`.
 - **The retire email's link always offers the choice.** HermitShell emailed a retired recruit before telling
   the Worker they were retired, so opening the link straight away (or during a bulk retire of several
   recruits) could show "Nothing to choose, your account is active again". The Worker now hears first, then

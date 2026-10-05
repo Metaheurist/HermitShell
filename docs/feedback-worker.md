@@ -876,7 +876,8 @@ without the link. Meanwhile:
 
 **Send jobs now** on each recruit's page (**Send jobs** on the Recruits list) runs that recruit's report straight
 away instead of waiting for its daily time. A second press for the same recruit within a minute (a double click
-or a reload) is the same request, so the scan is not queued twice. HermitShell gets the request over the live link within
+or a reload) is the same request, so the scan is not queued twice; once HermitShell has taken the request, the
+next press is a new one. HermitShell gets the request over the live link within
 seconds and starts the scan in the background (`profiles.py report --now <id>`, logged to
 `state/profiles/runs.log`), so other dashboard changes keep being applied while it runs. The email
 arrives when the scan finishes, usually 10 to 20 minutes later, and it is sent even when nothing

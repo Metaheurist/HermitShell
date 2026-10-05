@@ -4,13 +4,8 @@
 import { expect, test } from "@playwright/test";
 
 import { closeAll } from "../lib/actors.js";
-import { readState, writeState } from "../lib/config.js";
 import { note, step } from "../lib/findings.js";
 import { RECRUITS, admin, emailShowing, recruitId, recruiter } from "./shared.js";
-
-// The Worker ignores a second Send jobs now for a recruit within a minute (a double click). Replayed reports finish
-// in seconds, so a rerun straight after the last one waits that minute out.
-const SEND_GAP = 65000;
 
 test.afterAll(closeAll);
 
@@ -61,13 +56,7 @@ test("@recruiter Riley looks after their recruits", async () => {
   const since = Date.now();
   await step("recruiter", "Send jobs now brings Sam a report", page, async () => {
     await page.goto(`/admin/profile?u=${ids.sam}`);
-    const last = Number(readState().lastSendNow) || 0;
-    if (Date.now() - last < SEND_GAP) {
-      await r.say("waiting a minute: a second Send jobs now that soon counts as a double click");
-      await page.waitForTimeout(SEND_GAP - (Date.now() - last));
-    }
     await r.click(page.getByRole("button", { name: "Send jobs now" }));
-    writeState({ lastSendNow: Date.now() });
     const msg = await emailShowing(r, "HermitShell searches the web and rates each advert for Sam",
       { to: RECRUITS.sam.email, subject: "jobs", since }, { timeout: 1800000 });
     await note("recruiter", `Sam's report: ${msg.Subject}`);

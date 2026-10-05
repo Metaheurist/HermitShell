@@ -761,7 +761,8 @@ async function action(request, env, s) {
   const by = { by: displayName(s.me, current) };
   if (act === "bulk") return bulkAction(env, s, form, current, recs, by);
   if (act === "send_now") {
-    // A second press within a minute (a double click, a reload) asks for the same scan, so it is not queued again.
+    // A second press within a minute (a double click, a reload) asks for the same scan, so it is not queued again
+    // while HermitShell hasn't taken the first.
     if (!(await env.FEEDBACK.get(`sendnow:${u}`))) {
       await env.FEEDBACK.put(`sendnow:${u}`, "1", { expirationTtl: SEND_NOW_SECONDS });
       await queueItem(env, { type: "admin", action: act, u });
@@ -1131,6 +1132,10 @@ export async function handleApi(request, env) {
     const ids = (Array.isArray(body.ids) ? body.ids : []).filter((id) => typeof id === "string" && id.startsWith("queue:")).slice(0, 100);
     const items = await Promise.all(ids.map((id) => env.FEEDBACK.get(id, "json")));
     await Promise.all(items.filter((item) => item?.cv?.key).map((item) => env.FEEDBACK.delete(item.cv.key)));
+    // Once HermitShell has taken a Send jobs now, the next press is a new request, not a double click.
+    const sent = items.flatMap((item) => item?.action === "send_now" ? [item.u]
+      : item?.action === "bulk" && item.op === "send_now" && Array.isArray(item.us) ? item.us : []);
+    await Promise.all(sent.filter((u) => typeof u === "string" && PROFILE_RE.test(u)).map((u) => env.FEEDBACK.delete(`sendnow:${u}`)));
     await deleteAndUnflag(env, ids, "queue:", "flag:queue");
     return json({ deleted: ids.length });
   }
