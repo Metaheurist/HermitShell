@@ -20,9 +20,34 @@
       $("empty").hidden = true;
       t = { fig, img, said, role };
       tiles.set(key, t);
+      layout();
     }
     return t;
   }
+
+  // Pick the column count that shows every window biggest, so the tiles fill the screen whatever its shape.
+  let aspect = 0;
+  function layout() {
+    const box = $("tiles");
+    const n = tiles.size;
+    if (!n) return;
+    const gap = 10;
+    const caption = 32;
+    const w = box.clientWidth - 2 * gap;
+    const h = box.clientHeight - 2 * gap;
+    const ratio = aspect || 16 / 10;
+    let best = { cols: 1, rows: n, size: 0 };
+    for (let cols = 1; cols <= n; cols++) {
+      const rows = Math.ceil(n / cols);
+      const cw = (w - gap * (cols - 1)) / cols;
+      const ch = (h - gap * (rows - 1)) / rows - caption;
+      const size = Math.min(cw, ch * ratio);
+      if (size > best.size) best = { cols, rows, size };
+    }
+    box.style.gridTemplateColumns = `repeat(${best.cols}, minmax(0, 1fr))`;
+    box.style.gridTemplateRows = `repeat(${best.rows}, minmax(0, 1fr))`;
+  }
+  window.addEventListener("resize", layout);
 
   function setStatus(s) {
     $("status").textContent = s.text;
@@ -82,7 +107,12 @@
   events.addEventListener("hello", (e) => hello(JSON.parse(e.data)));
   events.addEventListener("status", (e) => setStatus(JSON.parse(e.data)));
   events.addEventListener("log", (e) => addLog(JSON.parse(e.data)));
-  events.addEventListener("reset", () => { tiles.forEach((t) => t.fig.remove()); tiles.clear(); $("empty").hidden = false; });
+  events.addEventListener("reset", () => {
+    tiles.forEach((t) => t.fig.remove());
+    tiles.clear();
+    $("empty").hidden = false;
+    $("tiles").style.gridTemplateColumns = $("tiles").style.gridTemplateRows = "";
+  });
   events.addEventListener("window", (e) => {
     const w = JSON.parse(e.data);
     tile(w.key, w.role).fig.classList.toggle("closed", !w.open);
@@ -92,6 +122,11 @@
     const t = tile(f.key, f.role);
     t.fig.classList.remove("closed");
     t.img.src = `data:image/jpeg;base64,${f.data}`;
+    if (!aspect) t.img.addEventListener("load", () => {
+      if (aspect || !t.img.naturalHeight) return;
+      aspect = t.img.naturalWidth / t.img.naturalHeight;
+      layout();
+    }, { once: true });
   });
   events.addEventListener("caption", (e) => {
     const c = JSON.parse(e.data);
