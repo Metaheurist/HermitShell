@@ -49,6 +49,35 @@ test("the page, its files and the report folder are served with security headers
   assert.equal((await fetch(`${base}/run`, { method: "POST" })).status, 404);
 });
 
+async function events(base, ms) {
+  const res = await fetch(`${base}/events`);
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let text = "";
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    const r = await Promise.race([reader.read(), new Promise((ok) => setTimeout(() => ok({ done: true }), end - Date.now()))]);
+    if (r.done) break;
+    text += dec.decode(r.value, { stream: true });
+  }
+  reader.cancel().catch(() => {});
+  return [...text.matchAll(/^event: frame\ndata: (.*)$/gm)].map((m) => JSON.parse(m[1]).data);
+}
+
+test("a burst of frames reaches the page as the newest one, and a new page starts with it", async () => {
+  const base = await serve("demo", null);
+  const internal = `http://127.0.0.1:${Number(new URL(base).port) + 1000}`;
+  const watching = events(base, 600);
+  await new Promise((r) => setTimeout(r, 50));
+  for (let i = 0; i < 30; i++) {
+    await fetch(`${internal}/frame`, { method: "POST", body: JSON.stringify({ key: "Admin", role: "Admin", data: `f${i}` }) });
+  }
+  const seen = await watching;
+  assert.ok(seen.length >= 1 && seen.length < 10, `sent ${seen.length} of 30 frames`);
+  assert.equal(seen.at(-1), "f29");
+  assert.deepEqual(await events(base, 100), ["f29"]);
+});
+
 test("POST /run is test mode only, same-origin and JSON", async () => {
   const runs = [];
   const base = await serve("test", async (only) => { runs.push(only); return true; });

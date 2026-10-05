@@ -17,6 +17,8 @@ const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", "
   ".zip": "application/zip", ".svg": "image/svg+xml" };
 const SECURITY = { "x-content-type-options": "nosniff", "referrer-policy": "no-referrer", "x-frame-options": "DENY",
   "content-security-policy": "default-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'" };
+const FRAME_MS = 200;
+const FRAME_BACKLOG = 1024 * 1024;
 
 // Resolves a request path inside `root`, or null if it would escape it.
 export function inside(root, path) {
@@ -57,6 +59,18 @@ export function start({ mode, port = 8080, internalPort = 8081, out = "/out", jo
     for (const res of clients) res.write(line);
   }
 
+  // Windows repaint far faster than a browser can draw, so only each window's newest frame goes out, a few times a
+  // second, and a page still busy with earlier frames skips this round: the view stays live instead of lagging.
+  const frames = new Map();
+  const pending = new Set();
+  const flush = setInterval(() => {
+    for (const key of pending) {
+      const line = `event: frame\ndata: ${JSON.stringify(frames.get(key))}\n\n`;
+      for (const res of clients) if (res.writableLength < FRAME_BACKLOG) res.write(line);
+    }
+    pending.clear();
+  }, FRAME_MS);
+
   const api = {
     status(state, text, extra = {}) { status = { state, text, ...extra }; send("status", status); },
     log(line) {
@@ -66,7 +80,7 @@ export function start({ mode, port = 8080, internalPort = 8081, out = "/out", jo
       if (log.length > 2000) log.shift();
       send("log", clean);
     },
-    clearWindows() { windows.clear(); send("reset", {}); },
+    clearWindows() { windows.clear(); frames.clear(); pending.clear(); send("reset", {}); },
   };
 
   // Internal: frames, windows and captions from the walkthrough.
@@ -74,9 +88,11 @@ export function start({ mode, port = 8080, internalPort = 8081, out = "/out", jo
     try {
       const data = await body(req, 4 * 1024 * 1024);
       const key = String(data.key || data.role || "").slice(0, 120);
-      if (req.url === "/frame" && typeof data.data === "string") send("frame", { key, role: data.role, data: data.data });
-      else if (req.url === "/window") {
-        if (data.open) windows.set(key, data.role); else windows.delete(key);
+      if (req.url === "/frame" && typeof data.data === "string") {
+        frames.set(key, { key, role: data.role, data: data.data });
+        pending.add(key);
+      } else if (req.url === "/window") {
+        if (data.open) windows.set(key, data.role); else { windows.delete(key); frames.delete(key); pending.delete(key); }
         send("window", { key, role: data.role, open: !!data.open });
       } else if (req.url === "/caption") send("caption", { role: String(data.role).slice(0, 40), text: String(data.text).slice(0, 300) });
       res.writeHead(204).end();
@@ -92,6 +108,7 @@ export function start({ mode, port = 8080, internalPort = 8081, out = "/out", jo
     if (req.method === "GET" && url.pathname === "/events") {
       res.writeHead(200, { ...SECURITY, "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
       res.write(`event: hello\ndata: ${JSON.stringify({ config, status, log: log.slice(-300), windows: [...windows] })}\n\n`);
+      for (const frame of frames.values()) res.write(`event: frame\ndata: ${JSON.stringify(frame)}\n\n`);
       clients.add(res);
       const ping = setInterval(() => res.write(": ping\n\n"), 20000);
       req.on("close", () => { clearInterval(ping); clients.delete(res); });
@@ -125,6 +142,7 @@ export function start({ mode, port = 8080, internalPort = 8081, out = "/out", jo
   }).listen(port, "0.0.0.0");
 
   api.close = () => {
+    clearInterval(flush);
     for (const res of clients) res.end();
     internal.close();
     server.close();

@@ -12,7 +12,9 @@ using [Semantic Versioning](https://semver.org/).
   from setup and invites to reports, the Pipeline, documents, branding and retiring, with screenshots and
   how to try each step in the demo image.
 - **The demo viewer fills the screen.** Its windows are laid out in whichever grid shows them biggest for
-  the screen and the number of windows open, instead of a strip along the top.
+  the screen and the number of windows open, instead of a strip along the top. It also stays live: only each
+  window's newest frame is sent, up to five times a second, so the page no longer falls minutes behind and
+  needs a refresh, and a page opened mid-run shows every window at once.
 - **The demo image, `hermitshell-demo`.** HermitShell in one container with made-up people, twelve
   fictional adverts and recorded AI answers: no keys, no GPU and no internet. Modes: `app` (use it by
   hand), `demo` (a showcase of every feature, live in the viewer on port 8080), `test` (pick journeys, run

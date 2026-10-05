@@ -121,8 +121,17 @@
     const f = JSON.parse(e.data);
     const t = tile(f.key, f.role);
     t.fig.classList.remove("closed");
-    t.img.src = `data:image/jpeg;base64,${f.data}`;
-    if (!aspect) t.img.addEventListener("load", () => {
+    const first = !t.next && !t.img.src;
+    t.next = f.data;
+    if (!t.drawing) {
+      t.drawing = true;
+      requestAnimationFrame(() => {
+        t.drawing = false;
+        t.img.src = `data:image/jpeg;base64,${t.next}`;
+        t.next = "";
+      });
+    }
+    if (first && !aspect) t.img.addEventListener("load", () => {
       if (aspect || !t.img.naturalHeight) return;
       aspect = t.img.naturalWidth / t.img.naturalHeight;
       layout();
