@@ -6,9 +6,9 @@ import { expect, test } from "@playwright/test";
 
 import { actor, closeAll } from "../lib/actors.js";
 import { bug, note, step } from "../lib/findings.js";
-import { links, message, search } from "../lib/mailpit.js";
+import { links } from "../lib/mailpit.js";
 import { waitShowing } from "../lib/show.js";
-import { RECRUITS, admin, emailShowing, recruitId } from "./shared.js";
+import { RECRUITS, admin, emailShowing, latestReport, recruitId } from "./shared.js";
 
 test.afterAll(closeAll);
 
@@ -25,9 +25,8 @@ function pdfs(msg) {
 
 test("@documents cover letter, tailored CV and the recruit's own CV", async () => {
   const sam = RECRUITS.sam;
-  const found = (await search(`to:${sam.email}`)).filter((m) => /\bjobs?\b/i.test(m.Subject) && !/ready|sign-in|test/i.test(m.Subject));
-  expect(found.length, "run the recruiter journey first").toBeGreaterThan(0);
-  const report = await message(found[0].ID);
+  const report = await latestReport(sam.email);
+  expect(report, "run the recruiter journey first").toBeTruthy();
   const s = await actor("Recruit", { key: "recruit-sam" });
 
   for (const [label, subject] of [["Cover letter", "^Cover letter:"], ["Tailored CV", "^Tailored CV:"]]) {

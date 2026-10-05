@@ -9,7 +9,7 @@ import { expect } from "@playwright/test";
 
 import { actor, signIn } from "../lib/actors.js";
 import { EXPLORE_DIR, loadEnv, readState, writeState } from "../lib/config.js";
-import { waitForEmail } from "../lib/mailpit.js";
+import { links, message, search, waitForEmail } from "../lib/mailpit.js";
 import { waitShowing } from "../lib/show.js";
 
 export const DATA = join(EXPLORE_DIR, "data");
@@ -64,6 +64,16 @@ export async function recruitId(who, name, { status = "" } = {}) {
   const id = new URL(href, "https://x").searchParams.get("u");
   writeState({ ids: { ...(readState().ids || {}), [name]: id } });
   return id;
+}
+
+// The newest report to a recruit that lists jobs: a later Send jobs now that found nothing new has no job buttons.
+export async function latestReport(to) {
+  const found = (await search(`to:${to}`)).filter((m) => /\bjobs?\b/i.test(m.Subject) && !/ready|sign-in|test/i.test(m.Subject));
+  for (const m of found.slice(0, 10)) {
+    const msg = await message(m.ID);
+    if (links(msg).some((l) => l.text === "Interested")) return msg;
+  }
+  return null;
 }
 
 export function forgetIds() {
@@ -126,6 +136,7 @@ export async function join_(person, link) {
   await page.getByRole("checkbox").check();
   await r.click(page.getByRole("button", { name: "Create my profile" }));
   await expect(page.getByRole("heading", { name: "Thanks, you're in" })).toBeVisible();
+  await r.say("the invite link can't be used twice");
   await page.goto(link);
   await expect(page.getByRole("button", { name: "Create my profile" })).toHaveCount(0);
   return r;

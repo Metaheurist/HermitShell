@@ -4,16 +4,11 @@
 import { expect, test } from "@playwright/test";
 
 import { actor, closeAll } from "../lib/actors.js";
-import { link, links, search, message } from "../lib/mailpit.js";
+import { link, links } from "../lib/mailpit.js";
 import { bug, step } from "../lib/findings.js";
-import { RECRUITS, admin, emailShowing, featureOn } from "./shared.js";
+import { RECRUITS, admin, emailShowing, featureOn, latestReport } from "./shared.js";
 
 test.afterAll(closeAll);
-
-async function latestReport(to) {
-  const found = (await search(`to:${to}`)).filter((m) => /\bjobs?\b/i.test(m.Subject) && !/ready|sign-in|test/i.test(m.Subject));
-  return found.length ? message(found[0].ID) : null;
-}
 
 async function answer(s, href, label) {
   const { page } = s;
