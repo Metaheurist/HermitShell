@@ -22,6 +22,7 @@ packages/*/feedback-worker/e2e
 **/test-results
 .env
 **/.env
+**/state
 data
 explore
 demo

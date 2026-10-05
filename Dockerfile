@@ -13,6 +13,7 @@ LABEL org.opencontainers.image.title="hermitshell" \
       org.opencontainers.image.version="${VERSION}"
 
 RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends tini tzdata \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid "${UID}" hermitshell \
