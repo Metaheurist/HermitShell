@@ -411,8 +411,8 @@ minutes after the latest one; change any recruit's time on their page. The setup
 `job_scanner.py` job no longer searches for anyone: it only starts the weekly roll-ups and cover
 letters for each active recruit. Without the scheduler (no `cron/jobs.json`), that daily run runs
 everyone's reports one after the other instead. Each recruit keeps their own job search (region,
-places, titles, salary, job types; a new recruit's searches start from the town they signed up
-with, and any region is set on their page), seen jobs, tracker, feedback buttons and skills pool.
+places, titles, salary, job types; a new recruit's searches and region start from the town they
+signed up with, and a recruiter can change the region on their page), seen jobs, tracker, feedback buttons and skills pool.
 They share the server's job sources, search keys and model settings, and every
 model request (ratings, cover letters, CVs, sign-ups, for all recruits) waits in one shared queue,
 so the model only ever gets one request at a time; see

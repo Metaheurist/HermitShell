@@ -539,10 +539,14 @@ def create_profile(item: dict, api, model_info_factory=lambda: connect_model("JO
     hc.write_private(d / "job_profile.md", profile_markdown({**item, "name": name}, built))
     write_json(d / "cv_keywords.json", keywords_json(built), private=True)
     kept = read_json(d / "settings.json", {})
-    own = {"JOB_SEARCH_LOCATION": _text(item.get("location"), 80), **kept}
+    town = _text(item.get("location"), 80)
+    own = {"JOB_SEARCH_LOCATION": town, **kept}
+    # A new recruit's region starts as where they live, so their searches and ranking have a place from day one.
+    region = {"JOB_REGION_NAME": town} if town and not existing and not kept.get("JOB_REGION_NAME") else {}
     nijobs = bool(kept["JOB_SCANNER_NIJOBS_KEYWORDS"] if "JOB_SCANNER_NIJOBS_KEYWORDS" in kept
                   else env("JOB_SCANNER_NIJOBS_KEYWORDS"))
-    write_json(d / "settings.json", {**kept, **search_settings(built, lambda k: own.get(k) or "", nijobs)}, private=True)
+    write_json(d / "settings.json", {**kept, **region, **search_settings(built, lambda k: own.get(k) or "", nijobs)},
+               private=True)
     now = time.time()
     recruiter = str(item.get("recruiter") or "")
     profile = {**(existing or {}), "id": pid, "name": name, "email": email,

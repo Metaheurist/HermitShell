@@ -937,6 +937,11 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **A new recruit's region starts as their home town.** Sign-ups already searched around the town given on
+  the form, but left the region empty, so ranking and the dashboard's **Region or city** had no place until a
+  recruiter set one. A new recruit's region is now that town; a region already set is kept when a CV is
+  rebuilt, and a sign-up without a town leaves it empty. Covered by `test_profiles.py`.
+
 - **One message per change.** Pressing Pause, Resume, Retire, Delete, Assign or **Send jobs**, a bulk
   change, or saving a global setting showed a **Saved** note, a **Waiting for HermitShell: 1 change**
   count and a **Saving** bar at once. Now only the bar shows (**Working on the change&hellip;** This page

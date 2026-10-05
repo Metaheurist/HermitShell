@@ -493,9 +493,28 @@ def test_recruits_have_their_own_search_not_the_admins(home, monkeypatch):
     monkeypatch.setenv("JOB_SALARY_CURRENCY", "EUR")
     profiles.sync(FakeApi([signup()]))
     environ = profiles.child_env(profiles.load("sam-lee-456789"))
-    for key in ("JOB_REGION_NAME", "JOB_EMPLOYMENT_TYPES", "JOB_SALARY_CURRENCY"):
+    for key in ("JOB_EMPLOYMENT_TYPES", "JOB_SALARY_CURRENCY"):
         assert environ[key] == "", key
+    assert environ["JOB_REGION_NAME"] == "Lisburn", "where they live, not the admin's region"
     assert profiles.os.environ["JOB_REGION_NAME"] == "Belfast"
+
+
+def test_a_new_recruits_region_starts_as_their_home_town(home):
+    profiles.sync(FakeApi([signup(), signup(id="queue:1700000000001:abcdef0123456780", name="Jo Bloggs",
+                                           email="jo@example.com", location="")]))
+    sam = json.loads((profiles.profile_dir("sam-lee-456789") / "settings.json").read_text())
+    assert sam["JOB_REGION_NAME"] == "Lisburn"
+    jo = next(p for p in profiles.all_profiles() if p["name"] == "Jo Bloggs")
+    assert "JOB_REGION_NAME" not in json.loads((profiles.profile_dir(jo["id"]) / "settings.json").read_text())
+
+
+def test_a_new_cv_keeps_the_region_a_recruiter_chose(home):
+    profiles.sync(FakeApi([signup()]))
+    pid = "sam-lee-456789"
+    profiles.sync(FakeApi([{"id": "queue:3:b", "type": "admin", "action": "profile", "u": pid, "job": {"region": "Newry"}}]))
+    profiles.sync(FakeApi([signup(id="queue:1700000000002:abcdef0123456781", location="Bangor")]))
+    settings = json.loads((profiles.profile_dir(pid) / "settings.json").read_text())
+    assert settings["JOB_REGION_NAME"] == "Newry"
 
 
 def test_existing_recruits_keep_the_search_they_were_sharing_once(home, monkeypatch):
