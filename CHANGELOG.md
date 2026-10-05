@@ -941,6 +941,9 @@ using [Semantic Versioning](https://semver.org/).
   the form, but left the region empty, so ranking and the dashboard's **Region or city** had no place until a
   recruiter set one. A new recruit's region is now that town; a region already set is kept when a CV is
   rebuilt, and a sign-up without a town leaves it empty. Covered by `test_profiles.py`.
+- **The production image is built natively on arm64.** The Image workflow builds and smoke-tests on amd64
+  and arm64 runners (no QEMU), pushes each by digest and merges them into one tag list, as the demo image
+  does.
 
 - **One message per change.** Pressing Pause, Resume, Retire, Delete, Assign or **Send jobs**, a bulk
   change, or saving a global setting showed a **Saved** note, a **Waiting for HermitShell: 1 change**

@@ -18,7 +18,7 @@ and recorded AI answers, with nothing to set up and no keys.
 
 ## Run it as a container
 
-Every push to `main` builds the image, tests it and publishes it for amd64 and arm64 as
+Every push to `main` builds the image natively on amd64 and arm64, tests both and publishes them as
 `ghcr.io/metaheurist/hermitshell` ([the workflow](../.github/workflows/image.yml)). On the Docker host:
 
 ```sh
