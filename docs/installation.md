@@ -13,6 +13,9 @@ it:
 
 Each way then uses the same [setup wizard](#setup-wizard) for settings, the profile and run times.
 
+Just want to see it first? The [demo image](demo-image.md) runs everything in one container with made-up people
+and recorded AI answers, with nothing to set up and no keys.
+
 ## Run it as a container
 
 Every push to `main` builds the image, tests it and publishes it for amd64 and arm64 as

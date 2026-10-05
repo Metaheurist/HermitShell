@@ -1,0 +1,32 @@
+# The HermitShell demo image (docs/demo-image.md). Ports are published on 127.0.0.1 only.
+#
+#   docker compose -f demo/docker-compose.demo.yml up                          # app mode
+#   HERMITSHELL_DEMO_MODE=demo docker compose -f demo/docker-compose.demo.yml up
+#   HERMITSHELL_DEMO_MODE=autorun docker compose -f demo/docker-compose.demo.yml up --abort-on-container-exit
+name: hermitshell-demo
+
+services:
+  demo:
+    image: ${HERMITSHELL_DEMO_IMAGE:-ghcr.io/metaheurist/hermitshell-demo:latest}
+    build:
+      context: ..
+      dockerfile: demo/Dockerfile
+    command: ["${HERMITSHELL_DEMO_MODE:-app}"]
+    environment:
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-}
+      DEMO_SLOW: ${DEMO_SLOW:-500}
+    ports:
+      - "127.0.0.1:8787:8787"
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - demo-data:/data
+      - ${HERMITSHELL_DEMO_OUT:-./out}:/out
+    shm_size: 1gb
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  demo-data:

@@ -77,6 +77,9 @@ One HermitShell server can run the daily reports for a whole desk of candidates:
   candidates, managers with their teams, recruiters, tasks, stats, history, the server model and backups);
   presses play out on it without reaching anyone, and daily reports carry on
   ([demo mode](docs/feedback-worker.md#demo-mode)).
+- **Try it with nothing to set up.** The [demo image](docs/demo-image.md) runs the whole thing in one
+  container with made-up people, adverts and recorded AI answers, no keys and no internet: use it by hand,
+  watch a showcase of every feature, or run every journey and read the report.
 
 ## Quick start
 
@@ -167,12 +170,15 @@ scripts/host/              host units: the image updater, and a watchdog that re
                            an Ollama that lost one
 Dockerfile, docker/        the container image and its entry point
 docker-compose.yml         runs the image with its data in ./data
+demo/                      the demo image: fictional data, replayed search and AI, a live viewer (docs/demo-image.md)
+explore/                   the exploratory walkthrough: a local full stack and visible journeys, not part of CI
+                           (docs/exploratory-testing.md)
 scripts/screenshots/       regenerates the documentation screenshots from fictional data
 tests/security/            security tests: hostile input, encryption, backups, file permissions, the signed and
                            sealed Worker link
 requirements.txt           run-time Python packages (requirements-dev.txt adds the test tools)
 .github/workflows/         Unit tests (lint, tests, Worker build), Playwright (browser tests), Security (secrets, security tests, Bandit,
-                           CVEs, CodeQL) and Image (build, smoke test, scan, publish to GHCR)
+                           CVEs, CodeQL), Image (build, smoke test, scan, publish to GHCR) and Demo image
 docs/                      installation, configuration, accounts and API keys, Cloudflare, feedback
                            Worker, email rendering, web providers, screenshots
 ```
@@ -254,7 +260,10 @@ cd packages/daily-vacancy-report/feedback-worker && npm ci && npm test
 npx playwright install chromium && npm run e2e   # browser tests against a local wrangler dev
 ```
 
-Four GitHub Actions workflows run on every push and pull request:
+For a visible run of every feature against a full local stack (real Worker, backend, Ollama and a test
+inbox), see [docs/exploratory-testing.md](docs/exploratory-testing.md); it isn't part of CI.
+
+Five GitHub Actions workflows run on pushes and pull requests:
 
 | Workflow | Jobs |
 | --- | --- |
@@ -262,6 +271,7 @@ Four GitHub Actions workflows run on every push and pull request:
 | [Playwright](.github/workflows/playwright.yml) | Browser tests of the feedback Worker's pages in Chromium ([`e2e/`](packages/daily-vacancy-report/feedback-worker/e2e)): the Worker runs locally under `wrangler dev` with fictional recruits and throwaway secrets, no Cloudflare account. They cover signing in and out, search, the dashboard tabs, a recruit's Manage, Pipeline and History tabs (moving a job along the board, asking for an interview prep pack), downloading a kept letter as PDF or Word, saving changes, Send jobs now, pausing, email buttons (confirm, save once, changed and expired links), invite sign-up, adding a recruiter and what a recruiter can see (including their desk, without fees), what a manager can see (their team's recruits, recruiters and fees, and nothing else), an admin's desk by recruiter, picking a new server model and following its download on the dashboard and in Tasks, sending a backup to the Worker and downloading it from the server panel, phone and wide layouts, and security (cookie flags, CSP, forged CSRF tokens, the API token, escaped input). On failure the HTML report and traces are uploaded |
 | [Security](.github/workflows/security.yml) | Gitleaks secret scan of the full history; the security test suites ([`tests/security`](tests/security) for hostile input, encryption, backups, file permissions and the Worker link, running the Worker's own signing and sealing code under Node against HermitShell's; the Worker's `test/security.test.js`, `test/apiauth.test.js` and `test/seal.test.js` for headers, escaping, authentication, signed requests and replays, sealed secrets, CSRF and size limits); Bandit static analysis of the Python code; CVE audits of the Python packages (`pip-audit`) and the Worker's npm packages (`npm audit`, high and critical fail); dependency review on pull requests; CodeQL code scanning of the Python, JavaScript and workflow files. It also runs every Monday, so newly published CVEs are reported even when nothing has changed |
 | [Image](.github/workflows/image.yml) | Builds the container image, starts it with an empty data folder and checks the scheduler comes up healthy with the standard jobs and every package imports, scans it with Trivy (fixable critical CVEs fail), then on `main` and version tags publishes it for amd64 and arm64 to `ghcr.io/metaheurist/hermitshell` and attaches it to a [release](https://github.com/Metaheurist/HermitShell/releases): its own for a version tag, the rolling `latest-build` pre-release for `main` |
+| [Demo image](.github/workflows/demo-image.yml) | When the demo, the walkthrough or HermitShell's code changes: the replay and viewer tests, native builds of the [demo image](docs/demo-image.md) on amd64 and arm64, a smoke test of each with no network (it must seed its fictional people and jobs offline), a Trivy scan for vulnerabilities and secrets, then on `main` and version tags publishes both to `ghcr.io/metaheurist/hermitshell-demo` and attaches the image files to a version's release |
 
 ## Security
 

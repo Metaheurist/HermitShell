@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HermitShell demo</title>
+<link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+<header>
+  <strong>HermitShell demo</strong>
+  <span id="mode" class="pill"></span>
+  <span id="status" role="status">Connecting...</span>
+  <nav id="links"></nav>
+</header>
+<main>
+  <section id="tiles" aria-label="Browser windows">
+    <p id="empty">Windows appear here as the walkthrough opens them.</p>
+  </section>
+  <aside id="panel" hidden aria-label="Test panel">
+    <h2>Journeys</h2>
+    <form id="run">
+      <div id="journeys"></div>
+      <button type="submit" id="run-button">Run</button>
+    </form>
+    <h2>Run log</h2>
+    <pre id="log" aria-live="polite"></pre>
+    <div id="report"></div>
+  </aside>
+</main>
+<script src="viewer.js"></script>
+</body>
+</html>

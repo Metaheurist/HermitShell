@@ -8,6 +8,23 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **The demo image, `hermitshell-demo`.** HermitShell in one container with made-up people, twelve
+  fictional adverts and recorded AI answers: no keys, no GPU and no internet. Modes: `app` (use it by
+  hand), `demo` (a showcase of every feature, live in the viewer on port 8080), `test` (pick journeys, run
+  them, read the report) and `autorun` (every journey, report and video to `/out`, exit code for the
+  result). Secrets and the CA are made at random per container; `HERMITSHELL_DEMO_LIVE=1` uses a real
+  Firecrawl key and Ollama given at run time. A new [Demo image](.github/workflows/demo-image.yml) workflow
+  builds it natively for amd64 and arm64, smoke-tests each with no network, scans it with Trivy
+  (vulnerabilities and secrets) and publishes it to `ghcr.io/<owner>/hermitshell-demo`. See
+  [docs/demo-image.md](docs/demo-image.md); the viewer's guards are covered by `demo/viewer/test`.
+- **An exploratory walkthrough.** `node explore/run.mjs` starts a full local stack (the Worker under
+  `wrangler dev`, the real backend image, Ollama on the GPU and a Mailpit inbox, all over https with a
+  private test CA) and walks through every portal in visible Chromium windows: setup, team, sign-ups from
+  pasted text, PDF and Word CVs, the recruiter's desk, a recruit's report buttons and own page, the
+  Pipeline, cover letters and tailored CVs, branding, retiring and multi-user permissions. Journeys run
+  alone or together, with checkpoints, slow-motion, findings with screenshots and video. `--replay` uses
+  fictional adverts and recorded answers instead of live search and a model; `--record` saves new ones.
+  Secrets stay outside the repo; not part of CI. See [docs/exploratory-testing.md](docs/exploratory-testing.md).
 - **`FIRECRAWL_API_BASE` and `TAVILY_API_BASE`.** Optional `.env` settings that send Firecrawl or Tavily
   requests, and the Global settings credit checks, to another host, such as the demo image's replay server.
   Only a plain `https://` address without a login, query or fragment is used; anything else is ignored with
@@ -1327,6 +1344,9 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **The images take Debian's security updates and leave local state out.** Both the production and demo
+  images run `apt-get upgrade` when built, so a fixed base package (such as `perl-base`) doesn't wait for a
+  new base image, and `**/state` folders (local runtime files, never in git) are kept out of the build.
 - **Demo mode never gives a role.** A signed-in user stands in for a made-up account with their username only
   when it has the same roles and isn't an admin, so a recruiter whose username matched the made-up admin can't
   open admin pages in demo mode. A stored demo state's model names must be Ollama names, and a made-up backup

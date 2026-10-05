@@ -10,9 +10,9 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
-    paths-ignore: ["docs/**", "**/*.md", "**/tests/**", "tests/**", "scripts/screenshots/**"]
+    paths-ignore: ["docs/**", "**/*.md", "**/tests/**", "tests/**", "scripts/screenshots/**", "explore/**", "demo/**", ".github/workflows/demo-image.yml"]
   pull_request:
-    paths-ignore: ["docs/**", "**/*.md", "**/tests/**", "tests/**", "scripts/screenshots/**"]
+    paths-ignore: ["docs/**", "**/*.md", "**/tests/**", "tests/**", "scripts/screenshots/**", "explore/**", "demo/**", ".github/workflows/demo-image.yml"]
   workflow_dispatch:
 
 permissions:

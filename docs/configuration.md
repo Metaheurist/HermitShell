@@ -241,7 +241,7 @@ Full template: [`.env.example`](../.env.example).
 | `FIRECRAWL_API_KEY` | none | Primary search and scrape provider |
 | `FIRECRAWL_BACKUP_KEYS` | none | Comma-separated extra Firecrawl keys for when credits run low |
 | `TAVILY_API_KEY` | none | Backup search and page extraction |
-| `FIRECRAWL_API_BASE` / `TAVILY_API_BASE` | the provider's own | Send Firecrawl or Tavily requests, and the credit checks, to another host, such as the [demo image](demo-image.md)'s replay server. Only a plain `https://host[:port][/path]` address is used; anything else is ignored with a log line. Set in `.env` only, as the dashboard cannot change them |
+| `FIRECRAWL_API_BASE` / `TAVILY_API_BASE` | the provider's own | Send Firecrawl or Tavily requests, and the credit checks, to another host, such as the replay server of the [demo image](demo-image.md) and the [exploratory walkthrough](exploratory-testing.md#replay-and-record). Only a plain `https://host[:port][/path]` address is used; anything else is ignored with a log line. Set in `.env` only, as the dashboard cannot change them |
 | `SCRAPFLY_API_KEY` | none | Backup scraping for bot-protected pages |
 | `WEB_SEARCH_ORDER` | `firecrawl,tavily` | Search provider priority |
 | `WEB_SCRAPE_ORDER` | `firecrawl,scrapfly,tavily` | Scrape provider priority |
