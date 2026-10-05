@@ -1311,7 +1311,8 @@ stop, and they choose by email whether HermitShell keeps their profile for when 
 
 - **What happens:** HermitShell sets them to **retired** (their daily job is paused, they can't sign in to
   `/me`, and **Send jobs** and bulk changes skip them) and emails them a signed link (the action `retire`,
-  working for 90 days like the other buttons). They are left out of the Recruits list; **N retired** beside the
+  working for 90 days like the other buttons). The Worker is told they are retired before any email goes, so
+  the link works as soon as it arrives. They are left out of the Recruits list; **N retired** beside the
   count, or **Retired** in the status dropdown, lists them with when they were retired and until when their
   data is kept.
 - **Their choice:** the link opens a page with **Keep it for 6 months**, **12 months** or **24 months**, or

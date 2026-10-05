@@ -1126,6 +1126,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The retire email's link always offers the choice.** HermitShell emailed a retired recruit before telling
+  the Worker they were retired, so opening the link straight away (or during a bulk retire of several
+  recruits) could show "Nothing to choose, your account is active again". The Worker now hears first, then
+  the emails go. Found by the exploratory walkthrough; covered by `test_profiles.py`.
 - **The Pipeline catches up with answers within minutes.** A recruit's **I applied** (or a move on the
   board) was collected within about 5 minutes, but the board only showed it at the next stats upload, up
   to 30 minutes later. Collecting new answers for a recruit now sends that recruit's stats straight away.

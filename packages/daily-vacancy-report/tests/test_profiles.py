@@ -2005,6 +2005,35 @@ def test_retiring_stops_reports_and_emails_a_signed_link_to_keep_or_delete(home,
     assert row["retired"] == int(sam["retired_at"] * 1000) and row["keep_until"] == int(sam["keep_until"] * 1000)
 
 
+class OrderedApi(FakeApi):
+    """Notes when the Worker is told each recruit is retired, next to the emails sent."""
+
+    def __init__(self, items, order):
+        super().__init__(items)
+        self.order = order
+
+    def status(self, payload):
+        super().status(payload)
+        self.order += [f"status:{p['id']}" for p in payload["profiles"] if p.get("status") == "retired"]
+
+
+@pytest.mark.parametrize("bulk", [False, True])
+def test_the_worker_knows_a_recruit_is_retired_before_their_email_goes(home, retiring, monkeypatch, bulk):
+    _, sent = home
+    profiles.sync(FakeApi([signup(), signup(id="queue:1700000000001:abcdef0123456780", name="Jo Bloggs", email="jo@example.com")]))
+    jo = next(p["id"] for p in profiles.all_profiles() if p.get("name") == "Jo Bloggs")
+    order = []
+    send = profiles.hc.send_email
+    monkeypatch.setattr(profiles.hc, "send_email", lambda *a, **k: order.append("email") or send(*a, **k))
+    items = ([{"id": "queue:5:a5", "type": "admin", "action": "bulk", "op": "retire", "us": [SAM_ID, jo]}] if bulk
+             else [admin("retire", SAM_ID, 5)])
+    profiles.sync(OrderedApi(items, order))
+    assert order.index("email") > order.index(f"status:{SAM_ID}")
+    if bulk:
+        assert order.count("email") == 2 and order.index("email") > order.index(f"status:{jo}")
+        assert order[:order.index("email")].count(f"status:{SAM_ID}") == 1
+
+
 def test_a_retired_recruit_gets_no_reports_and_only_resume_changes_that(home, retiring):
     _, started = retiring
     retired_sam(retiring)

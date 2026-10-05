@@ -995,9 +995,10 @@ def _para(text: str) -> str:
     return f'<p style="margin:0 0 10px;font-size:14px;line-height:21px;color:#334155">{html.escape(text)}</p>'
 
 
-def retire(profile: dict, now: float | None = None) -> None:
+def retire(profile: dict, now: float | None = None, api=None, announce: bool = True) -> None:
     """Stops a recruit's reports and emails them the link to choose how long their profile is kept for a return, or
-    to delete it now with every backup's copy. Until they choose it is kept for retire_default_months()."""
+    to delete it now with every backup's copy. Until they choose it is kept for retire_default_months(). With
+    announce=False the caller sends the email (announce_retired), as a bulk retire does once for everyone."""
     if profile.get("status") == "retired":
         raise ProfileError("already retired")
     now = time.time() if now is None else now
@@ -1005,7 +1006,19 @@ def retire(profile: dict, now: float | None = None) -> None:
     profile.pop("keep_months", None)
     save(profile)
     log(f"Profile {profile['id']} retired")
-    notify(lambda: send_retired(profile))
+    if announce:
+        announce_retired([profile], api)
+
+
+def announce_retired(retired: list[dict], api=None) -> None:
+    """Tells the Worker they are retired, then emails each their link: the link's page asks the Worker, so an email
+    opened at once must not find them still active."""
+    if not retired:
+        return
+    if api:
+        push_status(api, force=True)
+    for profile in retired:
+        notify(lambda p=profile: send_retired(p))
 
 
 def send_retired(profile: dict) -> None:
@@ -1344,11 +1357,11 @@ def bulk_action(item: dict, api=None) -> None:
     if op not in BULK_OPS or not isinstance(us, list) or not 0 < len(us) <= MAX_BULK:
         raise ProfileError("invalid bulk action")
     pids = list(dict.fromkeys(str(u) for u in us))
-    skipped, starting = [], []
+    skipped, starting, retired = [], [], []
     for pid in pids:
         try:
             if op != "send_now":
-                admin_action({"action": op, "u": pid, "recruiter": item.get("recruiter")}, api)
+                admin_action({"action": op, "u": pid, "recruiter": item.get("recruiter")}, api, retired=retired)
                 continue
             profile = load(pid)
             if not profile:
@@ -1362,12 +1375,13 @@ def bulk_action(item: dict, api=None) -> None:
             skipped.append(f"{_text(pid, 40)}: {exc}")
     if starting:
         start_reports(starting)
+    announce_retired(retired, api)
     log(f"Bulk {op} from the dashboard: {len(pids) - len(skipped)} done, {len(skipped)} skipped")
     if skipped:
         raise ProfileError(f"{len(skipped)} of {len(pids)} skipped ({skipped[0]})")
 
 
-def admin_action(item: dict, api=None) -> None:
+def admin_action(item: dict, api=None, retired: list | None = None) -> None:
     action, pid = item.get("action"), str(item.get("u") or "")
     if action == "bulk":
         return bulk_action(item, api)
@@ -1406,7 +1420,9 @@ def admin_action(item: dict, api=None) -> None:
     elif action in ("pause", "resume"):
         set_status(pid, "paused" if action == "pause" else "active")
     elif action == "retire":
-        retire(profile)
+        retire(profile, api=api, announce=retired is None)
+        if retired is not None:
+            retired.append(profile)
     elif action == "send_now":
         if profile.get("status") == "retired":
             raise ProfileError("retired: reactivate them first")
