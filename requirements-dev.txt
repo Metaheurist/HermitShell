@@ -6,4 +6,4 @@ requests>=2.32
 cryptography>=44
 pillow>=10.4
 pyyaml>=6.0
-pytest>=8.3
+pytest>=9.1.1
