@@ -33,7 +33,7 @@ COPY explore/data ./data
 COPY explore/replay ./replay
 COPY explore/stack/probe.py ./stack/probe.py
 
-FROM python:3.13-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 ARG UID=10000
 ARG VERSION=dev
