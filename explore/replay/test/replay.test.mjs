@@ -81,3 +81,24 @@ test("a request with no recording gets a reply shaped by its schema", () => {
   assert.equal(fallback({ format: "json" }), "{}");
   assert.equal(fallback({}), NOTE);
 });
+
+test("a schema's property names can't reach the object prototype", () => {
+  const schema = JSON.parse('{"type":"object","properties":{"__proto__":{"type":"object","properties":{"polluted":{"type":"boolean"}}},"constructor":{"type":"string"}}}');
+  const out = fromSchema(schema);
+  assert.equal(Object.getPrototypeOf(out), Object.prototype);
+  assert.deepEqual(Object.keys(out), ["__proto__", "constructor"]);
+  assert.equal({}.polluted, undefined);
+  assert.equal(JSON.parse(JSON.stringify(out)).constructor, "");
+});
+
+test("misses are counted per task, whatever the task is called", async () => {
+  const { chat, load, stats } = await import("../server.mjs");
+  load({});
+  stats.missed.clear();
+  const ask = { model: "m", messages: [{ role: "user", content: "Write a cover letter for the advert." }] };
+  await chat(ask);
+  await chat(ask);
+  const task = taskOf(ask);
+  assert.equal(stats.missed.get(task), 2);
+  assert.equal(Object.getPrototypeOf(Object.fromEntries(stats.missed)), Object.prototype);
+});

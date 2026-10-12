@@ -45,9 +45,9 @@ jobs:
         if: matrix.arch == 'amd64'
         with:
           node-version: 22
-      - name: Replay and viewer tests
+      - name: Replay, walkthrough and viewer tests
         if: matrix.arch == 'amd64'
-        run: node --test explore/replay/test/replay.test.mjs demo/viewer/test/viewer.test.mjs
+        run: node --test explore/replay/test/replay.test.mjs explore/lib/test/lib.test.mjs demo/viewer/test/viewer.test.mjs
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Image name
         id: name

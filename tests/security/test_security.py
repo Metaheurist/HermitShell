@@ -1197,3 +1197,21 @@ def test_a_redirect_is_never_followed_with_the_token(monkeypatch):
     with pytest.raises(worker_link.WorkerError, match="redirected"):
         worker_link.Link("https://fb.example.workers.dev", "test-api-token-0001", secret="").request("GET", "/api/queue")
     assert len(calls) == 1 and calls[0]["allow_redirects"] is False
+
+
+def test_the_explore_tls_probes_never_accept_tls_below_1_2():
+    import ast
+    import ssl
+
+    tree = ast.parse((REPO / "explore" / "stack" / "probe.py").read_text(encoding="utf-8"))
+    helper = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "tls_context")
+    space = {"ssl": ssl}
+    exec(compile(ast.Module(body=[helper], type_ignores=[]), "probe.py", "exec"), space)
+    assert space["tls_context"]().minimum_version >= ssl.TLSVersion.TLSv1_2
+    outside = [n for f in tree.body if not (isinstance(f, ast.FunctionDef) and f.name == "tls_context")
+               for n in ast.walk(f) if isinstance(n, ast.Attribute) and n.attr in ("create_default_context", "SSLContext")]
+    assert outside == [], "every TLS connection in the probe goes through tls_context()"
+
+
+def test_dependency_updates_stay_manual():
+    assert not any((REPO / ".github" / name).exists() for name in ("dependabot.yml", "dependabot.yaml"))

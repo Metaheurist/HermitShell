@@ -2,6 +2,7 @@
 // and as JSON. Run with: node --test demo/viewer/test/viewer.test.mjs
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after } from "node:test";
@@ -25,15 +26,27 @@ test("sameOrigin needs an Origin matching the Host", () => {
   assert.equal(sameOrigin({ headers: { host: "localhost:8080", origin: "null" } }), false);
 });
 
+// A fixed range can fall inside ports Windows reserves for Hyper-V, so let the OS pick.
+function freePort() {
+  return new Promise((resolve) => {
+    const probe = createServer().listen(0, "127.0.0.1", () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
 const servers = [];
+const internalOf = new Map();
 after(() => servers.forEach((s) => s.close()));
 
 async function serve(mode, onRun) {
   const out = mkdtempSync(join(tmpdir(), "viewer-out-"));
   writeFileSync(join(out, "findings.md"), "# findings\n");
-  const port = 18000 + Math.floor(Math.random() * 1000);
-  servers.push(start({ mode, port, internalPort: port + 1000, out, journeys: ["setup", "team"], onRun }));
+  const [port, internalPort] = [await freePort(), await freePort()];
+  servers.push(start({ mode, port, internalPort, out, journeys: ["setup", "team"], onRun }));
   await new Promise((r) => setTimeout(r, 100));
+  internalOf.set(`http://127.0.0.1:${port}`, `http://127.0.0.1:${internalPort}`);
   return `http://127.0.0.1:${port}`;
 }
 
@@ -66,7 +79,7 @@ async function events(base, ms) {
 
 test("a burst of frames reaches the page as the newest one, and a new page starts with it", async () => {
   const base = await serve("demo", null);
-  const internal = `http://127.0.0.1:${Number(new URL(base).port) + 1000}`;
+  const internal = internalOf.get(base);
   const watching = events(base, 600);
   await new Promise((r) => setTimeout(r, 50));
   for (let i = 0; i < 30; i++) {

@@ -27,18 +27,22 @@ def worker_requests():
     requests.get(f"{worker}/privacy", timeout=10).raise_for_status()
 
 
+def tls_context():
+    ctx = ssl.create_default_context()
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    return ctx
+
+
 def worker_default_context():
     with socket.create_connection((host, port), timeout=10) as raw:
-        ctx = ssl.create_default_context()
-        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-        with ctx.wrap_socket(raw, server_hostname=host):
+        with tls_context().wrap_socket(raw, server_hostname=host):
             pass
 
 
 def mailpit_starttls():
     with smtplib.SMTP(os.environ["SMTP_HOST"], int(os.environ["SMTP_PORT"]), timeout=10) as smtp:
         smtp.ehlo()
-        smtp.starttls(context=ssl.create_default_context())
+        smtp.starttls(context=tls_context())
         smtp.ehlo()
         smtp.login(os.environ["SMTP_USER"], os.environ["SMTP_PASSWORD"])
 
