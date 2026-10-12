@@ -33,13 +33,25 @@ export function rewrite(url) {
   return url.startsWith(BACKEND_WORKER) ? TARGET + url.slice(BACKEND_WORKER.length) : url;
 }
 
+// The visible text of a link's inner HTML: everything outside tags, with whitespace collapsed.
+export function textOf(html) {
+  let text = "";
+  let inTag = false;
+  for (const ch of html) {
+    if (ch === "<") inTag = true;
+    else if (ch === ">") inTag = false;
+    else if (!inTag) text += ch;
+  }
+  return text.replace(/\s+/g, " ").trim();
+}
+
 // The links in a message's HTML, rewritten for the browser, with their visible text.
 export function links(msg) {
   const out = [];
   const re = /<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
   for (let m; (m = re.exec(msg.HTML || ""));) {
     const href = m[1].replace(/&amp;/g, "&");
-    out.push({ href: rewrite(href), text: m[2].replace(/<[^>]*>?/g, "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim() });
+    out.push({ href: rewrite(href), text: textOf(m[2]) });
   }
   return out;
 }
