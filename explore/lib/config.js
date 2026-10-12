@@ -2,7 +2,7 @@
 // outside the repo and outside OneDrive, in %LOCALAPPDATA%\HermitShell\explore (or EXPLORE_HOME).
 
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,8 +60,10 @@ export function checkEnv(env) {
 // Reads .env.explore, creating it (or filling empty secrets) with random values; never prints a value.
 export function loadEnv() {
   mkdirSync(HOME, { recursive: true });
-  const env = existsSync(ENV_FILE) ? parseEnv(readFileSync(ENV_FILE, "utf8")) : {};
-  let changed = !existsSync(ENV_FILE);
+  let text = null;
+  try { text = readFileSync(ENV_FILE, "utf8"); } catch { /* first run: made below */ }
+  const env = text === null ? {} : parseEnv(text);
+  let changed = text === null;
   for (const [name, bytes] of Object.entries(GENERATED)) {
     if (!env[name]) { env[name] = randomBytes(bytes).toString(name.endsWith("PASSWORD") ? "base64url" : "hex"); changed = true; }
   }
@@ -73,7 +75,7 @@ export function loadEnv() {
 
 // Small run state shared between journeys: the staff passwords the team journey chose, invite links and so on.
 export function readState() {
-  return existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, "utf8")) : {};
+  try { return JSON.parse(readFileSync(STATE_FILE, "utf8")); } catch (err) { if (err.code === "ENOENT") return {}; throw err; }
 }
 
 export function writeState(patch) {

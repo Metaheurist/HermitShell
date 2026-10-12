@@ -1363,6 +1363,10 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **The demo and walkthrough tooling pass CodeQL.** Files are read or created in one step instead of being
+  checked first (the viewer serves from the handle it checked), names from requests and schemas no longer
+  become object keys, email link text can't keep a stray `<`, and the stack's TLS probe insists on TLS 1.2 or
+  later.
 - **The images take Debian's security updates and leave local state out.** Both the production and demo
   images run `apt-get upgrade` when built, so a fixed base package (such as `perl-base`) doesn't wait for a
   new base image, and `**/state` folders (local runtime files, never in git) are kept out of the build.

@@ -29,7 +29,9 @@ def worker_requests():
 
 def worker_default_context():
     with socket.create_connection((host, port), timeout=10) as raw:
-        with ssl.create_default_context().wrap_socket(raw, server_hostname=host):
+        ctx = ssl.create_default_context()
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        with ctx.wrap_socket(raw, server_hostname=host):
             pass
 
 

@@ -6,7 +6,7 @@
 // except POST /run, which is test mode only, needs a JSON body and a same-origin request, and runs one walkthrough
 // at a time.
 
-import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
+import { closeSync, createReadStream, fstatSync, openSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +28,20 @@ export function inside(root, path) {
   const base = resolve(root);
   const full = resolve(base, normalize(rel).replace(/^([/\\])+/, ""));
   return full === base || full.startsWith(base + sep) ? full : null;
+}
+
+// Opens a regular file for reading, checked on the open handle so it can't be swapped between the check and the read.
+function openFile(file) {
+  if (!file) return null;
+  let fd;
+  try {
+    fd = openSync(file, "r");
+    if (fstatSync(fd).isFile()) return fd;
+  } catch {
+    // missing or unreadable
+  }
+  if (fd !== undefined) closeSync(fd);
+  return null;
 }
 
 // Same-origin check for the one state-changing request: the browser always sends Origin on a cross-site POST.
@@ -130,15 +144,19 @@ export function start({ mode, port = 8080, internalPort = 8081, out = "/out", jo
     if (req.method !== "GET" && req.method !== "HEAD") return res.writeHead(405, SECURITY).end();
     if (url.pathname.startsWith("/out/")) {
       const file = inside(out, url.pathname.slice(5));
-      if (!file || !existsSync(file) || !statSync(file).isFile()) return res.writeHead(404, SECURITY).end();
+      const fd = openFile(file);
+      if (fd === null) return res.writeHead(404, SECURITY).end();
       res.writeHead(200, { ...SECURITY, "content-type": TYPES[extname(file)] || "application/octet-stream", "cache-control": "no-store" });
-      return createReadStream(file).pipe(res);
+      return createReadStream(file, { fd }).pipe(res);
     }
     const name = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
     const file = inside(join(HERE, "public"), name);
-    if (!file || !existsSync(file) || !statSync(file).isFile()) return res.writeHead(404, SECURITY).end();
+    const fd = openFile(file);
+    if (fd === null) return res.writeHead(404, SECURITY).end();
+    let content;
+    try { content = readFileSync(fd); } finally { closeSync(fd); }
     res.writeHead(200, { ...SECURITY, "content-type": TYPES[extname(file)] || "application/octet-stream" });
-    res.end(readFileSync(file));
+    res.end(content);
   }).listen(port, "0.0.0.0");
 
   api.close = () => {

@@ -39,7 +39,7 @@ export function links(msg) {
   const re = /<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
   for (let m; (m = re.exec(msg.HTML || ""));) {
     const href = m[1].replace(/&amp;/g, "&");
-    out.push({ href: rewrite(href), text: m[2].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim() });
+    out.push({ href: rewrite(href), text: m[2].replace(/<[^>]*>?/g, "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim() });
   }
   return out;
 }

@@ -1,7 +1,7 @@
 // The run's findings: each step passes or fails, and anything odd is noted as a bug or a note, with a screenshot,
 // into findings.md in the run's output folder (outside the repo).
 
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const OUT = process.env.EXPLORE_OUT || join(process.cwd(), "out", "adhoc");
@@ -10,7 +10,11 @@ let shot = 0;
 
 function ensure() {
   mkdirSync(join(OUT, "shots"), { recursive: true });
-  if (!existsSync(FILE)) writeFileSync(FILE, `# Exploratory run ${new Date().toISOString()}\n\n`);
+  try {
+    writeFileSync(FILE, `# Exploratory run ${new Date().toISOString()}\n\n`, { flag: "wx" });
+  } catch (err) {
+    if (err.code !== "EEXIST") throw err;
+  }
 }
 
 // Masks anything that looks like a key or a password before it reaches the findings.

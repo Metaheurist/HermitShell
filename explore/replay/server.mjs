@@ -28,7 +28,8 @@ const RECORD = process.env.REPLAY_RECORD || "";
 const UPSTREAM = (process.env.REPLAY_UPSTREAM || "").replace(/\/$/, "");
 const MAX_BODY = 4 * 1024 * 1024;
 
-export const stats = { hits: 0, misses: 0, recorded: 0, missed: {} };
+export const stats = { hits: 0, misses: 0, recorded: 0, missed: new Map() };
+const statsJson = () => ({ ...stats, missed: Object.fromEntries(stats.missed) });
 let recordings = existsSync(FILE) ? JSON.parse(readFileSync(FILE, "utf8")) : {};
 
 export function load(data) {
@@ -128,7 +129,7 @@ export async function chat(payload) {
     return recordings[key].content;
   }
   stats.misses += 1;
-  stats.missed[task] = (stats.missed[task] || 0) + 1;
+  stats.missed.set(task, (stats.missed.get(task) || 0) + 1);
   return fallback(payload);
 }
 
@@ -139,10 +140,10 @@ function chatReply(content) {
 
 export async function ollama(req, res) {
   const p = new URL(req.url, "http://replay").pathname;
-  if (p === "/replay/stats") return send(res, 200, { ...stats, recordings: Object.keys(recordings).length });
+  if (p === "/replay/stats") return send(res, 200, { ...statsJson(), recordings: Object.keys(recordings).length });
   if (p === "/replay/reset" && req.method === "POST") {
-    Object.assign(stats, { hits: 0, misses: 0, recorded: 0, missed: {} });
-    return send(res, 200, stats);
+    Object.assign(stats, { hits: 0, misses: 0, recorded: 0, missed: new Map() });
+    return send(res, 200, statsJson());
   }
   if (RECORD && UPSTREAM && p !== "/api/chat" && p !== "/api/pull") {
     const init = req.method === "POST" ? { method: "POST", headers: { "Content-Type": "application/json" },

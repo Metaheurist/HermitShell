@@ -10,9 +10,7 @@ export function fromSchema(schema, depth = 0) {
   const type = Array.isArray(schema.type) ? schema.type.find((t) => t !== "null") : schema.type;
   switch (type) {
     case "object": {
-      const out = {};
-      for (const [k, v] of Object.entries(schema.properties || {})) out[k] = fromSchema(v, depth + 1);
-      return out;
+      return Object.fromEntries(Object.entries(schema.properties || {}).map(([k, v]) => [k, fromSchema(v, depth + 1)]));
     }
     case "array": {
       const n = Math.max(0, schema.minItems || 0);

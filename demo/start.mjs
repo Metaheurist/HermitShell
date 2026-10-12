@@ -80,8 +80,10 @@ async function waitFor(what, check, timeout = 300000) {
 function secrets() {
   mkdirSync(HOME, { recursive: true, mode: 0o700 });
   const file = join(HOME, ".env.explore");
-  const env = existsSync(file) ? Object.fromEntries(readFileSync(file, "utf8").split("\n").filter((l) => l.includes("="))
-    .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)])) : {};
+  let text = "";
+  try { text = readFileSync(file, "utf8"); } catch { /* first start: made below */ }
+  const env = Object.fromEntries(text.split("\n").filter((l) => l.includes("="))
+    .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
   const want = { EXPLORE_LINK_SECRET: [32, "hex"], EXPLORE_API_TOKEN: [32, "hex"], EXPLORE_ADMIN_PASSWORD: [18, "base64url"] };
   for (const [name, [bytes, enc]] of Object.entries(want)) env[name] ||= randomBytes(bytes).toString(enc);
   if (process.env.DEMO_ADMIN_PASSWORD) env.EXPLORE_ADMIN_PASSWORD = process.env.DEMO_ADMIN_PASSWORD;
@@ -187,7 +189,7 @@ function reportLinks(out) {
 
 async function seed(viewer) {
   const flag = join(HOME, "seeded");
-  if (existsSync(flag)) return true;
+  try { readFileSync(flag); return true; } catch { /* not seeded yet */ }
   say("seeding the demo people and jobs (first start only)...");
   viewer?.status("running", "Seeding the demo people and jobs...");
   const { code } = await walkthrough(SEED, { video: false, viewer });
