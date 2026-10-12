@@ -5,5 +5,5 @@
 requests>=2.32
 cryptography>=44
 pillow>=10.4
-pyyaml>=6.0
+pyyaml>=6.0.3
 pytest>=8.3
