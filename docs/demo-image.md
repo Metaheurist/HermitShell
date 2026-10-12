@@ -65,11 +65,13 @@ afterwards. The folder must be writable by uid 10000.
 ## The viewer
 
 <http://localhost:8080> shows every browser window the walkthrough opens, live (the Chrome DevTools
-screencast), each with the caption of what that person is doing. In `test` and `autorun` modes a side panel
+screencast), each with the caption of what that person is doing. The windows are laptop-shaped (1280 x 720)
+and laid out in whichever grid shows them biggest on your screen; each updates a few times a second, so the page
+never falls behind or needs a refresh, and opening it mid-run shows every window at once. In `test` and `autorun` modes a side panel
 adds the journeys, the run log and links to the HTML report and `findings.md`. The journeys are the same as
 the [exploratory walkthrough's](exploratory-testing.md#the-journeys).
 
-<img src="images/demo/viewer-running.png" alt="The viewer streaming the admin's and recruiter's windows, with the test panel and run log" width="720">
+<img src="images/demo/viewer-running.png" alt="The viewer streaming the admin's, recruiter's and a recruit's windows in a grid, with the test panel and run log" width="720">
 
 In `test` mode, pick journeys and press **Run**; with none picked it runs every journey except setup, team,
 signup and extras. Those made the demo people when the container started, so they only run again in a fresh
@@ -129,7 +131,7 @@ between runs, or leave it out for a fresh start each time.
 packages, Mailpit and Chromium, all pinned. The [Demo image workflow](../.github/workflows/demo-image.yml)
 runs when the demo, the walkthrough or HermitShell's code changes:
 
-1. the replay and viewer tests;
+1. the replay, walkthrough-helper and viewer tests (`node --test explore/replay/test explore/lib/test demo/viewer/test`);
 2. a native build on amd64 and on arm64 runners;
 3. a smoke test of each with **no network at all**: the container must start, seed every demo person and
    their jobs, and answer over https;

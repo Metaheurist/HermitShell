@@ -24,7 +24,8 @@ export async function actor(role, { key = role, size = [960, 540] } = {}) {
   const session = join(SESSIONS_DIR, `${key}.json`);
   const out = process.env.EXPLORE_OUT;
   const context = await browser.newContext({
-    baseURL: TARGET, ignoreHTTPSErrors: true, viewport: null,
+    // Headless windows would default to 800 x 600; a laptop-shaped page is what people really see.
+    baseURL: TARGET, ignoreHTTPSErrors: true, viewport: headless ? { width: 1280, height: 720 } : null,
     ...(existsSync(session) ? { storageState: session } : {}),
     ...(out && process.env.EXPLORE_FAST !== "1" ? { recordVideo: { dir: join(out, "video", key) } } : {}),
   });

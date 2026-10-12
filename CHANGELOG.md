@@ -14,7 +14,13 @@ using [Semantic Versioning](https://semver.org/).
 - **The demo viewer fills the screen.** Its windows are laid out in whichever grid shows them biggest for
   the screen and the number of windows open, instead of a strip along the top. It also stays live: only each
   window's newest frame is sent, up to five times a second, so the page no longer falls minutes behind and
-  needs a refresh, and a page opened mid-run shows every window at once.
+  needs a refresh, and a page opened mid-run shows every window at once. Headless walkthrough windows (as in
+  the demo image) are laptop-sized, 1280 x 720, instead of Chromium's 800 x 600, so they fill the grid.
+- **Unit tests for the walkthrough's helpers** (`explore/lib/test`, run by the Demo image workflow): email
+  link text, the `.env.explore` and state files, the findings file and masking. Replay tests check that schema
+  property names can't reach the object prototype and that misses are counted per task. Security tests check
+  that every TLS connection in the stack's probe needs TLS 1.2 or later, and that dependency updates stay
+  manual (no Dependabot configuration).
 - **The demo image, `hermitshell-demo`.** HermitShell in one container with made-up people, twelve
   fictional adverts and recorded AI answers: no keys, no GPU and no internet. Modes: `app` (use it by
   hand), `demo` (a showcase of every feature, live in the viewer on port 8080), `test` (pick journeys, run

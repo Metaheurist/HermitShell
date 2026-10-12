@@ -65,7 +65,7 @@ is `EXPLORE_ADMIN_PASSWORD` in the same file.
 | `--only signup,recruiter` | Just these journeys, in their usual order |
 | `--from <checkpoint>` | Restore a checkpoint first |
 | `--slow 300` / `--fast` | Pause (ms) before each action, highlighting it; `--fast` turns pauses, video and traces off |
-| `--headless` | No windows |
+| `--headless` | No windows; each page is laptop-sized (1280 x 720) |
 | `--list` | List the journeys without running them |
 | `--target URL` / `--inbox URL` | Walk through another HermitShell, such as the [demo image](#walking-through-the-demo-image) |
 
