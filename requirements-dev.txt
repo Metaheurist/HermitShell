@@ -4,6 +4,6 @@
 # their code paths are tested and audited for CVEs.
 requests>=2.32
 cryptography>=44
-pillow>=10.4
+pillow>=12.3.0
 pyyaml>=6.0
 pytest>=8.3
