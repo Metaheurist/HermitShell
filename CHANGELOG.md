@@ -1363,6 +1363,9 @@ using [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **The Worker's build tools are past four new high advisories.** The lockfile takes the fixed `wrangler`,
+  `miniflare`, `sharp` and `source-map-js` (event-loop denial of service from crafted source maps, and a
+  `librsvg` flaw in `sharp`). They are used to test and deploy the Worker, not in the deployed Worker itself.
 - **The demo and walkthrough tooling pass CodeQL.** Files are read or created in one step instead of being
   checked first (the viewer serves from the handle it checked), names from requests and schemas no longer
   become object keys, email link text can't keep a stray `<`, and the stack's TLS probe insists on TLS 1.2 or
