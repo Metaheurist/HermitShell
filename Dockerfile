@@ -3,7 +3,7 @@
 #
 #   docker build -t hermitshell .
 #   docker run -d --name hermitshell -v /srv/hermitshell:/data hermitshell
-FROM python:3.13-slim
+FROM python:3.14-slim
 
 ARG UID=10000
 ARG VERSION=dev
