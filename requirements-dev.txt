@@ -3,7 +3,7 @@
 # (both are in the container image); pillow and pyyaml are optional there, and are installed here so
 # their code paths are tested and audited for CVEs.
 requests>=2.32
-cryptography>=44
+cryptography>=50.0.2
 pillow>=10.4
 pyyaml>=6.0
 pytest>=8.3
