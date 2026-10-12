@@ -2,7 +2,7 @@
 # `cryptography` once HERMES_DATA_KEY is set or passwords and API keys are typed into the dashboard
 # (both are in the container image); pillow and pyyaml are optional there, and are installed here so
 # their code paths are tested and audited for CVEs.
-requests>=2.32
+requests>=2.34.2
 cryptography>=44
 pillow>=10.4
 pyyaml>=6.0
