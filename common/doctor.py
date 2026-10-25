@@ -35,6 +35,7 @@ MIN_PYTHON = (3, 10)
 # (module to import, pip name, minimum version, required). Keep in step with requirements.txt.
 REQUIREMENTS = [
     ("requests", "requests", "2.32", True),
+    ("certifi", "certifi", "2026.10.23", True),
     ("cryptography", "cryptography", "44", True),
     ("PIL", "pillow", "10.4", False),
     ("yaml", "pyyaml", "6.0", False),

@@ -6,6 +6,15 @@ using [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **Feedback Worker dev tools.** Vite 8.3.5, Vitest 5.0.5 and Wrangler 4.152.0 replace the copies
+  Dependabot flagged (file access outside the dev server, the dev-server launch editor, and Vitest
+  mocker path checks). Undici is held at 7.30.1, the release that closes the high-severity parser
+  bugs in 7.29.1. These run in local tests and deploys; the Worker does not start a Vite server.
+- **Certificate bundle.** The image now installs certifi 2026.10.23 or newer, so the container scan no
+  longer fails on the compromised emSign root certificates bundled in 2026.6.17.
+
 ### Added
 
 - **A guided demo, [docs/demo.md](docs/demo.md).** A tour of every feature in the order a desk meets them,
